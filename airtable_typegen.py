@@ -7,12 +7,9 @@ from pydantic import BaseModel
 from rich import print
 from rich.console import Console
 from rich.table import Table
-from typer import Typer
 
-from airtable_meta import get_base_meta_data
-from airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
-
-app = Typer()
+from meta import get_base_meta_data
+from meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
 
 OUTPUT_PATH = Path("./output")
 TABLES_CSV_PATH = Path("./tables.csv")
@@ -24,8 +21,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-@app.command()
-def gen(verbose: bool = False):
+def python_gen(verbose: bool = False):
     """`WIP` Generate Python types and models for Airtable"""
 
     metadata = get_base_meta_data()
@@ -45,53 +41,6 @@ def gen(verbose: bool = False):
     write_tables(metadata, verbose)
     write_main_class(metadata, verbose)
     write_init(metadata, verbose)
-
-
-@app.command(name="csv")
-def csv_export():
-    """Export Airtable data to CSV format."""
-    metadata = get_base_meta_data()
-
-    table_rows = []
-    for table in metadata["tables"]:
-        table_rows.append(
-            {
-                "Table ID": table["id"],
-                "Table Name": table["name"],
-                "Class Name": f"{camel_case(table['name'])}",
-                "Record Dict": f"{camel_case(table['name'])}RecordDict",
-                "ORM Model": f"{camel_case(table['name'])}ORM",
-                "Pydantic Model": f"{camel_case(table['name'])}Model",
-                "Property Name": property_name(table, use_custom=False),
-            }
-        )
-
-    df = pd.DataFrame(table_rows, columns=["Table ID", "Table Name", "Class Name", "Record Dict", "ORM Model", "Pydantic Model", "Property Name"])
-    output_path = Path("airtable_tables.csv")
-    df.to_csv(output_path, index=False)
-    print(f"Table CSV exported to {output_path}")
-
-    field_rows = []
-    for table in metadata["tables"]:
-        for field in table["fields"]:
-            field_rows.append(
-                {
-                    "Table ID": table["id"],
-                    "Table Name": table["name"],
-                    "Field ID": field["id"],
-                    "Field Name": field["name"],
-                    "Property Name": property_name(field, use_custom=False),
-                    "Python Type": python_type(field, warn=False),
-                    "Airtable Type": field["type"],
-                }
-            )
-
-    fields_df = pd.DataFrame(
-        field_rows, columns=["Table ID", "Table Name", "Field ID", "Field Name", "Property Name", "Python Type", "Airtable Type"]
-    )
-    fields_output_path = Path("airtable_fields.csv")
-    fields_df.to_csv(fields_output_path, index=False)
-    print(f"Fields CSV exported to {fields_output_path}")
 
 
 # region WRITE
