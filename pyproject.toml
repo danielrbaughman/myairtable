@@ -4,4 +4,23 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "typer>=0.16.1",
+]
+
+[tool.ruff]
+line-length = 150
+extend-exclude = ["dynamic"]
+
+[tool.ruff.lint]
+extend-select = ["I", "N"]
+ignore = ["N999"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = false
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.10",
+    "ty>=0.0.1a19",
+]
