@@ -1,5 +1,9 @@
 from typing import Any, Literal, Optional, TypedDict
 
+from typer import Typer
+
+cli = Typer()
+
 
 class OptionMetadata(TypedDict):
     id: str
@@ -282,11 +286,18 @@ type AirTableFieldMetadata = (
 )
 
 
+class ViewMetadata(TypedDict):
+    id: str
+    name: str
+    type: str
+
+
 class TableMetadata(TypedDict):
     id: str
     name: str
     primaryFieldId: str
     fields: list[AirTableFieldMetadata]
+    views: list[ViewMetadata]
 
 
 class AirtableMetadata(TypedDict):
