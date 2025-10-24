@@ -1,6 +1,7 @@
 from typer import Typer
 
-from .airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata
+from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata
+
 from .airtable_typegen_helpers import (
     DYNAMIC_PATH,
     WriteToTypeScriptFile,

@@ -2,54 +2,17 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-import httpx
 import pandas as pd
-from fastapi import APIRouter
 from rich import print
 from typer import Option, Typer
 
-from ...library.airtable import Airtable
-from .airtable_meta_types import AirtableMetadata
+from src.meta import get_base_meta_data
+
 from .airtable_typegen_helpers import camel_case, python_property_name, sanitize_string
 from .airtable_typegen_python import gen_python, python_type
 from .airtable_typegen_typescript import gen_typescript
 
-# TODO
-# - Add option for custom naming of tables/models
-# - need to handle or at least detect duplicate property names
-# - improve property naming
-# - move to its own repo
-# - improve invalid field message
-
-# TS
-# - Need to see what happens to read/write when the field name changes
-# - Use Zod for type validation
-# - Migrate to AirtableTS, or learn from it - especially the error handling
-
 cli = Typer()
-api = APIRouter(prefix="/airtable", tags=["airtable"])
-
-
-# @api.get("/job", response_model=JobsModel)
-@cli.command()
-def test():
-    jobs = Airtable().jobs.get()
-    job = jobs[0]
-    print(job.name)
-
-
-def get_base_meta_data(base_id: str) -> AirtableMetadata:
-    api_key = os.getenv("AIRTABLE_API_KEY")
-    if not api_key:
-        raise Exception("AIRTABLE_API_KEY not found in environment")
-
-    url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
-    response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
-    data: AirtableMetadata = response.json()
-    data["tables"].sort(key=lambda t: t["name"].lower())
-    for table in data["tables"]:
-        table["fields"].sort(key=lambda f: f["name"].lower())
-    return data
 
 
 base_id = os.getenv("AIRTABLE_BASE_ID") or ""

@@ -6,7 +6,7 @@ from rich import print
 from typer import Typer
 
 from ...library.constants import LocalFolders
-from .airtable_meta_types import AirtableMetadata
+from ..src.airtable_meta_types import AirtableMetadata
 
 cli = Typer()
 

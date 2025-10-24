@@ -9,7 +9,7 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 
-from .airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
+from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
 
 BASE_PATH = Path("./src/library/airtable")
 DYNAMIC_PATH = BASE_PATH / "dynamic"

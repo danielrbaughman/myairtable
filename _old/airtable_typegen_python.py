@@ -2,7 +2,8 @@ from pydantic import BaseModel
 from rich import print
 from typer import Typer
 
-from .airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
+from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
+
 from .airtable_typegen_helpers import (
     DYNAMIC_PATH,
     WriteToPythonFile,
