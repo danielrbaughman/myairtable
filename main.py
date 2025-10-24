@@ -11,7 +11,7 @@ from src import csv, meta
 
 # TS
 # - Need to see what happens to read/write when the field name changes
-# - Use Zod for type validation
+# - Use Zod for type validation?
 # - Migrate to AirtableTS, or learn from it - especially the error handling
 
 app = Typer()
