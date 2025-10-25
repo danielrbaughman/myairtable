@@ -7,6 +7,7 @@ from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableM
 from src.helpers import (
     WriteToPythonFile,
     camel_case,
+    copy_static_files,
     get_referenced_field,
     get_result_type,
     get_select_options,
@@ -35,20 +36,19 @@ def gen_python(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: 
             if len(options) > 0:
                 select_options[field["id"]] = f"{options_name(camel_case(table['name']), camel_case(field['name']))}"
 
-    dynamic_folder = folder / "dynamic"
-    write_types(metadata, verbose, dynamic_folder)
-    write_dicts(metadata, verbose, dynamic_folder)
-    write_orm_models(metadata, base_id, verbose, dynamic_folder)
-    write_pydantic_models(metadata, verbose, dynamic_folder)
-    write_tables(metadata, verbose, dynamic_folder)
-    write_formula_helpers(metadata, verbose, dynamic_folder)
-    write_main_class(metadata, base_id, verbose, dynamic_folder)
-    write_init(metadata, verbose, dynamic_folder)
-
+    copy_static_files(folder, "python")
+    write_types(metadata, verbose, folder)
+    write_dicts(metadata, verbose, folder)
+    write_orm_models(metadata, base_id, verbose, folder)
+    write_pydantic_models(metadata, verbose, folder)
+    write_tables(metadata, verbose, folder)
+    write_formula_helpers(metadata, verbose, folder)
+    write_main_class(metadata, base_id, verbose, folder)
+    write_init(metadata, verbose, folder)
 
 # region TYPES
 def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "types.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "types.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from datetime import datetime, timedelta")
@@ -192,7 +192,7 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 # region DICTS
 def write_dicts(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "dicts.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "dicts.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from typing import Any")
@@ -255,7 +255,7 @@ def write_dicts(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 # region ORM
 def write_orm_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "orm_models.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "orm_models.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from datetime import datetime")
@@ -368,7 +368,7 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
 
 # region MODELS
 def write_pydantic_models(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "models.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "models.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from datetime import datetime, timedelta")
@@ -472,7 +472,7 @@ def write_pydantic_models(metadata: AirtableMetadata, verbose: bool, folder: Pat
 
 # region TABLES
 def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "tables.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "tables.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from pyairtable import Table")
@@ -538,7 +538,7 @@ def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 
 def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "formula.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "formula.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from .types import (")
@@ -579,7 +579,7 @@ def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Pat
 
 
 def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "airtable_main.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("import os")

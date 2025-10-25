@@ -4,6 +4,7 @@ from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableM
 from src.helpers import (
     WriteToTypeScriptFile,
     camel_case,
+    copy_static_files,
     get_referenced_field,
     get_result_type,
     get_select_options,
@@ -32,17 +33,17 @@ def gen_typescript(metadata: AirtableMetadata, base_id: str, verbose: bool, fold
             if len(options) > 0:
                 select_options[field["id"]] = f"{options_name(camel_case(table['name']), camel_case(field['name']))}"
 
-    dynamic_path = folder / "dynamic"
-    write_types(metadata, verbose, dynamic_path)
-    write_models(metadata, base_id, verbose, dynamic_path)
-    write_tables(metadata, verbose, dynamic_path)
-    write_main_class(metadata, base_id, verbose, dynamic_path)
-    write_formula_helpers(metadata, verbose, dynamic_path)
-    write_index(metadata, verbose, dynamic_path)
+    copy_static_files(folder, "typescript")
+    write_types(metadata, verbose, folder)
+    write_models(metadata, base_id, verbose, folder)
+    write_tables(metadata, verbose, folder)
+    write_main_class(metadata, base_id, verbose, folder)
+    write_formula_helpers(metadata, verbose, folder)
+    write_index(metadata, verbose, folder)
 
 
 def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "types.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "types.ts") as write:
         # Imports
         write.region("IMPORTS")
         write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
@@ -186,7 +187,7 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 
 def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "models.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "models.ts") as write:
         # Imports
         write.region("IMPORTS")
         write.line('import { Attachment, Collaborator, FieldSet, Record } from "airtable";')
@@ -281,7 +282,7 @@ def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder
 
 
 def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "tables.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "tables.ts") as write:
         # Imports
         write.region("IMPORTS")
         write.line('import { AirtableTable } from "../static/airtable-table";')
@@ -318,7 +319,7 @@ def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 
 def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "airtable-main.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
         write.line('import { getApiKey } from "../static/helpers";')
         write.line("import {")
@@ -341,7 +342,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
 
 
 def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "formula.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "formula.ts") as write:
         # Imports
         write.region("IMPORTS")
         write.line("import {")
@@ -378,7 +379,7 @@ def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Pat
 
 
 def write_index(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "index.ts") as write:
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
         write.line('export * from "./types";')

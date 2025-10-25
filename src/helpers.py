@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -437,3 +438,12 @@ def get_referenced_field(field: AirTableFieldMetadata, all_fields: dict[str, Air
         return all_fields[referenced_field_id]
 
     return None
+
+def copy_static_files(folder: Path, type: str):
+    source = Path(f"./src/static/{type}")
+    destination = folder / "static"
+
+    if source.exists():
+        for file in source.iterdir():
+            if file.is_file():
+                shutil.copy2(file, destination / file.name)

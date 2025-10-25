@@ -30,6 +30,10 @@ def gen_csv(folder: Path, fresh: bool):
     df.to_csv(tables_csv_path, index=False)
     print(f"Table CSV exported to {tables_csv_path}")
 
+
+    fields_output_path = Path(folder) / "fields.csv"
+    use_custom = use_custom and fields_output_path.exists()
+
     field_rows: list[dict] = []
     for table in metadata["tables"]:
         for field in table["fields"]:
@@ -61,6 +65,5 @@ def gen_csv(folder: Path, fresh: bool):
             "TypeScript Type",
         ],
     )
-    fields_output_path = Path(folder) / "fields.csv"
     fields_df.to_csv(fields_output_path, index=False)
     print(f"Fields CSV exported to {fields_output_path}")
