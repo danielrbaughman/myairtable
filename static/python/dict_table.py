@@ -3,9 +3,8 @@ from typing import Generic, Optional, overload
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
 
-from src.library.airtable.static.helpers import validate_keys
-
 from .formula import id_in_list
+from .helpers import validate_keys
 from .table_helpers import CreateDictType, DictType, FieldType, UpdateDictType, ViewType, prepare_fields_for_save, sanitize_record_dict
 
 
