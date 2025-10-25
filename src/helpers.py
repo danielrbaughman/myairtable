@@ -327,11 +327,17 @@ def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetada
 
     global fields_dataframe
     if fields_dataframe is None:
-        fields_dataframe = pd.read_csv(folder / "fields.csv")
+        fields_path = folder / "fields.csv"
+        if not fields_path.exists():
+            return None
+        fields_dataframe = pd.read_csv(fields_path)
 
     global tables_dataframe
     if tables_dataframe is None:
-        tables_dataframe = pd.read_csv(folder / "tables.csv")
+        tables_path = folder / "tables.csv"
+        if not tables_path.exists():
+            return None
+        tables_dataframe = pd.read_csv(tables_path)
 
     id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
     match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]
@@ -440,8 +446,9 @@ def get_referenced_field(field: AirTableFieldMetadata, all_fields: dict[str, Air
     return None
 
 def copy_static_files(folder: Path, type: str):
-    source = Path(f"./src/static/{type}")
+    source = Path(f"./static/{type}")
     destination = folder / "static"
+    destination.mkdir(parents=True, exist_ok=True)
 
     if source.exists():
         for file in source.iterdir():

@@ -617,7 +617,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
 
 
 def write_init(metadata: AirtableMetadata, verbose: bool, folder: Path):
-    with WriteToPythonFile(path=folder / "__init__.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
@@ -626,6 +626,11 @@ def write_init(metadata: AirtableMetadata, verbose: bool, folder: Path):
         write.line("from .tables import *  # noqa: F403")
         write.line("from .airtable_main import *  # noqa: F403")
         write.line("from .formula import *  # noqa: F403")
+
+    with WriteToPythonFile(path=folder / "__init__.py") as write:
+        # Imports
+        write.line("from .dynamic import *  # noqa: F403")
+        write.line("from .static.formula import *  # noqa: F403")
 
 
 # endregion

@@ -385,6 +385,11 @@ def write_index(metadata: AirtableMetadata, verbose: bool, folder: Path):
         write.line('export * from "./types";')
         write.line('export * from "./models";')
         write.line("")
+    
+    with WriteToTypeScriptFile(path=folder / "index.ts") as write:
+        write.line('export * from "./dynamic";')
+        write.line('export * from "./static/formula";')
+        write.line("")
 
 
 def typescript_type(field: AirTableFieldMetadata, verbose: bool = False, warn: bool = False) -> str:
