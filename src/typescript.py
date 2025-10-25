@@ -1,8 +1,8 @@
+import shutil
 from pathlib import Path
 
 from .helpers import (
     WriteToTypeScriptFile,
-    camel_case,
     copy_static_files,
     detect_duplicate_property_names,
     get_referenced_field,
@@ -14,7 +14,7 @@ from .helpers import (
     is_computed_field,
     is_valid_field,
     options_name,
-    property_name,
+    property_name_camel,
     sanitize_string,
     upper_case,
     warn_unhandled_airtable_type,
@@ -33,8 +33,18 @@ def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
             all_fields[field["id"]] = field
             options = get_select_options(field)
             if len(options) > 0:
-                select_options[field["id"]] = f"{options_name(camel_case(table['name']), camel_case(field['name']))}"
+                select_options[field["id"]] = f"{options_name(property_name_camel(table, folder), property_name_camel(field, folder))}"
         detect_duplicate_property_names(table, folder)
+
+    dynamic_folder = folder / "dynamic"
+    if dynamic_folder.exists():
+        shutil.rmtree(dynamic_folder)
+        dynamic_folder.mkdir(parents=True, exist_ok=True)
+
+    static_folder = folder / "static"
+    if static_folder.exists():
+        shutil.rmtree(static_folder)
+        static_folder.mkdir(parents=True, exist_ok=True)
 
     copy_static_files(folder, "typescript")
     write_types(metadata, folder)
@@ -61,7 +71,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
                 options = get_select_options(field)
                 if len(options) > 0:
                     write.types(
-                        options_name(camel_case(table["name"]), camel_case(sanitize_string(field["name"]))),
+                        options_name(property_name_camel(table, folder), property_name_camel(field, folder)),
                         options,
                         f"Select options for `{sanitize_string(field['name'])}`",
                     )
@@ -71,61 +81,61 @@ def write_types(metadata: BaseMetadata, folder: Path):
         for table in metadata["tables"]:
             field_names = [sanitize_string(field["name"]) for field in table["fields"]]
             field_ids = [field["id"] for field in table["fields"]]
-            property_names = [property_name(field, folder) for field in table["fields"]]
+            property_names = [property_name_camel(field, folder) for field in table["fields"]]
 
             write.region(upper_case(table["name"]))
 
-            write.types(f"{camel_case(table['name'])}Field", field_names, f"Field names for `{table['name']}`")
-            write.types(f"{camel_case(table['name'])}FieldId", field_ids, f"Field IDs for `{table['name']}`")
-            write.types(f"{camel_case(table['name'])}FieldProperty", property_names, f"Property names for `{table['name']}`")
+            write.types(f"{property_name_camel(table, folder)}Field", field_names, f"Field names for `{table['name']}`")
+            write.types(f"{property_name_camel(table, folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
+            write.types(f"{property_name_camel(table, folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
 
             write.docstring(f"Calculated fields for `{table['name']}`")
             write.str_list(
-                f"{camel_case(table['name'])}CalculatedFields",
+                f"{property_name_camel(table, folder)}CalculatedFields",
                 [sanitize_string(field["name"]) for field in table["fields"] if is_computed_field(field)],
             )
             write.docstring(f"Calculated fields for `{table['name']}`")
             write.str_list(
-                f"{camel_case(table['name'])}CalculatedFieldIds",
+                f"{property_name_camel(table, folder)}CalculatedFieldIds",
                 [field["id"] for field in table["fields"] if is_computed_field(field)],
             )
             write.line_empty()
 
             write.dict_class(
-                f"{camel_case(table['name'])}FieldNameIdMapping",
+                f"{property_name_camel(table, folder)}FieldNameIdMapping",
                 [(sanitize_string(field["name"]), field["id"]) for field in table["fields"]],
-                first_type=f"{camel_case(table['name'])}Field",
-                second_type=f"{camel_case(table['name'])}FieldId",
+                first_type=f"{property_name_camel(table, folder)}Field",
+                second_type=f"{property_name_camel(table, folder)}FieldId",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{camel_case(table['name'])}FieldIdNameMapping",
+                f"{property_name_camel(table, folder)}FieldIdNameMapping",
                 [(field["id"], sanitize_string(field["name"])) for field in table["fields"]],
-                first_type=f"{camel_case(table['name'])}FieldId",
-                second_type=f"{camel_case(table['name'])}Field",
+                first_type=f"{property_name_camel(table, folder)}FieldId",
+                second_type=f"{property_name_camel(table, folder)}Field",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{camel_case(table['name'])}FieldIdPropertyMapping",
-                [(field["id"], property_name(field, folder)) for field in table["fields"]],
-                first_type=f"{camel_case(table['name'])}FieldId",
-                second_type=f"{camel_case(table['name'])}FieldProperty",
+                f"{property_name_camel(table, folder)}FieldIdPropertyMapping",
+                [(field["id"], property_name_camel(field, folder)) for field in table["fields"]],
+                first_type=f"{property_name_camel(table, folder)}FieldId",
+                second_type=f"{property_name_camel(table, folder)}FieldProperty",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{camel_case(table['name'])}FieldPropertyIdMapping",
-                [(property_name(field, folder), field["id"]) for field in table["fields"]],
-                first_type=f"{camel_case(table['name'])}FieldProperty",
-                second_type=f"{camel_case(table['name'])}FieldId",
+                f"{property_name_camel(table, folder)}FieldPropertyIdMapping",
+                [(property_name_camel(field, folder), field["id"]) for field in table["fields"]],
+                first_type=f"{property_name_camel(table, folder)}FieldProperty",
+                second_type=f"{property_name_camel(table, folder)}FieldId",
                 is_value_string=True,
             )
 
-            write.line(f"export interface {camel_case(table['name'])}FieldSetIds extends FieldSet {{")
+            write.line(f"export interface {property_name_camel(table, folder)}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
                 write.property_row(field["id"], typescript_type(table["name"], field, warn=True), optional=True)
             write.line("}")
             write.line_empty()
-            write.line(f"export interface {camel_case(table['name'])}FieldSet extends FieldSet {{")
+            write.line(f"export interface {property_name_camel(table, folder)}FieldSet extends FieldSet {{")
             for field in table["fields"]:
                 write.property_row(
                     sanitize_string(field["name"]), typescript_type(table["name"], field, warn=True), is_name_string=True, optional=True
@@ -137,20 +147,20 @@ def write_types(metadata: BaseMetadata, folder: Path):
             views = table["views"]
             view_names: list[str] = [sanitize_string(view["name"]) for view in views]
             view_ids: list[str] = [view["id"] for view in views]
-            write.types(f"{camel_case(table['name'])}View", view_names, f"View names for `{table['name']}`")
-            write.types(f"{camel_case(table['name'])}ViewId", view_ids, f"View IDs for `{table['name']}`")
+            write.types(f"{property_name_camel(table, folder)}View", view_names, f"View names for `{table['name']}`")
+            write.types(f"{property_name_camel(table, folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
             write.dict_class(
-                f"{camel_case(table['name'])}ViewNameIdMapping",
+                f"{property_name_camel(table, folder)}ViewNameIdMapping",
                 [(sanitize_string(view["name"]), view["id"]) for view in table["views"]],
-                first_type=f"{camel_case(table['name'])}View",
-                second_type=f"{camel_case(table['name'])}ViewId",
+                first_type=f"{property_name_camel(table, folder)}View",
+                second_type=f"{property_name_camel(table, folder)}ViewId",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{camel_case(table['name'])}ViewIdNameMapping",
+                f"{property_name_camel(table, folder)}ViewIdNameMapping",
                 [(view["id"], sanitize_string(view["name"])) for view in table["views"]],
-                first_type=f"{camel_case(table['name'])}ViewId",
-                second_type=f"{camel_case(table['name'])}View",
+                first_type=f"{property_name_camel(table, folder)}ViewId",
+                second_type=f"{property_name_camel(table, folder)}View",
                 is_value_string=True,
             )
 
@@ -182,7 +192,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
         )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
-            [(table["id"], f"{camel_case(table['name'])}FieldNameIdMapping") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_camel(table, folder)}FieldNameIdMapping") for table in metadata["tables"]],
             first_type="TableId",
             second_type="Record<string, string>",
         )
@@ -199,16 +209,16 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line('import { getApiKey } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}FieldSet,")
+            write.line_indented(f"{property_name_camel(table, folder)}FieldSet,")
         for table in metadata["tables"]:
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
-                    write.line_indented(f"{options_name(camel_case(table['name']), camel_case(field['name']))},")
+                    write.line_indented(f"{options_name(property_name_camel(table, folder), property_name_camel(field, folder))},")
         write.line('} from "./types";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Table,")
+            write.line_indented(f"{property_name_camel(table, folder)}Table,")
         write.line('} from "./tables";')
         write.endregion()
         write.line_empty()
@@ -217,24 +227,26 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
         for table in metadata["tables"]:
             write.region(upper_case(table["name"]))
 
-            write.line(f"export class {camel_case(table['name'])}Record extends AirtableRecord<{camel_case(table['name'])}FieldSet> {{")
+            write.line(
+                f"export class {property_name_camel(table, folder)}Record extends AirtableRecord<{property_name_camel(table, folder)}FieldSet> {{"
+            )
             for field in table["fields"]:
-                write.line_indented(f"public {property_name(field, folder)}?: {typescript_type(table['name'], field, warn=True)};", 1)
+                write.line_indented(f"public {property_name_camel(field, folder)}?: {typescript_type(table['name'], field, warn=True)};", 1)
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
             for field in table["fields"]:
-                write.line_indented(f"{property_name(field, folder)},", 2)
+                write.line_indented(f"{property_name_camel(field, folder)},", 2)
             write.line_indented("}: {", 1)
             write.line_indented("id?: string,", 2)
             for field in table["fields"]:
-                write.line_indented(f"{property_name(field, folder)}?: {typescript_type(table['name'], field, warn=True)},", 2)
+                write.line_indented(f"{property_name_camel(field, folder)}?: {typescript_type(table['name'], field, warn=True)},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table["fields"]:
-                write.line_indented(f"this.{property_name(field, folder)} = {property_name(field, folder)};", 2)
+                write.line_indented(f"this.{property_name_camel(field, folder)} = {property_name_camel(field, folder)};", 2)
             write.line_indented(
-                f"this.record = new Record<{camel_case(table['name'])}FieldSet>(new {camel_case(table['name'])}Table(getApiKey(), '{base_id}')._table, this.id, {{}});",
+                f"this.record = new Record<{property_name_camel(table, folder)}FieldSet>(new {property_name_camel(table, folder)}Table(getApiKey(), '{base_id}')._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
@@ -242,9 +254,9 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_empty()
 
             write.line_indented(
-                f"public static fromRecord(record: Record<{camel_case(table['name'])}FieldSet>): {camel_case(table['name'])}Record {{"
+                f"public static fromRecord(record: Record<{property_name_camel(table, folder)}FieldSet>): {property_name_camel(table, folder)}Record {{"
             )
-            write.line_indented(f"const instance = new {camel_case(table['name'])}Record(", 2)
+            write.line_indented(f"const instance = new {property_name_camel(table, folder)}Record(", 2)
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
             write.line_indented("instance.updateModel(record);", 2)
@@ -252,21 +264,21 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{camel_case(table['name'])}FieldSet> {{")
-            write.line_indented(f"const fields: Partial<{camel_case(table['name'])}FieldSet> = {{}};", 2)
+            write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{property_name_camel(table, folder)}FieldSet> {{")
+            write.line_indented(f"const fields: Partial<{property_name_camel(table, folder)}FieldSet> = {{}};", 2)
             for field in table["fields"]:
                 if not is_computed_field(field):
                     write.line_indented(
-                        f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{property_name(field, folder)};', 2
+                        f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{property_name_camel(field, folder)};', 2
                     )
             write.line_indented("return fields;", 2)
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"protected updateModel(record: Record<{camel_case(table['name'])}FieldSet>) {{")
+            write.line_indented(f"protected updateModel(record: Record<{property_name_camel(table, folder)}FieldSet>) {{")
             write.line_indented("this.record = record;", 2)
             for field in table["fields"]:
-                write.line_indented(f'this.{property_name(field, folder)} = record.get("{sanitize_string(field["name"])}");', 2)
+                write.line_indented(f'this.{property_name_camel(field, folder)} = record.get("{sanitize_string(field["name"])}");', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -276,7 +288,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
             )
             for field in table["fields"]:
-                write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{property_name(field, folder)});', 2)
+                write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{property_name_camel(field, folder)});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -291,14 +303,14 @@ def write_tables(metadata: BaseMetadata, folder: Path):
         write.line('import { AirtableTable } from "../static/airtable-table";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}FieldSet,")
-            write.line_indented(f"{camel_case(table['name'])}Field,")
-            write.line_indented(f"{camel_case(table['name'])}View,")
-            write.line_indented(f"{camel_case(table['name'])}ViewNameIdMapping,")
+            write.line_indented(f"{property_name_camel(table, folder)}FieldSet,")
+            write.line_indented(f"{property_name_camel(table, folder)}Field,")
+            write.line_indented(f"{property_name_camel(table, folder)}View,")
+            write.line_indented(f"{property_name_camel(table, folder)}ViewNameIdMapping,")
         write.line('} from "./types";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Record,")
+            write.line_indented(f"{property_name_camel(table, folder)}Record,")
         write.line('} from "./models";')
         write.endregion()
         write.line_empty()
@@ -308,11 +320,11 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.region(upper_case(table["name"]))
 
             write.line(
-                f"export class {camel_case(table['name'])}Table extends AirtableTable<{camel_case(table['name'])}FieldSet, {camel_case(table['name'])}Record, {camel_case(table['name'])}View, {camel_case(table['name'])}Field> {{"
+                f"export class {property_name_camel(table, folder)}Table extends AirtableTable<{property_name_camel(table, folder)}FieldSet, {property_name_camel(table, folder)}Record, {property_name_camel(table, folder)}View, {property_name_camel(table, folder)}Field> {{"
             )
             write.line_indented("constructor(apiKey: string, baseId: string) {")
             write.line_indented(
-                f'super(apiKey, baseId, "{table["name"]}", {camel_case(table["name"])}ViewNameIdMapping, {camel_case(table["name"])}Record.fromRecord);',
+                f'super(apiKey, baseId, "{table["name"]}", {property_name_camel(table, folder)}ViewNameIdMapping, {property_name_camel(table, folder)}Record.fromRecord);',
                 2,
             )
             write.line_indented("}")
@@ -327,19 +339,21 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line('import { getApiKey } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Table,")
+            write.line_indented(f"{property_name_camel(table, folder)}Table,")
         write.line('} from "./tables";')
         write.line_empty()
 
         write.line("export class Airtable {")
         for table in metadata["tables"]:
-            write.line_indented(f"public {property_name(table, folder, use_custom=False)}: {camel_case(table['name'])}Table;")
+            write.line_indented(f"public {property_name_camel(table, folder, use_custom=False)}: {property_name_camel(table, folder)}Table;")
         write.line_empty()
         write.line_indented("constructor() {")
         write.line_indented("const apiKey = getApiKey();", 2)
         write.line_indented(f"const baseId = '{base_id}';", 2)
         for table in metadata["tables"]:
-            write.line_indented(f"this.{property_name(table, folder, use_custom=False)} = new {camel_case(table['name'])}Table(apiKey, baseId);", 2)
+            write.line_indented(
+                f"this.{property_name_camel(table, folder, use_custom=False)} = new {property_name_camel(table, folder)}Table(apiKey, baseId);", 2
+            )
         write.line_indented("}")
         write.line("}")
 
@@ -350,9 +364,9 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
         write.region("IMPORTS")
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Field,")
-            write.line_indented(f"{camel_case(table['name'])}Fields,")
-            write.line_indented(f"{camel_case(table['name'])}FieldNameIdMapping,")
+            write.line_indented(f"{property_name_camel(table, folder)}Field,")
+            write.line_indented(f"{property_name_camel(table, folder)}Fields,")
+            write.line_indented(f"{property_name_camel(table, folder)}FieldNameIdMapping,")
         write.line("} from './types';")
         write.line("import { validateKey } from '../static/helpers';")
         write.line("import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from '../static/formula';")
@@ -363,10 +377,10 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
             write.region(upper_case(table["name"]))
 
             def write_formula(type: str):
-                write.line(f"export class {camel_case(table['name'])}{type} extends {type} {{")
-                write.line_indented(f"constructor(name: {camel_case(table['name'])}Field) {{")
-                write.line_indented(f"validateKey(name, {camel_case(table['name'])}Fields);", 2)
-                write.line_indented(f"super(name, {camel_case(table['name'])}FieldNameIdMapping);", 2)
+                write.line(f"export class {property_name_camel(table, folder)}{type} extends {type} {{")
+                write.line_indented(f"constructor(name: {property_name_camel(table, folder)}Field) {{")
+                write.line_indented(f"validateKey(name, {property_name_camel(table, folder)}Fields);", 2)
+                write.line_indented(f"super(name, {property_name_camel(table, folder)}FieldNameIdMapping);", 2)
                 write.line_indented("}", 1)
                 write.line("}")
                 write.line_empty()

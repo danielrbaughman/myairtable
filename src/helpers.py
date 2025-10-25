@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel
-from pydantic.alias_generators import to_camel
+from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
 from .meta_types import FieldMetadata, FieldType, TableMetadata
@@ -220,24 +220,11 @@ def upper_case(text: str) -> str:
     return alpha_only(text).upper()
 
 
-def camel_case(text: str) -> str:
-    """Formats as CamelCase"""
-
-    def non_alpha_to_space(text: str) -> str:
-        return "".join(c if c.isalpha() else " " for c in text)
-
-    def capitalize_words(text: str) -> list[str]:
-        return [word.capitalize() for word in text.split()]
-
-    text = non_alpha_to_space(text)
-    return "".join(capitalize_words(text))
-
-
 def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
     """Detect duplicate property names in a table's fields."""
     property_names: list[str] = []
     for field in table["fields"]:
-        property_name = python_property_name(field, folder)
+        property_name = property_name_snake(field, folder)
         property_names.append(property_name)
     for name in set(property_names):
         count = property_names.count(name)
@@ -245,7 +232,7 @@ def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
             print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
 
 
-def python_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name_snake(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
 
     if use_custom and folder:
@@ -256,17 +243,23 @@ def python_property_name(field_or_table: FieldMetadata | TableMetadata, folder: 
     text = field_or_table["name"]
 
     text = sanitize_property_name(text)
-    text = snake_case(text)
+    text = space_to_snake_case(text)
     text = sanitize_leading_trailing_characters(text)
     text = sanitize_reserved_names(text)
 
     return text
 
 
-def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name_camel(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    python_name = python_property_name(field_or_table, folder, use_custom)
+    python_name = property_name_snake(field_or_table, folder, use_custom)
     return to_camel(python_name)
+
+
+def property_name_pascal(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+    """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
+    python_name = property_name_snake(field_or_table, folder, use_custom)
+    return to_pascal(python_name)
 
 
 def sanitize_property_name(text: str) -> str:
@@ -321,7 +314,7 @@ def sanitize_property_name(text: str) -> str:
     return text
 
 
-def snake_case(text: str) -> str:
+def space_to_snake_case(text: str) -> str:
     """Formats as snake_case"""
 
     text = text.replace(" ", "_")
@@ -384,29 +377,41 @@ tables_dataframe: pd.DataFrame = None  # type: ignore
 def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path) -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
-    global fields_dataframe
-    if fields_dataframe is None:
-        fields_path = folder / "fields.csv"
-        if not fields_path.exists():
-            return None
-        fields_dataframe = pd.read_csv(fields_path)
+    is_table = "primaryFieldId" in field_or_table
 
-    global tables_dataframe
-    if tables_dataframe is None:
-        tables_path = folder / "tables.csv"
-        if not tables_path.exists():
-            return None
-        tables_dataframe = pd.read_csv(tables_path)
+    if is_table:
+        global tables_dataframe
+        if tables_dataframe is None:
+            tables_path = folder / "tables.csv"
+            if not tables_path.exists():
+                return None
+            tables_dataframe = pd.read_csv(tables_path)
 
-    id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
-    match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]
-    if not match.empty:
-        if "Property Name" in match.columns:
-            custom_property_name = match.iloc[0]["Property Name"]
-            if isinstance(custom_property_name, str) and custom_property_name.strip():
-                name = snake_case(custom_property_name.strip())
-                if name:
-                    return name
+        match = tables_dataframe[tables_dataframe["Table ID"] == field_or_table["id"]]
+        if not match.empty:
+            if "Property Name (snake_case)" in match.columns:
+                custom_property_name = match.iloc[0]["Property Name (snake_case)"]
+                if isinstance(custom_property_name, str) and custom_property_name.strip():
+                    name = space_to_snake_case(custom_property_name.strip())
+                    if name:
+                        return name
+    else:
+        global fields_dataframe
+        if fields_dataframe is None:
+            fields_path = folder / "fields.csv"
+            if not fields_path.exists():
+                return None
+            fields_dataframe = pd.read_csv(fields_path)
+
+        id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
+        match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]
+        if not match.empty:
+            if "Property Name (snake_case)" in match.columns:
+                custom_property_name = match.iloc[0]["Property Name (snake_case)"]
+                if isinstance(custom_property_name, str) and custom_property_name.strip():
+                    name = space_to_snake_case(custom_property_name.strip())
+                    if name:
+                        return name
 
     return None
 

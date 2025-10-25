@@ -17,6 +17,7 @@ def get_base_meta_data(base_id: str) -> BaseMetadata:
     try:
         response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
     except httpx.ReadTimeout:
+        print("Request timed out, retrying in 5 seconds...")
         time.sleep(5)
         response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
     data: BaseMetadata = response.json()

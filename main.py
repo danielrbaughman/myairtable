@@ -10,9 +10,6 @@ from src.python import gen_python
 
 # TODO
 
-# General Improvements
-# - Add option for custom naming of tables/models
-
 # CLI
 # - improve the CLI with lots of options to enable/disable features (python only for now)
 # - ReadMe
