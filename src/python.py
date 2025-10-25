@@ -585,15 +585,15 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
-        write.line("import os")
-        write.line_empty()
         write.line("from pyairtable import Api")
         write.line_empty()
+        write.line("from .types import TableName")
+        write.line("from ..static.airtable_table import TableType")
+        write.line("from ..static.helpers import get_api_key")
         write.line("from .tables import (")
         for table in metadata["tables"]:
             write.line_indented(f"{camel_case(table['name'])}Table,")
         write.line(")")
-        write.line("from ..static.helpers import get_api_key")
         write.endregion()
         write.line_empty()
         write.line_empty()
@@ -602,20 +602,26 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
         write.region("MAIN CLASS")
         write.line("class Airtable:")
         write.line_indented(main_doc_string())
-        for table in metadata["tables"]:
-            write.line_indented(f"{python_property_name(table, folder, use_custom=False).lower()}: {camel_case(table['name'])}Table")
+        write.line_empty()
+        write.line_indented("_api: Api")
+        write.line_indented(f"_base_id: str = '{base_id}'")
+        write.line_indented("_tables: dict[TableName, TableType] = {}")
         write.line_empty()
         write.line_indented("def __init__(self):")
-        write.line_indented("api_key = get_api_key()", 2)
-        write.line_indented(f'base_id = "{base_id}"', 2)
-        write.line_indented("if not api_key or not base_id:", 2)
-        write.line_indented('raise ValueError("API key and Base ID must be provided.")', 3)
-        write.line_indented("api = Api(api_key=api_key)", 2)
+        write.line_indented("api_key: str = get_api_key()", 2)
+        write.line_indented("if not api_key:", 2)
+        write.line_indented('raise ValueError("API key must be provided.")', 3)
+        write.line_indented("self._api = Api(api_key=api_key)", 2)
+        write.line_empty()
         for table in metadata["tables"]:
+            write.line_indented("@property")
+            write.line_indented(f"def {python_property_name(table, folder, use_custom=False)}(self) -> {camel_case(table['name'])}Table:")
+            write.line_indented(f"if '{table['name']}' not in self._tables:", 2)
             write.line_indented(
-                f'self.{python_property_name(table, folder, use_custom=False).lower()} = {camel_case(table["name"])}Table.from_table(api.table(base_id, "{table["name"]}"))',
-                2,
+                f'self._tables["{table["name"]}"] = {camel_case(table["name"])}Table.from_table(self._api.table(self._base_id, "{table["name"]}"))', 3
             )
+            write.line_indented(f'return self._tables["{table["name"]}"]', 2)
+            write.line_empty()
         write.endregion()
 
 

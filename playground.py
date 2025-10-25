@@ -8,7 +8,7 @@ app = Typer()
 @app.command()
 def main():
     """Playground"""
-    companies = Airtable().companies.get()
+    companies = Airtable().companies.get(fields=["Name"])
     print(len(companies))
 
 

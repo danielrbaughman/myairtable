@@ -11,7 +11,6 @@ from src.python import gen_python
 # TODO
 
 # General Improvements
-# - Lazy init in main class
 # - See if docstrings can be moved to base classes
 # - Add option for custom naming of tables/models
 

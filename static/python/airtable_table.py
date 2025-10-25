@@ -1,4 +1,4 @@
-from typing import Generic
+from typing import Generic, TypeVar
 
 from pyairtable import Table
 
@@ -113,3 +113,5 @@ class AirtableTable(
 
 
 # endregion
+
+TableType = TypeVar("TableType", bound=AirtableTable)
