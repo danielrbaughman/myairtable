@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from rich import print
 
-from src.helpers import (
+from .helpers import (
     WriteToPythonFile,
     camel_case,
     copy_static_files,
@@ -22,14 +22,14 @@ from src.helpers import (
     upper_case,
     warn_unhandled_airtable_type,
 )
-from src.meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
+from .meta_types import BaseMetadata, FieldMetadata, FieldType, TableMetadata
 
-all_fields: dict[str, AirTableFieldMetadata] = {}
+all_fields: dict[str, FieldMetadata] = {}
 select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: AirtableMetadata, base_id: str, folder: Path):
+def gen_python(metadata: BaseMetadata, base_id: str, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -51,7 +51,7 @@ def gen_python(metadata: AirtableMetadata, base_id: str, folder: Path):
 
 
 # region TYPES
-def write_types(metadata: AirtableMetadata, folder: Path):
+def write_types(metadata: BaseMetadata, folder: Path):
     # Table Types
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "types" / f"{python_property_name(table, folder)}.py") as write:
@@ -200,7 +200,7 @@ def write_types(metadata: AirtableMetadata, folder: Path):
 
 
 # region DICTS
-def write_dicts(metadata: AirtableMetadata, folder: Path):
+def write_dicts(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "dicts" / f"{python_property_name(table, folder)}.py") as write:
             # Imports
@@ -259,7 +259,7 @@ def write_dicts(metadata: AirtableMetadata, folder: Path):
 
 
 # region ORM
-def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
+def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{python_property_name(table, folder)}.py") as write:
             # Imports
@@ -367,7 +367,7 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
 
 
 # region MODELS
-def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
+def write_pydantic_models(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "models" / f"{python_property_name(table, folder)}.py") as write:
             # Imports
@@ -481,7 +481,7 @@ def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
 
 
 # region TABLES
-def write_tables(metadata: AirtableMetadata, folder: Path):
+def write_tables(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "tables" / f"{python_property_name(table, folder)}.py") as write:
             # Imports
@@ -541,7 +541,7 @@ def write_tables(metadata: AirtableMetadata, folder: Path):
 
 
 # region FORMULA
-def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
+def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "formula" / f"{python_property_name(table, folder)}.py") as write:
             # Imports
@@ -581,7 +581,7 @@ def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
 # region MAIN
 
 
-def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
+def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -625,7 +625,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
         write.endregion()
 
 
-def write_init(metadata: AirtableMetadata, folder: Path):
+def write_init(metadata: BaseMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
@@ -748,10 +748,10 @@ def main_doc_string() -> str:
 
 
 # region TYPE PARSING
-def python_type(table_name: str, field: AirTableFieldMetadata, warn: bool = False) -> str:
+def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
-    airtable_type: FIELD_TYPE = field["type"]
+    airtable_type: FieldType = field["type"]
     py_type: str = "Any"
 
     # With calculated fields, we want to know the type of the result
@@ -825,13 +825,13 @@ def python_type(table_name: str, field: AirTableFieldMetadata, warn: bool = Fals
     return py_type
 
 
-def pydantic_type(table_name: str, field: AirTableFieldMetadata) -> str:
+def pydantic_type(table_name: str, field: FieldMetadata) -> str:
     """Returns the appropriate Python type as Optional"""
 
     return f"Optional[{python_type(table_name, field)}] = None"
 
 
-def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata) -> str:
+def pyairtable_orm_type(table_name: str, field: FieldMetadata) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -926,12 +926,12 @@ def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata) -> str:
 
 
 class TypeAndReferencedField(BaseModel):
-    type: FIELD_TYPE
-    field: AirTableFieldMetadata | None
-    types: list[FIELD_TYPE] = []
+    type: FieldType
+    field: FieldMetadata | None
+    types: list[FieldType] = []
 
 
-def get_calculated_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE) -> TypeAndReferencedField:
+def get_calculated_type(field: FieldMetadata, airtable_type: FieldType) -> TypeAndReferencedField:
     """Get the resulting type of a calculated field"""
 
     result: TypeAndReferencedField = TypeAndReferencedField(type=airtable_type, field=None)
@@ -997,7 +997,7 @@ def get_calculated_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE)
     return result
 
 
-def get_referenced_field_from_formula(field: AirTableFieldMetadata, type: FIELD_TYPE) -> AirTableFieldMetadata | None:
+def get_referenced_field_from_formula(field: FieldMetadata, type: FieldType) -> FieldMetadata | None:
     """Check if a formula field references a field of the given type"""
 
     if field["type"] == "formula":
@@ -1010,7 +1010,7 @@ def get_referenced_field_from_formula(field: AirTableFieldMetadata, type: FIELD_
     return None
 
 
-def is_lookup_that_references_field_type(field: AirTableFieldMetadata, target_type: FIELD_TYPE) -> bool:
+def is_lookup_that_references_field_type(field: FieldMetadata, target_type: FieldType) -> bool:
     """Check if a lookup field references a field of the given type."""
 
     if field["type"] == "lookup" or field["type"] == "multipleLookupValues":
@@ -1022,7 +1022,7 @@ def is_lookup_that_references_field_type(field: AirTableFieldMetadata, target_ty
     return False
 
 
-def is_rollup_that_references_field_type(field: AirTableFieldMetadata, target_type: FIELD_TYPE) -> bool:
+def is_rollup_that_references_field_type(field: FieldMetadata, target_type: FieldType) -> bool:
     """Check if a rollup field references a field of the given type."""
 
     if field["type"] == "rollup":
@@ -1034,7 +1034,7 @@ def is_rollup_that_references_field_type(field: AirTableFieldMetadata, target_ty
     return False
 
 
-def is_formula_that_references_field_type(field: AirTableFieldMetadata, type: FIELD_TYPE) -> bool:
+def is_formula_that_references_field_type(field: FieldMetadata, type: FieldType) -> bool:
     """Check if a formula field references a field of the given type"""
 
     if field["type"] == "formula":

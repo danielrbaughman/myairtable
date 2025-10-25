@@ -5,10 +5,10 @@ from pathlib import Path
 
 import httpx
 
-from .meta_types import AirtableMetadata
+from .meta_types import BaseMetadata
 
 
-def get_base_meta_data(base_id: str) -> AirtableMetadata:
+def get_base_meta_data(base_id: str) -> BaseMetadata:
     api_key = os.getenv("AIRTABLE_API_KEY")
     if not api_key:
         raise Exception("AIRTABLE_API_KEY not found in environment")
@@ -19,7 +19,7 @@ def get_base_meta_data(base_id: str) -> AirtableMetadata:
     except httpx.ReadTimeout:
         time.sleep(5)
         response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
-    data: AirtableMetadata = response.json()
+    data: BaseMetadata = response.json()
     data["tables"].sort(key=lambda t: t["name"].lower())
     for table in data["tables"]:
         table["fields"].sort(key=lambda f: f["name"].lower())

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.helpers import (
+from .helpers import (
     WriteToTypeScriptFile,
     camel_case,
     copy_static_files,
@@ -19,14 +19,14 @@ from src.helpers import (
     upper_case,
     warn_unhandled_airtable_type,
 )
-from src.meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata
+from .meta_types import BaseMetadata, FieldMetadata, FieldType
 
-all_fields: dict[str, AirTableFieldMetadata] = {}
+all_fields: dict[str, FieldMetadata] = {}
 select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_typescript(metadata: AirtableMetadata, base_id: str, folder: Path):
+def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -45,7 +45,7 @@ def gen_typescript(metadata: AirtableMetadata, base_id: str, folder: Path):
     write_index(metadata, folder)
 
 
-def write_types(metadata: AirtableMetadata, folder: Path):
+def write_types(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "types.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -189,7 +189,7 @@ def write_types(metadata: AirtableMetadata, folder: Path):
         write.endregion()
 
 
-def write_models(metadata: AirtableMetadata, base_id: str, folder: Path):
+def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "models.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -284,7 +284,7 @@ def write_models(metadata: AirtableMetadata, base_id: str, folder: Path):
             write.endregion()
 
 
-def write_tables(metadata: AirtableMetadata, folder: Path):
+def write_tables(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "tables.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -321,7 +321,7 @@ def write_tables(metadata: AirtableMetadata, folder: Path):
             write.endregion()
 
 
-def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
+def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
         write.line('import { getApiKey } from "../static/helpers";')
@@ -344,7 +344,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
         write.line("}")
 
 
-def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
+def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "formula.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -381,7 +381,7 @@ def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
             write.endregion()
 
 
-def write_index(metadata: AirtableMetadata, folder: Path):
+def write_index(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
@@ -395,10 +395,10 @@ def write_index(metadata: AirtableMetadata, folder: Path):
         write.line("")
 
 
-def typescript_type(table_name: str, field: AirTableFieldMetadata, warn: bool = False) -> str:
+def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
-    airtable_type: FIELD_TYPE = field["type"]
+    airtable_type: FieldType = field["type"]
     ts_type: str = "Any"
 
     # With calculated fields, we want to know the type of the result

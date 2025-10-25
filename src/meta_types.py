@@ -11,7 +11,7 @@ class OptionMetadata(TypedDict):
     color: str
 
 
-FIELD_TYPE = Literal[
+FieldType = Literal[
     "singleLineText",
     "multilineText",
     "number",
@@ -49,7 +49,7 @@ class OptionsBase(TypedDict):
 
 
 class ResultMetadata(TypedDict):
-    type: FIELD_TYPE
+    type: FieldType
     options: dict[str, Any]
 
 
@@ -63,7 +63,7 @@ class FormulaFieldOptions(OptionsBase):
 class NamedFieldMetadata(TypedDict):
     id: str
     name: str
-    type: FIELD_TYPE
+    type: FieldType
     description: Optional[str]
     strong_links: list[str]
     weak_links: list[str]
@@ -79,11 +79,11 @@ class MultipleRecordLinksOptions(OptionsBase):
 
 
 class MultipleRecordLinksField(NamedFieldMetadata):
-    type: Literal["multipleRecordLinks"]  # type: ignore
+    type: Literal["multipleRecordLinks"]
     options: MultipleRecordLinksOptions
 
 
-class MultipleLookupValuesOptions(OptionsBase):  # type: ignore
+class MultipleLookupValuesOptions(OptionsBase):
     isValid: bool
     recordLinkFieldId: str
     fieldIdInLinkedTable: str
@@ -91,12 +91,12 @@ class MultipleLookupValuesOptions(OptionsBase):  # type: ignore
 
 
 class MultipleLookupValues(NamedFieldMetadata):
-    type: Literal["multipleLookupValues"]  # type: ignore
+    type: Literal["multipleLookupValues"]
     options: MultipleLookupValuesOptions
 
 
 class SingleLineTextField(NamedFieldMetadata):
-    type: Literal["singleLineText"]  # type: ignore
+    type: Literal["singleLineText"]
 
 
 class MultipleAttachmentsOptions(OptionsBase):
@@ -104,7 +104,7 @@ class MultipleAttachmentsOptions(OptionsBase):
 
 
 class MultipleAttachmentsField(NamedFieldMetadata):
-    type: Literal["multipleAttachments"]  # type: ignore
+    type: Literal["multipleAttachments"]
     options: MultipleAttachmentsOptions
 
 
@@ -114,7 +114,7 @@ class NumberFieldOptions(OptionsBase):
 
 
 class NumberField(NamedFieldMetadata):
-    type: Literal["number"]  # type: ignore
+    type: Literal["number"]
     options: NumberFieldOptions
 
 
@@ -123,12 +123,12 @@ class MultipleSelectsOptions(OptionsBase):
 
 
 class MultipleSelectsField(NamedFieldMetadata):
-    type: Literal["multipleSelects"]  # type: ignore
+    type: Literal["multipleSelects"]
     options: MultipleSelectsOptions
 
 
 class SingleSelectField(NamedFieldMetadata):
-    type: Literal["singleSelect"]  # type: ignore
+    type: Literal["singleSelect"]
     options: MultipleSelectsOptions
 
 
@@ -139,7 +139,7 @@ class MultipleLookupValuesOptions(OptionsBase):
 
 
 class FormulaField(NamedFieldMetadata):
-    type: Literal["formula"]  # type: ignore
+    type: Literal["formula"]
     options: FormulaFieldOptions
 
 
@@ -149,7 +149,7 @@ class CheckboxOptions(OptionsBase):
 
 
 class CheckboxField(NamedFieldMetadata):
-    type: Literal["checkbox"]  # type: ignore
+    type: Literal["checkbox"]
     options: CheckboxOptions
 
 
@@ -179,7 +179,6 @@ class CreatedTimeField(NamedFieldMetadata):
 class LastModifiedTimeFieldOptions(OptionsBase):
     isValid: bool
     referencedFieldIds: list[str]
-
     result: ResultMetadata
 
 
@@ -194,7 +193,7 @@ class CountFieldOptions(OptionsBase):
 
 
 class CountField(NamedFieldMetadata):
-    type: Literal["count"]  # type: ignore
+    type: Literal["count"]
     options: CountFieldOptions
 
 
@@ -259,7 +258,7 @@ class RichTextField(NamedFieldMetadata):
     type: Literal["richText"]
 
 
-type AirTableFieldMetadata = (
+type FieldMetadata = (
     SingleLineTextField
     | FormulaField
     | MultipleSelectsField
@@ -296,10 +295,10 @@ class TableMetadata(TypedDict):
     id: str
     name: str
     primaryFieldId: str
-    fields: list[AirTableFieldMetadata]
+    fields: list[FieldMetadata]
     views: list[ViewMetadata]
 
 
-class AirtableMetadata(TypedDict):
+class BaseMetadata(TypedDict):
     tables: list[TableMetadata]
     table_lookup: dict[str, TableMetadata]

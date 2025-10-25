@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from pydantic.alias_generators import to_camel
 from rich import print
 
-from src.meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
+from .meta_types import FieldMetadata, FieldType, TableMetadata
 
 
 class WriteToFile(BaseModel):
@@ -70,7 +70,7 @@ class WriteToPythonFile(WriteToFile):
             self.line(f'"""{docstring}"""')
         self.line_empty()
 
-    def property_docstring(self, field: AirTableFieldMetadata, table: TableMetadata):
+    def property_docstring(self, field: FieldMetadata, table: TableMetadata):
         if field["id"] == table["primaryFieldId"]:
             if is_computed_field(field):
                 self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}` - `Primary Key` - `Read-Only Field`"""')
@@ -166,11 +166,11 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f"{name}{'?' if optional else ''}: {type}")
 
 
-def is_calculated_field(field: AirTableFieldMetadata) -> bool:
+def is_calculated_field(field: FieldMetadata) -> bool:
     return field["type"] == "formula" or field["type"] == "rollup" or field["type"] == "lookup" or field["type"] == "multipleLookupValues"
 
 
-def is_computed_field(field: AirTableFieldMetadata) -> bool:
+def is_computed_field(field: FieldMetadata) -> bool:
     return (
         is_calculated_field(field)
         or field["type"] == "createdTime"
@@ -180,7 +180,7 @@ def is_computed_field(field: AirTableFieldMetadata) -> bool:
     )
 
 
-def get_select_options(field: AirTableFieldMetadata) -> list[str]:
+def get_select_options(field: FieldMetadata) -> list[str]:
     """Get the options of a select field"""
 
     airtable_type = field["type"]
@@ -245,7 +245,7 @@ def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
             print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
 
 
-def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def python_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
 
     if use_custom and folder:
@@ -263,7 +263,7 @@ def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, 
     return text
 
 
-def property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
     python_name = python_property_name(field_or_table, folder, use_custom)
     return to_camel(python_name)
@@ -381,7 +381,7 @@ fields_dataframe: pd.DataFrame = None  # type: ignore
 tables_dataframe: pd.DataFrame = None  # type: ignore
 
 
-def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path) -> str | None:
+def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path) -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
     global fields_dataframe
@@ -411,7 +411,7 @@ def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetada
     return None
 
 
-def get_result_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE = "") -> FIELD_TYPE:
+def get_result_type(field: FieldMetadata, airtable_type: FieldType = "") -> FieldType:
     if "options" in field and field["options"]:  # type: ignore
         if "result" in field["options"] and field["options"]["result"]:  # type: ignore
             if "type" in field["options"]["result"]:  # type: ignore
@@ -420,7 +420,7 @@ def get_result_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE = ""
     return airtable_type
 
 
-def warn_unhandled_airtable_type(table_name: str, field: AirTableFieldMetadata, airtable_type: FIELD_TYPE):
+def warn_unhandled_airtable_type(table_name: str, field: FieldMetadata, airtable_type: FieldType):
     if is_valid_field(field):
         print(
             "[yellow]Warning: Unhandled Airtable type. This results in generic types in the output.[/]",
@@ -440,14 +440,14 @@ def sanitize_string(text: str) -> str:
     return text.replace('"', "'")
 
 
-def is_valid_field(field: AirTableFieldMetadata) -> bool:
+def is_valid_field(field: FieldMetadata) -> bool:
     """Check if the field is `valid` according to Airtable."""
     if "options" in field and "isValid" in field["options"]:  # type: ignore
         return bool(field["options"]["isValid"])  # type: ignore
     return True
 
 
-def involves_lookup_field(field: AirTableFieldMetadata, all_fields: dict[str, AirTableFieldMetadata]) -> bool:
+def involves_lookup_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> bool:
     """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
     if field["type"] == "multipleLookupValues" or field["type"] == "lookup":
         return True
@@ -465,7 +465,7 @@ def involves_lookup_field(field: AirTableFieldMetadata, all_fields: dict[str, Ai
     return False
 
 
-def involves_rollup_field(field: AirTableFieldMetadata, all_fields: dict[str, AirTableFieldMetadata]) -> bool:
+def involves_rollup_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> bool:
     """Check if a field involves rollup, either directly or through any referenced fields."""
     if field["type"] == "rollup":
         return True
@@ -483,7 +483,7 @@ def involves_rollup_field(field: AirTableFieldMetadata, all_fields: dict[str, Ai
     return False
 
 
-def get_referenced_field(field: AirTableFieldMetadata, all_fields: dict[str, AirTableFieldMetadata]) -> AirTableFieldMetadata | None:
+def get_referenced_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> FieldMetadata | None:
     options = field.get("options", {})
     referenced_field_id = options.get("fieldIdInLinkedTable")
     if referenced_field_id and referenced_field_id in all_fields:
