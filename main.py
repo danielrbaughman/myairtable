@@ -14,7 +14,6 @@ from src.python import gen_python
 # - Add option for custom naming of tables/models
 
 # CLI
-# - improve invalid field message
 # - improve the CLI with lots of options to enable/disable features (python only for now)
 
 # TS
@@ -49,23 +48,23 @@ def csv(
 
 
 @app.command()
-def py(folder: str = Argument(help="Path to the output folder"), verbose: bool = False):
+def py(folder: str = Argument(help="Path to the output folder")):
     """Generate types and models in Python"""
     base_id = get_base_id()
     metadata = get_base_meta_data(base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
-    gen_python(metadata, base_id, verbose, folder=folder_path)
+    gen_python(metadata, base_id, folder=folder_path)
 
 
 # @app.command()
-# def ts(folder: str = Argument(help="Path to the output folder"), verbose: bool = False):
+# def ts(folder: str = Argument(help="Path to the output folder")):
 #     """Generate types and models in TypeScript"""
 #     base_id = get_base_id()
 #     metadata = get_base_meta_data(base_id)
 #     folder_path = Path(folder)
 #     folder_path.mkdir(parents=True, exist_ok=True)
-#     gen_typescript(metadata, base_id, verbose, folder=folder_path)
+#     gen_typescript(metadata, base_id, folder=folder_path)
 
 
 if __name__ == "__main__":

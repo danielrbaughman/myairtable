@@ -45,8 +45,8 @@ def gen_csv(folder: Path, fresh: bool):
                     "Property Name (snake)": python_property_name(field, folder, use_custom=use_custom),
                     "Property Name (camel)": property_name(field, folder, use_custom=use_custom),
                     "Airtable Type": field["type"],
-                    "Python Type": python_type(field, warn=False),
-                    "TypeScript Type": typescript_type(field, warn=False),
+                    "Python Type": python_type(table["name"], field, warn=False),
+                    "TypeScript Type": typescript_type(table["name"], field, warn=False),
                 }
             )
 

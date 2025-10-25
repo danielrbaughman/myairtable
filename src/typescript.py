@@ -26,7 +26,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_typescript(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def gen_typescript(metadata: AirtableMetadata, base_id: str, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -37,15 +37,15 @@ def gen_typescript(metadata: AirtableMetadata, base_id: str, verbose: bool, fold
         detect_duplicate_property_names(table, folder)
 
     copy_static_files(folder, "typescript")
-    write_types(metadata, verbose, folder)
-    write_models(metadata, base_id, verbose, folder)
-    write_tables(metadata, verbose, folder)
-    write_main_class(metadata, base_id, verbose, folder)
-    write_formula_helpers(metadata, verbose, folder)
-    write_index(metadata, verbose, folder)
+    write_types(metadata, folder)
+    write_models(metadata, base_id, folder)
+    write_tables(metadata, folder)
+    write_main_class(metadata, base_id, folder)
+    write_formula_helpers(metadata, folder)
+    write_index(metadata, folder)
 
 
-def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_types(metadata: AirtableMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "types.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -122,13 +122,13 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
             write.line(f"export interface {camel_case(table['name'])}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
-                write.property_row(field["id"], typescript_type(field, warn=True, verbose=verbose), optional=True)
+                write.property_row(field["id"], typescript_type(table["name"], field, warn=True), optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {camel_case(table['name'])}FieldSet extends FieldSet {{")
             for field in table["fields"]:
                 write.property_row(
-                    sanitize_string(field["name"]), typescript_type(field, warn=True, verbose=verbose), is_name_string=True, optional=True
+                    sanitize_string(field["name"]), typescript_type(table["name"], field, warn=True), is_name_string=True, optional=True
                 )
             write.line("}")
             write.line_empty()
@@ -189,7 +189,7 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
         write.endregion()
 
 
-def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def write_models(metadata: AirtableMetadata, base_id: str, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "models.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -219,7 +219,7 @@ def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder
 
             write.line(f"export class {camel_case(table['name'])}Record extends AirtableRecord<{camel_case(table['name'])}FieldSet> {{")
             for field in table["fields"]:
-                write.line_indented(f"public {property_name(field, folder)}?: {typescript_type(field, warn=True, verbose=verbose)};", 1)
+                write.line_indented(f"public {property_name(field, folder)}?: {typescript_type(table['name'], field, warn=True)};", 1)
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
@@ -228,7 +228,7 @@ def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder
             write.line_indented("}: {", 1)
             write.line_indented("id?: string,", 2)
             for field in table["fields"]:
-                write.line_indented(f"{property_name(field, folder)}?: {typescript_type(field, warn=True, verbose=verbose)},", 2)
+                write.line_indented(f"{property_name(field, folder)}?: {typescript_type(table['name'], field, warn=True)},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table["fields"]:
@@ -284,7 +284,7 @@ def write_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder
             write.endregion()
 
 
-def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_tables(metadata: AirtableMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "tables.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -321,7 +321,7 @@ def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
             write.endregion()
 
 
-def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
         write.line('import { getApiKey } from "../static/helpers";')
@@ -344,7 +344,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
         write.line("}")
 
 
-def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "formula.ts") as write:
         # Imports
         write.region("IMPORTS")
@@ -381,7 +381,7 @@ def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Pat
             write.endregion()
 
 
-def write_index(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_index(metadata: AirtableMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
@@ -395,7 +395,7 @@ def write_index(metadata: AirtableMetadata, verbose: bool, folder: Path):
         write.line("")
 
 
-def typescript_type(field: AirTableFieldMetadata, verbose: bool = False, warn: bool = False) -> str:
+def typescript_type(table_name: str, field: AirTableFieldMetadata, warn: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FIELD_TYPE = field["type"]
@@ -430,21 +430,21 @@ def typescript_type(field: AirTableFieldMetadata, verbose: bool = False, warn: b
                 ts_type = select_options[referenced_field["id"]]
             else:
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 ts_type = "any"
         case "multipleSelects":
             if field["id"] in select_options:
                 ts_type = f"{select_options[field['id']]}[]"
             else:
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 ts_type = "any"
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
             if not is_valid_field(field):
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 ts_type = "any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.

@@ -29,7 +29,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def gen_python(metadata: AirtableMetadata, base_id: str, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -40,18 +40,18 @@ def gen_python(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: 
         detect_duplicate_property_names(table, folder)
 
     copy_static_files(folder, "python")
-    write_types(metadata, verbose, folder)
-    write_dicts(metadata, verbose, folder)
-    write_orm_models(metadata, base_id, verbose, folder)
-    write_pydantic_models(metadata, verbose, folder)
-    write_tables(metadata, verbose, folder)
-    write_formula_helpers(metadata, verbose, folder)
-    write_main_class(metadata, base_id, verbose, folder)
-    write_init(metadata, verbose, folder)
+    write_types(metadata, folder)
+    write_dicts(metadata, folder)
+    write_orm_models(metadata, base_id, folder)
+    write_pydantic_models(metadata, folder)
+    write_tables(metadata, folder)
+    write_formula_helpers(metadata, folder)
+    write_main_class(metadata, base_id, folder)
+    write_init(metadata, folder)
 
 
 # region TYPES
-def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_types(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "types.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -126,7 +126,7 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
             write.line(f"class {camel_case(table['name'])}FieldsDict(TypedDict, total=False):")
             for field in table["fields"]:
-                write.property_row(field["id"], python_type(field, warn=True, verbose=verbose))
+                write.property_row(field["id"], python_type(table["name"], field, warn=True))
             write.line_empty()
             write.line_empty()
 
@@ -195,7 +195,7 @@ def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 
 # region DICTS
-def write_dicts(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_dicts(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "dicts.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -258,7 +258,7 @@ def write_dicts(metadata: AirtableMetadata, verbose: bool, folder: Path):
 
 
 # region ORM
-def write_orm_models(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "orm_models.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -360,7 +360,7 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
 
             # properties
             for field in table["fields"]:
-                write.line_indented(f"{python_property_name(field, folder)}: {pyairtable_orm_type(table['name'], field, verbose)}")
+                write.line_indented(f"{python_property_name(field, folder)}: {pyairtable_orm_type(table['name'], field)}")
                 write.property_docstring(field, table)
             write.line_empty()
 
@@ -371,7 +371,7 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
 
 
 # region MODELS
-def write_pydantic_models(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "models.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -412,7 +412,7 @@ def write_pydantic_models(metadata: AirtableMetadata, verbose: bool, folder: Pat
             # Properties
             write.line(f"class {camel_case(table['name'])}Model(AirtableBaseModel):")
             for field in table["fields"]:
-                write.line_indented(f"{python_property_name(field, folder)}: {pydantic_type(field)}")
+                write.line_indented(f"{python_property_name(field, folder)}: {pydantic_type(table['name'], field)}")
                 write.property_docstring(field, table)
             write.line_empty()
 
@@ -475,7 +475,7 @@ def write_pydantic_models(metadata: AirtableMetadata, verbose: bool, folder: Pat
 
 
 # region TABLES
-def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_tables(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "tables.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -541,7 +541,7 @@ def write_tables(metadata: AirtableMetadata, verbose: bool, folder: Path):
 # region FORMULA
 
 
-def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "formula.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -582,7 +582,7 @@ def write_formula_helpers(metadata: AirtableMetadata, verbose: bool, folder: Pat
 # region MAIN
 
 
-def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
+def write_main_class(metadata: AirtableMetadata, base_id: str, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -620,7 +620,7 @@ def write_main_class(metadata: AirtableMetadata, base_id: str, verbose: bool, fo
         write.endregion()
 
 
-def write_init(metadata: AirtableMetadata, verbose: bool, folder: Path):
+def write_init(metadata: AirtableMetadata, folder: Path):
     with WriteToPythonFile(path=folder / "dynamic" / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
@@ -743,7 +743,7 @@ def main_doc_string() -> str:
 
 
 # region TYPE PARSING
-def python_type(field: AirTableFieldMetadata, verbose: bool = False, warn: bool = False) -> str:
+def python_type(table_name: str, field: AirTableFieldMetadata, warn: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FIELD_TYPE = field["type"]
@@ -791,21 +791,21 @@ def python_type(field: AirTableFieldMetadata, verbose: bool = False, warn: bool 
                 py_type = select_options[referenced_field["id"]]
             else:
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 py_type = "Any"
         case "multipleSelects":
             if field["id"] in select_options:
                 py_type = f"list[{select_options[field['id']]}]"
             else:
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 py_type = "Any"
         case "button":
             py_type = "AirtableButton"
         case _:
             if not is_valid_field(field):
                 if warn:
-                    warn_unhandled_airtable_type(field, airtable_type, verbose)
+                    warn_unhandled_airtable_type(table_name, field, airtable_type)
                 py_type = "Any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
@@ -820,13 +820,13 @@ def python_type(field: AirTableFieldMetadata, verbose: bool = False, warn: bool 
     return py_type
 
 
-def pydantic_type(field: AirTableFieldMetadata) -> str:
+def pydantic_type(table_name: str, field: AirTableFieldMetadata) -> str:
     """Returns the appropriate Python type as Optional"""
 
-    return f"Optional[{python_type(field)}] = None"
+    return f"Optional[{python_type(table_name, field)}] = None"
 
 
-def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata, verbose: bool, warn: bool = True) -> str:
+def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -902,7 +902,7 @@ def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata, verbose: 
         case "button":
             orm_type = f"ButtonField = ButtonField({params})"
         case "lookup" | "multipleLookupValues":
-            orm_type = f"LookupField = LookupField[{python_type(field)}]({params})"
+            orm_type = f"LookupField = LookupField[{python_type(table_name, field)}]({params})"
         case "multipleRecordLinks":
             if "options" in field and "linkedTableId" in field["options"]:
                 linked_table_name = table_id_name_map.get(field["options"]["linkedTableId"], field["options"]["linkedTableId"])
@@ -916,9 +916,6 @@ def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata, verbose: 
         case _:
             if not is_valid_field(field):
                 orm_type = "Any"
-
-    if orm_type == "Any" and warn:
-        warn_unhandled_airtable_type(field, airtable_type, verbose)
 
     return orm_type
 

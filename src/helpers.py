@@ -7,8 +7,6 @@ import pandas as pd
 from pydantic import BaseModel
 from pydantic.alias_generators import to_camel
 from rich import print
-from rich.console import Console
-from rich.table import Table
 
 from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
 
@@ -413,33 +411,20 @@ def get_result_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE = ""
     return airtable_type
 
 
-def warn_unhandled_airtable_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE, verbose: bool):
+def warn_unhandled_airtable_type(table_name: str, field: AirTableFieldMetadata, airtable_type: FIELD_TYPE):
     if is_valid_field(field):
         print(
-            "[yellow]Unhandled Airtable type. This results in generic types in the output.[/]",
-            "use --verbose for more details" if not verbose else "",
+            "[yellow]Warning: Unhandled Airtable type. This results in generic types in the output.[/]",
         )
     else:
         print(
-            "[yellow]Invalid Airtable field[/]",
-            field["id"],
-            "[yellow]This results in generic types in the output.[/]",
-            "use --verbose for more details" if not verbose else "",
+            "[yellow]Warning: Invalid Airtable field. This results in generic types in the output.[/]",
+            "Field:",
+            f"'{field['name']}'",
+            f"({field['id']})",
+            "in Table:",
+            f"'{table_name}'",
         )
-    if verbose:
-        table = Table()
-        table.add_column("Field")
-        table.add_column("Value")
-        table.add_row("ID", str(field["id"]))
-        table.add_row("Name", str(field["name"]))
-        table.add_row("Type", str(field["type"]))
-        table.add_row("Interpreted Type", str(airtable_type))
-        is_valid = is_valid_field(field)
-        color = "green" if is_valid else "red"
-        table.add_row("Is Valid", f"[{color}]{is_valid}[/{color}]")
-        console = Console()
-        console.print(table)
-        print("")
 
 
 def sanitize_string(text: str) -> str:
