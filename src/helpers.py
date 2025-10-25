@@ -445,6 +445,7 @@ def get_referenced_field(field: AirTableFieldMetadata, all_fields: dict[str, Air
 
     return None
 
+
 def copy_static_files(folder: Path, type: str):
     source = Path(f"./static/{type}")
     destination = folder / "static"

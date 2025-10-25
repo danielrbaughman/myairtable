@@ -27,6 +27,7 @@ all_fields: dict[str, AirTableFieldMetadata] = {}
 select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
+
 def gen_python(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
@@ -45,6 +46,7 @@ def gen_python(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: 
     write_formula_helpers(metadata, verbose, folder)
     write_main_class(metadata, base_id, verbose, folder)
     write_init(metadata, verbose, folder)
+
 
 # region TYPES
 def write_types(metadata: AirtableMetadata, verbose: bool, folder: Path):

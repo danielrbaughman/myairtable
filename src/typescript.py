@@ -24,6 +24,7 @@ all_fields: dict[str, AirTableFieldMetadata] = {}
 select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
+
 def gen_typescript(metadata: AirtableMetadata, base_id: str, verbose: bool, folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
@@ -385,7 +386,7 @@ def write_index(metadata: AirtableMetadata, verbose: bool, folder: Path):
         write.line('export * from "./types";')
         write.line('export * from "./models";')
         write.line("")
-    
+
     with WriteToTypeScriptFile(path=folder / "index.ts") as write:
         write.line('export * from "./dynamic";')
         write.line('export * from "./static/formula";')

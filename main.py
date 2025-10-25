@@ -23,12 +23,14 @@ from src.typescript import gen_typescript
 
 app = Typer()
 
+
 @app.command()
 def meta(folder: str = Argument(help="Path to the output folder")):
     """Fetch Airtable metadata into a json file."""
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     gen_meta(folder=folder_path)
+
 
 @app.command()
 def csv(
@@ -50,6 +52,7 @@ def py(folder: str = Argument(help="Path to the output folder"), verbose: bool =
     folder_path.mkdir(parents=True, exist_ok=True)
     gen_python(metadata, base_id, verbose, folder=folder_path)
 
+
 @app.command()
 def ts(folder: str = Argument(help="Path to the output folder"), verbose: bool = False):
     """Generate types and models in TypeScript"""
@@ -58,6 +61,7 @@ def ts(folder: str = Argument(help="Path to the output folder"), verbose: bool =
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     gen_typescript(metadata, base_id, verbose, folder=folder_path)
+
 
 if __name__ == "__main__":
     from dotenv import load_dotenv

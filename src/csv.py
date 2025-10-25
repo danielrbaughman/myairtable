@@ -30,7 +30,6 @@ def gen_csv(folder: Path, fresh: bool):
     df.to_csv(tables_csv_path, index=False)
     print(f"Table CSV exported to {tables_csv_path}")
 
-
     fields_output_path = Path(folder) / "fields.csv"
     use_custom = use_custom and fields_output_path.exists()
 

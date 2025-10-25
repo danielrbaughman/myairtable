@@ -20,6 +20,7 @@ def get_base_meta_data(base_id: str) -> AirtableMetadata:
         table["fields"].sort(key=lambda f: f["name"].lower())
     return data
 
+
 def get_base_id() -> str:
     """Get the Airtable Base ID from environment variable."""
     base_id = os.getenv("AIRTABLE_BASE_ID")

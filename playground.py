@@ -1,9 +1,9 @@
-
 from typer import Typer
 
 from output import Airtable
 
 app = Typer()
+
 
 @app.command()
 def main():
