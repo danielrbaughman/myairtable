@@ -5,6 +5,7 @@ from src.helpers import (
     WriteToTypeScriptFile,
     camel_case,
     copy_static_files,
+    detect_duplicate_property_names,
     get_referenced_field,
     get_result_type,
     get_select_options,
@@ -33,6 +34,7 @@ def gen_typescript(metadata: AirtableMetadata, base_id: str, verbose: bool, fold
             options = get_select_options(field)
             if len(options) > 0:
                 select_options[field["id"]] = f"{options_name(camel_case(table['name']), camel_case(field['name']))}"
+        detect_duplicate_property_names(table, folder)
 
     copy_static_files(folder, "typescript")
     write_types(metadata, verbose, folder)

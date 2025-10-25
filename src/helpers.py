@@ -226,10 +226,22 @@ def camel_case(text: str) -> str:
     return "".join(capitalize_words(text))
 
 
+def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
+    """Detect duplicate property names in a table's fields."""
+    property_names: list[str] = []
+    for field in table["fields"]:
+        property_name = python_property_name(field, folder)
+        property_names.append(property_name)
+    for name in set(property_names):
+        count = property_names.count(name)
+        if count > 1:
+            print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
+
+
 def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
 
-    if use_custom:
+    if use_custom and folder:
         text = get_custom_property_name(field_or_table, folder)
         if text:
             return text
