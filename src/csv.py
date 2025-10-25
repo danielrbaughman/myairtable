@@ -3,16 +3,15 @@ from pathlib import Path
 import pandas as pd
 
 from src.helpers import property_name_snake, sanitize_string
-from src.meta import get_base_id, get_base_meta_data
+from src.meta_types import BaseMetadata
 from src.python import python_type
 from src.typescript import typescript_type
 
 
-def gen_csv(folder: Path, fresh: bool):
+def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
     """Export Airtable data to CSV format."""
 
     use_custom = not fresh
-    metadata = get_base_meta_data(get_base_id())
 
     table_rows = []
     for table in metadata["tables"]:

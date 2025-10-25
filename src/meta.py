@@ -35,12 +35,10 @@ def get_base_id() -> str:
     return base_id
 
 
-def gen_meta(folder: Path):
+def gen_meta(metadata: BaseMetadata, folder: Path):
     """Fetch Airtable metadata into a json file."""
 
-    base_id = get_base_id()
-    data = get_base_meta_data(base_id)
     p = folder / "meta.json"
     with open(p, "w") as f:
-        f.write(json.dumps(data, indent=4))
+        f.write(json.dumps(metadata, indent=4))
     print(f"Base metadata written to {p.as_posix()}")

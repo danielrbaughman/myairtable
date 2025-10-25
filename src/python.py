@@ -33,7 +33,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: BaseMetadata, base_id: str, folder: Path):
+def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool, wrappers: bool, validation: bool):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -56,12 +56,14 @@ def gen_python(metadata: BaseMetadata, base_id: str, folder: Path):
     copy_static_files(folder, "python")
     write_types(metadata, folder)
     write_dicts(metadata, folder)
-    write_orm_models(metadata, base_id, folder)
+    write_orm_models(metadata, base_id, folder, validation)
     write_pydantic_models(metadata, folder)
-    write_tables(metadata, folder)
-    write_formula_helpers(metadata, folder)
-    write_main_class(metadata, base_id, folder)
-    write_init(metadata, folder)
+    if formulas:
+        write_formula_helpers(metadata, folder)
+    if wrappers:
+        write_tables(metadata, folder)
+        write_main_class(metadata, base_id, folder)
+    write_init(metadata, folder, formulas, wrappers)
 
 
 # region TYPES
@@ -273,7 +275,7 @@ def write_dicts(metadata: BaseMetadata, folder: Path):
 
 
 # region ORM
-def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path):
+def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validation: bool):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
@@ -354,17 +356,18 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"return {property_name_pascal(table, folder)}Model.from_record_dict(record_dict)", 2)
             write.line_empty()
 
-            # _validate
-            write.line_indented("def _validate(self) -> None:")
-            write.line_indented("self.to_model()", 2)
-            write.line_empty()
+            if validation:
+                # _validate
+                write.line_indented("def _validate(self) -> None:")
+                write.line_indented("self.to_model()", 2)
+                write.line_empty()
 
-            # __setattr__
-            write.line_indented("def __setattr__(self, name: str, value: Any) -> None:")
-            write.line_indented("super().__setattr__(name, value)", 2)
-            write.line_indented("if name != 'id':", 2)
-            write.line_indented("self._validate()", 3)
-            write.line_empty()
+                # __setattr__
+                write.line_indented("def __setattr__(self, name: str, value: Any) -> None:")
+                write.line_indented("super().__setattr__(name, value)", 2)
+                write.line_indented("if name != 'id':", 2)
+                write.line_indented("self._validate()", 3)
+                write.line_empty()
 
             # properties
             for field in table["fields"]:
@@ -642,21 +645,24 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.endregion()
 
 
-def write_init(metadata: BaseMetadata, folder: Path):
+def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: bool):
     with WriteToPythonFile(path=folder / "dynamic" / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
         write.line("from .orm_models import *  # noqa: F403")
         write.line("from .models import *  # noqa: F403")
-        write.line("from .tables import *  # noqa: F403")
-        write.line("from .airtable_main import *  # noqa: F403")
-        write.line("from .formula import *  # noqa: F403")
+        if wrappers:
+            write.line("from .tables import *  # noqa: F403")
+            write.line("from .airtable_main import *  # noqa: F403")
+        if formulas:
+            write.line("from .formula import *  # noqa: F403")
 
     with WriteToPythonFile(path=folder / "__init__.py") as write:
         # Imports
         write.line("from .dynamic import *  # noqa: F403")
-        write.line("from .static.formula import *  # noqa: F403")
+        if formulas:
+            write.line("from .static.formula import *  # noqa: F403")
 
 
 # endregion
