@@ -15,11 +15,11 @@ repos:
         types: [python]
         pass_filenames: false
 
-      # - id: eslint
-      #   name: TS Linter
-      #   entry: yarn lint
-      #   language: system
-      #   pass_filenames: true
+      - id: eslint
+        name: TS Linter
+        entry: yarn lint
+        language: system
+        pass_filenames: true
 
       - id: ruff-format
         name: PY Formatter
