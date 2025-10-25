@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from pydantic.alias_generators import to_camel
 from rich import print
 
-from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
+from src.meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
 
 
 class WriteToFile(BaseModel):

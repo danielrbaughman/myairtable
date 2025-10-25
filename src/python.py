@@ -3,7 +3,6 @@ from pathlib import Path
 from pydantic import BaseModel
 from rich import print
 
-from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
 from src.helpers import (
     WriteToPythonFile,
     camel_case,
@@ -23,6 +22,7 @@ from src.helpers import (
     upper_case,
     warn_unhandled_airtable_type,
 )
+from src.meta_types import FIELD_TYPE, AirTableFieldMetadata, AirtableMetadata, TableMetadata
 
 all_fields: dict[str, AirTableFieldMetadata] = {}
 select_options: dict[str, str] = {}

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from .airtable_meta_types import AirtableMetadata
+from .meta_types import AirtableMetadata
 
 
 def get_base_meta_data(base_id: str) -> AirtableMetadata:
