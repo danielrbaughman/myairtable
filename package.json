@@ -1,0 +1,23 @@
+{
+	"name": "myairtable",
+	"version": "0.1.0",
+	"main": "index.js",
+	"repository": "https://github.com/danielrbaughman/myairtable.git",
+	"author": "Daniel Baughman <danielrbaughman@icloud.com>",
+	"license": "MIT",
+	"scripts": {
+		"build": "npx tsc",
+		"start": "node -r dotenv/config dist/playground.js",
+		"playground": "yarn install && yarn build && yarn start",
+		"reinstall": "rm -rf node_modules && yarn install"
+	},
+	"devDependencies": {
+		"@types/node": "^24.9.1",
+		"commander": "^14.0.2"
+	},
+	"dependencies": {
+		"airtable": "^0.12.2",
+		"dotenv": "^17.2.3",
+		"typescript": "^5.9.3"
+	}
+}

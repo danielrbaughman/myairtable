@@ -8,8 +8,8 @@ app = Typer()
 @app.command()
 def main():
     """Playground"""
-    jobs = Airtable().jobs.get()
-    print(len(jobs))
+    companies = Airtable().companies.get()
+    print(len(companies))
 
 
 if __name__ == "__main__":

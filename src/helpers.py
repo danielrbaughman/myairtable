@@ -273,7 +273,7 @@ def sanitize_property_name(text: str) -> str:
 
     text = text.replace("(", "").replace(")", "")
     text = text.replace("?", "").replace("$", "")
-    text = text.replace("#", "").replace("'", "")
+    text = text.replace("#", " hash ").replace("'", "")
 
     text = text.replace("/", "_")
     text = text.replace("\\", "_")
