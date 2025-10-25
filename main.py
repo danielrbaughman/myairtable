@@ -1,6 +1,13 @@
-from typer import Typer
+from pathlib import Path
 
-from src import csv, meta
+from typer import Argument, Option, Typer
+
+from src.csv import gen_csv
+from src.meta import gen_meta, get_base_id, get_base_meta_data
+from src.python import gen_python
+from src.typescript import gen_typescript
+
+# from src import csv, meta, python, typescript
 
 # TODO
 # - Add option for custom naming of tables/models
@@ -15,16 +22,34 @@ from src import csv, meta
 # - Migrate to AirtableTS, or learn from it - especially the error handling
 
 app = Typer()
-app.add_typer(meta.app)
-app.add_typer(csv.app)
 
-@app.command(name="py")
-def gen_python():
-    pass
+@app.command()
+def meta(folder: str = Argument(help="Path to the output folder")):
+    """Fetch Airtable metadata into a json file."""
+    gen_meta(folder=Path(folder))
 
-@app.command(name="ts")
-def gen_typescript():
-    pass
+@app.command()
+def csv(
+    folder: str = Argument(help="Path to the output folder"),
+    fresh: bool = Option(default=False, help="Generate fresh property names instead of using custom names if they exist."),
+):
+    """Export Airtable metadata to CSV format."""
+    gen_csv(Path(folder), fresh)
+
+
+@app.command()
+def py(folder: str = Argument(help="Path to the output folder"), verbose: bool = False):
+    """Generate types and models in Python"""
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    gen_python(metadata, base_id, verbose, folder=Path(folder))
+
+@app.command()
+def ts(folder: str = Argument(help="Path to the output folder"), verbose: bool = False):
+    """Generate types and models in TypeScript"""
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    gen_typescript(metadata, base_id, verbose, folder=Path(folder))
 
 if __name__ == "__main__":
     from dotenv import load_dotenv

@@ -1,21 +1,14 @@
 from pathlib import Path
 
 import pandas as pd
-from typer import Argument, Option, Typer
 
-from _old.airtable_typegen_helpers import camel_case, property_name, python_property_name, sanitize_string
-from _old.airtable_typegen_python import python_type
-from _old.airtable_typegen_typescript import typescript_type
+from src.helpers import camel_case, property_name, python_property_name, sanitize_string
 from src.meta import get_base_id, get_base_meta_data
+from src.python import python_type
+from src.typescript import typescript_type
 
-app = Typer()
 
-
-@app.command(name="csv")
-def gen_csv(
-    folder: str = Argument(help="Path to the output folder"),
-    fresh: bool = Option(default=False, help="Generate fresh property names instead of using custom names if they exist."),
-):
+def gen_csv(folder: Path, fresh: bool):
     """Export Airtable data to CSV format."""
 
     use_custom = not fresh
@@ -28,7 +21,7 @@ def gen_csv(
                 "Table ID": table["id"],
                 "Table Name": table["name"],
                 "Class Name": f"{camel_case(table['name'])}",
-                "Property Name": python_property_name(table, use_custom=False),
+                "Property Name": python_property_name(table, folder, use_custom=False),
             }
         )
 
@@ -46,8 +39,8 @@ def gen_csv(
                     "Table Name": table["name"],
                     "Field ID": field["id"],
                     "Field Name": sanitize_string(field["name"]),
-                    "Property Name (snake)": python_property_name(field, use_custom=use_custom),
-                    "Property Name (camel)": property_name(field, use_custom=use_custom),
+                    "Property Name (snake)": python_property_name(field, folder, use_custom=use_custom),
+                    "Property Name (camel)": property_name(field, folder, use_custom=use_custom),
                     "Airtable Type": field["type"],
                     "Python Type": python_type(field, warn=False),
                     "TypeScript Type": typescript_type(field, warn=False),

@@ -11,11 +11,6 @@ from rich.table import Table
 
 from src.airtable_meta_types import FIELD_TYPE, AirTableFieldMetadata, TableMetadata
 
-BASE_PATH = Path("./src/library/airtable")
-DYNAMIC_PATH = BASE_PATH / "dynamic"
-TABLES_CSV_PATH = BASE_PATH / "tables.csv"
-FIELDS_CSV_PATH = BASE_PATH / "fields.csv"
-
 
 class WriteToFile(BaseModel):
     """Abstracts file writing operations."""
@@ -230,11 +225,11 @@ def camel_case(text: str) -> str:
     return "".join(capitalize_words(text))
 
 
-def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, use_custom: bool = True) -> str:
+def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
 
     if use_custom:
-        text = get_custom_property_name(field_or_table)
+        text = get_custom_property_name(field_or_table, folder)
         if text:
             return text
 
@@ -248,9 +243,9 @@ def python_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, 
     return text
 
 
-def property_name(field_or_table: AirTableFieldMetadata | TableMetadata, use_custom: bool = True) -> str:
+def property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    python_name = python_property_name(field_or_table, use_custom)
+    python_name = python_property_name(field_or_table, folder, use_custom)
     return to_camel(python_name)
 
 
@@ -326,16 +321,16 @@ fields_dataframe: pd.DataFrame = None  # type: ignore
 tables_dataframe: pd.DataFrame = None  # type: ignore
 
 
-def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetadata) -> str | None:
+def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetadata, folder: Path) -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
     global fields_dataframe
     if fields_dataframe is None:
-        fields_dataframe = pd.read_csv(FIELDS_CSV_PATH)
+        fields_dataframe = pd.read_csv(folder / "fields.csv")
 
     global tables_dataframe
     if tables_dataframe is None:
-        tables_dataframe = pd.read_csv(TABLES_CSV_PATH)
+        tables_dataframe = pd.read_csv(folder / "tables.csv")
 
     id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
     match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]

@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 
 import httpx
-from typer import Argument, Typer
 
 from .airtable_meta_types import AirtableMetadata
 
@@ -28,16 +27,13 @@ def get_base_id() -> str:
         raise Exception("AIRTABLE_BASE_ID not found in environment")
     return base_id
 
-app = Typer()
 
-
-@app.command(name="meta")
-def gen_meta(path: str = Argument(default="./", help="Path to the output folder")):
+def gen_meta(folder: Path):
     """Fetch Airtable metadata into a json file."""
 
     base_id = get_base_id()
     data = get_base_meta_data(base_id)
-    p = Path(path) / "meta.json"
+    p = folder / "meta.json"
     with open(p, "w") as f:
         f.write(json.dumps(data, indent=4))
     print(f"Base metadata written to {p.as_posix()}")
