@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -32,11 +33,13 @@ class WriteToFile(BaseModel):
                 case "python":
                     self.file.write("# ==========================================\n")
                     self.file.write("# Auto-generated file. Do not edit directly.\n")
+                    self.file.write(f"# Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {datetime.now().astimezone().tzinfo}\n")
                     self.file.write("# ==========================================\n")
                     self.file.write("\n")
                 case "typescript":
                     self.file.write("// ==========================================\n")
                     self.file.write("// Auto-generated file. Do not edit directly.\n")
+                    self.file.write(f"// Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {datetime.now().astimezone().tzinfo}\n")
                     self.file.write("// ==========================================\n")
                     self.file.write("\n")
             for line in self.lines:
