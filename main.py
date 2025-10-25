@@ -10,9 +10,7 @@ from src.python import gen_python
 
 # TODO
 # Basics
-# - migration from old repo
 # - remove from old repo
-# - output to old repo
 
 # General Improvements
 # - improve property naming
