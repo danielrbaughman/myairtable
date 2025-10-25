@@ -11,10 +11,15 @@ from src.python import gen_python
 # TODO
 
 # General Improvements
+# - Output to smaller files (dynamic/types/jobs.py, dynamic/dicts/companies.py, etc)
+# - Lazy init in main class
+# - See if docstrings can be moved to base classes
 # - Add option for custom naming of tables/models
 
 # CLI
 # - improve the CLI with lots of options to enable/disable features (python only for now)
+# - ReadMe
+# - Public version
 
 # TS
 # - Need to see what happens to read/write when the field name changes
