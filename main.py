@@ -12,6 +12,11 @@ from src.python import gen_python
 
 # CLI
 # - improve the CLI with lots of options to enable/disable features (python only for now)
+#   - formulas
+#   - tables
+#   - main class (requires tables output)
+#   - models
+#   - pydantic validation in ORM (required models output)
 # - ReadMe
 # - Private -> Public repo
 

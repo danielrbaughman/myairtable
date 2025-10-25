@@ -422,7 +422,7 @@ def get_result_type(field: FieldMetadata, airtable_type: FieldType = "") -> Fiel
     return airtable_type
 
 
-def warn_unhandled_airtable_type(table_name: str, field: FieldMetadata, airtable_type: FieldType):
+def warn_unhandled_airtable_type(table_name: str, field: FieldMetadata):
     if is_valid_field(field):
         print(
             "[yellow]Warning: Unhandled Airtable type. This results in generic types in the output.[/]",

@@ -444,21 +444,21 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
                 ts_type = select_options[referenced_field["id"]]
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 ts_type = "any"
         case "multipleSelects":
             if field["id"] in select_options:
                 ts_type = f"{select_options[field['id']]}[]"
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 ts_type = "any"
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
             if not is_valid_field(field):
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 ts_type = "any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.

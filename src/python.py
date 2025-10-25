@@ -813,21 +813,21 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
                 py_type = select_options[referenced_field["id"]]
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 py_type = "Any"
         case "multipleSelects":
             if field["id"] in select_options:
                 py_type = f"list[{select_options[field['id']]}]"
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 py_type = "Any"
         case "button":
             py_type = "AirtableButton"
         case _:
             if not is_valid_field(field):
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field, airtable_type)
+                    warn_unhandled_airtable_type(table_name, field)
                 py_type = "Any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
