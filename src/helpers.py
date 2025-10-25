@@ -86,10 +86,16 @@ class WriteToPythonFile(WriteToFile):
         self.line_empty()
 
     def literal(self, name: str, list: list[str]):
-        self.line(f"{name} = Literal[{', '.join(f'"{item}"' for item in list)}]")
+        self.line(f"{name} = Literal[")
+        for item in list:
+            self.line_indented(f'"{item}",')
+        self.line("]")
 
     def str_list(self, name: str, list: list[str], type: str = "str"):
-        self.line(f"{name}: list[{type}] = [{', '.join(f'"{item}"' for item in list)}]")
+        self.line(f"{name}: list[{type}] = [")
+        for item in list:
+            self.line_indented(f'"{item}",')
+        self.line("]")
 
     def dict_row(self, key: str, value: str):
         self.line_indented(f'"{key}": "{value}",')
@@ -403,10 +409,10 @@ def get_custom_property_name(field_or_table: AirTableFieldMetadata | TableMetada
 
 
 def get_result_type(field: AirTableFieldMetadata, airtable_type: FIELD_TYPE = "") -> FIELD_TYPE:
-    if "options" in field and field["options"]:
-        if "result" in field["options"] and field["options"]["result"]:
-            if "type" in field["options"]["result"]:
-                airtable_type = field["options"]["result"]["type"]
+    if "options" in field and field["options"]:  # type: ignore
+        if "result" in field["options"] and field["options"]["result"]:  # type: ignore
+            if "type" in field["options"]["result"]:  # type: ignore
+                airtable_type = field["options"]["result"]["type"]  # type: ignore
 
     return airtable_type
 
@@ -433,8 +439,8 @@ def sanitize_string(text: str) -> str:
 
 def is_valid_field(field: AirTableFieldMetadata) -> bool:
     """Check if the field is `valid` according to Airtable."""
-    if "options" in field and "isValid" in field["options"]:
-        return bool(field["options"]["isValid"])
+    if "options" in field and "isValid" in field["options"]:  # type: ignore
+        return bool(field["options"]["isValid"])  # type: ignore
     return True
 
 

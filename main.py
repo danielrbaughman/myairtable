@@ -11,7 +11,6 @@ from src.python import gen_python
 # TODO
 
 # General Improvements
-# - Improve readability of generated code (line breaks, indentations, etc)
 # - Lazy init in main class
 # - See if docstrings can be moved to base classes
 # - Add option for custom naming of tables/models
@@ -23,6 +22,7 @@ from src.python import gen_python
 
 # TS
 # - Output to smaller files (similar to python)
+# - Improve diff readability of generated code (line breaks, indentations, etc)
 # - Need to see what happens to read/write when the field name changes
 # - Migrate to Airtable-TS
 # - Use Zod for type validation?
