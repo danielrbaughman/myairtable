@@ -11,7 +11,6 @@ from src.python import gen_python
 # TODO
 
 # General Improvements
-# - improve property naming
 # - need to handle or at least detect duplicate property names
 # - Add option for custom naming of tables/models
 

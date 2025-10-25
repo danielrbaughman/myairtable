@@ -260,26 +260,44 @@ def sanitize_property_name(text: str) -> str:
         text = text[:-1]
         text = text + "number"
 
-    text = text.replace("+", " and ")
+    text = text.replace("<<", " ")
+    text = text.replace(">>", " ")
+    text = text.replace("< ", " less than ")
+    text = text.replace(" <", " less than ")
+    text = text.replace("> ", " greater than ")
+    text = text.replace(" >", " greater than ")
+
+    text = text.replace("+", " plus ")
+    text = text.replace("-", " dash ")
     text = text.replace("&", " and ")
-    text = text.replace("=", " is ")
+    text = text.replace("=", " equals ")
     text = text.replace("%", " percent ")
-    text = text.replace("<", " less than ")
-    text = text.replace(">", " greater than ")
     text = text.replace("$/", " dollars per ")
     text = text.replace("$ ", "dollar ")
+    text = text.replace("$", " d ")
+    text = text.replace("w/o", " without ")
     text = text.replace("w/", " with ")
     text = text.replace("# ", " number ")
+    text = text.replace("#", " h ")
+    text = text.replace("@", " at ")
+    text = text.replace("!", " e ")
+    text = text.replace("?", " q ")
+    text = text.replace("^", " power ")
+    text = text.replace("*", " star ")
+    text = text.replace("/", " slash ")
+    text = text.replace("~", " tilde ")
 
-    text = text.replace("(", "").replace(")", "")
-    text = text.replace("?", "").replace("$", "")
-    text = text.replace("#", " hash ").replace("'", "")
+    text = text.replace("(", " ").replace(")", " ")
+    text = text.replace("[", " ").replace("]", " ")
+    text = text.replace("{", " ").replace("}", " ")
+    text = text.replace("<", " ").replace(">", " ")
 
-    text = text.replace("/", "_")
-    text = text.replace("\\", "_")
-    text = text.replace("-", "_")
-    text = text.replace(".", "_")
-    text = text.replace(":", "_")
+    text = text.replace("'", " ")
+    text = text.replace("`", " ")
+    text = text.replace("|", " ")
+    text = text.replace("\\", " ")
+    text = text.replace(".", " ")
+    text = text.replace(":", " ")
 
     return text
 
@@ -288,7 +306,8 @@ def snake_case(text: str) -> str:
     """Formats as snake_case"""
 
     text = text.replace(" ", "_")
-    text = text.replace("__", "_").replace("__", "_").replace("__", "_").replace("__", "_").replace("__", "_")
+    while "__" in text:
+        text = text.replace("__", "_")
     text = text.lower()
 
     return text
@@ -302,7 +321,28 @@ def sanitize_leading_trailing_characters(text: str) -> str:
     if text.endswith("_"):
         text = text[:-1]
     if text and text[0].isdigit():
-        text = f"n_{text}"
+        if text.startswith("1st"):
+            text = "first" + text[3:]
+        elif text.startswith("2nd"):
+            text = "second" + text[3:]
+        elif text.startswith("3rd"):
+            text = "third" + text[3:]
+        elif text.startswith("4th"):
+            text = "fourth" + text[3:]
+        elif text.startswith("5th"):
+            text = "fifth" + text[3:]
+        elif text.startswith("6th"):
+            text = "sixth" + text[3:]
+        elif text.startswith("7th"):
+            text = "seventh" + text[3:]
+        elif text.startswith("8th"):
+            text = "eighth" + text[3:]
+        elif text.startswith("9th"):
+            text = "ninth" + text[3:]
+        elif text.startswith("10th"):
+            text = "tenth" + text[4:]
+        else:
+            text = f"n_{text}"
 
     return text
 
@@ -313,7 +353,7 @@ def sanitize_reserved_names(text: str) -> str:
     if text == "id":
         text = "identifier"
     if text == "created_time":
-        text = "created_at"
+        text = "created_at_time"
 
     return text
 
