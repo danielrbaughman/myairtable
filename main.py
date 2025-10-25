@@ -18,7 +18,7 @@ from src.python import gen_python
 # CLI
 # - improve the CLI with lots of options to enable/disable features (python only for now)
 # - ReadMe
-# - Public version
+# - Private -> Public repo
 
 # TS
 # - Output to smaller files (similar to python)
@@ -28,8 +28,9 @@ from src.python import gen_python
 # - Use Zod for type validation?
 # - improve the CLI with lots of options to enable/disable features (typescript)
 
-# JS ???
-
+# Future Ideas
+# - JS
+# - https://squidfunk.github.io/mkdocs-material/
 
 app = Typer()
 
