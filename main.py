@@ -11,8 +11,15 @@ from src.python import gen_python
 
 # TODO
 
-# CLI
+# PY
+# - Formula for number between two values
+# - Unit tests
+
+# Misc
 # - ReadMe
+# - Move TODO out of code
+# - Add CI
+# - Lock down master branch
 # - Private -> Public repo
 
 # TS
