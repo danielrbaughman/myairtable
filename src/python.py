@@ -52,19 +52,19 @@ def gen_python(metadata: AirtableMetadata, base_id: str, folder: Path):
 
 # region TYPES
 def write_types(metadata: AirtableMetadata, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "types.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from datetime import datetime, timedelta")
-        write.line("from typing import Any, Literal, TypedDict")
-        write.line_empty()
-        write.line("from ..static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
-        write.endregion()
-        write.line_empty()
+    # Table Types
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "types" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line("from datetime import datetime, timedelta")
+            write.line("from typing import Any, Literal, TypedDict")
+            write.line_empty()
+            write.line("from ...static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
+            write.endregion()
+            write.line_empty()
 
-        # Field Options
-        write.region("FIELD OPTIONS")
-        for table in metadata["tables"]:
+            write.region("OPTIONS")
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
@@ -73,10 +73,8 @@ def write_types(metadata: AirtableMetadata, folder: Path):
                         options,
                         f"Select options for `{sanitize_string(field['name'])}`",
                     )
-        write.endregion()
+            write.endregion()
 
-        # Table Types
-        for table in metadata["tables"]:
             field_names = [sanitize_string(field["name"]) for field in table["fields"]]
             field_ids = [field["id"] for field in table["fields"]]
             property_names = [python_property_name(field, folder) for field in table["fields"]]
@@ -150,6 +148,10 @@ def write_types(metadata: AirtableMetadata, folder: Path):
 
             write.endregion()
 
+    with WriteToPythonFile(path=folder / "dynamic" / "types" / "_tables.py") as write:
+        write.line("from typing import Literal")
+        write.line_empty()
+
         # Table Lists
         table_names = []
         table_ids = []
@@ -157,7 +159,6 @@ def write_types(metadata: AirtableMetadata, folder: Path):
             table_names.append(table["name"])
             table_ids.append(table["id"])
 
-        write.region("TABLES")
         write.types("TableName", table_names)
         write.types("TableId", table_ids)
         write.dict_class(
@@ -188,7 +189,11 @@ def write_types(metadata: AirtableMetadata, folder: Path):
             [(table["id"], f"{camel_case(table['name'])}FieldNames") for table in metadata["tables"]],
             first_type="TableId",
         )
-        write.endregion()
+
+    with WriteToPythonFile(path=folder / "dynamic" / "types" / "__init__.py") as write:
+        write.line("from ._tables import *  # noqa: F403")
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -196,25 +201,19 @@ def write_types(metadata: AirtableMetadata, folder: Path):
 
 # region DICTS
 def write_dicts(metadata: AirtableMetadata, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "dicts.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from typing import Any")
-        write.line_empty()
-        write.line("from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict")
-        write.line_empty()
-        write.line("from .types import (")
-        for table in metadata["tables"]:
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "dicts" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.line("from typing import Any")
+            write.line_empty()
+            write.line("from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict")
+            write.line_empty()
+            write.line("from ..types import (")
             write.line_indented(f"{camel_case(table['name'])}FieldsDict,")
-        for table in metadata["tables"]:
             write.line_indented(f"{camel_case(table['name'])}Field,")
-        write.line(")")
-        write.endregion()
-        write.line_empty()
+            write.line(")")
+            write.line_empty()
 
-        # Dicts
-        for table in metadata["tables"]:
-            write.region(upper_case(table["name"]))
             write.line(f"class {camel_case(table['name'])}CreateRecordDict(CreateRecordDict):")
             write.line_indented(name_record_doc_string(table["name"], id=False, created_time=False))
             write.line_indented(f"fields: dict[{f'{camel_case(table["name"])}Field'}, Any]")
@@ -251,7 +250,9 @@ def write_dicts(metadata: AirtableMetadata, folder: Path):
             write.line_empty()
             write.line_empty()
 
-            write.endregion()
+    with WriteToPythonFile(path=folder / "dynamic" / "dicts" / "__init__.py") as write:
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -259,68 +260,61 @@ def write_dicts(metadata: AirtableMetadata, folder: Path):
 
 # region ORM
 def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "orm_models.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from datetime import datetime")
-        write.line("from typing import Any")
-        write.line_empty()
-        write.line("from pyairtable.orm import Model")
-        pyairtable_field_types: list[str] = [
-            "SingleLineTextField",
-            "MultilineTextField",
-            "PhoneNumberField",
-            "EmailField",
-            "LinkField",
-            "SingleLinkField",
-            "UrlField",
-            "DateField",
-            "CreatedTimeField",
-            "LastModifiedTimeField",
-            "NumberField",
-            "SelectField",
-            "MultipleSelectField",
-            "CheckboxField",
-            "RichTextField",
-            "CurrencyField",
-            "PercentField",
-            "LookupField",
-            "AttachmentsField",
-            "CreatedByField",
-            "ButtonField",
-            "CountField",
-            "DatetimeField",
-            "DurationField",
-            "LastModifiedByField",
-            "AutoNumberField",
-            "CollaboratorField",
-        ]
-        write.line(f"from pyairtable.orm.fields import {', '.join(pyairtable_field_types)}")
-        write.line_empty()
-        write.line("from ..static.helpers import get_api_key")
-        write.line("from ..static.special_types import AirtableAttachment, RecordId")
-        write.line("from .types import (")
-        for table in metadata["tables"]:
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.line("from datetime import datetime")
+            write.line("from typing import Any")
+            write.line_empty()
+            write.line("from pyairtable.orm import Model")
+            pyairtable_field_types: list[str] = [
+                "SingleLineTextField",
+                "MultilineTextField",
+                "PhoneNumberField",
+                "EmailField",
+                "LinkField",
+                "SingleLinkField",
+                "UrlField",
+                "DateField",
+                "CreatedTimeField",
+                "LastModifiedTimeField",
+                "NumberField",
+                "SelectField",
+                "MultipleSelectField",
+                "CheckboxField",
+                "RichTextField",
+                "CurrencyField",
+                "PercentField",
+                "LookupField",
+                "AttachmentsField",
+                "CreatedByField",
+                "ButtonField",
+                "CountField",
+                "DatetimeField",
+                "DurationField",
+                "LastModifiedByField",
+                "AutoNumberField",
+                "CollaboratorField",
+            ]
+            write.line(f"from pyairtable.orm.fields import {', '.join(pyairtable_field_types)}")
+            write.line_empty()
+            write.line("from ...static.helpers import get_api_key")
+            write.line("from ...static.special_types import AirtableAttachment, RecordId")
+            all_options: list[str] = []
             for field in table["fields"]:
                 options = get_select_options(field)
-                if len(options) > 0:
-                    write.line_indented(f"{options_name(camel_case(table['name']), camel_case(field['name']))},")
-        write.line(")")
-        write.line("from .dicts import (")
-        for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}RecordDict,")
-        write.line(")")
-        write.line("from .models import (")
-        for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Model,")
-        write.line(")")
-        write.endregion()
-        write.line_empty()
-        write.line_empty()
-
-        # Models
-        for table in metadata["tables"]:
-            write.region(upper_case(table["name"]))
+                all_options.extend(options)
+            if len(all_options) > 0:
+                write.line("from ..types import (")
+                for field in table["fields"]:
+                    options = get_select_options(field)
+                    if len(options) > 0:
+                        write.line_indented(f"{options_name(camel_case(table['name']), camel_case(field['name']))},")
+                write.line(")")
+            write.line(f"from ..dicts import {camel_case(table['name'])}RecordDict")
+            write.line(f"from ..models import {camel_case(table['name'])}Model")
+            write.line_empty()
+            write.line_empty()
 
             # definition
             write.line(f"class {camel_case(table['name'])}ORM(Model):")
@@ -364,7 +358,9 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
                 write.property_docstring(field, table)
             write.line_empty()
 
-            write.endregion()
+    with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / "__init__.py") as write:
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -372,51 +368,53 @@ def write_orm_models(metadata: AirtableMetadata, base_id: str, folder: Path):
 
 # region MODELS
 def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "models.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from datetime import datetime, timedelta")
-        write.line("from typing import Any, Optional, overload")
-        write.line_empty()
-        write.line("from ..static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
-        write.line("from ..static.airtable_base_model import AirtableBaseModel")
-        write.line("from .types import (")
-        for table in metadata["tables"]:
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "models" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.line("from datetime import datetime, timedelta")
+            write.line("from typing import Any, Optional, overload")
+            write.line_empty()
+            write.line("from ...static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
+            write.line("from ...static.airtable_base_model import AirtableBaseModel")
+            all_options: list[str] = []
             for field in table["fields"]:
                 options = get_select_options(field)
-                if len(options) > 0:
-                    write.line_indented(f"{options_name(camel_case(table['name']), camel_case(field['name']))},")
-        write.line(")")
-        write.line("from .dicts import (")
-        for table in metadata["tables"]:
+                all_options.extend(options)
+            if len(all_options) > 0:
+                write.line("from ..types import (")
+                for field in table["fields"]:
+                    options = get_select_options(field)
+                    if len(options) > 0:
+                        write.line_indented(f"{options_name(camel_case(table['name']), camel_case(field['name']))},")
+                write.line(")")
+            write.line("from ..dicts import (")
             write.line_indented(f"{camel_case(table['name'])}RecordDict,")
             write.line_indented(f"{camel_case(table['name'])}IdsRecordDict,")
             write.line_indented(f"{camel_case(table['name'])}CreateRecordDict,")
             write.line_indented(f"{camel_case(table['name'])}IdsCreateRecordDict,")
             write.line_indented(f"{camel_case(table['name'])}UpdateRecordDict,")
             write.line_indented(f"{camel_case(table['name'])}IdsUpdateRecordDict,")
-        write.line(")")
-        write.endregion()
-        write.line_empty()
-        write.line_empty()
+            write.line(")")
+            write.line_empty()
+            write.line_empty()
 
-        for table in metadata["tables"]:
             select_options: dict[str, str] = {}
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
                     select_options[field["id"]] = f"{options_name(camel_case(table['name']), camel_case(field['name']))}"
 
-            write.region(upper_case(table["name"]))
-
             # Properties
+            write.region("PROPERTIES")
             write.line(f"class {camel_case(table['name'])}Model(AirtableBaseModel):")
             for field in table["fields"]:
                 write.line_indented(f"{python_property_name(field, folder)}: {pydantic_type(table['name'], field)}")
                 write.property_docstring(field, table)
             write.line_empty()
+            write.endregion()
 
             # _to_fields
+            write.region("TO_FIELDS")
             write.line_indented("def _to_fields(self, use_field_ids: bool) -> dict:")
             write.line_indented("fields: dict = {}", 2)
             write.line_indented("if use_field_ids:", 2)
@@ -428,9 +426,11 @@ def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
                 write.line_indented(f"if self.{python_property_name(field, folder)} is not None:", 3)
                 write.line_indented(f'fields["{sanitize_string(field["name"])}"] = self.{python_property_name(field, folder)}', 4)
             write.line_indented("return fields", 2)
+            write.endregion()
             write.line_empty()
 
             # _update_from_record_dict
+            write.region("UPDATE_FROM_RECORD_DICT")
             write.line_indented(
                 f"def _update_from_record_dict(self, record: {camel_case(table['name'])}RecordDict | {camel_case(table['name'])}IdsRecordDict):"
             )
@@ -440,9 +440,12 @@ def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
                     f"self.{python_property_name(field, folder)} = fields.get('{field['id']}', None) or fields.get(\"{sanitize_string(field['name'])}\", None)",
                     2,
                 )
+            write.endregion()
             write.line_empty()
 
             # to_record_dict
+            write.region("TO/FROM_RECORD_DICT")
+
             def _to_record_dict(method: str, record_type: str):
                 write.line_indented("@overload")
                 write.line_indented(f"def {method}(self) -> {camel_case(table['name'])}{record_type}: ...")
@@ -467,8 +470,11 @@ def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
             write.line_indented("instance._update_from_record_dict(record)", 2)
             write.line_indented("return instance", 2)
             write.line_empty()
-
             write.endregion()
+
+    with WriteToPythonFile(path=folder / "dynamic" / "models" / "__init__.py") as write:
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -476,41 +482,33 @@ def write_pydantic_models(metadata: AirtableMetadata, folder: Path):
 
 # region TABLES
 def write_tables(metadata: AirtableMetadata, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "tables.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from pyairtable import Table")
-        write.line_empty()
-        write.line("from ..static.airtable_table import AirtableTable")
-        write.line("from .types import (")
-        for table in metadata["tables"]:
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "tables" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line("from pyairtable import Table")
+            write.line_empty()
+            write.line("from ...static.airtable_table import AirtableTable")
+            write.line("from ..types import (")
             write.line_indented(f"{camel_case(table['name'])}Field,")
             write.line_indented(f"{camel_case(table['name'])}CalculatedFields,")
             write.line_indented(f"{camel_case(table['name'])}CalculatedFieldIds,")
             write.line_indented(f"{camel_case(table['name'])}View,")
             write.line_indented(f"{camel_case(table['name'])}ViewNameIdMapping,")
             write.line_indented(f"{camel_case(table['name'])}Fields,")
-        write.line(")")
-        write.line("from .dicts import (")
-        for table in metadata["tables"]:
+            write.line(")")
+            write.line("from ..dicts import (")
             write.line_indented(f"{camel_case(table['name'])}RecordDict,")
             write.line_indented(f"{camel_case(table['name'])}CreateRecordDict,")
             write.line_indented(f"{camel_case(table['name'])}UpdateRecordDict,")
-        write.line(")")
-        write.line("from .orm_models import (")
-        for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}ORM,")
-        write.line(")")
-        write.line("from .models import (")
-        for table in metadata["tables"]:
-            write.line_indented(f"{camel_case(table['name'])}Model,")
-        write.line(")")
-        write.endregion()
-        write.line_empty()
-        write.line_empty()
+            write.line(")")
+            write.line(f"from ..orm_models import {camel_case(table['name'])}ORM")
+            write.line(f"from ..models import {camel_case(table['name'])}Model")
+            write.endregion()
+            write.line_empty()
+            write.line_empty()
 
-        # Tables
-        for table in metadata["tables"]:
+            # Tables
             write.region(upper_case(table["name"]))
             write.line(
                 f"class {camel_case(table['name'])}Table(AirtableTable[{camel_case(table['name'])}RecordDict, {camel_case(table['name'])}CreateRecordDict, {camel_case(table['name'])}UpdateRecordDict, {camel_case(table['name'])}ORM, {camel_case(table['name'])}Model, {camel_case(table['name'])}View, {camel_case(table['name'])}Field]):"
@@ -534,30 +532,29 @@ def write_tables(metadata: AirtableMetadata, folder: Path):
             write.endregion()
             write.line_empty()
 
+    with WriteToPythonFile(path=folder / "dynamic" / "tables" / "__init__.py") as write:
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
+
 
 # endregion
 
 
 # region FORMULA
-
-
 def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "formula.py") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("from .types import (")
-        for table in metadata["tables"]:
+    for table in metadata["tables"]:
+        with WriteToPythonFile(path=folder / "dynamic" / "formula" / f"{python_property_name(table, folder)}.py") as write:
+            # Imports
+            write.line("from ..types import (")
             write.line_indented(f"{camel_case(table['name'])}Field,")
             write.line_indented(f"{camel_case(table['name'])}Fields,")
             write.line_indented(f"{camel_case(table['name'])}FieldNameIdMapping,")
-        write.line(")")
-        write.line("from ..static.helpers import validate_key")
-        write.line("from ..static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField")
-        write.line_empty()
+            write.line(")")
+            write.line("from ...static.helpers import validate_key")
+            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField")
+            write.line_empty()
 
-        # Class
-        for table in metadata["tables"]:
-            write.region(upper_case(table["name"]))
+            # Class
 
             def write_formula(type: str):
                 write.line(f"class {camel_case(table['name'])}{type}({type}):")
@@ -573,7 +570,9 @@ def write_formula_helpers(metadata: AirtableMetadata, folder: Path):
             write_formula("NumberField")
             write_formula("TextField")
 
-            write.endregion()
+    with WriteToPythonFile(path=folder / "dynamic" / "formula" / "__init__.py") as write:
+        for table in metadata["tables"]:
+            write.line(f"from .{python_property_name(table, folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -904,10 +903,10 @@ def pyairtable_orm_type(table_name: str, field: AirTableFieldMetadata) -> str:
         case "lookup" | "multipleLookupValues":
             orm_type = f"LookupField = LookupField[{python_type(table_name, field)}]({params})"
         case "multipleRecordLinks":
-            if "options" in field and "linkedTableId" in field["options"]:
-                linked_table_name = table_id_name_map.get(field["options"]["linkedTableId"], field["options"]["linkedTableId"])
+            if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
+                linked_table_name = table_id_name_map.get(field["options"]["linkedTableId"], field["options"]["linkedTableId"])  # type: ignore
                 linked_orm_class = f"{camel_case(linked_table_name)}ORM"
-                if field["options"]["prefersSingleRecordLink"]:
+                if field["options"]["prefersSingleRecordLink"]:  # type: ignore
                     orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'
                 else:
                     orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'
