@@ -9,8 +9,6 @@ from src.python import gen_python
 # from src.typescript import gen_typescript
 
 # TODO
-# Basics
-# - remove from old repo
 
 # General Improvements
 # - improve property naming
