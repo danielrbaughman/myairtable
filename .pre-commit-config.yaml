@@ -15,12 +15,6 @@ repos:
         types: [python]
         pass_filenames: false
 
-      - id: eslint
-        name: TS Linter
-        entry: yarn lint
-        language: system
-        pass_filenames: true
-
       - id: ruff-format
         name: PY Formatter
         entry: ruff format
@@ -28,9 +22,15 @@ repos:
         types: [python]
         pass_filenames: true
 
-      # - id: prettier
-      #   name: TS Format
-      #   entry: yarn format
-      #   language: system
-      #   pass_filenames: false
-      #   always_run: true
+      - id: eslint
+        name: TS Linter
+        entry: yarn lint
+        language: system
+        pass_filenames: true
+
+      - id: prettier
+        name: TS Format
+        entry: yarn format
+        language: system
+        pass_filenames: false
+        always_run: true

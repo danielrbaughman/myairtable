@@ -1,0 +1,12 @@
+build
+dist
+node_modules
+coverage
+*.py
+.claude
+.pytest_cache
+.venv
+.vscode
+.ruff_cache
+__pycache__
+output
