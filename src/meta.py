@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 
 import httpx
@@ -13,7 +14,11 @@ def get_base_meta_data(base_id: str) -> AirtableMetadata:
         raise Exception("AIRTABLE_API_KEY not found in environment")
 
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
-    response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
+    except httpx.ReadTimeout:
+        time.sleep(5)
+        response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
     data: AirtableMetadata = response.json()
     data["tables"].sort(key=lambda t: t["name"].lower())
     for table in data["tables"]:
