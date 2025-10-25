@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MyAirtable is a code generator that creates type-safe Python and TypeScript bindings for Airtable bases. It fetches metadata from the Airtable API and generates strongly-typed models, ORM classes, table abstractions, and formula helpers.
 
+The project uses `uv` for Python dependency management and `yarn` for TypeScript/JavaScript.
+
 ## Development Commands
 
 ### Python Development
@@ -46,7 +48,7 @@ Requires `.env` file with:
   - Type mapping helpers for complex Airtable field types
   - Duplicate property name detection
 - **`csv.py`**: Exports metadata to CSV for customizing property names
-- **`airtable_meta_types.py`**: Type definitions for Airtable metadata API responses
+- **`meta_types.py`**: Type definitions for Airtable metadata API responses (defines `FieldType`, `FieldMetadata`, `TableMetadata`, `BaseMetadata`, etc.)
 
 ### Code Generation Flow
 
@@ -60,6 +62,8 @@ Requires `.env` file with:
 8. Copy static files (base classes, helpers) to output
 
 ### Output Structure (`output/`)
+
+**IMPORTANT**: The `output/` directory contains auto-generated code. Never edit files in `output/` directly - they will be overwritten on the next generation. Instead, modify the generator code in `src/` or customize property names via CSV files.
 
 Generated code is split into:
 
@@ -84,6 +88,16 @@ Template files that are copied to `output/static/` during generation:
 ### Property Name Customization
 
 After running `csv` command, edit `output/fields.csv` or `output/tables.csv` to customize generated property names. The generator will use custom names on subsequent runs unless `--fresh` flag is used.
+
+### Typical Development Workflow
+
+1. Set up `.env` file with `AIRTABLE_API_KEY` and `AIRTABLE_BASE_ID`
+2. Run `uv run python main.py meta output/` to fetch metadata from Airtable
+3. Run `uv run python main.py csv output/` to generate CSV files for property name customization
+4. (Optional) Edit `output/fields.csv` and `output/tables.csv` to customize property names
+5. Run `uv run python main.py py output/` to generate Python code
+6. Use the generated code via `from output import Airtable`
+7. Test with `uv run python playground.py`
 
 ## Key Implementation Details
 
@@ -120,8 +134,9 @@ Each table supports three access patterns:
 - TypeScript: ESLint configured in `eslint.config.mts`
 - Formatting: Prettier configured in `.prettierrc` (excludes generated code via `.prettierignore`)
 
-## Notes
+## Important Notes
 
-- TypeScript generation exists but is disabled in the main CLI (`main.py:60-67`)
-- Recent commits show work on field naming improvements and duplicate detection
-- The playground files (`playground.py`, `playground.ts`) demonstrate basic usage patterns
+- **TypeScript Generation**: TypeScript generation code exists in `src/typescript.py` but is currently disabled in the CLI (`main.py:65-72`). To enable it, uncomment the `@app.command()` decorator and the `ts` command function.
+- The playground files (`playground.py`, `playground.ts`) demonstrate basic usage patterns for the generated code
+- All generated files include a timestamp header indicating when they were created
+- Property name sanitization happens in `src/helpers.py` and follows specific rules to avoid Python/TypeScript reserved words and handle special characters
