@@ -9,31 +9,6 @@ from src.python import gen_python
 
 # from src.typescript import gen_typescript
 
-# TODO
-
-# PY
-# - Formula for number between two values
-# - Unit tests
-
-# Misc
-# - ReadMe
-# - Move TODO out of code
-# - Add CI
-# - Lock down master branch
-# - Private -> Public repo
-
-# TS
-# - Output to smaller files (similar to python)
-# - Improve diff readability of generated code (line breaks, indentations, etc)
-# - Need to see what happens to read/write when the field name changes
-# - Migrate to Airtable-TS
-# - Use Zod for type validation?
-# - improve the CLI with lots of options to enable/disable features (typescript)
-
-# Future Ideas
-# - JS
-# - https://squidfunk.github.io/mkdocs-material/
-
 app = Typer()
 
 

@@ -801,9 +801,6 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
             #     else:
             #         py_type = "float"
             # else:
-
-            # You'd think that precision == 0 would mean int, but that's not always the case
-            # TODO ??? - found issue in Deals table - fldHHgC24A8Wf4lGo
             py_type = "float"
         case "multipleRecordLinks":
             py_type = "list[RecordId]"

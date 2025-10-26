@@ -49,8 +49,6 @@ class AirtableTable(
 
     dict: DictTable[DictType, CreateDictType, UpdateDictType, ViewType, FieldType]
     """A table that returns typed RecordDicts."""
-    # orm: ORMTable[ORMType, ViewType, FieldType]  # TODO: Does it make more sense to have a distinct table for ORM, or to access it directly?
-    # """A table that returns pyAirtable ORM models."""
     model: PydanticTable[ORMType, PydanticType, ViewType, FieldType]
     """A table that returns Pydantic models."""
 
@@ -91,14 +89,6 @@ class AirtableTable(
             view_name_id_mapping,
             field_names,
         )
-        # instance.orm = ORMTable[ORMType, ViewType, FieldType].from_table(
-        #     table,
-        #     orm_cls,
-        #     calculated_field_names,
-        #     calculated_field_ids,
-        #     view_name_id_mapping,
-        #     field_names,
-        # )
         instance.model = PydanticTable[ORMType, PydanticType, ViewType, FieldType].from_table(
             table,
             pydantic_cls,
