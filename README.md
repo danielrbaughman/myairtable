@@ -88,10 +88,6 @@ at.contacts.model.update(contact)
 
 myAirtable optionally generates CSV files containing the names/ids of the tables and fields, including the "property name" that they will be given in myAirtable's output. These CSV files, if present in the destination folder, will be used as the source of truth for table+field names in the generated code. They can thus be used to prevent class/property names from changing unexpectedly when someone else changes a field name in Airtable, or for customizing the class/property names as they appear in code, if you prefer a different name for a given table/field. They can also be handy for resolving duplicate property name issues if that happens.
 
-```python
-# TODO
-```
-
 ## Getting Started
 
 1. Clone the repo
