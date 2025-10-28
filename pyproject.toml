@@ -28,6 +28,11 @@ known-first-party = ["output"]
 [tool.ruff.format]
 skip-magic-trailing-comma = false
 
+[[tool.ty.overrides]]
+include = ["playground.py"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
 [dependency-groups]
 dev = [
     "ruff>=0.12.10",
