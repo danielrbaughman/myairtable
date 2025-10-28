@@ -309,6 +309,16 @@ class NumberField(Field):
     def less_than_or_equals(self, value: int | float) -> str:
         """{field}<value"""
         return self._compare("<=", value)
+    
+    def between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> str:
+        """AND({field}>=min_value, {field}<=max_value)"""
+        return AND(
+            self.greater_than_or_equals(min_value),
+            self.less_than_or_equals(max_value),
+        ) if inclusive else AND(
+            self.greater_than(min_value),
+            self.less_than(max_value),
+        )
 
 
 # endregion
@@ -557,6 +567,33 @@ class DateField(Field):
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
+    
+    def is_between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> str:
+        """
+        Check if the date falls between two given dates.
+        
+        Args:
+            start_date (str | datetime): The start date for the range comparison.
+                Can be a string or datetime object.
+            end_date (str | datetime): The end date for the range comparison.
+                Can be a string or datetime object.
+            inclusive (bool, optional): Whether to include the boundary dates in the comparison.
+                If True, uses >= and <= operators. If False, uses > and < operators.
+                Defaults to True.
+        
+        Returns:
+            str: A formula string that evaluates to True if the date is between
+                 the start and end dates according to the inclusive parameter.
+        """
+        parsed_start_date: datetime = _parse_date(start_date)
+        parsed_end_date: datetime = _parse_date(end_date)
+        return AND(
+            self.is_on_or_after(parsed_start_date),
+            self.is_on_or_before(parsed_end_date),
+        ) if inclusive else AND(
+            self.is_after(parsed_start_date),
+            self.is_before(parsed_end_date),
+        )
 
 
 # endregion

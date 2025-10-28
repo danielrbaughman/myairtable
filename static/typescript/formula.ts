@@ -280,6 +280,21 @@ export class NumberField extends Field {
 	lessThanOrEquals(value: number): string {
 		return this._compare("<=", value);
 	}
+
+	/** AND({field}>=min_value, {field}<=max_value) */
+	between(minValue: number, maxValue: number, inclusive: boolean = true): string {
+		if (inclusive) {
+			return AND(
+				this.greaterThanOrEquals(minValue),
+				this.lessThanOrEquals(maxValue),
+			);
+		} else {
+			return AND(
+				this.greaterThan(minValue),
+				this.lessThan(maxValue),
+			);
+		}
+	}
 }
 // endregion
 
@@ -502,6 +517,30 @@ export class DateField extends Field {
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
+	}
+
+	/**
+	 * Checks if the date is between two specified dates.
+	 * 
+	 * @param startDate - The start date of the range. Can be a Date object or string.
+	 * @param endDate - The end date of the range. Can be a Date object or string.
+	 * @param inclusive - Whether to include the start and end dates in the range. Defaults to true.
+	 * @returns A string formula that evaluates whether the date falls within the specified range.
+	 */
+	isBetween(startDate: Date | string, endDate: Date | string, inclusive: boolean = true): string {
+		const startParsed = parseDate(startDate);
+		const endParsed = parseDate(endDate);
+		if (inclusive) {
+			return AND(
+				this.isOnOrAfter(startParsed) as string,
+				this.isOnOrBefore(endParsed) as string,
+			);
+		} else {
+			return AND(
+				this.isAfter(startParsed) as string,
+				this.isBefore(endParsed) as string,
+			);
+		}
 	}
 }
 // endregion
