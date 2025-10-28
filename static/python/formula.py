@@ -58,18 +58,23 @@ class ELSE(THEN):
 
 
 # region HELPERS
-def id_equals(id: str) -> str:
-    """RECORD_ID()='id'"""
-    return f"RECORD_ID()='{id}'"
+class ID:
+    """Record ID formulas"""
+
+    @staticmethod
+    def equals(id: str) -> str:
+        """RECORD_ID()='id'"""
+        return f"RECORD_ID()='{id}'"
 
 
-def id_in_list(ids: list[str]) -> str:
-    if not ids:
-        return "FALSE()"
-    elif len(ids) == 1:
-        return id_equals(ids[0])
-    else:
-        return OR(*[id_equals(id) for id in ids])
+    @staticmethod
+    def in_list(ids: list[str]) -> str:
+        if not ids:
+            return "FALSE()"
+        elif len(ids) == 1:
+            return ID.equals(ids[0])
+        else:
+            return OR(*[ID.equals(id) for id in ids])
 
 
 class Field(BaseModel):
@@ -294,30 +299,30 @@ class NumberField(Field):
         """{field}!=value"""
         return self._compare("!=", value)
 
-    def greater_than(self, value: int | float) -> str:
+    def is_greater_than(self, value: int | float) -> str:
         """{field}>value"""
         return self._compare(">", value)
 
-    def less_than(self, value: int | float) -> str:
+    def is_less_than(self, value: int | float) -> str:
         """{field}<value"""
         return self._compare("<", value)
 
-    def greater_than_or_equals(self, value: int | float) -> str:
+    def is_greater_than_or_equals(self, value: int | float) -> str:
         """{field}>value"""
         return self._compare(">=", value)
 
-    def less_than_or_equals(self, value: int | float) -> str:
+    def is_less_than_or_equals(self, value: int | float) -> str:
         """{field}<value"""
         return self._compare("<=", value)
     
-    def between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> str:
+    def is_between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> str:
         """AND({field}>=min_value, {field}<=max_value)"""
         return AND(
-            self.greater_than_or_equals(min_value),
+            self.is_greater_than_or_equals(min_value),
             self.less_than_or_equals(max_value),
         ) if inclusive else AND(
-            self.greater_than(min_value),
-            self.less_than(max_value),
+            self.is_greater_than(min_value),
+            self.is_less_than(max_value),
         )
 
 

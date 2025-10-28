@@ -57,18 +57,21 @@ class Else extends Then {
 // endregion
 
 // region HELPERS
-/** RECORD_ID()='id' */
-export function idEquals(id: string): string {
-	return `RECORD_ID()='${id}'`;
-}
+/** Record ID formulas */
+export namespace ID {
+	/** RECORD_ID()='id' */
+	export function equals(id: string): string {
+		return `RECORD_ID()='${id}'`;
+	}
 
-export function idInList(ids: string[]): string {
-	if (ids.length === 0) {
-		return "FALSE()";
-	} else if (ids.length === 1) {
-		return idEquals(ids[0]);
-	} else {
-		return OR(...ids.map((id) => idEquals(id)));
+	export function inList(ids: string[]): string {
+		if (ids.length === 0) {
+			return "FALSE()";
+		} else if (ids.length === 1) {
+			return equals(ids[0]);
+		} else {
+			return OR(...ids.map((id) => equals(id)));
+		}
 	}
 }
 
@@ -262,36 +265,36 @@ export class NumberField extends Field {
 	}
 
 	/** {field}>value */
-	greaterThan(value: number): string {
+	isGreaterThan(value: number): string {
 		return this._compare(">", value);
 	}
 
 	/** {field}<value */
-	lessThan(value: number): string {
+	isLessThan(value: number): string {
 		return this._compare("<", value);
 	}
 
 	/** {field}>=value */
-	greaterThanOrEquals(value: number): string {
+	isGreaterThanOrEquals(value: number): string {
 		return this._compare(">=", value);
 	}
 
 	/** {field}<=value */
-	lessThanOrEquals(value: number): string {
+	isLessThanOrEquals(value: number): string {
 		return this._compare("<=", value);
 	}
 
 	/** AND({field}>=min_value, {field}<=max_value) */
-	between(minValue: number, maxValue: number, inclusive: boolean = true): string {
+	isBetween(minValue: number, maxValue: number, inclusive: boolean = true): string {
 		if (inclusive) {
 			return AND(
-				this.greaterThanOrEquals(minValue),
-				this.lessThanOrEquals(maxValue),
+				this.isGreaterThanOrEquals(minValue),
+				this.isLessThanOrEquals(maxValue),
 			);
 		} else {
 			return AND(
-				this.greaterThan(minValue),
-				this.lessThan(maxValue),
+				this.isGreaterThan(minValue),
+				this.isLessThan(maxValue),
 			);
 		}
 	}
