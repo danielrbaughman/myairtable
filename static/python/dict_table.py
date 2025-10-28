@@ -3,7 +3,7 @@ from typing import Generic, Optional, overload
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
 
-from .formula import id_in_list
+from .formula import ID
 from .helpers import validate_keys
 from .table_helpers import CreateDictType, DictType, FieldType, UpdateDictType, ViewType, prepare_fields_for_save, sanitize_record_dict
 
@@ -147,7 +147,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             records: list[RecordDict] = self._table.all(
-                formula=id_in_list(record_ids),
+                formula=ID.in_list(record_ids),
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
@@ -219,7 +219,9 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             records = [sanitize_record_dict(r) for r in records]
             return records
         else:
-            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys)
+            if not record_s:
+                raise ValueError("Record to create cannot be None.")
+            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys) # type: ignore
             record = self._table.create(fields=record_s["fields"], use_field_ids=use_field_ids, **options)
             record = sanitize_record_dict(record)
             return record
@@ -277,7 +279,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             records = [sanitize_record_dict(r) for r in records]
             return records
         else:
-            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys)
+            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys) # type: ignore
             record = self._table.update(
                 record_id=record_s["id"],
                 fields=record_s["fields"],

@@ -3,7 +3,7 @@ from typing import Generic, Optional, overload
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
 
-from .formula import id_in_list
+from .formula import ID
 from .helpers import validate_keys
 from .table_helpers import DictType, FieldType, ORMType, PydanticType, ViewType, prepare_fields_for_save, sanitize_record_dict
 
@@ -138,7 +138,7 @@ class PydanticTable(Generic[ORMType, PydanticType, ViewType, FieldType]):
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             record_dicts: list[RecordDict] = self._table.all(
-                formula=id_in_list(record_ids),
+                formula=ID.in_list(record_ids),
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
@@ -199,7 +199,9 @@ class PydanticTable(Generic[ORMType, PydanticType, ViewType, FieldType]):
                 record_models.append(record_model)
             return record_models
         else:
-            record_dict = record_s.to_create_record_dict()
+            if not record_s:
+                raise ValueError("Record cannot be None.")
+            record_dict = record_s.to_create_record_dict() # type: ignore
             record_dict["fields"] = prepare_fields_for_save(record_dict["fields"], self._calculated_field_ids)
             record = self._table.create(fields=record_dict["fields"], use_field_ids=True)
             record = sanitize_record_dict(record)
@@ -243,7 +245,9 @@ class PydanticTable(Generic[ORMType, PydanticType, ViewType, FieldType]):
                 record_models.append(record_model)
             return record_models
         else:
-            record_dict = record_s.to_update_record_dict(use_field_ids=True)
+            if not record_s:
+                raise ValueError("Record cannot be None.")
+            record_dict = record_s.to_update_record_dict(use_field_ids=True) # type: ignore
             record_dict["fields"] = prepare_fields_for_save(record_dict["fields"], self._calculated_field_ids)
             record = self._table.update(record_id=record_dict["id"], fields=record_dict["fields"], use_field_ids=True)
             record = sanitize_record_dict(record)

@@ -12,6 +12,7 @@ export default defineConfig([
 		languageOptions: { globals: globals.browser },
 		rules: {
 			"@typescript-eslint/ban-ts-comment": "off",
+			"@typescript-eslint/no-namespace": "off",
 		},
 	},
 	{

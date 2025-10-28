@@ -3,7 +3,7 @@ from typing import Generic, Optional, overload
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
 
-from .formula import id_in_list
+from .formula import ID
 from .helpers import validate_keys
 from .table_helpers import DictType, FieldType, ORMType, ViewType, sanitize_record_dict
 
@@ -134,7 +134,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             record_dicts: list[RecordDict] = self._table.all(
-                formula=id_in_list(record_ids),
+                formula=ID.in_list(record_ids),
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
@@ -185,8 +185,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             new_records = self.get(record_ids=[r.id for r in record_s])
             return new_records
         else:
-            record_s.save()
-            new_record = self.get(record_id=record_s.id)
+            if not record_s:
+                raise ValueError("Record to create cannot be None.")
+            record_s.save() # type: ignore
+            new_record = self.get(record_id=record_s.id) # type: ignore
             return new_record
 
     @overload
@@ -215,8 +217,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             updated_records = self.get(record_ids=[r.id for r in record_s])
             return updated_records
         else:
-            record_s.save()
-            updated_record = self.get(record_id=record_s.id)
+            if not record_s:
+                raise ValueError("Record cannot be None.")
+            record_s.save() # type: ignore
+            updated_record = self.get(record_id=record_s.id) # type: ignore
             return updated_record
 
     @overload
