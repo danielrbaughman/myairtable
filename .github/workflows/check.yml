@@ -29,11 +29,10 @@ jobs:
         run: uv sync
 
       - name: Run ruff check
-        run: ruff check --config pyproject.toml
+        run: uv run ruff check --config pyproject.toml
 
       - name: Run type check
-        run: ty check --config pyproject.toml
-        
+        run: uv run ty check --config pyproject.toml
 
   Lint-TypeScript:
     runs-on: ubuntu-latest
