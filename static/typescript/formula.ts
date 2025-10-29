@@ -287,15 +287,9 @@ export class NumberField extends Field {
 	/** AND({field}>=min_value, {field}<=max_value) */
 	isBetween(minValue: number, maxValue: number, inclusive: boolean = true): string {
 		if (inclusive) {
-			return AND(
-				this.isGreaterThanOrEquals(minValue),
-				this.isLessThanOrEquals(maxValue),
-			);
+			return AND(this.isGreaterThanOrEquals(minValue), this.isLessThanOrEquals(maxValue));
 		} else {
-			return AND(
-				this.isGreaterThan(minValue),
-				this.isLessThan(maxValue),
-			);
+			return AND(this.isGreaterThan(minValue), this.isLessThan(maxValue));
 		}
 	}
 }
@@ -524,7 +518,7 @@ export class DateField extends Field {
 
 	/**
 	 * Checks if the date is between two specified dates.
-	 * 
+	 *
 	 * @param startDate - The start date of the range. Can be a Date object or string.
 	 * @param endDate - The end date of the range. Can be a Date object or string.
 	 * @param inclusive - Whether to include the start and end dates in the range. Defaults to true.
@@ -534,15 +528,9 @@ export class DateField extends Field {
 		const startParsed = parseDate(startDate);
 		const endParsed = parseDate(endDate);
 		if (inclusive) {
-			return AND(
-				this.isOnOrAfter(startParsed) as string,
-				this.isOnOrBefore(endParsed) as string,
-			);
+			return AND(this.isOnOrAfter(startParsed) as string, this.isOnOrBefore(endParsed) as string);
 		} else {
-			return AND(
-				this.isAfter(startParsed) as string,
-				this.isBefore(endParsed) as string,
-			);
+			return AND(this.isAfter(startParsed) as string, this.isBefore(endParsed) as string);
 		}
 	}
 }

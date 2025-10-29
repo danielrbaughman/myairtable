@@ -66,6 +66,8 @@ class ID:
         """RECORD_ID()='id'"""
         return f"RECORD_ID()='{id}'"
 
+    def __eq__(self, id: str) -> str:
+        return self.equals(id)
 
     @staticmethod
     def in_list(ids: list[str]) -> str:
@@ -112,9 +114,15 @@ class TextField(Field):
         escaped_value = value.replace('"', '\\"')
         return f'{{{self.id}}}="{escaped_value}"'
 
+    def __eq__(self, value: str) -> str:
+        return self.equals(value)
+
     def not_equals(self, value: str) -> str:
         """{field}!="value\" """
         return f'{{{self.id}}}!="{value}"'
+
+    def __ne__(self, value: str) -> str:
+        return self.not_equals(value)
 
     def _find(
         self,
@@ -295,34 +303,62 @@ class NumberField(Field):
         """{field}=value"""
         return self._compare("=", value)
 
+    def __eq__(self, value: int | float) -> str:
+        """Override equality operator for easier testing"""
+        return self.equals(value)
+
     def not_equals(self, value: int | float) -> str:
         """{field}!=value"""
         return self._compare("!=", value)
+
+    def __ne__(self, value: int | float) -> str:
+        """Override not-equal operator for easier testing"""
+        return self.not_equals(value)
 
     def is_greater_than(self, value: int | float) -> str:
         """{field}>value"""
         return self._compare(">", value)
 
+    def __gt__(self, value: int | float) -> str:
+        """Override greater-than operator for easier testing"""
+        return self.is_greater_than(value)
+
     def is_less_than(self, value: int | float) -> str:
         """{field}<value"""
         return self._compare("<", value)
+
+    def __lt__(self, value: int | float) -> str:
+        """Override less-than operator for easier testing"""
+        return self.is_less_than(value)
 
     def is_greater_than_or_equals(self, value: int | float) -> str:
         """{field}>value"""
         return self._compare(">=", value)
 
+    def __ge__(self, value: int | float) -> str:
+        """Override greater-than-or-equal operator for easier testing"""
+        return self.is_greater_than_or_equals(value)
+
     def is_less_than_or_equals(self, value: int | float) -> str:
         """{field}<value"""
         return self._compare("<=", value)
-    
+
+    def __le__(self, value: int | float) -> str:
+        """Override less-than-or-equal operator for easier testing"""
+        return self.is_less_than_or_equals(value)
+
     def is_between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> str:
         """AND({field}>=min_value, {field}<=max_value)"""
-        return AND(
-            self.is_greater_than_or_equals(min_value),
-            self.less_than_or_equals(max_value),
-        ) if inclusive else AND(
-            self.is_greater_than(min_value),
-            self.is_less_than(max_value),
+        return (
+            AND(
+                self.is_greater_than_or_equals(min_value),
+                self.less_than_or_equals(max_value),
+            )
+            if inclusive
+            else AND(
+                self.is_greater_than(min_value),
+                self.is_less_than(max_value),
+            )
         )
 
 
@@ -455,6 +491,9 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
+    def __eq__(self, date: str | datetime) -> str:
+        return self.is_on(date)
+
     @overload
     def is_on_or_after(self) -> DateComparison: ...
     @overload
@@ -477,6 +516,9 @@ class DateField(Field):
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
+
+    def __ge__(self, date: str | datetime) -> str:
+        return self.is_on_or_after(date)
 
     @overload
     def is_on_or_before(self) -> DateComparison: ...
@@ -502,6 +544,9 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
+    def __le__(self, date: str | datetime) -> str:
+        return self.is_on_or_before(date)
+
     @overload
     def is_after(self) -> DateComparison: ...
     @overload
@@ -526,6 +571,9 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
+    def __lt__(self, date: str | datetime) -> str:
+        return self.is_after(date)
+
     @overload
     def is_before(self) -> DateComparison: ...
     @overload
@@ -548,6 +596,9 @@ class DateField(Field):
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
+
+    def __gt__(self, date: str | datetime) -> str:
+        return self.is_before(date)
 
     @overload
     def is_not_on(self) -> DateComparison: ...
@@ -572,11 +623,14 @@ class DateField(Field):
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
-    
+
+    def __ne__(self, date: str | datetime) -> str:
+        return self.is_not_on(date)
+
     def is_between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> str:
         """
         Check if the date falls between two given dates.
-        
+
         Args:
             start_date (str | datetime): The start date for the range comparison.
                 Can be a string or datetime object.
@@ -585,19 +639,23 @@ class DateField(Field):
             inclusive (bool, optional): Whether to include the boundary dates in the comparison.
                 If True, uses >= and <= operators. If False, uses > and < operators.
                 Defaults to True.
-        
+
         Returns:
             str: A formula string that evaluates to True if the date is between
                  the start and end dates according to the inclusive parameter.
         """
         parsed_start_date: datetime = _parse_date(start_date)
         parsed_end_date: datetime = _parse_date(end_date)
-        return AND(
-            self.is_on_or_after(parsed_start_date),
-            self.is_on_or_before(parsed_end_date),
-        ) if inclusive else AND(
-            self.is_after(parsed_start_date),
-            self.is_before(parsed_end_date),
+        return (
+            AND(
+                self.is_on_or_after(parsed_start_date),
+                self.is_on_or_before(parsed_end_date),
+            )
+            if inclusive
+            else AND(
+                self.is_after(parsed_start_date),
+                self.is_before(parsed_end_date),
+            )
         )
 
 

@@ -10,7 +10,7 @@ myAirtable generates strongly-typed dicts, ORM classes, and Pydantic models, all
 # Fully-typed versions of pyAirtable's RecordDict TypedDict class
 class ContactsRecordDict(RecordDict):
   fields: dict[ContactsField, Any] # ContactsFields is a Literal of the fields names in the Contacts table
-  
+
 nane = contact["fields"]["Name"] # your IDE will suggest "Name"
 
 # Instance of pyAirtable's ORM
@@ -26,7 +26,7 @@ class ContactsModel(AirtableBaseModel):
   name: Optional[str] = None # all Pydantic properties are Optional by necessity
   address: Optional[str] = None
   # etc
-    
+
 name = contact.name
 
 # myAirtable's ORMs make use of the Pydantic models under-the-hood for type validation
@@ -43,9 +43,11 @@ from myairtable_output import Airtable, AND, OR, ContactsTextField, ContactsDate
 
 formula: str = AND(
   ContactsTextField("Name").contains("Bob"),
-  ContactsDateField("Birthday").is_before("2020-04-01")
+  ContactsTextField("Last Name") == "Smith",
+  ContactsDateField("Birthday").is_after().years_ago(30),
+  ContactsDateField("Birthday") < "2019-04-01"
   OR(
-    ContactsNumberField("Age").is_greater_than(10),
+    ContactsNumberField("Age") > 10,
     ContactsNumberField("Age").is_less_than(20)
   ),
   "{fld1234567890}='you can also put raw strings here'"
