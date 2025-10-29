@@ -380,6 +380,9 @@ class BooleanField(Field):
     def is_false(self) -> str:
         """{field}=FALSE()"""
         return f"{{{self.id}}}=FALSE()"
+    
+    def __call__(self) -> str:
+        return self.is_true()
 
 
 # endregion

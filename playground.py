@@ -1,6 +1,6 @@
 from typer import Typer
 
-from output import AND, ID, Airtable, CompaniesDateField, CompaniesNumberField, CompaniesTextField
+from output import AND, ID, Airtable, CompaniesDateField, CompaniesNumberField, CompaniesTextField, CompaniesBooleanField
 
 app = Typer()
 
@@ -13,6 +13,7 @@ def main():
     name = CompaniesTextField("Name")
     status = CompaniesNumberField("#Status")
     date = CompaniesDateField("SQL Date")
+    is_active = CompaniesBooleanField("# Hours from Wolcott")
     formula = AND(
         name.equals("test"),
         name == "Active",
@@ -24,6 +25,7 @@ def main():
         date == "2023-06-15",
         date != "2023-07-01",
         ID() == "rec1234567890",
+        is_active(),
     )
     print(formula)
 
