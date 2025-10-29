@@ -33,24 +33,22 @@ name = contact.name
 contact.name = 123 # causes a Pydantic validation error
 ```
 
-myAirtable also generates typed formula helpers, for use when filtering by formula. pyAirtable already includes decent formula builders, but their options are limited to simple operations (e.g. =, >, <, etc). myAirtable's formula helpers include additional operations (e.g. "string contains", "date is N days ago", etc)
+myAirtable also generates typed formula helpers, for use when filtering by formula. pyAirtable already includes decent formula builders, but their options are limited to simple operations (e.g. =, >, <, etc). myAirtable's formula helpers include additional operations (e.g. "string contains", "date is N days ago", etc). You can access the myAirtable formula helpers from the `.f` property on each ORM class.
 
 ```python
-from myairtable_output import Airtable, AND, OR, ContactsTextField, ContactsDateField, ContactsNumberField
-
-# there are formula-builder classes for various Airtable fields
-# myAirtable generates a typed version for each table
+from myairtable_output import Airtable, AND, OR, ContactsORM
 
 formula: str = AND(
-  ContactsTextField("Name").contains("Bob"),
-  ContactsTextField("Last Name") == "Smith",
-  ContactsDateField("Birthday").is_after().years_ago(30),
-  ContactsDateField("Birthday") < "2019-04-01"
+  ContactsORM.f.name.contains("Bob"),
+  ContactsORM.f.last_name == "Smith",
+  ContactsORM.f.birthday.is_after().years_ago(30),
+  ContactsORM.f.birthday < "2019-04-01"
   OR(
-    ContactsNumberField("Age") > 10,
-    ContactsNumberField("Age").is_less_than(20)
+	  ContactsORM.f.age > 10,
+	  ContactsORM.f.age.is_less_than(20)
   ),
-  "{fld1234567890}='you can also put raw strings here'"
+  "{fld1234567890}='you can also put raw strings here'",
+  ContactsORM.name.eq("Bob") # myAirtable's AND, OR, XOR, and NOT functions are compatible with pyAirtable's built-in formula builders
 )
 
 Airtable().contacts.get(formula=formula)

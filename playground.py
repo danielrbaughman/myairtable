@@ -1,6 +1,7 @@
 from typer import Typer
 
-from output import AND, ID, Airtable, CompaniesDateField, CompaniesNumberField, CompaniesTextField, CompaniesBooleanField
+from output import AND
+from output.dynamic.orm_models.deals import DealsORM
 
 app = Typer()
 
@@ -8,24 +9,12 @@ app = Typer()
 @app.command()
 def main():
     """Playground"""
-    companies = Airtable().companies.get(fields=["Name"])
-    print(len(companies))
-    name = CompaniesTextField("Name")
-    status = CompaniesNumberField("#Status")
-    date = CompaniesDateField("SQL Date")
-    is_active = CompaniesBooleanField("# Hours from Wolcott")
     formula = AND(
-        name.equals("test"),
-        name == "Active",
-        name != "Inactive",
-        status == 5,
-        status != 10,
-        date >= "2023-01-01",
-        date <= "2023-12-31",
-        date == "2023-06-15",
-        date != "2023-07-01",
-        ID() == "rec1234567890",
-        is_active(),
+        DealsORM.f.name == "Test Deal",
+        DealsORM.f.active(),
+        DealsORM.f.mql_date_from_company > "2023-01-01",
+        DealsORM.field_size_upcharge_h_samplingcharge_h_bill.eq(10),
+        DealsORM.field_size_upcharge_h_samplingcharge_h_bill.gt(5),
     )
     print(formula)
 

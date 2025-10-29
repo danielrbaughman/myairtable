@@ -56,7 +56,7 @@ def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: boo
     copy_static_files(folder, "python")
     write_types(metadata, folder)
     write_dicts(metadata, folder)
-    write_orm_models(metadata, base_id, folder, validation)
+    write_orm_models(metadata, base_id, folder, validation, formulas)
     write_pydantic_models(metadata, folder)
     if formulas:
         write_formula_helpers(metadata, folder)
@@ -275,7 +275,7 @@ def write_dicts(metadata: BaseMetadata, folder: Path):
 
 
 # region ORM
-def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validation: bool):
+def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validation: bool, formulas: bool):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
@@ -329,6 +329,7 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validat
                 write.line(")")
             write.line(f"from ..dicts import {property_name_pascal(table, folder)}RecordDict")
             write.line(f"from ..models import {property_name_pascal(table, folder)}Model")
+            write.line(f"from ..formulas import {property_name_pascal(table, folder)}Formulas")
             write.line_empty()
             write.line_empty()
 
@@ -355,6 +356,10 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validat
             write.line_indented("record_dict = self.to_record()", 2)
             write.line_indented(f"return {property_name_pascal(table, folder)}Model.from_record_dict(record_dict)", 2)
             write.line_empty()
+
+            if formulas:
+                write.line_indented(f"f: {property_name_pascal(table, folder)}Formulas = {property_name_pascal(table, folder)}Formulas()")
+                write.line_empty()
 
             if validation:
                 # _validate
@@ -560,36 +565,32 @@ def write_tables(metadata: BaseMetadata, folder: Path):
 
 
 # region FORMULA
+
+
 def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "formula" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=folder / "dynamic" / "formulas" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
-            write.line("from ..types import (")
-            write.line_indented(f"{property_name_pascal(table, folder)}Field,")
-            write.line_indented(f"{property_name_pascal(table, folder)}Fields,")
-            write.line_indented(f"{property_name_pascal(table, folder)}FieldNameIdMapping,")
-            write.line(")")
-            write.line("from ...static.helpers import validate_key")
-            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField")
+            write.line(f"from ..types import {property_name_pascal(table, folder)}FieldNameIdMapping")
+            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, ID")
             write.line_empty()
 
-            # Class
+            # Properties
+            write.region("PROPERTIES")
+            write.line(f"class {property_name_pascal(table, folder)}Formulas:")
+            write.line_indented("id: ID = ID()")
+            for field in table["fields"]:
+                property_name = property_name_snake(field, folder)
+                formula_class = formula_type(table["name"], field)
+                class_name = property_name_pascal(table, folder)
+                write.line_indented(
+                    f"{property_name}: {formula_class} = {formula_class}(name='{field['id']}',name_to_id_map={class_name}FieldNameIdMapping)"
+                )
+                write.property_docstring(field, table)
+            write.line_empty()
+            write.endregion()
 
-            def write_formula(type: str):
-                write.line(f"class {property_name_pascal(table, folder)}{type}({type}):")
-                write.line_indented(f"def __init__(self, name: {property_name_pascal(table, folder)}Field):")
-                write.line_indented(f"validate_key(name, {property_name_pascal(table, folder)}Fields)", 2)
-                write.line_indented(f"super().__init__(name=name, name_to_id_map={property_name_pascal(table, folder)}FieldNameIdMapping)", 2)
-                write.line_empty()
-                write.line_empty()
-
-            write_formula("AttachmentsField")
-            write_formula("BooleanField")
-            write_formula("DateField")
-            write_formula("NumberField")
-            write_formula("TextField")
-
-    with WriteToPythonFile(path=folder / "dynamic" / "formula" / "__init__.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "formulas" / "__init__.py") as write:
         for table in metadata["tables"]:
             write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
 
@@ -656,7 +657,7 @@ def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: b
             write.line("from .tables import *  # noqa: F403")
             write.line("from .airtable_main import *  # noqa: F403")
         if formulas:
-            write.line("from .formula import *  # noqa: F403")
+            write.line("from .formulas import *  # noqa: F403")
 
     with WriteToPythonFile(path=folder / "__init__.py") as write:
         # Imports
@@ -849,6 +850,33 @@ def pydantic_type(table_name: str, field: FieldMetadata) -> str:
     """Returns the appropriate Python type as Optional"""
 
     return f"Optional[{python_type(table_name, field)}] = None"
+
+
+def formula_type(table_name: str, field: FieldMetadata) -> str:
+    """Returns the appropriate myAirtable formula type for a given Airtable field."""
+
+    airtable_type: FieldType = field["type"]
+    formula_type: str = "TextField"
+
+    # With calculated fields, we want to know the type of the result
+    if is_calculated_field(field):
+        airtable_type = get_result_type(field)
+
+    match airtable_type:
+        case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
+            formula_type = "TextField"
+        case "checkbox":
+            formula_type = "BooleanField"
+        case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
+            formula_type = "DateField"
+        case "count" | "autoNumber" | "percent" | "currency" | "duration" | "number":
+            formula_type = "NumberField"
+        case "multipleAttachments":
+            formula_type = "AttachmentsField"
+        case _:
+            formula_type = "TextField"
+
+    return formula_type
 
 
 def pyairtable_orm_type(table_name: str, field: FieldMetadata) -> str:

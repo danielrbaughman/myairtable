@@ -1,34 +1,35 @@
 from datetime import datetime
-from typing import Literal, Optional, overload
+from typing import Iterable, Literal, Optional, overload
 
 import dateparser
+from pyairtable.formulas import Formula
 from pydantic import BaseModel
 
 COMPARISON = Literal["=", "!=", ">", "<", ">=", "<="]
 
 
 # region LOGIC
-def AND(*args: str) -> str:  # noqa: N802
+def AND(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
     """AND(arg1, arg2, ...)"""
-    non_empty_args = [arg for arg in args if arg != ""]
+    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
     return f"AND({','.join(non_empty_args)})"
 
 
-def OR(*args: str) -> str:  # noqa: N802
+def OR(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
     """OR(arg1, arg2, ...)"""
-    non_empty_args = [arg for arg in args if arg != ""]
+    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
     return f"OR({','.join(non_empty_args)})"
 
 
-def XOR(*args: str) -> str:  # noqa: N802
+def XOR(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
     """XOR(arg1, arg2, ...)"""
-    non_empty_args = [arg for arg in args if arg != ""]
+    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
     return f"XOR({','.join(non_empty_args)})"
 
 
-def NOT(*args: str) -> str:  # noqa: N802
+def NOT(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
     """NOT(arg)"""
-    non_empty_args = [arg for arg in args if arg != ""]
+    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
     return f"NOT({','.join(non_empty_args)})"
 
 
@@ -380,7 +381,7 @@ class BooleanField(Field):
     def is_false(self) -> str:
         """{field}=FALSE()"""
         return f"{{{self.id}}}=FALSE()"
-    
+
     def __call__(self) -> str:
         return self.is_true()
 
