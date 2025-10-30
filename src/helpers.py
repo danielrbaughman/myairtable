@@ -243,9 +243,10 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, u
 
     text = sanitize_property_name(text)
     text = sanitize_leading_trailing_characters(text)
-    text = sanitize_reserved_names(text)
     text = remove_extra_spaces(text)
     text = text.replace(" ", "_")
+    text = to_snake(text)
+    text = sanitize_reserved_names(text)
 
     return text
 
