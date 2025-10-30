@@ -278,7 +278,7 @@ def property_name_model(field_or_table: FieldMetadata | TableMetadata, folder: P
             text = text.replace(" ", "_")
             return to_pascal(text)
 
-    return property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "ORM"
+    return property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "Model"
 
 
 def sanitize_property_name(text: str) -> str:

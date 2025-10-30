@@ -55,7 +55,7 @@ def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: boo
     copy_static_files(folder, "python")
     write_types(metadata, folder)
     write_dicts(metadata, folder)
-    write_orm_models(metadata, base_id, folder, formulas)
+    write_models(metadata, base_id, folder, formulas)
     # write_pydantic_models(metadata, folder)
     if formulas:
         write_formula_helpers(metadata, folder)
@@ -273,10 +273,10 @@ def write_dicts(metadata: BaseMetadata, folder: Path):
 # endregion
 
 
-# region ORM
-def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool):
+# region MODELS
+def write_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=folder / "dynamic" / "models" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
             write.line("from datetime import datetime")
             write.line("from typing import Any")
@@ -359,7 +359,7 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, formula
                 write.property_docstring(field, table)
             write.line_empty()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / "__init__.py") as write:
+    with WriteToPythonFile(path=folder / "dynamic" / "models" / "__init__.py") as write:
         for table in metadata["tables"]:
             write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
 
@@ -389,7 +389,7 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,")
             write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,")
             write.line(")")
-            write.line(f"from ..orm_models import {property_name_model(table, folder)}")
+            write.line(f"from ..models import {property_name_model(table, folder)}")
             write.endregion()
             write.line_empty()
             write.line_empty()
@@ -514,7 +514,7 @@ def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: b
         # Imports
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
-        write.line("from .orm_models import *  # noqa: F403")
+        write.line("from .models import *  # noqa: F403")
         if wrappers:
             write.line("from .tables import *  # noqa: F403")
             write.line("from .airtable_main import *  # noqa: F403")
