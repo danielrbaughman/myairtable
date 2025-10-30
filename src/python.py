@@ -33,7 +33,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool, wrappers: bool, validation: bool):
+def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool, wrappers: bool):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -56,8 +56,8 @@ def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: boo
     copy_static_files(folder, "python")
     write_types(metadata, folder)
     write_dicts(metadata, folder)
-    write_orm_models(metadata, base_id, folder, validation, formulas)
-    write_pydantic_models(metadata, folder)
+    write_orm_models(metadata, base_id, folder, formulas)
+    # write_pydantic_models(metadata, folder)
     if formulas:
         write_formula_helpers(metadata, folder)
     if wrappers:
@@ -275,7 +275,7 @@ def write_dicts(metadata: BaseMetadata, folder: Path):
 
 
 # region ORM
-def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validation: bool, formulas: bool):
+def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
@@ -361,18 +361,18 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, validat
                 write.line_indented(f"f: {property_name_pascal(table, folder)}Formulas = {property_name_pascal(table, folder)}Formulas()")
                 write.line_empty()
 
-            if validation:
-                # _validate
-                write.line_indented("def _validate(self) -> None:")
-                write.line_indented("self.to_model()", 2)
-                write.line_empty()
+            # if validation:
+            #     # _validate
+            #     write.line_indented("def _validate(self) -> None:")
+            #     write.line_indented("self.to_model()", 2)
+            #     write.line_empty()
 
-                # __setattr__
-                write.line_indented("def __setattr__(self, name: str, value: Any) -> None:")
-                write.line_indented("super().__setattr__(name, value)", 2)
-                write.line_indented("if name != 'id':", 2)
-                write.line_indented("self._validate()", 3)
-                write.line_empty()
+            #     # __setattr__
+            #     write.line_indented("def __setattr__(self, name: str, value: Any) -> None:")
+            #     write.line_indented("super().__setattr__(name, value)", 2)
+            #     write.line_indented("if name != 'id':", 2)
+            #     write.line_indented("self._validate()", 3)
+            #     write.line_empty()
 
             # properties
             for field in table["fields"]:

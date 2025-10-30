@@ -28,9 +28,6 @@ class ContactsModel(AirtableBaseModel):
   # etc
 
 name = contact.name
-
-# myAirtable's ORMs make use of the Pydantic models under-the-hood for type validation
-contact.name = 123 # causes a Pydantic validation error
 ```
 
 myAirtable also generates typed formula helpers, for use when filtering by formula. pyAirtable already includes decent formula builders, but their options are limited to simple operations (e.g. =, >, <, etc). myAirtable's formula helpers include additional operations (e.g. "string contains", "date is N days ago", etc). You can access the myAirtable formula helpers from the `.f` property on each ORM class.
@@ -103,4 +100,3 @@ myAirtable optionally generates CSV files containing the names/ids of the tables
 - `--fresh`: Regenerates the name-locking CSVs from scratch, rather than using the existing ones.
 - `--formulas`: You can choose not to include myAirtable's formula helpers in the output.
 - `--wrapper`: You can choose to not include myAirtable's table/base wrapper classes in the output.
-- `--validation`: myAirtable uses Pydantic models under the hood for type validation in the pyAirtable ORM models. You can choose to disable this.
