@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.helpers import property_name_snake, sanitize_string
+from src.helpers import MODEL_NAME, PROPERTY_NAME, property_name_snake, sanitize_string
 from src.meta_types import BaseMetadata
 from src.python import python_type
 from src.typescript import typescript_type
@@ -19,7 +19,8 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
             {
                 "Table ID": table["id"],
                 "Table Name": table["name"],
-                "Property Name (snake_case)": property_name_snake(table, folder, use_custom=use_custom),
+                PROPERTY_NAME: property_name_snake(table, folder, use_custom=use_custom),
+                MODEL_NAME: property_name_snake(table, folder, use_custom=use_custom, custom_key=MODEL_NAME),
             }
         )
 
@@ -28,7 +29,8 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
         columns=[
             "Table ID",
             "Table Name",
-            "Property Name (snake_case)",
+            PROPERTY_NAME,
+            MODEL_NAME,
         ],
     )
     tables_csv_path = Path(folder) / "tables.csv"
@@ -47,7 +49,7 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
                     "Table Name": table["name"],
                     "Field ID": field["id"],
                     "Field Name": sanitize_string(field["name"]),
-                    "Property Name (snake_case)": property_name_snake(field, folder, use_custom=use_custom),
+                    PROPERTY_NAME: property_name_snake(field, folder, use_custom=use_custom),
                     "Airtable Type": field["type"],
                     "Python Type": python_type(table["name"], field, warn=False),
                     "TypeScript Type": typescript_type(table["name"], field, warn=False),
@@ -61,7 +63,7 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
             "Table Name",
             "Field ID",
             "Field Name",
-            "Property Name (snake_case)",
+            PROPERTY_NAME,
             "Airtable Type",
             "Python Type",
             "TypeScript Type",

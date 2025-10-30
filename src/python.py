@@ -2,7 +2,6 @@ import shutil
 from pathlib import Path
 
 from pydantic import BaseModel
-from pydantic.alias_generators import to_pascal
 from rich import print
 
 from .helpers import (
@@ -19,10 +18,10 @@ from .helpers import (
     is_valid_field,
     options_name,
     property_name_camel,
+    property_name_model,
     property_name_pascal,
     property_name_snake,
     sanitize_string,
-    space_to_snake_case,
     upper_case,
     warn_unhandled_airtable_type,
 )
@@ -328,13 +327,12 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, formula
                         write.line_indented(f"{options_name(property_name_pascal(table, folder), property_name_pascal(field, folder))},")
                 write.line(")")
             write.line(f"from ..dicts import {property_name_pascal(table, folder)}RecordDict")
-            write.line(f"from ..models import {property_name_pascal(table, folder)}Model")
             write.line(f"from ..formulas import {property_name_pascal(table, folder)}Formulas")
             write.line_empty()
             write.line_empty()
 
             # definition
-            write.line(f"class {property_name_pascal(table, folder)}ORM(Model):")
+            write.line(f"class {property_name_model(table, folder)}(Model):")
             write.line_indented(orm_model_doc_string(table["name"]))
             write.line_indented("class Meta:")
             write.line_indented("@staticmethod", 2)
@@ -351,152 +349,17 @@ def write_orm_models(metadata: BaseMetadata, base_id: str, folder: Path, formula
             write.line_indented("return self.to_record()", 2)
             write.line_empty()
 
-            # to_model
-            write.line_indented(f"def to_model(self) -> {property_name_pascal(table, folder)}Model:")
-            write.line_indented("record_dict = self.to_record()", 2)
-            write.line_indented(f"return {property_name_pascal(table, folder)}Model.from_record_dict(record_dict)", 2)
-            write.line_empty()
-
             if formulas:
                 write.line_indented(f"f: {property_name_pascal(table, folder)}Formulas = {property_name_pascal(table, folder)}Formulas()")
                 write.line_empty()
 
-            # if validation:
-            #     # _validate
-            #     write.line_indented("def _validate(self) -> None:")
-            #     write.line_indented("self.to_model()", 2)
-            #     write.line_empty()
-
-            #     # __setattr__
-            #     write.line_indented("def __setattr__(self, name: str, value: Any) -> None:")
-            #     write.line_indented("super().__setattr__(name, value)", 2)
-            #     write.line_indented("if name != 'id':", 2)
-            #     write.line_indented("self._validate()", 3)
-            #     write.line_empty()
-
             # properties
             for field in table["fields"]:
-                write.line_indented(f"{property_name_snake(field, folder)}: {pyairtable_orm_type(table['name'], field)}")
+                write.line_indented(f"{property_name_snake(field, folder)}: {pyairtable_orm_type(table['name'], field, metadata, folder)}")
                 write.property_docstring(field, table)
             write.line_empty()
 
     with WriteToPythonFile(path=folder / "dynamic" / "orm_models" / "__init__.py") as write:
-        for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
-
-
-# endregion
-
-
-# region MODELS
-def write_pydantic_models(metadata: BaseMetadata, folder: Path):
-    for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "models" / f"{property_name_snake(table, folder)}.py") as write:
-            # Imports
-            write.line("from datetime import datetime, timedelta")
-            write.line("from typing import Any, Optional, overload")
-            write.line_empty()
-            write.line("from ...static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
-            write.line("from ...static.airtable_base_model import AirtableBaseModel")
-            all_options: list[str] = []
-            for field in table["fields"]:
-                options = get_select_options(field)
-                all_options.extend(options)
-            if len(all_options) > 0:
-                write.line("from ..types import (")
-                for field in table["fields"]:
-                    options = get_select_options(field)
-                    if len(options) > 0:
-                        write.line_indented(f"{options_name(property_name_pascal(table, folder), property_name_pascal(field, folder))},")
-                write.line(")")
-            write.line("from ..dicts import (")
-            write.line_indented(f"{property_name_pascal(table, folder)}RecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}IdsRecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}IdsCreateRecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}IdsUpdateRecordDict,")
-            write.line(")")
-            write.line_empty()
-            write.line_empty()
-
-            select_options: dict[str, str] = {}
-            for field in table["fields"]:
-                options = get_select_options(field)
-                if len(options) > 0:
-                    select_options[field["id"]] = f"{options_name(property_name_camel(table, folder), property_name_camel(field, folder))}"
-
-            # Properties
-            write.region("PROPERTIES")
-            write.line(f"class {property_name_pascal(table, folder)}Model(AirtableBaseModel):")
-            for field in table["fields"]:
-                write.line_indented(f"{property_name_snake(field, folder)}: {pydantic_type(table['name'], field)}")
-                write.property_docstring(field, table)
-            write.line_empty()
-            write.endregion()
-
-            # _to_fields
-            write.region("TO_FIELDS")
-            write.line_indented("def _to_fields(self, use_field_ids: bool) -> dict:")
-            write.line_indented("fields: dict = {}", 2)
-            write.line_indented("if use_field_ids:", 2)
-            for field in table["fields"]:
-                write.line_indented(f"if self.{property_name_snake(field, folder)} is not None:", 3)
-                write.line_indented(f'fields["{field["id"]}"] = self.{property_name_snake(field, folder)}', 4)
-            write.line_indented("else:", 2)
-            for field in table["fields"]:
-                write.line_indented(f"if self.{property_name_snake(field, folder)} is not None:", 3)
-                write.line_indented(f'fields["{sanitize_string(field["name"])}"] = self.{property_name_snake(field, folder)}', 4)
-            write.line_indented("return fields", 2)
-            write.endregion()
-            write.line_empty()
-
-            # _update_from_record_dict
-            write.region("UPDATE_FROM_RECORD_DICT")
-            write.line_indented(
-                f"def _update_from_record_dict(self, record: {property_name_pascal(table, folder)}RecordDict | {property_name_pascal(table, folder)}IdsRecordDict):"
-            )
-            write.line_indented("fields = record.get('fields', {})", 2)
-            for field in table["fields"]:
-                write.line_indented(
-                    f"self.{property_name_snake(field, folder)} = fields.get('{field['id']}', None) or fields.get(\"{sanitize_string(field['name'])}\", None)",
-                    2,
-                )
-            write.endregion()
-            write.line_empty()
-
-            # to_record_dict
-            write.region("TO/FROM_RECORD_DICT")
-
-            def _to_record_dict(method: str, record_type: str):
-                write.line_indented("@overload")
-                write.line_indented(f"def {method}(self) -> {property_name_pascal(table, folder)}{record_type}: ...")
-                write.line_indented("@overload")
-                write.line_indented(f"def {method}(self, use_field_ids: bool) -> {property_name_pascal(table, folder)}Ids{record_type}: ...")
-                write.line_indented(
-                    f"def {method}(self, use_field_ids: bool = False) -> {property_name_pascal(table, folder)}{record_type} | {property_name_pascal(table, folder)}Ids{record_type}:"
-                )
-                write.line_indented(f"record = super().{method}()", 2)
-                write.line_indented("record['fields'] = self._to_fields(use_field_ids)", 2)
-                write.line_indented("return record", 2)
-                write.line_empty()
-
-            _to_record_dict("to_create_record_dict", "CreateRecordDict")
-            _to_record_dict("to_update_record_dict", "UpdateRecordDict")
-            _to_record_dict("to_record_dict", "RecordDict")
-
-            # from_record_dict
-            write.line_indented("@classmethod")
-            write.line_indented(
-                f'def from_record_dict(cls, record: {property_name_pascal(table, folder)}RecordDict) -> "{property_name_pascal(table, folder)}Model":'
-            )
-            write.line_indented("instance = super().from_record_dict(record)", 2)
-            write.line_indented("instance._update_from_record_dict(record)", 2)
-            write.line_indented("return instance", 2)
-            write.line_empty()
-            write.endregion()
-
-    with WriteToPythonFile(path=folder / "dynamic" / "models" / "__init__.py") as write:
         for table in metadata["tables"]:
             write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
 
@@ -526,16 +389,17 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,")
             write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,")
             write.line(")")
-            write.line(f"from ..orm_models import {property_name_pascal(table, folder)}ORM")
-            write.line(f"from ..models import {property_name_pascal(table, folder)}Model")
+            write.line(f"from ..orm_models import {property_name_model(table, folder)}")
             write.endregion()
             write.line_empty()
             write.line_empty()
 
             # Tables
             write.region(upper_case(table["name"]))
+            class_name = property_name_pascal(table, folder)
+            model_name = property_name_model(table, folder)
             write.line(
-                f"class {property_name_pascal(table, folder)}Table(AirtableTable[{property_name_pascal(table, folder)}RecordDict, {property_name_pascal(table, folder)}CreateRecordDict, {property_name_pascal(table, folder)}UpdateRecordDict, {property_name_pascal(table, folder)}ORM, {property_name_pascal(table, folder)}Model, {property_name_pascal(table, folder)}View, {property_name_pascal(table, folder)}Field]):"
+                f"class {class_name}Table(AirtableTable[{class_name}RecordDict, {class_name}CreateRecordDict, {class_name}UpdateRecordDict, {model_name}, {class_name}View, {class_name}Field]):"
             )
             write.line_indented(table_doc_string(table, folder))
             write.line_indented("@classmethod")
@@ -545,8 +409,7 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.line_indented(f"{property_name_pascal(table, folder)}RecordDict,", 3)
             write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,", 3)
             write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}ORM,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}Model,", 3)
+            write.line_indented(f"{property_name_model(table, folder)},", 3)
             write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFields,", 3)
             write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFieldIds,", 3)
             write.line_indented(f"{property_name_pascal(table, folder)}ViewNameIdMapping,", 3)
@@ -652,7 +515,6 @@ def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: b
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
         write.line("from .orm_models import *  # noqa: F403")
-        write.line("from .models import *  # noqa: F403")
         if wrappers:
             write.line("from .tables import *  # noqa: F403")
             write.line("from .airtable_main import *  # noqa: F403")
@@ -720,18 +582,14 @@ def table_doc_string(table: TableMetadata, folder: Path) -> str:
     return f'''"""
     An abstraction of pyAirtable's `Api.table` for the `{table["name"]}` table, and an interface for working with custom-typed versions of the models/dicts created by the type generator.
 
-    Has tables for RecordDicts under `.dict`, pyAirtable ORM models under `.orm`, and Pydantic models under `.model`.
-
-    ```python
-    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.dict.get("rec1234567890")
-    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.orm.get("rec1234567890")
-    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.model.get("rec1234567890")
-    ```
-
-    You can also access the ORM tables without `.orm`.
-
     ```python
     record = Airtable().{property_name_snake(table, folder, use_custom=False)}.get("rec1234567890")
+    ```
+
+    You can also access the RecordDicts via `.dict`.
+    
+    ```python
+    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.dict.get("rec1234567890")
     ```
 
     You can also use the ORM Models directly. See https://pyairtable.readthedocs.io/en/stable/orm.html#
@@ -744,18 +602,14 @@ def main_doc_string() -> str:
     
     Provides an interface for working with custom-typed versions of the models/dicts created by the type generator, for each of the tables in the Airtable base.
 
-    Has tables for RecordDicts under `.dict`, pyAirtable ORM models under `.orm`, and Pydantic models under `.model`.
-
-    ```python
-    record = Airtable().tablename.dict.get("rec1234567890")
-    record = Airtable().tablename.orm.get("rec1234567890")
-    record = Airtable().tablename.model.get("rec1234567890")
-    ```
-
-    You can also access the ORM tables without `.orm`.
-
     ```python
     record = Airtable().tablename.get("rec1234567890")
+    ```
+
+    You can also access the RecordDicts via `.dict`.
+    
+    ```python
+    record = Airtable().tablename.dict.get("rec1234567890")
     ```
 
     You can also use the ORM Models directly. See https://pyairtable.readthedocs.io/en/stable/orm.html#
@@ -846,12 +700,6 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
     return py_type
 
 
-def pydantic_type(table_name: str, field: FieldMetadata) -> str:
-    """Returns the appropriate Python type as Optional"""
-
-    return f"Optional[{python_type(table_name, field)}] = None"
-
-
 def formula_type(table_name: str, field: FieldMetadata) -> str:
     """Returns the appropriate myAirtable formula type for a given Airtable field."""
 
@@ -879,7 +727,7 @@ def formula_type(table_name: str, field: FieldMetadata) -> str:
     return formula_type
 
 
-def pyairtable_orm_type(table_name: str, field: FieldMetadata) -> str:
+def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, folder: Path) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -958,8 +806,12 @@ def pyairtable_orm_type(table_name: str, field: FieldMetadata) -> str:
             orm_type = f"LookupField = LookupField[{python_type(table_name, field)}]({params})"
         case "multipleRecordLinks":
             if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
-                linked_table_name = table_id_name_map.get(field["options"]["linkedTableId"], field["options"]["linkedTableId"])  # type: ignore
-                linked_orm_class = f"{to_pascal(space_to_snake_case(linked_table_name))}ORM"
+                table_id = field["options"]["linkedTableId"]  # type: ignore
+                tables = metadata["tables"]
+                for table in tables:
+                    if table["id"] == table_id:
+                        linked_orm_class = property_name_model(table, folder)
+                        break
                 if field["options"]["prefersSingleRecordLink"]:  # type: ignore
                     orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'
                 else:

@@ -4,13 +4,10 @@ from typing import Any, TypeVar
 from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict
 from pyairtable.orm import Model
 
-from .airtable_base_model import AirtableBaseModel
-
 DictType = TypeVar("DictType", bound=RecordDict)
 UpdateDictType = TypeVar("UpdateDictType", bound=UpdateRecordDict)
 CreateDictType = TypeVar("CreateDictType", bound=CreateRecordDict)
 ORMType = TypeVar("ORMType", bound=Model)
-PydanticType = TypeVar("PydanticType", bound=AirtableBaseModel)
 ViewType = TypeVar("ViewType", bound=str)
 FieldType = TypeVar("FieldType", bound=str)
 

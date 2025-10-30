@@ -5,10 +5,13 @@ from typing import Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel
-from pydantic.alias_generators import to_camel, to_pascal
+from pydantic.alias_generators import to_camel, to_pascal, to_snake
 from rich import print
 
 from .meta_types import FieldMetadata, FieldType, TableMetadata
+
+PROPERTY_NAME = "Property Name (snake_case)"
+MODEL_NAME = "Model Name (snake_case)"
 
 
 class WriteToFile(BaseModel):
@@ -229,34 +232,53 @@ def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
             print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
 
 
-def property_name_snake(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
-    """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
-
+def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     if use_custom and folder:
-        text = get_custom_property_name(field_or_table, folder)
+        text = get_custom_property_name(field_or_table, folder, key=custom_key)
         if text:
+            text = text.replace(" ", "_")
             return text
 
     text = field_or_table["name"]
 
     text = sanitize_property_name(text)
-    text = space_to_snake_case(text)
     text = sanitize_leading_trailing_characters(text)
     text = sanitize_reserved_names(text)
+    text = remove_extra_spaces(text)
+    text = text.replace(" ", "_")
 
     return text
 
 
-def property_name_camel(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name_snake(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+    """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
+    text = property_name(field_or_table, folder, use_custom, custom_key)
+    return to_snake(text)
+
+
+def property_name_camel(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    python_name = property_name_snake(field_or_table, folder, use_custom)
-    return to_camel(python_name)
+    text = property_name(field_or_table, folder, use_custom, custom_key)
+    return to_camel(text)
 
 
-def property_name_pascal(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name_pascal(
+    field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
+) -> str:
     """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    python_name = property_name_snake(field_or_table, folder, use_custom)
-    return to_pascal(python_name)
+    text = property_name(field_or_table, folder, use_custom, custom_key)
+    return to_pascal(text)
+
+
+def property_name_model(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+    """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
+    if use_custom and folder:
+        text = get_custom_property_name(field_or_table, folder, key=MODEL_NAME)
+        if text:
+            text = text.replace(" ", "_")
+            return to_pascal(text)
+
+    return property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "ORM"
 
 
 def sanitize_property_name(text: str) -> str:
@@ -311,13 +333,11 @@ def sanitize_property_name(text: str) -> str:
     return text
 
 
-def space_to_snake_case(text: str) -> str:
-    """Formats as snake_case"""
+def remove_extra_spaces(text: str) -> str:
+    """Removes extra spaces from the text"""
 
-    text = text.replace(" ", "_")
-    while "__" in text:
-        text = text.replace("__", "_")
-    text = text.lower()
+    while "  " in text:
+        text = text.replace("  ", " ")
 
     return text
 
@@ -325,9 +345,9 @@ def space_to_snake_case(text: str) -> str:
 def sanitize_leading_trailing_characters(text: str) -> str:
     """Sanitizes leading and trailing characters, to deal with characters that are not allowed and/or desired in property names"""
 
-    if text.startswith("_"):
+    if text.startswith(" ") or text.startswith("_"):
         text = text[1:]
-    if text.endswith("_"):
+    if text.endswith(" ") or text.endswith("_"):
         text = text[:-1]
     if text and text[0].isdigit():
         if text.startswith("1st"):
@@ -371,7 +391,7 @@ fields_dataframe: pd.DataFrame = None  # type: ignore
 tables_dataframe: pd.DataFrame = None  # type: ignore
 
 
-def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path) -> str | None:
+def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, key: str = "Property Name (snake_case)") -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
     is_table = "primaryFieldId" in field_or_table
@@ -386,10 +406,10 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, fold
 
         match = tables_dataframe[tables_dataframe["Table ID"] == field_or_table["id"]]
         if not match.empty:
-            if "Property Name (snake_case)" in match.columns:
-                custom_property_name = match.iloc[0]["Property Name (snake_case)"]
+            if key in match.columns:
+                custom_property_name = match.iloc[0][key]
                 if isinstance(custom_property_name, str) and custom_property_name.strip():
-                    name = space_to_snake_case(custom_property_name.strip())
+                    name = remove_extra_spaces(custom_property_name.strip())
                     if name:
                         return name
     else:
@@ -403,10 +423,10 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, fold
         id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
         match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]
         if not match.empty:
-            if "Property Name (snake_case)" in match.columns:
-                custom_property_name = match.iloc[0]["Property Name (snake_case)"]
+            if key in match.columns:
+                custom_property_name = match.iloc[0][key]
                 if isinstance(custom_property_name, str) and custom_property_name.strip():
-                    name = space_to_snake_case(custom_property_name.strip())
+                    name = remove_extra_spaces(custom_property_name.strip())
                     if name:
                         return name
 
