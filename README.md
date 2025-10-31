@@ -32,10 +32,7 @@ formula: str = AND(
   ContactsModel.f.last_name == "Smith",
   ContactsModel.f.birthday.after().years_ago(30),
   ContactsModel.f.birthday < "2019-04-01"
-  OR(
-	  ContactsModel.f.age < 10,
-	  ContactsModel.f.is_adult()
-  ),
+  (ContactsModel.f.age < 10 | ContactsModel.f.age == 12 | ContactsModel.f.age > 15),
   "{fld1234567890}='you can also put raw strings here'",
 )
 
