@@ -70,9 +70,18 @@ myAirtable optionally generates CSV files containing the names/ids of the tables
 ## Getting Started
 
 1. Clone the repo
+
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+
 3. Run `uv sync`
-4. Add a `.env` file with `AIRTABLE_API_KEY=your_airtable_api_key_here`
+
+4. Add a `.env` file like so:
+
+```
+AIRTABLE_API_KEY=your_airtable_api_key_here
+AIRTABLE_BASE_ID=app1234567890
+```
+
 5. Run `uv run main.py --help` to see all commands
 
 ## Notable Options
