@@ -1,129 +1,62 @@
 from datetime import datetime
-from typing import Iterable, Literal, Optional, overload
+from typing import Any, Optional, overload
 
 import dateparser
-from pyairtable.formulas import Formula
-from pydantic import BaseModel
-
-COMPARISON = Literal["=", "!=", ">", "<", ">=", "<="]
+from pyairtable import formulas as F  # noqa: N812
+from pyairtable.formulas import AND, NOT, OR, XOR
 
 
-# region LOGIC
-def AND(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
-    """AND(arg1, arg2, ...)"""
-    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
-    return f"AND({','.join(non_empty_args)})"
-
-
-def OR(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
-    """OR(arg1, arg2, ...)"""
-    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
-    return f"OR({','.join(non_empty_args)})"
-
-
-def XOR(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
-    """XOR(arg1, arg2, ...)"""
-    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
-    return f"XOR({','.join(non_empty_args)})"
-
-
-def NOT(*args: str | Formula | Iterable[Formula]) -> str:  # noqa: N802
-    """NOT(arg)"""
-    non_empty_args: list[str] = [str(arg) for arg in args if arg != ""]
-    return f"NOT({','.join(non_empty_args)})"
-
-
-def IF(condition: str) -> "THEN":  # noqa: N802
-    """IF(condition, valueIfTrue, valueIfFalse)"""
-    return THEN(condition=condition)
-
-
-class THEN(BaseModel):
-    condition: str
-
-    def THEN(self, value_if_true: str, string: bool = False) -> "ELSE":  # noqa: N802
-        return ELSE(condition=self.condition, true_value=value_if_true, is_true_string=string)
-
-
-class ELSE(THEN):
-    true_value: str
-    is_true_string: bool = False
-
-    def ELSE(self, value_if_false: str, string: bool = False) -> str:  # noqa: N802
-        true_val = f'"{self.true_value}"' if self.is_true_string else self.true_value
-        false_val = f'"{value_if_false}"' if string else value_if_false
-        return f"IF({self.condition}, {true_val}, {false_val})"
-
-
-# endregion
-
-
-# region HELPERS
 class ID:
     """Record ID formulas"""
 
     @staticmethod
-    def equals(id: str) -> str:
+    def equals(id: str) -> F.Formula:
         """RECORD_ID()='id'"""
-        return f"RECORD_ID()='{id}'"
+        return F.EQ(F.RECORD_ID(), id)
 
-    def __eq__(self, id: str) -> str:
+    def __eq__(self, id: str) -> F.Formula:
         return self.equals(id)
 
     @staticmethod
-    def in_list(ids: list[str]) -> str:
+    def in_list(ids: list[str]) -> F.Formula:
         if not ids:
-            return "FALSE()"
+            return F.FALSE()
         elif len(ids) == 1:
             return ID.equals(ids[0])
         else:
             return OR(*[ID.equals(id) for id in ids])
 
 
-class Field(BaseModel):
-    """Base class for all Airtable field types"""
+class Field(F.Field):
+    def __eq__(self, value: Any) -> F.Comparison:
+        return super().eq(value)
 
-    name: str
-    id: str = ""
-    name_to_id_map: dict[str, str] = {}
+    def __ne__(self, value: Any) -> F.Comparison:
+        return super().ne(value)
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.name:
-            raise ValueError("Field name cannot be empty.")
-        self.id = self.name_to_id_map.get(self.name) or self.name
-        self.name = self.name.replace("{", "").replace("}", "").replace("\n", "").replace("\t", "").replace("\r", "")
+    def __lt__(self, value: Any) -> F.Comparison:
+        return super().lt(value)
 
-    def is_empty(self) -> str:
+    def __le__(self, value: Any) -> F.Comparison:
+        return super().lte(value)
+
+    def __gt__(self, value: Any) -> F.Comparison:
+        return super().gt(value)
+
+    def __ge__(self, value: Any) -> F.Comparison:
+        return super().gte(value)
+
+    def empty(self) -> F.Formula:
         """{field}=BLANK()"""
-        return f"{{{self.id}}}=BLANK()"
+        return F.EQ(self, F.BLANK())
 
-    def is_not_empty(self) -> str:
+    def not_empty(self) -> F.Formula:
         """{field}"""
-        return f"{{{self.id}}}"
+        return self
 
 
-# endregion
-
-
-# region TEXT
 class TextField(Field):
     """String comparison formulas"""
-
-    def equals(self, value: str) -> str:
-        """{field}="value\" """
-        escaped_value = value.replace('"', '\\"')
-        return f'{{{self.id}}}="{escaped_value}"'
-
-    def __eq__(self, value: str) -> str:
-        return self.equals(value)
-
-    def not_equals(self, value: str) -> str:
-        """{field}!="value\" """
-        return f'{{{self.id}}}!="{value}"'
-
-    def __ne__(self, value: str) -> str:
-        return self.not_equals(value)
 
     def _find(
         self,
@@ -131,20 +64,24 @@ class TextField(Field):
         comparison: str,
         case_sensitive: bool = False,
         trim: bool = True,
-    ) -> str:
+    ) -> F.Formula:
         """case-insensitive"""
+        formula: str
+
         if case_sensitive:
             if trim:
-                return f'FIND(TRIM("{value}"), TRIM({{{self.id}}})){comparison}'
+                formula = str(F.FIND(F.TRIM(value), F.TRIM(self))) + comparison
             else:
-                return f'FIND("{value}", {{{self.id}}}){comparison}'
+                formula = str(F.FIND(value, self)) + comparison
         else:
             if trim:
-                return f'FIND(TRIM(LOWER("{value}")), TRIM(LOWER({{{self.id}}}))){comparison}'
+                formula = str(F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(self)))) + comparison
             else:
-                return f'FIND(LOWER("{value}"), LOWER({{{self.id}}})){comparison}'
+                formula = str(F.FIND(F.LOWER(value), F.LOWER(self))) + comparison
 
-    def contains(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+        return F.Formula(formula)
+
+    def contains(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field contains a substring
 
@@ -158,7 +95,7 @@ class TextField(Field):
         """
         return self._find(value, ">0", case_sensitive=case_sensitive, trim=trim)
 
-    def contains_any(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> str:
+    def contains_any(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field contains any of the substrings in the provided list.
 
@@ -172,7 +109,7 @@ class TextField(Field):
         """
         return OR(*[self.contains(value, case_sensitive=case_sensitive, trim=trim) for value in values])
 
-    def contains_all(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> str:
+    def contains_all(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field contains all of the substrings in the provided list.
 
@@ -186,7 +123,7 @@ class TextField(Field):
         """
         return AND(*[self.contains(value, case_sensitive=case_sensitive, trim=trim) for value in values])
 
-    def not_contains(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+    def not_contains(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field does not contain a substring
 
@@ -200,7 +137,7 @@ class TextField(Field):
         """
         return self._find(value, "=0", case_sensitive=case_sensitive, trim=trim)
 
-    def starts_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+    def starts_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if the field value starts with the specified substring.
 
@@ -214,7 +151,7 @@ class TextField(Field):
         """
         return self._find(value, "=1", case_sensitive=case_sensitive, trim=trim)
 
-    def not_starts_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+    def not_starts_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if the field value does not start with the specified substring.
 
@@ -234,19 +171,34 @@ class TextField(Field):
         comparison: str,
         case_sensitive: bool = False,
         trim: bool = True,
-    ) -> str:
+    ) -> F.Formula:
+        actual_index: F.Formula
+        field_length: F.Formula
+        value_length: F.Formula
+
         if case_sensitive:
             if trim:
-                return f'FIND(TRIM("{value}"), TRIM({{{self.id}}})) {comparison} LEN(TRIM({{{self.id}}})) - LEN(TRIM("{value}")) + 1'
+                actual_index = F.FIND(F.TRIM(value), F.TRIM(self))
+                field_length = F.LEN(F.TRIM(self))
+                value_length = F.LEN(F.TRIM(value))
             else:
-                return f'FIND("{value}", {{{self.id}}}) {comparison} LEN({{{self.id}}}) - LEN("{value}") + 1'
+                actual_index = F.FIND(value, self)
+                field_length = F.LEN(self)
+                value_length = F.LEN(value)
         else:
             if trim:
-                return f'FIND(TRIM(LOWER("{value}")), TRIM(LOWER({{{self.id}}}))) {comparison} LEN(TRIM(LOWER({{{self.id}}}))) - LEN(TRIM(LOWER("{value}"))) + 1'
+                actual_index = F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(self)))
+                field_length = F.LEN(F.TRIM(F.LOWER(self)))
+                value_length = F.LEN(F.TRIM(F.LOWER(value)))
             else:
-                return f'FIND(LOWER("{value}"), LOWER({{{self.id}}})) {comparison} LEN(LOWER({{{self.id}}})) - LEN(LOWER("{value}")) + 1'
+                actual_index = F.FIND(F.LOWER(value), F.LOWER(self))
+                field_length = F.LEN(F.LOWER(self))
+                value_length = F.LEN(F.LOWER(value))
 
-    def ends_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+        expected_index = F.Formula(f"{field_length} - {value_length} + 1")
+        return F.Formula(f"{actual_index} {comparison} {expected_index}")
+
+    def ends_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if the target string ends with the specified substring.
 
@@ -263,7 +215,7 @@ class TextField(Field):
         """
         return self._ends_with(value, "=", case_sensitive=case_sensitive, trim=trim)
 
-    def not_ends_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> str:
+    def not_ends_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if the field value does not end with the specified substring.
 
@@ -277,7 +229,7 @@ class TextField(Field):
         """
         return self._ends_with(value, "!=", case_sensitive=case_sensitive, trim=trim)
 
-    def regex_match(self, pattern: str) -> str:
+    def regex_match(self, pattern: str) -> F.Formula:
         """
         Tests field against a regular expression pattern.
 
@@ -287,129 +239,56 @@ class TextField(Field):
         Returns:
             str: An Airtable formula string using REGEX_MATCH with the field name and the provided pattern.
         """
-        return f'REGEX_MATCH({{{self.id}}}, "{pattern}")'
+        return F.REGEX_MATCH(self, pattern)
 
 
-# endregion
-
-
-# region NUMBER
 class NumberField(Field):
     """Number comparison formulas"""
 
-    def _compare(self, comparison: COMPARISON, value: int | float) -> str:
-        return f"{{{self.id}}}{comparison}{value}"
-
-    def equals(self, value: int | float) -> str:
-        """{field}=value"""
-        return self._compare("=", value)
-
-    def __eq__(self, value: int | float) -> str:
-        """Override equality operator for easier testing"""
-        return self.equals(value)
-
-    def not_equals(self, value: int | float) -> str:
-        """{field}!=value"""
-        return self._compare("!=", value)
-
-    def __ne__(self, value: int | float) -> str:
-        """Override not-equal operator for easier testing"""
-        return self.not_equals(value)
-
-    def is_greater_than(self, value: int | float) -> str:
-        """{field}>value"""
-        return self._compare(">", value)
-
-    def __gt__(self, value: int | float) -> str:
-        """Override greater-than operator for easier testing"""
-        return self.is_greater_than(value)
-
-    def is_less_than(self, value: int | float) -> str:
-        """{field}<value"""
-        return self._compare("<", value)
-
-    def __lt__(self, value: int | float) -> str:
-        """Override less-than operator for easier testing"""
-        return self.is_less_than(value)
-
-    def is_greater_than_or_equals(self, value: int | float) -> str:
-        """{field}>value"""
-        return self._compare(">=", value)
-
-    def __ge__(self, value: int | float) -> str:
-        """Override greater-than-or-equal operator for easier testing"""
-        return self.is_greater_than_or_equals(value)
-
-    def is_less_than_or_equals(self, value: int | float) -> str:
-        """{field}<value"""
-        return self._compare("<=", value)
-
-    def __le__(self, value: int | float) -> str:
-        """Override less-than-or-equal operator for easier testing"""
-        return self.is_less_than_or_equals(value)
-
-    def is_between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> str:
+    def between(self, min_value: int | float, max_value: int | float, inclusive: bool = True) -> F.Formula:
         """AND({field}>=min_value, {field}<=max_value)"""
-        return (
-            AND(
-                self.is_greater_than_or_equals(min_value),
-                self.less_than_or_equals(max_value),
+        if inclusive:
+            return AND(
+                self.gte(min_value),
+                self.lte(max_value),
             )
-            if inclusive
-            else AND(
-                self.is_greater_than(min_value),
-                self.is_less_than(max_value),
+        else:
+            return AND(
+                self.gt(min_value),
+                self.lt(max_value),
             )
-        )
 
 
-# endregion
-
-
-# region BOOLEAN
 class BooleanField(Field):
     """Boolean comparison formulas"""
 
-    def equals(self, value: bool) -> str:
+    def eq(self, value: bool) -> F.Formula:
         """{field}=TRUE()|FALSE()"""
-        return f"{{{self.id}}}={'TRUE()' if value else 'FALSE()'}"
+        return F.EQ(self, F.TRUE() if value else F.FALSE())
 
-    def is_true(self) -> str:
+    def true(self) -> F.Formula:
         """{field}=TRUE()"""
-        return f"{{{self.id}}}=TRUE()"
+        return F.EQ(self, F.TRUE())
 
-    def is_false(self) -> str:
+    def false(self) -> F.Formula:
         """{field}=FALSE()"""
-        return f"{{{self.id}}}=FALSE()"
+        return F.EQ(self, F.FALSE())
 
-    def __call__(self) -> str:
-        return self.is_true()
+    def __call__(self) -> F.Formula:
+        return self.true()
+
+    def __invert__(self):
+        return self.false()
 
 
-# endregion
-
-
-# region ATTACHMENTS
 class AttachmentsField(Field):
     """Attachment comparison formulas"""
 
-    def is_not_empty(self) -> str:
-        """LEN({field})>0"""
-        return f"LEN({{{self.id}}})>0"
-
-    def is_empty(self) -> str:
-        """LEN({field})=0"""
-        return f"LEN({{{self.id}}})=0"
-
-    def count_is(self, count: int) -> str:
+    def count(self, count: int) -> F.Formula:
         """LEN({field})=count"""
-        return f"LEN({{{self.id}}})={count}"
+        return F.EQ(F.LEN(self), count)
 
 
-# endregion
-
-
-# region DATE
 def _parse_date(date: datetime | str) -> datetime:
     if isinstance(date, datetime):
         parsed_date = date
@@ -422,48 +301,54 @@ def _parse_date(date: datetime | str) -> datetime:
 
 
 class DateComparison(Field):
-    compare: COMPARISON
+    compare: str
 
-    def _date(self, date: str | datetime) -> str:
-        parsed_date = _parse_date(date)
-        return f"DATETIME_PARSE('{parsed_date}'){self.compare}DATETIME_PARSE({{{self.id}}})"
+    def __init__(self, name: str, compare: str) -> None:
+        super().__init__(name)
+        self.compare = compare
 
-    def _ago(self, unit: str, value: int) -> str:
-        return f"DATETIME_DIFF(NOW(), {{{self.id}}}, '{unit}'){self.compare}{value}"
+    def _date(self, date: datetime) -> F.Formula:
+        left_side = F.DATETIME_PARSE(date.isoformat())
+        right_side = F.DATETIME_PARSE(self)
+        return F.Formula(f"{left_side}{self.compare}{right_side}")
 
-    def milliseconds_ago(self, milliseconds: int) -> str:
+    def _ago(self, unit: str, value: int) -> F.Formula:
+        time_ago = F.DATETIME_DIFF(F.NOW(), F.DATETIME_PARSE(self), unit)
+        return F.Formula(f"{time_ago}{self.compare}{value}")
+
+    def milliseconds_ago(self, milliseconds: int) -> F.Formula:
         """Compare to time ago in milliseconds"""
         return self._ago("milliseconds", milliseconds)
 
-    def seconds_ago(self, seconds: int) -> str:
+    def seconds_ago(self, seconds: int) -> F.Formula:
         """Compare to time ago in seconds"""
         return self._ago("seconds", seconds)
 
-    def minutes_ago(self, minutes: int) -> str:
+    def minutes_ago(self, minutes: int) -> F.Formula:
         """Compare to time ago in minutes"""
         return self._ago("minutes", minutes)
 
-    def hours_ago(self, hours: int) -> str:
+    def hours_ago(self, hours: int) -> F.Formula:
         """Compare to time ago in hours"""
         return self._ago("hours", hours)
 
-    def days_ago(self, days: int) -> str:
+    def days_ago(self, days: int) -> F.Formula:
         """Compare to time ago in days"""
         return self._ago("days", days)
 
-    def weeks_ago(self, weeks: int) -> str:
+    def weeks_ago(self, weeks: int) -> F.Formula:
         """Compare to time ago in weeks"""
         return self._ago("weeks", weeks)
 
-    def months_ago(self, months: int) -> str:
+    def months_ago(self, months: int) -> F.Formula:
         """Compare to time ago in months"""
         return self._ago("months", months)
 
-    def quarters_ago(self, quarters: int) -> str:
+    def quarters_ago(self, quarters: int) -> F.Formula:
         """Compare to time ago in quarters"""
         return self._ago("quarters", quarters)
 
-    def years_ago(self, years: int) -> str:
+    def years_ago(self, years: int) -> F.Formula:
         """Compare to time ago in years"""
         return self._ago("years", years)
 
@@ -472,11 +357,11 @@ class DateField(Field):
     """DateTime comparison formulas"""
 
     @overload
-    def is_on(self) -> DateComparison: ...
+    def on(self) -> DateComparison: ...
     @overload
-    def is_on(self, date: str | datetime) -> str: ...
+    def on(self, date: str | datetime) -> F.Formula: ...
 
-    def is_on(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def on(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the object's date matches the specified date.
 
@@ -488,22 +373,22 @@ class DateField(Field):
             DateComparison | str: A DateComparison object set to compare equality with the specified date,
                 or the DateComparison object itself if no date is provided.
         """
-        date_comparison = DateComparison(name=self.id, compare="=")
+        date_comparison = DateComparison(name=self.value, compare="=")
         if date is None:
             return date_comparison
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __eq__(self, date: str | datetime) -> str:
-        return self.is_on(date)
+    def __eq__(self, date: str | datetime) -> F.Formula:
+        return self.on(date)
 
     @overload
-    def is_on_or_after(self) -> DateComparison: ...
+    def on_or_after(self) -> DateComparison: ...
     @overload
-    def is_on_or_after(self, date: str | datetime) -> str: ...
+    def on_or_after(self, date: str | datetime) -> F.Formula: ...
 
-    def is_on_or_after(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def on_or_after(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is on or after the specified date.
 
@@ -514,7 +399,7 @@ class DateField(Field):
         Returns:
             DateComparison | str: A DateComparison object if no date is provided, otherwise the result of the comparison as a string.
         """
-        date_comparison = DateComparison(name=self.id, compare=">=")
+        date_comparison = DateComparison(name=self.value, compare=">=")
         if date is None:
             return date_comparison
 
@@ -522,14 +407,14 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __ge__(self, date: str | datetime) -> str:
-        return self.is_on_or_after(date)
+        return self.on_or_after(date)
 
     @overload
-    def is_on_or_before(self) -> DateComparison: ...
+    def on_or_before(self) -> DateComparison: ...
     @overload
-    def is_on_or_before(self, date: str | datetime) -> str: ...
+    def on_or_before(self, date: str | datetime) -> F.Formula: ...
 
-    def is_on_or_before(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def on_or_before(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is on or before the specified date.
 
@@ -541,7 +426,7 @@ class DateField(Field):
             DateComparison | str: If no date is provided, returns a DateComparison object configured for 'on or before' comparison.
                 If a date is provided, returns the result of the comparison as a string.
         """
-        date_comparison = DateComparison(name=self.id, compare="<=")
+        date_comparison = DateComparison(name=self.value, compare="<=")
         if date is None:
             return date_comparison
 
@@ -549,14 +434,14 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __le__(self, date: str | datetime) -> str:
-        return self.is_on_or_before(date)
+        return self.on_or_before(date)
 
     @overload
-    def is_after(self) -> DateComparison: ...
+    def after(self) -> DateComparison: ...
     @overload
-    def is_after(self, date: str | datetime) -> str: ...
+    def after(self, date: str | datetime) -> F.Formula: ...
 
-    def is_after(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def after(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is after the specified date.
 
@@ -568,22 +453,22 @@ class DateField(Field):
             DateComparison | str: A DateComparison object if no date is provided, or the result of the comparison as a string.
 
         """
-        date_comparison = DateComparison(name=self.id, compare="<")
+        date_comparison = DateComparison(name=self.value, compare="<")
         if date is None:
             return date_comparison
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __lt__(self, date: str | datetime) -> str:
-        return self.is_after(date)
+    def __lt__(self, date: str | datetime) -> F.Formula:
+        return self.after(date)
 
     @overload
-    def is_before(self) -> DateComparison: ...
+    def before(self) -> DateComparison: ...
     @overload
-    def is_before(self, date: str | datetime) -> str: ...
+    def before(self, date: str | datetime) -> F.Formula: ...
 
-    def is_before(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def before(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is before the specified date.
 
@@ -594,22 +479,22 @@ class DateField(Field):
         Returns:
             DateComparison | str: A DateComparison object if no date is provided, otherwise the result of the comparison.
         """
-        date_comparison = DateComparison(name=self.id, compare=">")
+        date_comparison = DateComparison(name=self.value, compare=">")
         if date is None:
             return date_comparison
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __gt__(self, date: str | datetime) -> str:
-        return self.is_before(date)
+    def __gt__(self, date: str | datetime) -> F.Formula:
+        return self.before(date)
 
     @overload
-    def is_not_on(self) -> DateComparison: ...
+    def not_on(self) -> DateComparison: ...
     @overload
-    def is_not_on(self, date: str | datetime) -> str: ...
+    def not_on(self, date: str | datetime) -> F.Formula: ...
 
-    def is_not_on(self, date: Optional[str | datetime] = None) -> DateComparison | str:
+    def not_on(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
         """
         Checks if the field's date is not equal to the specified date.
 
@@ -621,17 +506,17 @@ class DateField(Field):
             DateComparison | str: A DateComparison object with the '!=' operator if no date is provided,
                 otherwise returns the result of comparing the field's date to the parsed date.
         """
-        date_comparison = DateComparison(name=self.id, compare="!=")
+        date_comparison = DateComparison(name=self.value, compare="!=")
         if date is None:
             return date_comparison
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ne__(self, date: str | datetime) -> str:
-        return self.is_not_on(date)
+    def __ne__(self, date: str | datetime) -> F.Formula:
+        return self.not_on(date)
 
-    def is_between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> str:
+    def between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> F.Formula:
         """
         Check if the date falls between two given dates.
 
@@ -650,17 +535,27 @@ class DateField(Field):
         """
         parsed_start_date: datetime = _parse_date(start_date)
         parsed_end_date: datetime = _parse_date(end_date)
-        return (
-            AND(
-                self.is_on_or_after(parsed_start_date),
-                self.is_on_or_before(parsed_end_date),
+        if inclusive:
+            return AND(
+                self.gte(parsed_start_date),
+                self.lte(parsed_end_date),
             )
-            if inclusive
-            else AND(
-                self.is_after(parsed_start_date),
-                self.is_before(parsed_end_date),
+        else:
+            return AND(
+                self.gt(parsed_start_date),
+                self.lt(parsed_end_date),
             )
-        )
 
 
-# endregion
+__all__ = [
+    "AND",
+    "OR",
+    "XOR",
+    "NOT",
+    "ID",
+    "TextField",
+    "NumberField",
+    "BooleanField",
+    "AttachmentsField",
+    "DateField",
+]

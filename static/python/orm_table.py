@@ -2,6 +2,7 @@ from typing import Generic, Optional, overload
 
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
+from pyairtable.formulas import Formula
 
 from .formula import ID
 from .helpers import validate_keys
@@ -84,7 +85,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     @overload
     def get(
         self,
-        formula: str = "",
+        formula: Optional[Formula] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = True,
         page_size: int = 100,
@@ -110,7 +111,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record_id: str = "",
         record_ids: list[str] = [],
-        formula: str = "",
+        formula: Optional[Formula] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = True,
         page_size: int = 100,
@@ -148,7 +149,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             record_dicts: list[RecordDict] = self._table.all(
-                formula=formula,
+                formula=formula.flatten() if formula else None,
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
@@ -187,8 +188,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         else:
             if not record_s:
                 raise ValueError("Record to create cannot be None.")
-            record_s.save() # type: ignore
-            new_record = self.get(record_id=record_s.id) # type: ignore
+            record_s.save()  # type: ignore
+            new_record = self.get(record_id=record_s.id)  # type: ignore
             return new_record
 
     @overload
@@ -219,8 +220,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         else:
             if not record_s:
                 raise ValueError("Record cannot be None.")
-            record_s.save() # type: ignore
-            updated_record = self.get(record_id=record_s.id) # type: ignore
+            record_s.save()  # type: ignore
+            updated_record = self.get(record_id=record_s.id)  # type: ignore
             return updated_record
 
     @overload

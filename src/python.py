@@ -434,7 +434,6 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=folder / "dynamic" / "formulas" / f"{property_name_snake(table, folder)}.py") as write:
             # Imports
-            write.line(f"from ..types import {property_name_pascal(table, folder)}FieldNameIdMapping")
             write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, ID")
             write.line_empty()
 
@@ -445,10 +444,7 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
             for field in table["fields"]:
                 property_name = property_name_snake(field, folder)
                 formula_class = formula_type(table["name"], field)
-                class_name = property_name_pascal(table, folder)
-                write.line_indented(
-                    f"{property_name}: {formula_class} = {formula_class}(name='{field['id']}',name_to_id_map={class_name}FieldNameIdMapping)"
-                )
+                write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field['id']}')")
                 write.property_docstring(field, table)
             write.line_empty()
             write.endregion()
