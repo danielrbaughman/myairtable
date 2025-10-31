@@ -41,7 +41,7 @@ Airtable().contacts.get(formula=formula)
 Finally, myAirtable generates custom lightweight wrapper classes, which expose pyAirtable's CRUD methods with strongly-typed kwargs, and provide easy access to the tables through a simple interface.
 
 ```python
-from myairtable_output import Airtable, ContactsModel
+from myairtable_output import Airtable, ContactsModel, ContactsRecordDict
 
 at = Airtable()
 
