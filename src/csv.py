@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pandas as pd
+from pydantic.alias_generators import to_snake
 
-from src.helpers import MODEL_NAME, PROPERTY_NAME, property_name_snake, sanitize_string
+from src.helpers import MODEL_NAME, PROPERTY_NAME, property_name_model, property_name_snake, sanitize_string
 from src.meta_types import BaseMetadata
 from src.python import python_type
 from src.typescript import typescript_type
@@ -20,7 +21,7 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
                 "Table ID": table["id"],
                 "Table Name": table["name"],
                 PROPERTY_NAME: property_name_snake(table, folder, use_custom=use_custom),
-                MODEL_NAME: property_name_snake(table, folder, use_custom=use_custom, custom_key=MODEL_NAME),
+                MODEL_NAME: to_snake(property_name_model(table, folder, use_custom=use_custom)),
             }
         )
 

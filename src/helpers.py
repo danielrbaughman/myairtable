@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel
-from pydantic.alias_generators import to_camel, to_pascal, to_snake
+from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
 from .meta_types import FieldMetadata, FieldType, TableMetadata
@@ -233,6 +233,8 @@ def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
 
 
 def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+    """Converts the field or table name to a sanitized property name in snake_case."""
+
     if use_custom and folder:
         text = get_custom_property_name(field_or_table, folder, key=custom_key)
         if text:
@@ -242,10 +244,10 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, u
     text = field_or_table["name"]
 
     text = sanitize_property_name(text)
-    text = sanitize_leading_trailing_characters(text)
     text = remove_extra_spaces(text)
     text = text.replace(" ", "_")
-    text = to_snake(text)
+    text = text.lower()
+    text = sanitize_leading_trailing_characters(text)
     text = sanitize_reserved_names(text)
 
     return text
@@ -254,7 +256,7 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, u
 def property_name_snake(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
     text = property_name(field_or_table, folder, use_custom, custom_key)
-    return to_snake(text)
+    return text
 
 
 def property_name_camel(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
@@ -279,7 +281,9 @@ def property_name_model(field_or_table: FieldMetadata | TableMetadata, folder: P
             text = text.replace(" ", "_")
             return to_pascal(text)
 
-    return property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "Model"
+    name = property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "Model"
+    print(name)
+    return name
 
 
 def sanitize_property_name(text: str) -> str:
