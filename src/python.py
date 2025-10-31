@@ -652,6 +652,7 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
             #     else:
             #         py_type = "float"
             # else:
+            # TODO: you'd think precision == 0 would mean int, but I've run into issues with that. Need to investigate more.
             py_type = "float"
         case "multipleRecordLinks":
             py_type = "list[RecordId]"
@@ -687,8 +688,6 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
-    # I don't love this, but it works. Pydantic throws validation errors without it.
-    # - this might have something to do with select fields... Those can be null
     if "list" not in py_type:
         if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
             py_type = f"list[{py_type} | None] | {py_type}"

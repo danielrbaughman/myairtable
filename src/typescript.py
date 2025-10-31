@@ -464,8 +464,6 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
-    # I don't love this, but it works. Pydantic throws validation errors without it.
-    # - this might have something to do with select fields... Those can be null
     if not ts_type.endswith("[]") and ts_type not in ("number", "boolean"):  # TODO - why is this not allowed in Airtable JS library?
         if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
             ts_type = f"{ts_type}[]"
