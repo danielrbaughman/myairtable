@@ -28,8 +28,7 @@ myAirtable also generates formula builders, for use when filtering by formula. p
 from myairtable_output import Airtable, AND, OR, ContactsModel
 
 formula: str = AND(
-  ContactsModel.f.name.contains("Bob"),
-  ContactsModel.f.last_name == "Smith",
+  (ContactsModel.f.first_name.contains("Bob") & ContactsModel.f.last_name == "Smith"),
   ContactsModel.f.birthday.after().years_ago(30),
   ContactsModel.f.birthday < "2019-04-01"
   (ContactsModel.f.age < 10 | ContactsModel.f.age == 12 | ContactsModel.f.age > 15),
