@@ -52,7 +52,7 @@ contact.save() # pyAirtable's ORM models have handy functions like .save()
 at.contacts.update(contact) # or you can use myAirtable's wrapper if you prefer that syntax
 
 # table.get() method has kwargs for most of pyAirtable's options, which are otherwise less clear. View and Fields kwargs are typed.
-contacts: list[ContactsORM] = at.contacts.get(view="Family & Friends", fields=["Name", "Age"])
+contacts: list[ContactsModel] = at.contacts.get(view="Family & Friends", fields=["Name", "Age"])
 for contact in contacts
 	contact.age = contact.age + 1
   contact.save()
