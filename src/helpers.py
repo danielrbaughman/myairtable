@@ -145,19 +145,31 @@ class WriteToTypeScriptFile(WriteToFile):
         self.line_empty()
 
     def dict_class(
-        self, name: str, pairs: list[tuple[str, str]], first_type: str = "string", second_type: str = "string", is_value_string: bool = False
+        self,
+        name: str,
+        pairs: list[tuple[str, str]],
+        first_type: str = "string",
+        second_type: str = "string",
+        is_key_string: bool = False,
+        is_value_string: bool = False,
     ):
         self.line(f"export const {name}: Record<{first_type}, {second_type}> = {{")
         for k, v in pairs:
-            self.dict_row(k, v, is_value_string)
+            self.dict_row(k, v, is_key_string, is_value_string)
         self.line("}")
         self.line_empty()
 
-    def dict_row(self, key: str, value: str, is_value_string: bool = False, optional: bool = False):
-        if is_value_string:
-            self.line_indented(f'"{key}"{"?" if optional else ""}: "{value}",')
+    def dict_row(self, key: str, value: str, is_key_string: bool = False, is_value_string: bool = False, optional: bool = False):
+        if is_key_string:
+            if is_value_string:
+                self.line_indented(f'"{key}"{"?" if optional else ""}: "{value}",')
+            else:
+                self.line_indented(f'"{key}"{"?" if optional else ""}: {value},')
         else:
-            self.line_indented(f'"{key}"{"?" if optional else ""}: {value},')
+            if is_value_string:
+                self.line_indented(f'{key}{"?" if optional else ""}: "{value}",')
+            else:
+                self.line_indented(f"{key}{'?' if optional else ''}: {value},")
 
     def property_row(self, name: str, type: str, is_name_string: bool = False, optional: bool = False):
         if is_name_string:

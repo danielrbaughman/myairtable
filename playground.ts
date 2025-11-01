@@ -1,30 +1,30 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-import { TeamPayTypeOptions, TeamPayTypeOption } from "./output";
+import { TeamPayTypeOption, TeamZodType, BoxFieldPropertyIdMapping, BoxFieldPropertyTypeMapping } from "./output";
 import { AirtableTs, Table } from "airtable-ts";
-import * as z from "zod";
+// import * as z from "zod";
 
 const program = new Command();
 program.action(async () => {
-	const teamsZod = z.object({
-		id: z.string(),
-		name: z.string().optional(),
-		email: z.email().or(z.literal("")).optional(),
-		payType: z.enum(TeamPayTypeOptions).or(z.literal("")).optional(),
-	});
+	// const teamsZod = z.object({
+	// 	id: z.string(),
+	// 	name: z.string().optional(),
+	// 	email: z.email().or(z.literal("")).optional(),
+	// 	payType: z.enum(TeamPayTypeOptions).or(z.literal("")).optional(),
+	// });
 
-	type TeamsRecord = z.infer<typeof teamsZod>;
+	// type TeamsRecord = z.infer<typeof teamsZod>;
 
-	const teamFieldNames = { name: "string", email: "string", payType: "string" } as const;
-	const teamFieldIds = { name: "flddlHwEkZPUc18zB", email: "fld0FDjwBjaSaFAn5", payType: "fldOCHqS5ipKMNJyk" } as const;
+	// const teamFieldNames = { name: "string", email: "string", payType: "string" } as const;
+	// const teamFieldIds = { name: "flddlHwEkZPUc18zB", email: "fld0FDjwBjaSaFAn5", payType: "fldOCHqS5ipKMNJyk" } as const;
 
-	const team: Table<TeamsRecord> = {
+	const team: Table<TeamZodType> = {
 		name: "Team",
 		baseId: process.env.AIRTABLE_BASE_ID || "",
 		tableId: "tbltyutRGeqeflNU5",
-		schema: teamFieldNames,
-		mappings: teamFieldIds,
+		schema: BoxFieldPropertyTypeMapping,
+		mappings: BoxFieldPropertyIdMapping,
 	};
 
 	class Model {
@@ -40,7 +40,7 @@ program.action(async () => {
 		private _email?: string;
 		private _payType?: TeamPayTypeOption | "";
 
-		constructor(data: TeamsRecord) {
+		constructor(data: TeamZodType) {
 			super(data.id);
 			this._name = data.name;
 			this._email = data.email;
