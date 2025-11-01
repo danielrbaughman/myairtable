@@ -7,12 +7,6 @@ import * as z from "zod";
 
 const program = new Command();
 program.action(async () => {
-	const apiKey = process.env.AIRTABLE_API_KEY;
-
-	const db = new AirtableTs({
-		apiKey: apiKey,
-	});
-
 	const teamsZod = z.object({
 		id: z.string(),
 		name: z.string().optional(),
@@ -98,6 +92,12 @@ program.action(async () => {
 			return parsed.success;
 		}
 	}
+
+	const apiKey = process.env.AIRTABLE_API_KEY;
+
+	const db = new AirtableTs({
+		apiKey: apiKey,
+	});
 
 	const teamMembers: TeamsRecord[] = await db.scan(team);
 	console.log("Team Members:", teamMembers.length);

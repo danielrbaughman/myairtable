@@ -11,7 +11,7 @@ from .helpers import (
     involves_lookup_field,
     involves_rollup_field,
     is_calculated_field,
-    # is_computed_field,
+    is_computed_field,
     is_valid_field,
     options_name,
     property_name_camel,
@@ -34,7 +34,7 @@ def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
             all_fields[field["id"]] = field
             options = get_select_options(field)
             if len(options) > 0:
-                select_options[field["id"]] = f"{options_name(property_name_camel(table, folder), property_name_camel(field, folder))}"
+                select_options[field["id"]] = f"{options_name(property_name_pascal(table, folder), property_name_pascal(field, folder))}"
         detect_duplicate_property_names(table, folder)
 
     dynamic_folder = folder / "dynamic"
@@ -97,7 +97,6 @@ def write_types(metadata: BaseMetadata, folder: Path):
             write.endregion()
             write.line_empty()
 
-            write.region("FIELD OPTIONS")
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
@@ -106,95 +105,91 @@ def write_types(metadata: BaseMetadata, folder: Path):
                         options,
                         f"Select options for `{sanitize_string(field['name'])}`",
                     )
-            write.endregion()
             write.line_empty()
 
-            # field_names = [sanitize_string(field["name"]) for field in table["fields"]]
-            # field_ids = [field["id"] for field in table["fields"]]
-            # property_names = [property_name_camel(field, folder) for field in table["fields"]]
+            field_names = [sanitize_string(field["name"]) for field in table["fields"]]
+            field_ids = [field["id"] for field in table["fields"]]
+            property_names = [property_name_camel(field, folder) for field in table["fields"]]
 
-            # write.region(upper_case(table["name"]))
+            write.types(f"{property_name_pascal(table, folder)}Field", field_names, f"Field names for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
 
-            # write.types(f"{property_name_camel(table, folder)}Field", field_names, f"Field names for `{table['name']}`")
-            # write.types(f"{property_name_camel(table, folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
-            # write.types(f"{property_name_camel(table, folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
+            write.docstring(f"Calculated fields for `{table['name']}`")
+            write.str_list(
+                f"{property_name_pascal(table, folder)}CalculatedFields",
+                [sanitize_string(field["name"]) for field in table["fields"] if is_computed_field(field)],
+            )
+            write.docstring(f"Calculated fields for `{table['name']}`")
+            write.str_list(
+                f"{property_name_pascal(table, folder)}CalculatedFieldIds",
+                [field["id"] for field in table["fields"] if is_computed_field(field)],
+            )
+            write.line_empty()
 
-            # write.docstring(f"Calculated fields for `{table['name']}`")
-            # write.str_list(
-            #     f"{property_name_camel(table, folder)}CalculatedFields",
-            #     [sanitize_string(field["name"]) for field in table["fields"] if is_computed_field(field)],
-            # )
-            # write.docstring(f"Calculated fields for `{table['name']}`")
-            # write.str_list(
-            #     f"{property_name_camel(table, folder)}CalculatedFieldIds",
-            #     [field["id"] for field in table["fields"] if is_computed_field(field)],
-            # )
-            # write.line_empty()
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}FieldNameIdMapping",
+                [(sanitize_string(field["name"]), field["id"]) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, folder)}Field",
+                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                is_value_string=True,
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}FieldIdNameMapping",
+                [(field["id"], sanitize_string(field["name"])) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, folder)}FieldId",
+                second_type=f"{property_name_pascal(table, folder)}Field",
+                is_value_string=True,
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}FieldIdPropertyMapping",
+                [(field["id"], property_name_camel(field, folder)) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, folder)}FieldId",
+                second_type=f"{property_name_pascal(table, folder)}FieldProperty",
+                is_value_string=True,
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}FieldPropertyIdMapping",
+                [(property_name_camel(field, folder), field["id"]) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, folder)}FieldProperty",
+                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                is_value_string=True,
+            )
 
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}FieldNameIdMapping",
-            #     [(sanitize_string(field["name"]), field["id"]) for field in table["fields"]],
-            #     first_type=f"{property_name_camel(table, folder)}Field",
-            #     second_type=f"{property_name_camel(table, folder)}FieldId",
-            #     is_value_string=True,
-            # )
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}FieldIdNameMapping",
-            #     [(field["id"], sanitize_string(field["name"])) for field in table["fields"]],
-            #     first_type=f"{property_name_camel(table, folder)}FieldId",
-            #     second_type=f"{property_name_camel(table, folder)}Field",
-            #     is_value_string=True,
-            # )
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}FieldIdPropertyMapping",
-            #     [(field["id"], property_name_camel(field, folder)) for field in table["fields"]],
-            #     first_type=f"{property_name_camel(table, folder)}FieldId",
-            #     second_type=f"{property_name_camel(table, folder)}FieldProperty",
-            #     is_value_string=True,
-            # )
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}FieldPropertyIdMapping",
-            #     [(property_name_camel(field, folder), field["id"]) for field in table["fields"]],
-            #     first_type=f"{property_name_camel(table, folder)}FieldProperty",
-            #     second_type=f"{property_name_camel(table, folder)}FieldId",
-            #     is_value_string=True,
-            # )
+            write.line(f"export interface {property_name_pascal(table, folder)}FieldSetIds extends FieldSet {{")
+            for field in table["fields"]:
+                ts_type = typescript_type(table["name"], field, warn=True)
+                write.property_row(field["id"], ts_type, optional=True)
+            write.line("}")
+            write.line_empty()
+            write.line(f"export interface {property_name_pascal(table, folder)}FieldSet extends FieldSet {{")
+            for field in table["fields"]:
+                ts_type = typescript_type(table["name"], field, warn=True)
+                name = sanitize_string(field["name"])
+                write.property_row(name, ts_type, is_name_string=True, optional=True)
+            write.line("}")
+            write.line_empty()
+            write.line_empty()
 
-            # write.line(f"export interface {property_name_camel(table, folder)}FieldSetIds extends FieldSet {{")
-            # for field in table["fields"]:
-            #     write.property_row(field["id"], typescript_type(table["name"], field, warn=True), optional=True)
-            # write.line("}")
-            # write.line_empty()
-            # write.line(f"export interface {property_name_camel(table, folder)}FieldSet extends FieldSet {{")
-            # for field in table["fields"]:
-            #     write.property_row(
-            #         sanitize_string(field["name"]), typescript_type(table["name"], field, warn=True), is_name_string=True, optional=True
-            #     )
-            # write.line("}")
-            # write.line_empty()
-            # write.line_empty()
-
-            # views = table["views"]
-            # view_names: list[str] = [sanitize_string(view["name"]) for view in views]
-            # view_ids: list[str] = [view["id"] for view in views]
-            # write.types(f"{property_name_camel(table, folder)}View", view_names, f"View names for `{table['name']}`")
-            # write.types(f"{property_name_camel(table, folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}ViewNameIdMapping",
-            #     [(sanitize_string(view["name"]), view["id"]) for view in table["views"]],
-            #     first_type=f"{property_name_camel(table, folder)}View",
-            #     second_type=f"{property_name_camel(table, folder)}ViewId",
-            #     is_value_string=True,
-            # )
-            # write.dict_class(
-            #     f"{property_name_camel(table, folder)}ViewIdNameMapping",
-            #     [(view["id"], sanitize_string(view["name"])) for view in table["views"]],
-            #     first_type=f"{property_name_camel(table, folder)}ViewId",
-            #     second_type=f"{property_name_camel(table, folder)}View",
-            #     is_value_string=True,
-            # )
-
-            # write.endregion()
+            views = table["views"]
+            view_names: list[str] = [sanitize_string(view["name"]) for view in views]
+            view_ids: list[str] = [view["id"] for view in views]
+            write.types(f"{property_name_pascal(table, folder)}View", view_names, f"View names for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}ViewNameIdMapping",
+                [(sanitize_string(view["name"]), view["id"]) for view in table["views"]],
+                first_type=f"{property_name_pascal(table, folder)}View",
+                second_type=f"{property_name_pascal(table, folder)}ViewId",
+                is_value_string=True,
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, folder)}ViewIdNameMapping",
+                [(view["id"], sanitize_string(view["name"])) for view in table["views"]],
+                first_type=f"{property_name_pascal(table, folder)}ViewId",
+                second_type=f"{property_name_pascal(table, folder)}View",
+                is_value_string=True,
+            )
 
     with WriteToTypeScriptFile(path=folder / "dynamic" / "types" / "index.ts") as write:
         write.line('export * from "./_tables";')
