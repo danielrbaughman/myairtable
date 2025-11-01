@@ -1,30 +1,20 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-import { TeamPayTypeOption, TeamZodType, BoxFieldPropertyIdMapping, BoxFieldPropertyTypeMapping } from "./output";
+import { TeamPayTypeOption, TeamZodType, TeamRecord, TeamFieldPropertyIdMapping, TeamZodSchema } from "./output";
+import { TeamFieldPropertyTypeMapping } from "./output/dynamic/types/team";
 import { AirtableTs, Table } from "airtable-ts";
-// import * as z from "zod";
+
 
 const program = new Command();
 program.action(async () => {
-	// const teamsZod = z.object({
-	// 	id: z.string(),
-	// 	name: z.string().optional(),
-	// 	email: z.email().or(z.literal("")).optional(),
-	// 	payType: z.enum(TeamPayTypeOptions).or(z.literal("")).optional(),
-	// });
-
-	// type TeamsRecord = z.infer<typeof teamsZod>;
-
-	// const teamFieldNames = { name: "string", email: "string", payType: "string" } as const;
-	// const teamFieldIds = { name: "flddlHwEkZPUc18zB", email: "fld0FDjwBjaSaFAn5", payType: "fldOCHqS5ipKMNJyk" } as const;
-
-	const team: Table<TeamZodType> = {
+	// console.log("TeamFieldPropertyIdMapping", TeamFieldPropertyIdMapping);
+	const team: Table<TeamRecord> = {
 		name: "Team",
 		baseId: process.env.AIRTABLE_BASE_ID || "",
 		tableId: "tbltyutRGeqeflNU5",
-		schema: BoxFieldPropertyTypeMapping,
-		mappings: BoxFieldPropertyIdMapping,
+		schema: TeamFieldPropertyTypeMapping,
+		mappings: TeamFieldPropertyIdMapping,
 	};
 
 	class Model {
@@ -38,7 +28,7 @@ program.action(async () => {
 	class TeamsModel extends Model {
 		private _name?: string;
 		private _email?: string;
-		private _payType?: TeamPayTypeOption | "";
+		private _payType?: TeamPayTypeOption;
 
 		constructor(data: TeamZodType) {
 			super(data.id);
@@ -66,16 +56,16 @@ program.action(async () => {
 			this.validate();
 		}
 
-		get payType(): TeamPayTypeOption | "" | undefined {
+		get payType(): TeamPayTypeOption | undefined {
 			return this._payType;
 		}
 
-		set payType(value: TeamPayTypeOption | "" | undefined) {
+		set payType(value: TeamPayTypeOption | undefined) {
 			this._payType = value;
 			this.validate();
 		}
 
-		toRecord(): TeamsRecord {
+		toRecord(): TeamZodType {
 			return {
 				id: this.id,
 				name: this._name,
@@ -85,7 +75,7 @@ program.action(async () => {
 		}
 
 		validate(): boolean {
-			const parsed = teamsZod.safeParse(this.toRecord());
+			const parsed = TeamZodSchema.safeParse(this.toRecord());
 			if (!parsed.success) {
 				throw new Error("Validation error: " + parsed.error.message);
 			}
@@ -99,26 +89,26 @@ program.action(async () => {
 		apiKey: apiKey,
 	});
 
-	const teamMembers: TeamsRecord[] = await db.scan(team);
-	console.log("Team Members:", teamMembers.length);
+	const teamMembers: TeamRecord = await db.get<TeamRecord>(team, "rec01prAYWAOwsALi");
+	console.log("Team Members:", teamMembers);
 
-	const parsedTeamMembers: TeamsModel[] = await Promise.all(
-		teamMembers.map(async (member) => {
-			const parsed = teamsZod.safeParse(member);
-			if (!parsed.success) {
-				console.error("Validation error:", member, parsed.error);
-				return null;
-			}
-			return new TeamsModel(parsed.data);
-		}),
-	).then((results) => results.filter((member): member is TeamsModel => member !== null));
+	// const parsedTeamMembers: TeamsModel[] = await Promise.all(
+	// 	teamMembers.map(async (member) => {
+	// 		const parsed = TeamZodSchema.safeParse(member);
+	// 		if (!parsed.success) {
+	// 			console.error("Validation error:", member, parsed.error);
+	// 			return null;
+	// 		}
+	// 		return new TeamsModel(parsed.data);
+	// 	}),
+	// ).then((results) => results.filter((member): member is TeamsModel => member !== null));
 
-	// console.log("Parsed Team Members:", parsedTeamMembers);
-	console.log("Parsed Team Members:", parsedTeamMembers.length);
-	const t = parsedTeamMembers[0];
-	t.email = "hello@hello.com";
-	// t.validate();
-	console.log(t.email);
+	// // console.log("Parsed Team Members:", parsedTeamMembers);
+	// console.log("Parsed Team Members:", parsedTeamMembers.length);
+	// const t = parsedTeamMembers[0];
+	// t.email = "hello@hello.com";
+	// // t.validate();
+	// console.log(t.email);
 });
 
 program.parse(process.argv);

@@ -7,8 +7,9 @@
 	"license": "MIT",
 	"scripts": {
 		"build": "npx tsc",
+		"clean": "rm -rf dist",
 		"start": "node -r dotenv/config dist/playground.js",
-		"playground": "yarn install && yarn build && yarn start",
+		"playground": "yarn clean && yarn install && yarn build && yarn start",
 		"reinstall": "rm -rf node_modules && yarn install",
 		"format": "prettier --write \"**/*.{ts,js,md,yaml,yml,json}\" --ignore-path .prettierignore",
 		"lint": "eslint ."

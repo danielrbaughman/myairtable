@@ -53,7 +53,7 @@ def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
 
     copy_static_files(folder, "typescript")
     write_types(metadata, folder)
-    # write_models_old(metadata, base_id, folder)
+    write_interfaces(metadata, base_id, folder)
     write_zod_schemas(metadata, base_id, folder)
     # write_tables(metadata, folder)
     # write_main_class(metadata, base_id, folder)
@@ -163,23 +163,23 @@ def write_types(metadata: BaseMetadata, folder: Path):
                 second_type=f"{table_name}FieldId",
                 is_value_string=True,
             )
-            write.dict_class(
-                f"{table_name}FieldPropertyTypeMapping",
-                [(property_name_camel(field, folder), airtable_ts_type(table["name"], field)) for field in table["fields"]],
-                first_type=f"{table_name}FieldProperty",
-                second_type="string | undefined",
-                is_value_string=True,
-            )
+            write.line(f"export const {table_name}FieldPropertyTypeMapping = {{")
+            for field in table["fields"]:
+                write.line_indented(
+                    f"{property_name_camel(field, folder)}: {airtable_ts_type(table['name'], field, warn=True)},",
+                )
+            write.line("} as const;")
+            write.line_empty()
 
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
-                ts_type = typescript_type(table["name"], field, warn=True)
+                ts_type = typescript_type(table["name"], field)
                 write.property_row(field["id"], ts_type, optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table["fields"]:
-                ts_type = typescript_type(table["name"], field, warn=True)
+                ts_type = typescript_type(table["name"], field)
                 name = sanitize_string(field["name"])
                 write.property_row(name, ts_type, is_name_string=True, optional=True)
             write.line("}")
@@ -214,106 +214,37 @@ def write_types(metadata: BaseMetadata, folder: Path):
             write.line(f'export * from "./{table_filename}";')
 
 
-# def write_models_old(metadata: BaseMetadata, base_id: str, folder: Path):
-#     for table in metadata["tables"]:
-#         table_filename = property_name_camel(table, folder)
+def write_interfaces(metadata: BaseMetadata, base_id: str, folder: Path):
+    for table in metadata["tables"]:
+        table_filename = property_name_camel(table, folder)
 
-#         with WriteToTypeScriptFile(path=folder / "dynamic" / "models_old" / f"{table_filename}.ts") as write:
-#             # Imports
-#             write.line('import { Record } from "airtable";')
-#             write.line('import { AirtableRecord } from "../../static/airtable-record";')
-#             write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
-#             write.line('import { RecordId } from "../../static/special-types";')
+        with WriteToTypeScriptFile(path=folder / "dynamic" / "interfaces" / f"{table_filename}.ts") as write:
+            write.line("import {")
+            for field in table["fields"]:
+                options = get_select_options(field)
+                if len(options) > 0:
+                    table_name = property_name_pascal(table, folder)
+                    field_name = property_name_pascal(field, folder)
+                    write.line_indented(f"{options_name(table_name, field_name)},")
+            write.line(f'}} from "../types/{table_filename}";')
+            write.line('import { RecordId } from "../../../static/typescript/special-types";')
+            write.line('import { Attachment, Collaborator } from "airtable";')
+            write.line_empty()
 
-#             write.line("import type {")
-#             write.line_indented(f"{property_name_pascal(table, folder)}FieldSet,")
-#             # Import select option types
-#             for field in table["fields"]:
-#                 options = get_select_options(field)
-#                 if len(options) > 0:
-#                     table_name = property_name_pascal(table, folder)
-#                     field_name = property_name_pascal(field, folder)
-#                     write.line_indented(f"{options_name(table_name, field_name)},")
-#             write.line(f'}} from "../types/{table_filename}";')
-#             write.line_empty()
+            table_name = property_name_pascal(table, folder)
+            write.line(f"export interface {table_name}Record {{")
+            write.line_indented("id: string;")
+            for field in table["fields"]:
+                field_name = property_name_camel(field, folder)
+                ts_type = typescript_type(table["name"], field, include_null=True)
+                write.property_row(field_name, ts_type, optional=True)
+            write.line("}")
+            write.line_empty()
 
-#             table_name = property_name_pascal(table, folder)
-
-#             write.line(f"export class {table_name}Record extends AirtableRecord<{table_name}FieldSet> {{")
-#             for field in table["fields"]:
-#                 field_name = property_name_camel(field, folder)
-#                 write.line_indented(f"public {field_name}?: {typescript_type(table['name'], field, warn=True)};", 1)
-#             write.line_empty()
-
-#             # Constructor - DON'T initialize this.record here to avoid circular dependency
-#             write.line_indented("constructor({")
-#             write.line_indented("id,", 2)
-#             for field in table["fields"]:
-#                 field_name = property_name_camel(field, folder)
-#                 write.line_indented(f"{field_name},", 2)
-#             write.line_indented("}: {", 1)
-#             write.line_indented("id?: string,", 2)
-#             for field in table["fields"]:
-#                 field_name = property_name_camel(field, folder)
-#                 ts_type = typescript_type(table["name"], field, warn=True)
-#                 write.line_indented(f"{field_name}?: {ts_type},", 2)
-#             write.line_indented("}) {")
-#             write.line_indented("super(id ?? '');", 2)
-#             for field in table["fields"]:
-#                 field_name = property_name_camel(field, folder)
-#                 write.line_indented(f"this.{field_name} = {field_name};", 2)
-#             # REMOVED: this.record initialization to avoid circular dependency
-#             # REMOVED: this.updateRecord() call
-#             write.line_indented("}", 1)
-#             write.line_empty()
-
-#             write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>): {table_name}Record {{")
-#             write.line_indented(f"const instance = new {table_name}Record(", 2)
-#             write.line_indented("{ id: record.id },", 3)
-#             write.line_indented(");", 2)
-#             write.line_indented("instance.updateModel(record);", 2)
-#             write.line_indented("return instance;", 2)
-#             write.line_indented("}", 1)
-#             write.line_empty()
-
-#             write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
-#             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
-#             for field in table["fields"]:
-#                 if not is_computed_field(field):
-#                     field_name = sanitize_string(field["name"])
-#                     field_name_camel = property_name_camel(field, folder)
-#                     write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{field_name}"] = this.{field_name_camel};', 2)
-#             write.line_indented("return fields;", 2)
-#             write.line_indented("}", 1)
-#             write.line_empty()
-
-#             write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
-#             write.line_indented("this.record = record;", 2)
-#             for field in table["fields"]:
-#                 field_name = sanitize_string(field["name"])
-#                 field_name_camel = property_name_camel(field, folder)
-#                 write.line_indented(f'this.{field_name_camel} = record.get("{field_name}");', 2)
-#             write.line_indented("}", 1)
-#             write.line_empty()
-
-#             write.line_indented("protected updateRecord() {")
-#             write.line_indented("if (!this.record) ", 2)
-#             write.line_indented(
-#                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
-#             )
-#             for field in table["fields"]:
-#                 field_name = sanitize_string(field["name"])
-#                 field_name_camel = property_name_camel(field, folder)
-#                 write.line_indented(f'this.record.set("{field_name}", this.{field_name_camel});', 2)
-#             write.line_indented("}", 1)
-#             write.line_empty()
-
-#             write.line("}")
-
-#     with WriteToTypeScriptFile(path=folder / "dynamic" / "models_old" / "index.ts") as write:
-#         for table in metadata["tables"]:
-#             table_filename = property_name_camel(table, folder)
-#             write.line(f'export * from "./{table_filename}";')
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "interfaces" / "index.ts") as write:
+        for table in metadata["tables"]:
+            table_filename = property_name_camel(table, folder)
+            write.line(f'export * from "./{table_filename}";')
 
 
 def write_zod_schemas(metadata: BaseMetadata, base_id: str, folder: Path):
@@ -341,7 +272,7 @@ def write_zod_schemas(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line(f"export const {property_name_pascal(table, folder)}ZodSchema = z.object({{")
             write.line_indented("id: z.string(),")
             for field in table["fields"]:
-                z_type = zod_type(table["name"], field, warn=True)
+                z_type = zod_type(table["name"], field)
                 field_name = property_name_camel(field, folder)
                 write.line_indented(f"{field_name}: {z_type},", 1)  # TODO: Replace with actual type
             write.line("});")
@@ -485,6 +416,7 @@ def write_index(metadata: BaseMetadata, folder: Path):
         # write.line('export * from "./tables";')
         write.line('export * from "./types";')
         write.line('export * from "./zod";')
+        write.line('export * from "./interfaces";')
         # write.line('export * from "./models";')
         # write.line('export * from "./formulas";')
         write.line("")
@@ -495,7 +427,7 @@ def write_index(metadata: BaseMetadata, folder: Path):
         write.line("")
 
 
-def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
+def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False, include_null: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FieldType = field["type"]
@@ -551,10 +483,18 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
     if not ts_type.endswith("[]") and ts_type not in ("number", "boolean"):  # TODO - why is this not allowed in Airtable JS library?
-        if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
+        if involves_lookup_field(field, all_fields):
             ts_type = f"{ts_type}[]"
+        elif involves_rollup_field(field, all_fields):
+            if ts_type == "number" or ts_type == "string":  # TODO - a limitation of Airtable-TS: "[airtable-ts] Unknown airtable type..."
+                ts_type = ts_type
+            else:
+                ts_type = f"{ts_type}[]"
 
-    return ts_type
+    if include_null:
+        return ts_type + " | null"
+    else:
+        return ts_type
 
 
 def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
@@ -579,7 +519,7 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
         case "duration":
             ts_type = "number"
         case "multipleRecordLinks":
-            ts_type = "RecordId[]"
+            ts_type = "string[]"
         case "multipleAttachments":
             ts_type = "AirtableAttachment[]"  # TODO
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
@@ -616,10 +556,15 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
     if not ts_type.endswith("[]") and ts_type not in ("number", "boolean"):  # TODO - why is this not allowed in Airtable JS library?
-        if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
+        if involves_lookup_field(field, all_fields):
             ts_type = f"{ts_type}[]"
+        elif involves_rollup_field(field, all_fields):
+            if ts_type == "number" or ts_type == "string":  # TODO - a limitation of Airtable-TS: "[airtable-ts] Unknown airtable type..."
+                ts_type = ts_type
+            else:
+                ts_type = f"{ts_type}[]"
 
-    return ts_type
+    return f"'{ts_type} | null'"
 
 
 def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
