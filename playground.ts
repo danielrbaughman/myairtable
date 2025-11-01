@@ -2,8 +2,9 @@
 import process from "node:process";
 import { Command } from "commander";
 import { TeamPayTypeOption, TeamZodType, TeamRecord, TeamFieldPropertyIdMapping, TeamZodSchema } from "./output";
-import { TeamFieldPropertyTypeMapping } from "./output/dynamic/types/team";
+import { TeamFieldPropertyTypeMapping, TeamPayTypeOptions } from "./output/dynamic/types/team";
 import { AirtableTs, Table } from "airtable-ts";
+import * as z from "zod";
 
 
 const program = new Command();
@@ -26,60 +27,35 @@ program.action(async () => {
 	}
 
 	class TeamsModel extends Model {
-		private _name?: string;
-		private _email?: string;
-		private _payType?: TeamPayTypeOption;
-
 		constructor(data: TeamZodType) {
 			super(data.id);
-			this._name = data.name;
-			this._email = data.email;
-			this._payType = data.payType;
-			this.validate(); // Validate on construction
+			this._name = this._nameSchema.parse(data.name);
+			this._email = this._emailSchema.parse(data.email);
+			this._payType = this._payTypeSchema.parse(data.payType);
 		}
+		
+		private _name: string | null;
+		private _nameSchema = z.string().nullable();
+		public get name(): string | null { return this._name; }
+		public set name(value: string | null) { this._name = this._nameSchema.parse(value); }
+		
+		private _email: string | null;
+		private _emailSchema = z.email().nullable();
+		public get email(): string | null { return this._email; }
+		public set email(value: string | null) { this._email = this._emailSchema.parse(value); }
+		
+		private _payType: TeamPayTypeOption | null;
+		private _payTypeSchema = z.enum(TeamPayTypeOptions).nullable();
+		public get payType(): TeamPayTypeOption | null { return this._payType; }
+		public set payType(value: TeamPayTypeOption | null) { this._payType = this._payTypeSchema.parse(value); }
 
-		get name(): string | undefined {
-			return this._name;
-		}
-
-		set name(value: string | undefined) {
-			this._name = value;
-			this.validate();
-		}
-
-		get email(): string | undefined {
-			return this._email;
-		}
-
-		set email(value: string | undefined) {
-			this._email = value;
-			this.validate();
-		}
-
-		get payType(): TeamPayTypeOption | undefined {
-			return this._payType;
-		}
-
-		set payType(value: TeamPayTypeOption | undefined) {
-			this._payType = value;
-			this.validate();
-		}
-
-		toRecord(): TeamZodType {
+		toJSON(): Partial<TeamRecord> {
 			return {
 				id: this.id,
-				name: this._name,
-				email: this._email,
-				payType: this._payType,
+				name: this.name,
+				email: this.email,
+				payType: this.payType,
 			};
-		}
-
-		validate(): boolean {
-			const parsed = TeamZodSchema.safeParse(this.toRecord());
-			if (!parsed.success) {
-				throw new Error("Validation error: " + parsed.error.message);
-			}
-			return parsed.success;
 		}
 	}
 
@@ -89,17 +65,20 @@ program.action(async () => {
 		apiKey: apiKey,
 	});
 
-	const teamMembers: TeamRecord = await db.get<TeamRecord>(team, "rec01prAYWAOwsALi");
-	console.log("Team Members:", teamMembers);
+	const teamMember = await db.get(team, "rec01prAYWAOwsALi");
+	// console.log("Team Members:", teamMember);
+	// const parsedTeamMember = TeamZodSchema.parse(teamMember);
 
+	const parsed = TeamZodSchema.safeParse(teamMember);
+	if (!parsed.success) {
+		console.error("Validation error:", teamMember, parsed.error);
+		throw new Error("Validation failed");
+	}
+	const teamMemberModel = new TeamsModel(parsed.data);
+	console.log("Parsed Team Member Model:", teamMemberModel.toJSON());
+	teamMemberModel.email = "hello"
 	// const parsedTeamMembers: TeamsModel[] = await Promise.all(
-	// 	teamMembers.map(async (member) => {
-	// 		const parsed = TeamZodSchema.safeParse(member);
-	// 		if (!parsed.success) {
-	// 			console.error("Validation error:", member, parsed.error);
-	// 			return null;
-	// 		}
-	// 		return new TeamsModel(parsed.data);
+	// 	teamMember.map(async (member) => {
 	// 	}),
 	// ).then((results) => results.filter((member): member is TeamsModel => member !== null));
 

@@ -131,8 +131,8 @@ class WriteToTypeScriptFile(WriteToFile):
     def str_list(self, name: str, list: list[str], type: str = "string"):
         self.line(f"export const {name}: {type}[] = [{', '.join(f'"{item}"' for item in list)}]")
 
-    def docstring(self, text: str):
-        self.line(f"/** {text} */")
+    def docstring(self, text: str, indentation: int = 0):
+        self.line_indented(f"/** {text} */", indentation)
 
     def types(self, name: str, list: list[str], docstring: str = ""):
         literal_name = f"{name}"

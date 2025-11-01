@@ -237,7 +237,8 @@ def write_interfaces(metadata: BaseMetadata, base_id: str, folder: Path):
             for field in table["fields"]:
                 field_name = property_name_camel(field, folder)
                 ts_type = typescript_type(table["name"], field, include_null=True)
-                write.property_row(field_name, ts_type, optional=True)
+                write.docstring(f"`{sanitize_string(field['name'])}` ({field['id']})", 1)
+                write.property_row(field_name, ts_type, optional=False)
             write.line("}")
             write.line_empty()
 
@@ -589,7 +590,7 @@ def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
         case "checkbox":
             ts_type = "z.boolean()"
         case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
-            ts_type = "z.date()"
+            ts_type = "z.string()"  # TODO
         case "count" | "autoNumber" | "percent" | "currency" | "duration":
             ts_type = "z.number()"
         case "number":
@@ -638,4 +639,4 @@ def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
         if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
             ts_type = f"{ts_type}.or(z.array({ts_type}))"  # TODO - not sure if this is correct
 
-    return ts_type + ".optional()"
+    return ts_type + ".nullable()"
