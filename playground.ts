@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-// import { Airtable } from "./output";
+import { TeamPayTypeOptions, TeamPayTypeOption } from "./output";
 import { AirtableTs, Table } from "airtable-ts";
 import * as z from "zod";
 
 const program = new Command();
 program.action(async () => {
 	const apiKey = process.env.AIRTABLE_API_KEY;
-
-	const payTypes = ["Hourly", "Salary"] as const;
-	type PayType = (typeof payTypes)[number];
 
 	const db = new AirtableTs({
 		apiKey: apiKey,
@@ -20,7 +17,7 @@ program.action(async () => {
 		id: z.string(),
 		name: z.string().optional(),
 		email: z.email().or(z.literal("")).optional(),
-		payType: z.enum(payTypes).or(z.literal("")).optional(),
+		payType: z.enum(TeamPayTypeOptions).or(z.literal("")).optional(),
 	});
 
 	type TeamsRecord = z.infer<typeof teamsZod>;
@@ -47,7 +44,7 @@ program.action(async () => {
 	class TeamsModel extends Model {
 		private _name?: string;
 		private _email?: string;
-		private _payType?: PayType | "";
+		private _payType?: TeamPayTypeOption | "";
 
 		constructor(data: TeamsRecord) {
 			super(data.id);
@@ -75,11 +72,11 @@ program.action(async () => {
 			this.validate();
 		}
 
-		get payType(): PayType | "" | undefined {
+		get payType(): TeamPayTypeOption | "" | undefined {
 			return this._payType;
 		}
 
-		set payType(value: PayType | "" | undefined) {
+		set payType(value: TeamPayTypeOption | "" | undefined) {
 			this._payType = value;
 			this.validate();
 		}
