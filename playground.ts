@@ -9,6 +9,9 @@ const program = new Command();
 program.action(async () => {
 	const apiKey = process.env.AIRTABLE_API_KEY;
 
+	const payTypes = ["Hourly", "Salary"] as const;
+	type PayType = (typeof payTypes)[number];
+
 	const db = new AirtableTs({
 		apiKey: apiKey,
 	});
@@ -17,12 +20,13 @@ program.action(async () => {
 		id: z.string(),
 		name: z.string().optional(),
 		email: z.email().or(z.literal("")).optional(),
+		payType: z.enum(payTypes).or(z.literal("")).optional(),
 	});
 
 	type TeamsRecord = z.infer<typeof teamsZod>;
 
-	const teamFieldNames = { name: "string", email: "string" } as const;
-	const teamFieldIds = { name: "flddlHwEkZPUc18zB", email: "fld0FDjwBjaSaFAn5" } as const;
+	const teamFieldNames = { name: "string", email: "string", payType: "string" } as const;
+	const teamFieldIds = { name: "flddlHwEkZPUc18zB", email: "fld0FDjwBjaSaFAn5", payType: "fldOCHqS5ipKMNJyk" } as const;
 
 	const team: Table<TeamsRecord> = {
 		name: "Team",
@@ -43,12 +47,13 @@ program.action(async () => {
 	class TeamsModel extends Model {
 		private _name?: string;
 		private _email?: string;
+		private _payType?: PayType | "";
 
 		constructor(data: TeamsRecord) {
 			super(data.id);
 			this._name = data.name;
-			this._name = data.name;
 			this._email = data.email;
+			this._payType = data.payType;
 			this.validate(); // Validate on construction
 		}
 
@@ -70,11 +75,21 @@ program.action(async () => {
 			this.validate();
 		}
 
+		get payType(): PayType | "" | undefined {
+			return this._payType;
+		}
+
+		set payType(value: PayType | "" | undefined) {
+			this._payType = value;
+			this.validate();
+		}
+
 		toRecord(): TeamsRecord {
 			return {
 				id: this.id,
 				name: this._name,
 				email: this._email,
+				payType: this._payType,
 			};
 		}
 
@@ -94,7 +109,7 @@ program.action(async () => {
 		teamMembers.map(async (member) => {
 			const parsed = teamsZod.safeParse(member);
 			if (!parsed.success) {
-				// console.error("Validation error:", member, parsed.error);
+				console.error("Validation error:", member, parsed.error);
 				return null;
 			}
 			return new TeamsModel(parsed.data);
