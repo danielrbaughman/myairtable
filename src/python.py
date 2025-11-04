@@ -646,14 +646,13 @@ def python_type(table_name: str, field: FieldMetadata, warn: bool = False) -> st
         case "duration":
             py_type = "timedelta"
         case "number":
-            # if "options" in field and "precision" in field["options"]:
-            #     if field["options"]["precision"] == 0:
-            #         py_type = "int"
-            #     else:
-            #         py_type = "float"
-            # else:
-            # TODO: you'd think precision == 0 would mean int, but I've run into issues with that. Need to investigate more.
-            py_type = "float"
+            if "options" in field and "precision" in field["options"]:  # type: ignore
+                if field["options"]["precision"] == 0:  # type: ignore
+                    py_type = "int"
+                else:
+                    py_type = "float"
+            else:
+                py_type = "float"
         case "multipleRecordLinks":
             py_type = "list[RecordId]"
         case "multipleAttachments":

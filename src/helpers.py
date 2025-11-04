@@ -282,7 +282,6 @@ def property_name_model(field_or_table: FieldMetadata | TableMetadata, folder: P
             return to_pascal(text)
 
     name = property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "Model"
-    print(name)
     return name
 
 
