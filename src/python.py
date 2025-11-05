@@ -494,11 +494,12 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line_empty()
         for table in metadata["tables"]:
             write.line_indented("@property")
-            write.line_indented(f"def {property_name_snake(table, folder, use_custom=False)}(self) -> {property_name_pascal(table, folder)}Table:")
+            table_name_property = property_name_snake(table, folder)
+            table_name_class = property_name_pascal(table, folder)
+            write.line_indented(f"def {table_name_property}(self) -> {table_name_class}Table:")
             write.line_indented(f"if '{table['name']}' not in self._tables:", 2)
             write.line_indented(
-                f'self._tables["{table["name"]}"] = {property_name_pascal(table, folder)}Table.from_table(self._api.table(self._base_id, "{table["name"]}"))',
-                3,
+                f'self._tables["{table["name"]}"] = {table_name_class}Table.from_table(self._api.table(self._base_id, "{table["name"]}"))', 3
             )
             write.line_indented(f'return self._tables["{table["name"]}"]', 2)
             write.line_empty()
@@ -579,13 +580,13 @@ def table_doc_string(table: TableMetadata, folder: Path) -> str:
     An abstraction of pyAirtable's `Api.table` for the `{table["name"]}` table, and an interface for working with custom-typed versions of the models/dicts created by the type generator.
 
     ```python
-    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.get("rec1234567890")
+    record = Airtable().{property_name_snake(table, folder)}.get("rec1234567890")
     ```
 
     You can also access the RecordDicts via `.dict`.
     
     ```python
-    record = Airtable().{property_name_snake(table, folder, use_custom=False)}.dict.get("rec1234567890")
+    record = Airtable().{property_name_snake(table, folder)}.dict.get("rec1234567890")
     ```
 
     You can also use the ORM Models directly. See https://pyairtable.readthedocs.io/en/stable/orm.html#
