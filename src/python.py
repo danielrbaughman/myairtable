@@ -32,44 +32,44 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool, wrappers: bool):
+def gen_python(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
             all_fields[field["id"]] = field
             options = get_select_options(field)
             if len(options) > 0:
-                select_options[field["id"]] = f"{options_name(property_name_pascal(table, folder), property_name_pascal(field, folder))}"
-        detect_duplicate_property_names(table, folder)
+                select_options[field["id"]] = f"{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}"
+        detect_duplicate_property_names(table, csv_folder)
 
-    dynamic_folder = folder / "dynamic"
+    dynamic_folder = output_folder / "dynamic"
     if dynamic_folder.exists():
         shutil.rmtree(dynamic_folder)
         dynamic_folder.mkdir(parents=True, exist_ok=True)
 
-    static_folder = folder / "static"
+    static_folder = output_folder / "static"
     if static_folder.exists():
         shutil.rmtree(static_folder)
         static_folder.mkdir(parents=True, exist_ok=True)
 
-    copy_static_files(folder, "python")
-    write_types(metadata, folder)
-    write_dicts(metadata, folder)
-    write_models(metadata, base_id, folder, formulas)
+    copy_static_files(output_folder, "python")
+    write_types(metadata, output_folder, csv_folder)
+    write_dicts(metadata, output_folder, csv_folder)
+    write_models(metadata, base_id, output_folder, csv_folder, formulas)
     # write_pydantic_models(metadata, folder)
     if formulas:
-        write_formula_helpers(metadata, folder)
+        write_formula_helpers(metadata, output_folder, csv_folder)
     if wrappers:
-        write_tables(metadata, folder)
-        write_main_class(metadata, base_id, folder)
-    write_init(metadata, folder, formulas, wrappers)
+        write_tables(metadata, output_folder, csv_folder)
+        write_main_class(metadata, base_id, output_folder, csv_folder)
+    write_init(metadata, output_folder, formulas, wrappers)
 
 
 # region TYPES
-def write_types(metadata: BaseMetadata, folder: Path):
+def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     # Table Types
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "types" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=output_folder / "dynamic" / "types" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from datetime import datetime, timedelta")
@@ -84,7 +84,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
                 options = get_select_options(field)
                 if len(options) > 0:
                     write.types(
-                        options_name(property_name_pascal(table, folder), property_name_pascal(field, folder)),
+                        options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder)),
                         options,
                         f"Select options for `{sanitize_string(field['name'])}`",
                     )
@@ -92,52 +92,52 @@ def write_types(metadata: BaseMetadata, folder: Path):
 
             field_names = [sanitize_string(field["name"]) for field in table["fields"]]
             field_ids = [field["id"] for field in table["fields"]]
-            property_names = [property_name_snake(field, folder) for field in table["fields"]]
+            property_names = [property_name_snake(field, csv_folder) for field in table["fields"]]
 
             write.region(upper_case(table["name"]))
 
-            write.types(f"{property_name_pascal(table, folder)}Field", field_names, f"Field names for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, csv_folder)}Field", field_names, f"Field names for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, csv_folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, csv_folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
 
             write.str_list(
-                f"{property_name_pascal(table, folder)}CalculatedFields",
+                f"{property_name_pascal(table, csv_folder)}CalculatedFields",
                 [sanitize_string(field["name"]) for field in table["fields"] if is_computed_field(field)],
             )
             write.line(f'"""Calculated fields for `{table["name"]}`"""')
             write.str_list(
-                f"{property_name_pascal(table, folder)}CalculatedFieldIds",
+                f"{property_name_pascal(table, csv_folder)}CalculatedFieldIds",
                 [field["id"] for field in table["fields"] if is_computed_field(field)],
             )
             write.line(f'"""Calculated fields for `{table["name"]}`"""')
             write.line_empty()
 
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldNameIdMapping",
+                f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping",
                 [(sanitize_string(field["name"]), field["id"]) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}Field",
-                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                first_type=f"{property_name_pascal(table, csv_folder)}Field",
+                second_type=f"{property_name_pascal(table, csv_folder)}FieldId",
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldIdNameMapping",
+                f"{property_name_pascal(table, csv_folder)}FieldIdNameMapping",
                 [(field["id"], sanitize_string(field["name"])) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldId",
-                second_type=f"{property_name_pascal(table, folder)}Field",
+                first_type=f"{property_name_pascal(table, csv_folder)}FieldId",
+                second_type=f"{property_name_pascal(table, csv_folder)}Field",
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldIdPropertyMapping",
-                [(field["id"], property_name_snake(field, folder)) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldId",
-                second_type=f"{property_name_pascal(table, folder)}FieldProperty",
+                f"{property_name_pascal(table, csv_folder)}FieldIdPropertyMapping",
+                [(field["id"], property_name_snake(field, csv_folder)) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}FieldId",
+                second_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldPropertyIdMapping",
-                [(property_name_snake(field, folder), field["id"]) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldProperty",
-                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                f"{property_name_pascal(table, csv_folder)}FieldPropertyIdMapping",
+                [(property_name_snake(field, csv_folder), field["id"]) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+                second_type=f"{property_name_pascal(table, csv_folder)}FieldId",
             )
 
-            write.line(f"class {property_name_pascal(table, folder)}FieldsDict(TypedDict, total=False):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}FieldsDict(TypedDict, total=False):")
             for field in table["fields"]:
                 write.property_row(field["id"], python_type(table["name"], field, warn=True))
             write.line_empty()
@@ -146,24 +146,24 @@ def write_types(metadata: BaseMetadata, folder: Path):
             views = table["views"]
             view_names: list[str] = [sanitize_string(view["name"]) for view in views]
             view_ids: list[str] = [view["id"] for view in views]
-            write.types(f"{property_name_pascal(table, folder)}View", view_names, f"View names for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, csv_folder)}View", view_names, f"View names for `{table['name']}`")
+            write.types(f"{property_name_pascal(table, csv_folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
             write.dict_class(
-                f"{property_name_pascal(table, folder)}ViewNameIdMapping",
+                f"{property_name_pascal(table, csv_folder)}ViewNameIdMapping",
                 [(sanitize_string(view["name"]), view["id"]) for view in table["views"]],
-                first_type=f"{property_name_pascal(table, folder)}View",
-                second_type=f"{property_name_pascal(table, folder)}ViewId",
+                first_type=f"{property_name_pascal(table, csv_folder)}View",
+                second_type=f"{property_name_pascal(table, csv_folder)}ViewId",
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}ViewIdNameMapping",
+                f"{property_name_pascal(table, csv_folder)}ViewIdNameMapping",
                 [(view["id"], sanitize_string(view["name"])) for view in table["views"]],
-                first_type=f"{property_name_pascal(table, folder)}ViewId",
-                second_type=f"{property_name_pascal(table, folder)}View",
+                first_type=f"{property_name_pascal(table, csv_folder)}ViewId",
+                second_type=f"{property_name_pascal(table, csv_folder)}View",
             )
 
             write.endregion()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "types" / "_tables.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "_tables.py") as write:
         write.line("from typing import Literal")
         write.line_empty()
 
@@ -190,93 +190,93 @@ def write_types(metadata: BaseMetadata, folder: Path):
         )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
-            [(table["id"], f"{property_name_camel(table, folder)}FieldNameIdMapping") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
             first_type="TableId",
             second_type="dict[str, str]",
         )
         write.dict_class(
             "TableIdToFieldNamesTypeMapping",
-            [(table["id"], f"{property_name_camel(table, folder)}FieldName") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldName") for table in metadata["tables"]],
             first_type="TableId",
         )
         write.dict_class(
             "TableIdToFieldNamesListMapping",
-            [(table["id"], f"{property_name_camel(table, folder)}FieldNames") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldNames") for table in metadata["tables"]],
             first_type="TableId",
         )
 
-    with WriteToPythonFile(path=folder / "dynamic" / "types" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "__init__.py") as write:
         write.line("from ._tables import *  # noqa: F403")
         for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
+            write.line(f"from .{property_name_snake(table, csv_folder)} import *  # noqa: F403")
 
 
 # endregion
 
 
 # region DICTS
-def write_dicts(metadata: BaseMetadata, folder: Path):
+def write_dicts(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "dicts" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=output_folder / "dynamic" / "dicts" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.line("from typing import Any")
             write.line_empty()
             write.line("from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict")
             write.line_empty()
             write.line("from ..types import (")
-            write.line_indented(f"{property_name_pascal(table, folder)}FieldsDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}Field,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}FieldsDict,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}Field,")
             write.line(")")
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}CreateRecordDict(CreateRecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}CreateRecordDict(CreateRecordDict):")
             write.line_indented(name_record_doc_string(table["name"], id=False, created_time=False))
-            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, folder)}Field'}, Any]")
+            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, csv_folder)}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}IdsCreateRecordDict(CreateRecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}IdsCreateRecordDict(CreateRecordDict):")
             write.line_indented(id_record_doc_string(table["name"], id=False, created_time=False))
-            write.line_indented(f"fields: {property_name_pascal(table, folder)}FieldsDict")
+            write.line_indented(f"fields: {property_name_pascal(table, csv_folder)}FieldsDict")
             write.line_empty()
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}UpdateRecordDict(UpdateRecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}UpdateRecordDict(UpdateRecordDict):")
             write.line_indented(name_record_doc_string(table["name"], id=True, created_time=False))
-            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, folder)}Field'}, Any]")
+            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, csv_folder)}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}IdsUpdateRecordDict(UpdateRecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}IdsUpdateRecordDict(UpdateRecordDict):")
             write.line_indented(id_record_doc_string(table["name"], id=True, created_time=False))
-            write.line_indented(f"fields: {property_name_pascal(table, folder)}FieldsDict")
+            write.line_indented(f"fields: {property_name_pascal(table, csv_folder)}FieldsDict")
             write.line_empty()
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}RecordDict(RecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}RecordDict(RecordDict):")
             write.line_indented(name_record_doc_string(table["name"], id=True, created_time=True))
-            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, folder)}Field'}, Any]")
+            write.line_indented(f"fields: dict[{f'{property_name_pascal(table, csv_folder)}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
-            write.line(f"class {property_name_pascal(table, folder)}IdsRecordDict(RecordDict):")
+            write.line(f"class {property_name_pascal(table, csv_folder)}IdsRecordDict(RecordDict):")
             write.line_indented(id_record_doc_string(table["name"], id=True, created_time=False))
-            write.line_indented(f"fields: {property_name_pascal(table, folder)}FieldsDict")
+            write.line_indented(f"fields: {property_name_pascal(table, csv_folder)}FieldsDict")
             write.line_empty()
             write.line_empty()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "dicts" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "dicts" / "__init__.py") as write:
         for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
+            write.line(f"from .{property_name_snake(table, csv_folder)} import *  # noqa: F403")
 
 
 # endregion
 
 
 # region MODELS
-def write_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: bool):
+def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "models" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.line("from datetime import datetime")
             write.line("from typing import Any")
@@ -324,15 +324,15 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: b
                 for field in table["fields"]:
                     options = get_select_options(field)
                     if len(options) > 0:
-                        write.line_indented(f"{options_name(property_name_pascal(table, folder), property_name_pascal(field, folder))},")
+                        write.line_indented(f"{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))},")
                 write.line(")")
-            write.line(f"from ..dicts import {property_name_pascal(table, folder)}RecordDict")
-            write.line(f"from ..formulas import {property_name_pascal(table, folder)}Formulas")
+            write.line(f"from ..dicts import {property_name_pascal(table, csv_folder)}RecordDict")
+            write.line(f"from ..formulas import {property_name_pascal(table, csv_folder)}Formulas")
             write.line_empty()
             write.line_empty()
 
             # definition
-            write.line(f"class {property_name_model(table, folder)}(Model):")
+            write.line(f"class {property_name_model(table, csv_folder)}(Model):")
             write.line_indented(orm_model_doc_string(table["name"]))
             write.line_indented("class Meta:")
             write.line_indented("@staticmethod", 2)
@@ -345,83 +345,85 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path, formulas: b
             write.line_empty()
 
             # to_record_dict
-            write.line_indented(f"def to_record_dict(self) -> {property_name_pascal(table, folder)}RecordDict:")
+            write.line_indented(f"def to_record_dict(self) -> {property_name_pascal(table, csv_folder)}RecordDict:")
             write.line_indented("return self.to_record()", 2)
             write.line_empty()
 
             if formulas:
-                write.line_indented(f"f: {property_name_pascal(table, folder)}Formulas = {property_name_pascal(table, folder)}Formulas()")
+                write.line_indented(f"f: {property_name_pascal(table, csv_folder)}Formulas = {property_name_pascal(table, csv_folder)}Formulas()")
                 write.line_empty()
 
             # properties
             for field in table["fields"]:
-                write.line_indented(f"{property_name_snake(field, folder)}: {pyairtable_orm_type(table['name'], field, metadata, folder)}")
+                field_name = property_name_snake(field, csv_folder)
+                pyairtable_type = pyairtable_orm_type(table["name"], field, metadata, csv_folder)
+                write.line_indented(f"{field_name}: {pyairtable_type}")
                 write.property_docstring(field, table)
             write.line_empty()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "models" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "models" / "__init__.py") as write:
         for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
+            write.line(f"from .{property_name_snake(table, csv_folder)} import *  # noqa: F403")
 
 
 # endregion
 
 
 # region TABLES
-def write_tables(metadata: BaseMetadata, folder: Path):
+def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "tables" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=output_folder / "dynamic" / "tables" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from pyairtable import Table")
             write.line_empty()
             write.line("from ...static.airtable_table import AirtableTable")
             write.line("from ..types import (")
-            write.line_indented(f"{property_name_pascal(table, folder)}Field,")
-            write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFields,")
-            write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFieldIds,")
-            write.line_indented(f"{property_name_pascal(table, folder)}View,")
-            write.line_indented(f"{property_name_pascal(table, folder)}ViewNameIdMapping,")
-            write.line_indented(f"{property_name_pascal(table, folder)}Fields,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}Field,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CalculatedFields,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CalculatedFieldIds,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}View,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}ViewNameIdMapping,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}Fields,")
             write.line(")")
             write.line("from ..dicts import (")
-            write.line_indented(f"{property_name_pascal(table, folder)}RecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,")
-            write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}RecordDict,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CreateRecordDict,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}UpdateRecordDict,")
             write.line(")")
-            write.line(f"from ..models import {property_name_model(table, folder)}")
+            write.line(f"from ..models import {property_name_model(table, csv_folder)}")
             write.endregion()
             write.line_empty()
             write.line_empty()
 
             # Tables
             write.region(upper_case(table["name"]))
-            class_name = property_name_pascal(table, folder)
-            model_name = property_name_model(table, folder)
+            class_name = property_name_pascal(table, csv_folder)
+            model_name = property_name_model(table, csv_folder)
             write.line(
                 f"class {class_name}Table(AirtableTable[{class_name}RecordDict, {class_name}CreateRecordDict, {class_name}UpdateRecordDict, {model_name}, {class_name}View, {class_name}Field]):"
             )
-            write.line_indented(table_doc_string(table, folder))
+            write.line_indented(table_doc_string(table, csv_folder))
             write.line_indented("@classmethod")
             write.line_indented("def from_table(cls, table: Table):")
             write.line_indented("cls = super().from_table(", 2)
             write.line_indented("table,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}RecordDict,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}CreateRecordDict,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}UpdateRecordDict,", 3)
-            write.line_indented(f"{property_name_model(table, folder)},", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFields,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}CalculatedFieldIds,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}ViewNameIdMapping,", 3)
-            write.line_indented(f"{property_name_pascal(table, folder)}Fields,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}RecordDict,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CreateRecordDict,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}UpdateRecordDict,", 3)
+            write.line_indented(f"{property_name_model(table, csv_folder)},", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CalculatedFields,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}CalculatedFieldIds,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}ViewNameIdMapping,", 3)
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}Fields,", 3)
             write.line_indented(")", 2)
             write.line_indented("return cls", 2)
             write.endregion()
             write.line_empty()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "tables" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "tables" / "__init__.py") as write:
         for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
+            write.line(f"from .{property_name_snake(table, csv_folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -430,28 +432,28 @@ def write_tables(metadata: BaseMetadata, folder: Path):
 # region FORMULA
 
 
-def write_formula_helpers(metadata: BaseMetadata, folder: Path):
+def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     for table in metadata["tables"]:
-        with WriteToPythonFile(path=folder / "dynamic" / "formulas" / f"{property_name_snake(table, folder)}.py") as write:
+        with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, ID")
             write.line_empty()
 
             # Properties
             write.region("PROPERTIES")
-            write.line(f"class {property_name_pascal(table, folder)}Formulas:")
+            write.line(f"class {property_name_pascal(table, csv_folder)}Formulas:")
             write.line_indented("id: ID = ID()")
             for field in table["fields"]:
-                property_name = property_name_snake(field, folder)
+                property_name = property_name_snake(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
                 write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field['id']}')")
                 write.property_docstring(field, table)
             write.line_empty()
             write.endregion()
 
-    with WriteToPythonFile(path=folder / "dynamic" / "formulas" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / "__init__.py") as write:
         for table in metadata["tables"]:
-            write.line(f"from .{property_name_snake(table, folder)} import *  # noqa: F403")
+            write.line(f"from .{property_name_snake(table, csv_folder)} import *  # noqa: F403")
 
 
 # endregion
@@ -460,8 +462,8 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
 # region MAIN
 
 
-def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
-    with WriteToPythonFile(path=folder / "dynamic" / "airtable_main.py") as write:
+def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
+    with WriteToPythonFile(path=output_folder / "dynamic" / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from pyairtable import Api")
@@ -471,7 +473,7 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line("from ..static.helpers import get_api_key")
         write.line("from .tables import (")
         for table in metadata["tables"]:
-            write.line_indented(f"{property_name_pascal(table, folder)}Table,")
+            write.line_indented(f"{property_name_pascal(table, csv_folder)}Table,")
         write.line(")")
         write.endregion()
         write.line_empty()
@@ -494,8 +496,8 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line_empty()
         for table in metadata["tables"]:
             write.line_indented("@property")
-            table_name_property = property_name_snake(table, folder)
-            table_name_class = property_name_pascal(table, folder)
+            table_name_property = property_name_snake(table, csv_folder)
+            table_name_class = property_name_pascal(table, csv_folder)
             write.line_indented(f"def {table_name_property}(self) -> {table_name_class}Table:")
             write.line_indented(f"if '{table['name']}' not in self._tables:", 2)
             write.line_indented(
@@ -506,8 +508,8 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.endregion()
 
 
-def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: bool):
-    with WriteToPythonFile(path=folder / "dynamic" / "__init__.py") as write:
+def write_init(metadata: BaseMetadata, output_folder: Path, formulas: bool, wrappers: bool):
+    with WriteToPythonFile(path=output_folder / "dynamic" / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
@@ -518,7 +520,7 @@ def write_init(metadata: BaseMetadata, folder: Path, formulas: bool, wrappers: b
         if formulas:
             write.line("from .formulas import *  # noqa: F403")
 
-    with WriteToPythonFile(path=folder / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / "__init__.py") as write:
         # Imports
         write.line("from .dynamic import *  # noqa: F403")
         if formulas:
@@ -575,18 +577,18 @@ def orm_model_doc_string(table_name: str) -> str:
     """'''
 
 
-def table_doc_string(table: TableMetadata, folder: Path) -> str:
+def table_doc_string(table: TableMetadata, csv_folder: Path) -> str:
     return f'''"""
     An abstraction of pyAirtable's `Api.table` for the `{table["name"]}` table, and an interface for working with custom-typed versions of the models/dicts created by the type generator.
 
     ```python
-    record = Airtable().{property_name_snake(table, folder)}.get("rec1234567890")
+    record = Airtable().{property_name_snake(table, csv_folder)}.get("rec1234567890")
     ```
 
     You can also access the RecordDicts via `.dict`.
     
     ```python
-    record = Airtable().{property_name_snake(table, folder)}.dict.get("rec1234567890")
+    record = Airtable().{property_name_snake(table, csv_folder)}.dict.get("rec1234567890")
     ```
 
     You can also use the ORM Models directly. See https://pyairtable.readthedocs.io/en/stable/orm.html#
@@ -722,7 +724,7 @@ def formula_type(table_name: str, field: FieldMetadata) -> str:
     return formula_type
 
 
-def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, folder: Path) -> str:
+def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, csv_folder: Path) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -805,7 +807,7 @@ def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMet
                 tables = metadata["tables"]
                 for table in tables:
                     if table["id"] == table_id:
-                        linked_orm_class = property_name_model(table, folder)
+                        linked_orm_class = property_name_model(table, csv_folder)
                         break
                 if field["options"]["prefersSingleRecordLink"]:  # type: ignore
                     orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'

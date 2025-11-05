@@ -220,11 +220,11 @@ def upper_case(text: str) -> str:
     return alpha_only(text).upper()
 
 
-def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
+def detect_duplicate_property_names(table: TableMetadata, csv_folder: Path) -> None:
     """Detect duplicate property names in a table's fields."""
     property_names: list[str] = []
     for field in table["fields"]:
-        property_name = property_name_snake(field, folder)
+        property_name = property_name_snake(field, csv_folder)
         property_names.append(property_name)
     for name in set(property_names):
         count = property_names.count(name)
@@ -232,11 +232,11 @@ def detect_duplicate_property_names(table: TableMetadata, folder: Path) -> None:
             print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
 
 
-def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+def property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Converts the field or table name to a sanitized property name in snake_case."""
 
-    if use_custom and folder:
-        text = get_custom_property_name(field_or_table, folder, key=custom_key)
+    if use_custom and csv_folder:
+        text = get_custom_property_name(field_or_table, csv_folder, key=custom_key)
         if text:
             text = text.replace(" ", "_")
             return text
@@ -253,35 +253,39 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, u
     return text
 
 
-def property_name_snake(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+def property_name_snake(
+    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
+) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
-    text = property_name(field_or_table, folder, use_custom, custom_key)
+    text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return text
 
 
-def property_name_camel(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+def property_name_camel(
+    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
+) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    text = property_name(field_or_table, folder, use_custom, custom_key)
+    text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return to_camel(text)
 
 
 def property_name_pascal(
-    field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
+    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
 ) -> str:
     """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    text = property_name(field_or_table, folder, use_custom, custom_key)
+    text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return to_pascal(text)
 
 
-def property_name_model(field_or_table: FieldMetadata | TableMetadata, folder: Path, use_custom: bool = True) -> str:
+def property_name_model(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True) -> str:
     """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
-    if use_custom and folder:
-        text = get_custom_property_name(field_or_table, folder, key=MODEL_NAME)
+    if use_custom and csv_folder:
+        text = get_custom_property_name(field_or_table, csv_folder, key=MODEL_NAME)
         if text:
             text = text.replace(" ", "_")
             return to_pascal(text)
 
-    name = property_name_pascal(field_or_table, folder, use_custom, custom_key=MODEL_NAME) + "Model"
+    name = property_name_pascal(field_or_table, csv_folder, use_custom, custom_key=MODEL_NAME) + "Model"
     return name
 
 
@@ -395,7 +399,7 @@ fields_dataframe: pd.DataFrame = None  # type: ignore
 tables_dataframe: pd.DataFrame = None  # type: ignore
 
 
-def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, folder: Path, key: str = "Property Name (snake_case)") -> str | None:
+def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, key: str = "Property Name (snake_case)") -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
     is_table = "primaryFieldId" in field_or_table
@@ -403,7 +407,7 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, fold
     if is_table:
         global tables_dataframe
         if tables_dataframe is None:
-            tables_path = folder / "tables.csv"
+            tables_path = csv_folder / "tables.csv"
             if not tables_path.exists():
                 return None
             tables_dataframe = pd.read_csv(tables_path)
@@ -419,7 +423,7 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, fold
     else:
         global fields_dataframe
         if fields_dataframe is None:
-            fields_path = folder / "fields.csv"
+            fields_path = csv_folder / "fields.csv"
             if not fields_path.exists():
                 return None
             fields_dataframe = pd.read_csv(fields_path)
@@ -518,9 +522,9 @@ def get_referenced_field(field: FieldMetadata, all_fields: dict[str, FieldMetada
     return None
 
 
-def copy_static_files(folder: Path, type: str):
+def copy_static_files(output_folder: Path, type: str):
     source = Path(f"./static/{type}")
-    destination = folder / "static"
+    destination = output_folder / "static"
     destination.mkdir(parents=True, exist_ok=True)
 
     if source.exists():
