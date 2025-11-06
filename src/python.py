@@ -17,7 +17,6 @@ from .helpers import (
     is_computed_field,
     is_valid_field,
     options_name,
-    property_name_camel,
     property_name_model,
     property_name_pascal,
     property_name_snake,
@@ -190,18 +189,18 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
         )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
-            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
             first_type="TableId",
             second_type="dict[str, str]",
         )
         write.dict_class(
             "TableIdToFieldNamesTypeMapping",
-            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldName") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldName") for table in metadata["tables"]],
             first_type="TableId",
         )
         write.dict_class(
             "TableIdToFieldNamesListMapping",
-            [(table["id"], f"{property_name_camel(table, csv_folder)}FieldNames") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNames") for table in metadata["tables"]],
             first_type="TableId",
         )
 
