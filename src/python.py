@@ -212,6 +212,13 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             second_type="list[str]",
             value_is_string=False,
         )
+        write.dict_class(
+            "TableIdToFieldNameToFieldIdMapping",
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
+            first_type="TableId",
+            second_type="dict[str, str]",
+            value_is_string=False,
+        )
 
     with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "__init__.py") as write:
         write.line("from ._tables import *  # noqa: F403")
