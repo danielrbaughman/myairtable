@@ -164,6 +164,10 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
 
     with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "_tables.py") as write:
         write.line("from typing import Literal")
+        for table in metadata["tables"]:
+            table_name_snake = property_name_snake(table, csv_folder)
+            table_name_pascal = property_name_pascal(table, csv_folder)
+            write.line(f"from .{table_name_snake} import {table_name_pascal}Field, {table_name_pascal}Fields, {table_name_pascal}FieldNameIdMapping")
         write.line_empty()
 
         # Table Lists
@@ -192,16 +196,21 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
             first_type="TableId",
             second_type="dict[str, str]",
+            value_is_string=False,
         )
         write.dict_class(
             "TableIdToFieldNamesTypeMapping",
             [(table["id"], f"{property_name_pascal(table, csv_folder)}Field") for table in metadata["tables"]],
             first_type="TableId",
+            second_type="str",
+            value_is_string=False,
         )
         write.dict_class(
             "TableIdToFieldNamesListMapping",
             [(table["id"], f"{property_name_pascal(table, csv_folder)}Fields") for table in metadata["tables"]],
             first_type="TableId",
+            second_type="list[str]",
+            value_is_string=False,
         )
 
     with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "__init__.py") as write:

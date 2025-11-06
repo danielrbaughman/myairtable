@@ -81,10 +81,10 @@ class WriteToPythonFile(WriteToFile):
         else:
             self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}`"""')
 
-    def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str"):
+    def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str", value_is_string: bool = True):
         self.line(f"{name}: dict[{first_type}, {second_type}] = {{")
         for k, v in pairs:
-            self.dict_row(k, v)
+            self.dict_row(k, v, value_is_string=value_is_string)
         self.line("}")
         self.line_empty()
 
@@ -100,8 +100,11 @@ class WriteToPythonFile(WriteToFile):
             self.line_indented(f'"{item}",')
         self.line("]")
 
-    def dict_row(self, key: str, value: str):
-        self.line_indented(f'"{key}": "{value}",')
+    def dict_row(self, key: str, value: str, value_is_string: bool = True):
+        if value_is_string:
+            self.line_indented(f'"{key}": "{value}",')
+        else:
+            self.line_indented(f'"{key}": {value},')
 
     def property_row(self, name: str, type: str):
         self.line_indented(f"{name}: {type}")
