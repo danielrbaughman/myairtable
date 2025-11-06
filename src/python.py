@@ -195,12 +195,12 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
         )
         write.dict_class(
             "TableIdToFieldNamesTypeMapping",
-            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldName") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}Field") for table in metadata["tables"]],
             first_type="TableId",
         )
         write.dict_class(
             "TableIdToFieldNamesListMapping",
-            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNames") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}Fields") for table in metadata["tables"]],
             first_type="TableId",
         )
 
