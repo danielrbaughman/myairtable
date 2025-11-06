@@ -49,7 +49,6 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record_id: str,
         use_field_ids: bool = True,
-        fields: list[FieldType] | None = None,
         **options,
     ) -> ORMType:
         """
@@ -58,7 +57,6 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         Args:
             record_id (str): Airtable record ID
             use_field_ids (bool, optional): If True, returns field IDs instead of field names. Defaults to True.
-            fields (list[str] | None, optional): A list of fields to retrieve. If None, retrieves all fields. Defaults to None.
             **options: Additional options to pass to the pyAirtable `get` method.
         """
         ...
@@ -125,7 +123,6 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record_dict: RecordDict = self._table.get(
                 record_id,
                 use_field_ids=use_field_ids,
-                fields=fields,
                 **options,
             )
             record_dict: DictType = sanitize_record_dict(record_dict)

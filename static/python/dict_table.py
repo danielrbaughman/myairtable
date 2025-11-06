@@ -55,7 +55,6 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         self,
         record_id: str,
         use_field_ids: bool = False,
-        fields: list[FieldType] | None = None,
         max_records: int | None = None,
         **options,
     ) -> DictType:
@@ -65,7 +64,6 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         Args:
             record_id (str): Airtable record ID
             use_field_ids (bool, optional): If True, returns field IDs instead of field names. Defaults to False.
-            fields (list[str] | None, optional): A list of fields to retrieve. If None, retrieves all fields. Defaults to None.
             max_records (int | None, optional): The maximum number of records to retrieve. If None, retrieves all records. Defaults to None.
             **options: Additional options to pass to the pyAirtable `get` method.
         """
@@ -138,7 +136,6 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             record: RecordDict = self._table.get(
                 record_id,
                 use_field_ids=use_field_ids,
-                fields=fields,
                 max_records=max_records,
                 **options,
             )
