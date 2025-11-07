@@ -119,6 +119,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         if fields is not None:
             validate_keys(fields, self._field_names)
 
+        if isinstance(record_id, list) and len(record_id) > 0 and isinstance(record_id[0], str):
+            record_ids = record_id
+            record_id = None  # type: ignore
+
         if record_id:
             record_dict: RecordDict = self._table.get(
                 record_id,
@@ -177,16 +181,24 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         """
         ...
 
-    def create(self, record_s: ORMType | list[ORMType]) -> ORMType | list[ORMType]:
-        if isinstance(record_s, list):
-            self._orm_cls.batch_save(record_s)
-            new_records = self.get(record_ids=[r.id for r in record_s])
+    def create(
+        self,
+        record: ORMType | None = None,
+        records: list[ORMType] | None = None,
+    ) -> ORMType | list[ORMType]:
+        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], self._orm_cls):
+            records = record
+            record = None  # type: ignore
+
+        if records:
+            self._orm_cls.batch_save(records)
+            new_records = self.get(record_ids=[r.id for r in records])
             return new_records
         else:
-            if not record_s:
+            if not record:
                 raise ValueError("Record to create cannot be None.")
-            record_s.save()  # type: ignore
-            new_record = self.get(record_id=record_s.id)  # type: ignore
+            record.save()  # type: ignore
+            new_record = self.get(record_id=record.id)  # type: ignore
             return new_record
 
     @overload
@@ -209,16 +221,24 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         """
         ...
 
-    def update(self, record_s: ORMType | list[ORMType]) -> ORMType | list[ORMType]:
-        if isinstance(record_s, list):
-            self._orm_cls.batch_save(record_s)
-            updated_records = self.get(record_ids=[r.id for r in record_s])
+    def update(
+        self,
+        record: ORMType | None = None,
+        records: list[ORMType] | None = None,
+    ) -> ORMType | list[ORMType]:
+        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], self._orm_cls):
+            records = record
+            record = None  # type: ignore
+
+        if records:
+            self._orm_cls.batch_save(records)
+            updated_records = self.get(record_ids=[r.id for r in records])
             return updated_records
         else:
-            if not record_s:
+            if not record:
                 raise ValueError("Record cannot be None.")
-            record_s.save()  # type: ignore
-            updated_record = self.get(record_id=record_s.id)  # type: ignore
+            record.save()  # type: ignore
+            updated_record = self.get(record_id=record.id)  # type: ignore
             return updated_record
 
     @overload

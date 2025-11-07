@@ -132,7 +132,11 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         if fields is not None:
             validate_keys(fields, self._field_names)
 
-        if record_id:
+        if isinstance(record_id, list) and len(record_id) > 0 and isinstance(record_id[0], str):
+            record_ids = record_id
+            record_id = None  # type: ignore
+
+        if record_id and isinstance(record_id, str):
             record: RecordDict = self._table.get(
                 record_id,
                 use_field_ids=use_field_ids,
@@ -205,22 +209,27 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
 
     def create(
         self,
-        record_s: DictType | CreateDictType | list[DictType] | list[CreateDictType],
+        record: DictType | CreateDictType,
+        records: list[DictType] | list[CreateDictType],
         use_field_ids: bool = False,
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record_s, list):
-            for r in record_s:
+        if isinstance(record, list) and len(record) > 0 and (isinstance(record[0], DictType) or isinstance(record[0], CreateDictType)):
+            records = record
+            record = None  # type: ignore
+
+        if records:
+            for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            records = self._table.batch_create([r["fields"] for r in record_s], use_field_ids=use_field_ids, **options)
+            records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
             records = [sanitize_record_dict(r) for r in records]
             return records
         else:
-            if not record_s:
+            if not record:
                 raise ValueError("Record to create cannot be None.")
-            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys)  # type: ignore
-            record = self._table.create(fields=record_s["fields"], use_field_ids=use_field_ids, **options)
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # type: ignore
+            record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
             record = sanitize_record_dict(record)
             return record
 
@@ -260,15 +269,20 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
 
     def update(
         self,
-        record_s: DictType | UpdateDictType | list[DictType] | list[UpdateDictType],
+        record: DictType | UpdateDictType,
+        records: list[DictType] | list[UpdateDictType] = [],
         use_field_ids: bool = False,
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record_s, list):
-            for r in record_s:
+        if isinstance(record, list) and len(record) > 0 and (isinstance(record[0], DictType) or isinstance(record[0], UpdateDictType)):
+            records = record
+            record = None  # type: ignore
+
+        if isinstance(records, list):
+            for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in record_s]
+            update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in records]
             records = self._table.batch_update(
                 update_dicts,
                 use_field_ids=use_field_ids,
@@ -277,10 +291,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             records = [sanitize_record_dict(r) for r in records]
             return records
         else:
-            record_s["fields"] = prepare_fields_for_save(record_s["fields"], calculated_field_keys)  # type: ignore
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # type: ignore
             record = self._table.update(
-                record_id=record_s["id"],
-                fields=record_s["fields"],
+                record_id=record["id"],
+                fields=record["fields"],
                 use_field_ids=use_field_ids,
                 **options,
             )
