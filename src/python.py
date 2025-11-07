@@ -328,7 +328,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             ]
             write.line(f"from pyairtable.orm.fields import {', '.join(pyairtable_field_types)}")
             write.line_empty()
-            write.line("from ...static.helpers import get_api_key")
+            write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
             all_options: list[str] = []
             for field in table["fields"]:
@@ -353,7 +353,9 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line_indented("@staticmethod", 2)
             write.line_indented("def api_key() -> str:", 2)
             write.line_indented("return get_api_key()", 3)
-            write.line_indented(f'base_id = "{base_id}"', 2)
+            write.line_indented("@staticmethod", 2)
+            write.line_indented("def base_id() -> str:", 2)
+            write.line_indented("return get_base_id()", 3)
             write.line_indented(f'table_name = "{table["name"]}"', 2)
             write.line_indented("use_field_ids = True", 2)
             write.line_indented("memoize = True", 2)
@@ -485,7 +487,7 @@ def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, 
         write.line_empty()
         write.line("from .types import TableName")
         write.line("from ..static.airtable_table import TableType")
-        write.line("from ..static.helpers import get_api_key")
+        write.line("from ..static.helpers import get_api_key, get_base_id")
         write.line("from .tables import (")
         for table in metadata["tables"]:
             write.line_indented(f"{property_name_pascal(table, csv_folder)}Table,")
@@ -500,10 +502,13 @@ def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, 
         write.line_indented(main_doc_string())
         write.line_empty()
         write.line_indented("_api: Api")
-        write.line_indented(f"_base_id: str = '{base_id}'")
+        write.line_indented("_base_id: str")
         write.line_indented("_tables: dict[TableName, TableType] = {}")
         write.line_empty()
         write.line_indented("def __init__(self):")
+        write.line_indented("self._base_id: str = get_base_id()", 2)
+        write.line_indented("if not self._base_id:", 2)
+        write.line_indented('raise ValueError("Base ID must be provided.")', 3)
         write.line_indented("api_key: str = get_api_key()", 2)
         write.line_indented("if not api_key:", 2)
         write.line_indented('raise ValueError("API key must be provided.")', 3)
