@@ -31,7 +31,7 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_python(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool):
+def gen_python(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
@@ -54,7 +54,7 @@ def gen_python(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_fo
     copy_static_files(output_folder, "python")
     write_types(metadata, output_folder, csv_folder)
     write_dicts(metadata, output_folder, csv_folder)
-    write_models(metadata, base_id, output_folder, csv_folder, formulas)
+    write_models(metadata, base_id, output_folder, csv_folder, formulas, package_prefix)
     # write_pydantic_models(metadata, folder)
     if formulas:
         write_formula_helpers(metadata, output_folder, csv_folder)
@@ -289,7 +289,7 @@ def write_dicts(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
 
 
 # region MODELS
-def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool):
+def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path, formulas: bool, package_prefix: str):
     for table in metadata["tables"]:
         with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
@@ -378,7 +378,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             # properties
             for field in table["fields"]:
                 field_name = property_name_snake(field, csv_folder)
-                pyairtable_type = pyairtable_orm_type(table["name"], field, metadata, csv_folder, output_folder)
+                pyairtable_type = pyairtable_orm_type(table["name"], field, metadata, csv_folder, output_folder, package_prefix=package_prefix)
                 write.line_indented(f"{field_name}: {pyairtable_type}")
                 write.property_docstring(field, table)
             write.line_empty()
@@ -749,7 +749,9 @@ def formula_type(table_name: str, field: FieldMetadata) -> str:
     return formula_type
 
 
-def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, csv_folder: Path, output_folder: Path) -> str:
+def pyairtable_orm_type(
+    table_name: str, field: FieldMetadata, metadata: BaseMetadata, csv_folder: Path, output_folder: Path, package_prefix: str
+) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -834,10 +836,11 @@ def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMet
                     if table["id"] == table_id:
                         linked_orm_class = property_name_model(table, csv_folder)
                         break
+                prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
                 if field["options"]["prefersSingleRecordLink"]:  # type: ignore
-                    orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{output_folder.stem}.dynamic.models.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
+                    orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
                 else:
-                    orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{output_folder.stem}.dynamic.models.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
+                    orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
             else:
                 print(table_name, original_id, sanitize_string(field["name"]), "[yellow]does not have a linkedTableId[/]")
         case _:

@@ -44,6 +44,7 @@ def py(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
 ):
     """Generate types and models in Python"""
     base_id = get_base_id()
@@ -60,6 +61,7 @@ def py(
         csv_folder=csv_folder_path,
         formulas=formulas,
         wrappers=wrappers,
+        package_prefix=package_prefix,
     )
 
 
