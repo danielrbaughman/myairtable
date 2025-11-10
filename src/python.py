@@ -294,7 +294,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
         with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
             write.line("from datetime import datetime")
-            write.line("from typing import Any")
+            write.line("from typing import Any, TYPE_CHECKING")
             write.line_empty()
             write.line("from pyairtable.orm import Model")
             pyairtable_field_types: list[str] = [
@@ -343,6 +343,11 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                 write.line(")")
             write.line(f"from ..dicts import {property_name_pascal(table, csv_folder)}RecordDict")
             write.line(f"from ..formulas import {property_name_pascal(table, csv_folder)}Formulas")
+            linked_tables = get_linked_tables(table, metadata, csv_folder)
+            if len(linked_tables) > 0:
+                write.line("if TYPE_CHECKING:")
+            for linked_table in linked_tables:
+                write.line_indented(f"from .{property_name_snake(linked_table, csv_folder)} import {property_name_model(linked_table, csv_folder)}")
             write.line_empty()
             write.line_empty()
 
@@ -373,7 +378,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             # properties
             for field in table["fields"]:
                 field_name = property_name_snake(field, csv_folder)
-                pyairtable_type = pyairtable_orm_type(table["name"], field, metadata, csv_folder)
+                pyairtable_type = pyairtable_orm_type(table["name"], field, metadata, csv_folder, output_folder)
                 write.line_indented(f"{field_name}: {pyairtable_type}")
                 write.property_docstring(field, table)
             write.line_empty()
@@ -744,7 +749,7 @@ def formula_type(table_name: str, field: FieldMetadata) -> str:
     return formula_type
 
 
-def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, csv_folder: Path) -> str:
+def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMetadata, csv_folder: Path, output_folder: Path) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field["type"]
@@ -830,9 +835,9 @@ def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMet
                         linked_orm_class = property_name_model(table, csv_folder)
                         break
                 if field["options"]["prefersSingleRecordLink"]:  # type: ignore
-                    orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'
+                    orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{output_folder.stem}.dynamic.models.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
                 else:
-                    orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{linked_orm_class}") # type: ignore'
+                    orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{output_folder.stem}.dynamic.models.{property_name_snake(table, csv_folder)}.{linked_orm_class}") # type: ignore'
             else:
                 print(table_name, original_id, sanitize_string(field["name"]), "[yellow]does not have a linkedTableId[/]")
         case _:
@@ -840,6 +845,33 @@ def pyairtable_orm_type(table_name: str, field: FieldMetadata, metadata: BaseMet
                 orm_type = "Any"
 
     return orm_type
+
+
+def get_linked_tables(table: TableMetadata, metadata: BaseMetadata, csv_folder: Path) -> list[TableMetadata]:
+    """Get the list of linked models for a given table"""
+
+    linked_tables: list[TableMetadata] = []
+
+    for field in table["fields"]:
+        if field["type"] == "multipleRecordLinks":
+            if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
+                table_id = field["options"]["linkedTableId"]  # type: ignore
+                tables = metadata["tables"]
+                for linked_table in tables:
+                    if linked_table["id"] == table_id:
+                        linked_tables.append(linked_table)
+                        break
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_linked_tables = []
+    for linked_table in linked_tables:
+        if linked_table["id"] not in seen and linked_table["id"] != table["id"]:
+            seen.add(linked_table["id"])
+            unique_linked_tables.append(linked_table)
+
+    linked_tables = unique_linked_tables
+    return linked_tables
 
 
 class TypeAndReferencedField(BaseModel):
