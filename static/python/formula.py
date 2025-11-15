@@ -75,6 +75,24 @@ class TextField(Field):
 
         return F.Formula(formula)
 
+    def phone_equals(self, value: str) -> F.Formula:
+        """
+        Compares two phone numbers after normalizing the values
+        """
+
+        def normalize(s: str) -> str:
+            f = F.TRIM(s)
+            f = F.SUBSTITUTE(f, " ", "")
+            f = F.SUBSTITUTE(f, "-", "")
+            f = F.SUBSTITUTE(f, "(", "")
+            f = F.SUBSTITUTE(f, ")", "")
+            f = F.SUBSTITUTE(f, "+", "")
+            f = F.SUBSTITUTE(f, ".", "")
+            return str(f)
+
+        formula = normalize(self) + " = " + normalize(value)
+        return F.Formula(formula)
+
     def _find(
         self,
         value: str,
