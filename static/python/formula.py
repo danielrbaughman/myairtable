@@ -58,7 +58,7 @@ class Field(F.Field):
 class TextField(Field):
     """String comparison formulas"""
 
-    def equals(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
+    def equals(self, value: str, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """
         Slightly redundant with `.eq`, but adds options for case sensitivity and trimming whitespace.
         """
