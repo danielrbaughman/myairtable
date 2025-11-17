@@ -6,6 +6,7 @@ from typer import Argument, Option, Typer
 from src.csv import gen_csv
 from src.meta import gen_meta, get_base_id, get_base_meta_data
 from src.python import gen_python
+from src.typescript import gen_typescript
 
 # from src.typescript import gen_typescript
 
@@ -65,15 +66,14 @@ def py(
     )
 
 
-# Disabled for now, while I finalize the Python version.
-# @app.command()
-# def ts(folder: str = Argument(help="Path to the output folder")):
-#     """Generate types and models in TypeScript"""
-#     base_id = get_base_id()
-#     metadata = get_base_meta_data(base_id)
-#     folder_path = Path(folder)
-#     folder_path.mkdir(parents=True, exist_ok=True)
-#     gen_typescript(metadata, base_id, folder=folder_path)
+@app.command()
+def ts(folder: str = Argument(help="Path to the output folder")):
+    """Generate types and models in TypeScript"""
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    folder_path = Path(folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    gen_typescript(metadata, base_id, folder=folder_path)
 
 
 if __name__ == "__main__":

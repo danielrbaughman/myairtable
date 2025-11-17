@@ -2,7 +2,7 @@
 import Airtable, { Record as ATRecord, FieldSet, Table } from "airtable";
 import { AirtableRecord } from "./airtable-record";
 import { QueryParams } from "airtable/lib/query_params";
-import { idEquals, idInList } from "./formula";
+import { ID } from "./formula";
 
 interface BasicGetOptions<T> {
 	pageSize?: number;
@@ -48,7 +48,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableRecord<T>, V ex
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
 			const selectOptions: QueryParams<T> = {
-				filterByFormula: idEquals(recordIdOrIdsOrOptions),
+				filterByFormula: ID.equals(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
@@ -66,7 +66,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableRecord<T>, V ex
 			}
 
 			const selectOptions: QueryParams<T> = {
-				filterByFormula: idInList(recordIdOrIdsOrOptions),
+				filterByFormula: ID.inList(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
