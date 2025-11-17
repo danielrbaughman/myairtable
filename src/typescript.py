@@ -56,17 +56,22 @@ def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
 
 
 def write_types(metadata: BaseMetadata, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "types.ts") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
-        write.line('import { RecordId } from "../static/special_types";')
-        write.endregion()
-        write.line_empty()
+    # Create types directory
+    types_dir = folder / "dynamic" / "types"
+    types_dir.mkdir(parents=True, exist_ok=True)
 
-        # Field Options
-        write.region("FIELD OPTIONS")
-        for table in metadata["tables"]:
+    # Write individual table type files
+    for table in metadata["tables"]:
+        with WriteToTypeScriptFile(path=types_dir / f"{property_name_camel(table, folder)}.ts") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
+            write.line('import { RecordId } from "../../static/special_types";')
+            write.endregion()
+            write.line_empty()
+
+            # Field Options
+            write.region("FIELD OPTIONS")
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
@@ -75,10 +80,9 @@ def write_types(metadata: BaseMetadata, folder: Path):
                         options,
                         f"Select options for `{sanitize_string(field['name'])}`",
                     )
-        write.endregion()
+            write.endregion()
 
-        # Table Types
-        for table in metadata["tables"]:
+            # Table Type
             field_names = [sanitize_string(field["name"]) for field in table["fields"]]
             field_ids = [field["id"] for field in table["fields"]]
             property_names = [property_name_camel(field, folder) for field in table["fields"]]
@@ -166,6 +170,15 @@ def write_types(metadata: BaseMetadata, folder: Path):
 
             write.endregion()
 
+    # Write global tables file
+    with WriteToTypeScriptFile(path=types_dir / "_tables.ts") as write:
+        # Import field name ID mappings from individual table files
+        write.region("IMPORTS")
+        for table in metadata["tables"]:
+            write.line(f"import {{ {property_name_camel(table, folder)}FieldNameIdMapping }} from './{property_name_camel(table, folder)}';")
+        write.endregion()
+        write.line_empty()
+
         # Table Lists
         table_names = []
         table_ids = []
@@ -190,6 +203,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
             second_type="TableName",
             is_value_string=True,
         )
+
         write.dict_class(
             "TableIdToFieldNameIdMapping",
             [(table["id"], f"{property_name_camel(table, folder)}FieldNameIdMapping") for table in metadata["tables"]],
@@ -198,33 +212,44 @@ def write_types(metadata: BaseMetadata, folder: Path):
         )
         write.endregion()
 
+    # Write barrel export index.ts
+    with WriteToTypeScriptFile(path=types_dir / "index.ts") as write:
+        for table in metadata["tables"]:
+            write.line(f"export * from './{property_name_camel(table, folder)}';")
+        write.line("export * from './_tables';")
+        write.line("")
+
 
 def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "models.ts") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line('import { Attachment, Collaborator, FieldSet, Record } from "airtable";')
-        write.line('import { AirtableRecord } from "../static/airtable-record";')
-        write.line('import { RecordId } from "../static/special_types";')
-        write.line('import { getApiKey } from "../static/helpers";')
-        write.line("import {")
-        for table in metadata["tables"]:
+    # Create models directory
+    models_dir = folder / "dynamic" / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write individual table model files
+    for table in metadata["tables"]:
+        with WriteToTypeScriptFile(path=models_dir / f"{property_name_camel(table, folder)}.ts") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line('import { Attachment, Collaborator, FieldSet, Record } from "airtable";')
+            write.line('import { AirtableRecord } from "../../static/airtable-record";')
+            write.line('import { RecordId } from "../../static/special_types";')
+            write.line('import { getApiKey } from "../../static/helpers";')
+
+            # Import types for this table
+            write.line("import {")
             write.line_indented(f"{property_name_camel(table, folder)}FieldSet,")
-        for table in metadata["tables"]:
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
                     write.line_indented(f"{options_name(property_name_camel(table, folder), property_name_camel(field, folder))},")
-        write.line('} from "./types";')
-        write.line("import {")
-        for table in metadata["tables"]:
-            write.line_indented(f"{property_name_camel(table, folder)}Table,")
-        write.line('} from "./tables";')
-        write.endregion()
-        write.line_empty()
+            write.line('} from "../types";')
 
-        # Table Types
-        for table in metadata["tables"]:
+            # Import table class for this table
+            write.line(f"import {{ {property_name_camel(table, folder)}Table }} from '../tables/{property_name_camel(table, folder)}';")
+            write.endregion()
+            write.line_empty()
+
+            # Table Model
             write.region(upper_case(table["name"]))
 
             write.line(
@@ -295,28 +320,35 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line("}")
             write.endregion()
 
+    # Write barrel export index.ts
+    with WriteToTypeScriptFile(path=models_dir / "index.ts") as write:
+        for table in metadata["tables"]:
+            write.line(f"export * from './{property_name_camel(table, folder)}';")
+        write.line("")
+
 
 def write_tables(metadata: BaseMetadata, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "tables.ts") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line('import { AirtableTable } from "../static/airtable-table";')
-        write.line("import {")
-        for table in metadata["tables"]:
+    # Create tables directory
+    tables_dir = folder / "dynamic" / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write individual table files
+    for table in metadata["tables"]:
+        with WriteToTypeScriptFile(path=tables_dir / f"{property_name_camel(table, folder)}.ts") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line('import { AirtableTable } from "../../static/airtable-table";')
+            write.line("import {")
             write.line_indented(f"{property_name_camel(table, folder)}FieldSet,")
             write.line_indented(f"{property_name_camel(table, folder)}Field,")
             write.line_indented(f"{property_name_camel(table, folder)}View,")
             write.line_indented(f"{property_name_camel(table, folder)}ViewNameIdMapping,")
-        write.line('} from "./types";')
-        write.line("import {")
-        for table in metadata["tables"]:
-            write.line_indented(f"{property_name_camel(table, folder)}Record,")
-        write.line('} from "./models";')
-        write.endregion()
-        write.line_empty()
+            write.line('} from "../types";')
+            write.line(f"import {{ {property_name_camel(table, folder)}Record }} from '../models/{property_name_camel(table, folder)}';")
+            write.endregion()
+            write.line_empty()
 
-        # Table Types
-        for table in metadata["tables"]:
+            # Table Class
             write.region(upper_case(table["name"]))
 
             write.line(
@@ -331,6 +363,12 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.line("}")
 
             write.endregion()
+
+    # Write barrel export index.ts
+    with WriteToTypeScriptFile(path=tables_dir / "index.ts") as write:
+        for table in metadata["tables"]:
+            write.line(f"export * from './{property_name_camel(table, folder)}';")
+        write.line("")
 
 
 def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
@@ -359,21 +397,26 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
 
 
 def write_formula_helpers(metadata: BaseMetadata, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "formula.ts") as write:
-        # Imports
-        write.region("IMPORTS")
-        write.line("import {")
-        for table in metadata["tables"]:
+    # Create formulas directory
+    formulas_dir = folder / "dynamic" / "formulas"
+    formulas_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write individual formula helper files
+    for table in metadata["tables"]:
+        with WriteToTypeScriptFile(path=formulas_dir / f"{property_name_camel(table, folder)}.ts") as write:
+            # Imports
+            write.region("IMPORTS")
+            write.line("import {")
             write.line_indented(f"{property_name_camel(table, folder)}Field,")
             write.line_indented(f"{property_name_camel(table, folder)}Fields,")
             write.line_indented(f"{property_name_camel(table, folder)}FieldNameIdMapping,")
-        write.line("} from './types';")
-        write.line("import { validateKey } from '../static/helpers';")
-        write.line("import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from '../static/formula';")
-        write.line_empty()
+            write.line('} from "../types";')
+            write.line('import { validateKey } from "../../static/helpers";')
+            write.line('import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
+            write.endregion()
+            write.line_empty()
 
-        # Class
-        for table in metadata["tables"]:
+            # Formula Classes
             write.region(upper_case(table["name"]))
 
             def write_formula(type: str):
@@ -394,6 +437,12 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
 
             write.endregion()
 
+    # Write barrel export index.ts
+    with WriteToTypeScriptFile(path=formulas_dir / "index.ts") as write:
+        for table in metadata["tables"]:
+            write.line(f"export * from './{property_name_camel(table, folder)}';")
+        write.line("")
+
 
 def write_index(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
@@ -401,6 +450,7 @@ def write_index(metadata: BaseMetadata, folder: Path):
         write.line('export * from "./tables";')
         write.line('export * from "./types";')
         write.line('export * from "./models";')
+        write.line('export * from "./formulas";')
         write.line("")
 
     with WriteToTypeScriptFile(path=folder / "index.ts") as write:

@@ -3,3 +3,4 @@ __pycache__/
 output/
 dist/
 node_modules/
+.claude/settings.local.json
