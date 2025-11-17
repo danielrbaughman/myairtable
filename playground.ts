@@ -58,7 +58,7 @@ program.action(async () => {
 	// 	throw new Error("Validation failed");
 	// }
 	const jobModel = new JobsModel(job);
-	console.log(jobModel.name);
+	console.log(jobModel.toJSON());
 	// console.log("Parsed Team Member Model:", teamMemberModel.toJSON());
 	// teamMemberModel.email = "hello"
 	// const parsedTeamMembers: TeamsModel[] = await Promise.all(

@@ -291,11 +291,19 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented("super(data.id);", 2)
             for field in table["fields"]:
                 field_name = property_name_camel(field, folder)
-                # ts_type = typescript_type(table["name"], field, include_null=True)
                 write.line_indented(f"this._{field_name} = this._{field_name}Schema.parse(data.{field_name});", 2)
             write.line_indented("}")
+            write.line_empty()
+            write.line_indented(f"toJSON(): {table_name}Record {{")
+            write.line_indented("return {", 2)
+            write.line_indented("id: this.id,", 3)
+            for field in table["fields"]:
+                field_name = property_name_camel(field, folder)
+                # write.line_indented("//@ts-ignore", 3)
+                write.line_indented(f"{field_name}: this._{field_name},", 3)
+            write.line_indented("};", 2)
+            write.line_indented("}", 1)
             write.line("}")
-            # write.docstring(f"`{sanitize_string(field['name'])}` ({field['id']})", 1)
             write.line_empty()
 
     with WriteToTypeScriptFile(path=folder / "dynamic" / "models" / "index.ts") as write:
@@ -517,9 +525,18 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
-    if not ts_type.endswith("[]"):
-        if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
-            ts_type = f"{ts_type} | {ts_type}[]"  # TODO - not sure if this is correct
+    # if not ts_type.endswith("[]"):
+    #     if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
+    #         ts_type = f"{ts_type} | {ts_type}[]"  # TODO - not sure if this is correct
+
+    if not ts_type.endswith("[]") and ts_type not in ("number", "boolean"):  # TODO - why is this not allowed in Airtable JS library?
+        if involves_lookup_field(field, all_fields):
+            ts_type = f"{ts_type}[]"
+        elif involves_rollup_field(field, all_fields):
+            if ts_type == "number" or ts_type == "string":  # TODO - a limitation of Airtable-TS: "[airtable-ts] Unknown airtable type..."
+                ts_type = ts_type
+            else:
+                ts_type = f"{ts_type}[]"
 
     return ts_type + " | null"
 
@@ -675,7 +692,8 @@ def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
     """Returns the appropriate Zod schema type for a given Airtable field."""
 
     airtable_type: FieldType = field["type"]
-    ts_type: str = "z.any()"
+    generic = "z.string()"  # AirtableTS doesn't like "any"
+    zod_type: str = generic
 
     # With calculated fields, we want to know the type of the result
     if is_calculated_field(field):
@@ -683,66 +701,70 @@ def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
 
     match airtable_type:
         case "singleLineText" | "multilineText" | "richText" | "barcode":
-            ts_type = "z.string()"
+            zod_type = "z.string()"
         case "phoneNumber":
-            ts_type = "z.string()"  # TODO - zod doesn't have built-in phone validation, but it supports custom validation
+            zod_type = "z.string()"  # TODO - zod doesn't have built-in phone validation, but it supports custom validation
         case "url":
-            ts_type = "z.url().or(z.literal(''))"
+            zod_type = "z.url().or(z.literal(''))"
         case "email":
-            ts_type = "z.email().or(z.literal(''))"
+            zod_type = "z.email().or(z.literal(''))"
         case "checkbox":
-            ts_type = "z.boolean()"
+            zod_type = "z.boolean()"
         case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
-            ts_type = "z.string()"  # TODO
+            zod_type = "z.string()"  # TODO
         case "count" | "autoNumber" | "percent" | "currency" | "duration":
-            ts_type = "z.number()"
+            zod_type = "z.number()"
         case "number":
             if "options" in field and "precision" in field["options"]:  # type: ignore
                 if field["options"]["precision"] == 0:  # type: ignore
-                    ts_type = "z.int()"
+                    zod_type = "z.int()"
                 else:
-                    ts_type = "z.number()"
+                    zod_type = "z.number()"
             else:
-                ts_type = "z.number()"
+                zod_type = "z.number()"
         case "multipleRecordLinks":
-            ts_type = "z.array(RecordIdSchema)"
+            zod_type = "z.array(RecordIdSchema)"
         case "multipleAttachments":
             # ts_type = "z.array(AirtableAttachmentSchema)"
-            ts_type = "z.array(AirtableAttachmentSchema)"
-            ts_type = "z.string()"  # TODO - AirtableTS seems to just return the URL string
+            zod_type = "z.string()"  # TODO - AirtableTS seems to just return the URL string
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             # ts_type = "AirtableCollaboratorSchema"
-            ts_type = "z.string()"  # TODO
+            zod_type = "z.string()"  # TODO
         case "singleSelect":
             referenced_field = get_referenced_field(field, all_fields)
             if field["id"] in select_options_lists:
-                ts_type = f"z.enum({select_options_lists[field['id']]})"
+                zod_type = f"z.enum({select_options_lists[field['id']]})"
             elif referenced_field and referenced_field["type"] == "singleSelect" and referenced_field["id"] in select_options_types:
-                ts_type = f"z.enum({select_options_lists[referenced_field['id']]})"
+                zod_type = f"z.enum({select_options_lists[referenced_field['id']]})"
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "z.any()"
+                zod_type = generic
         case "multipleSelects":
             if field["id"] in select_options_lists:
-                ts_type = f"z.array(z.enum({select_options_lists[field['id']]}))"
+                zod_type = f"z.array(z.enum({select_options_lists[field['id']]}))"
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "z.any()"
+                zod_type = generic
         case "button":
-            ts_type = "z.string()"  # TODO
+            zod_type = "z.string()"  # TODO
         case _:
             if not is_valid_field(field):
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "z.any()"
+                zod_type = generic
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
-    if not ts_type.startswith("z.array"):
-        if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
-            ts_type = f"{ts_type}.or(z.array({ts_type}))"  # TODO - not sure if this is correct
+    if not zod_type.startswith("z.array") and zod_type not in ("z.number()", "z.boolean()"):  # TODO - why is this not allowed in Airtable JS library?
+        if involves_lookup_field(field, all_fields):
+            zod_type = f"z.array({zod_type})"
+        elif involves_rollup_field(field, all_fields):
+            if zod_type == "z.number()" or zod_type == "z.string()":  # TODO - a limitation of Airtable-TS: "[airtable-ts] Unknown airtable type..."
+                zod_type = zod_type
+            else:
+                zod_type = f"z.array({zod_type})"
 
-    return ts_type + ".nullable()"
+    return zod_type + ".nullable()"
