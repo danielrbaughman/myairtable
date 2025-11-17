@@ -406,7 +406,9 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False, i
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FieldType = field["type"]
-    ts_type: str = "Any"
+    generic = "string"
+    # ts_type: str = "Any"
+    ts_type: str = generic  # AirtableTS doesn't like "Any"
 
     # With calculated fields, we want to know the type of the result
     if is_calculated_field(field):
@@ -426,9 +428,11 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False, i
         case "multipleRecordLinks":
             ts_type = "RecordId[]"
         case "multipleAttachments":
-            ts_type = "Attachment[]"
+            # ts_type = "Attachment[]"
+            ts_type = "string"
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            ts_type = "Collaborator"
+            # ts_type = "Collaborator"
+            ts_type = "string"
         case "singleSelect":
             referenced_field = get_referenced_field(field, all_fields)
             if field["id"] in select_options_types:
@@ -438,21 +442,21 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False, i
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
         case "multipleSelects":
             if field["id"] in select_options_types:
                 ts_type = f"{select_options_types[field['id']]}[]"
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
             if not is_valid_field(field):
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
@@ -476,7 +480,8 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
     """Returns the appropriate Airtable-TS type for a given Airtable field."""
 
     airtable_type: FieldType = field["type"]
-    ts_type: str = "Any"
+    generic = "string"
+    ts_type: str = generic  # AirtableTS doesn't like "Any"
 
     # With calculated fields, we want to know the type of the result
     if is_calculated_field(field):
@@ -496,9 +501,11 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
         case "multipleRecordLinks":
             ts_type = "string[]"
         case "multipleAttachments":
-            ts_type = "AirtableAttachment[]"  # TODO
+            # ts_type = "Attachment[]"  # TODO
+            ts_type = "string"  # TODO
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            ts_type = "AirtableCollaborator"  # TODO
+            # ts_type = "Collaborator"  # TODO
+            ts_type = "string"  # TODO
         case "singleSelect":
             referenced_field = get_referenced_field(field, all_fields)
             if field["id"] in select_options_types:
@@ -510,7 +517,7 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
         case "multipleSelects":
             if field["id"] in select_options_types:
                 ts_type = "string[]"
@@ -518,14 +525,14 @@ def airtable_ts_type(table_name: str, field: FieldMetadata, warn: bool = False) 
             else:
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
             if not is_valid_field(field):
                 if warn:
                     warn_unhandled_airtable_type(table_name, field)
-                ts_type = "any"
+                ts_type = generic
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if

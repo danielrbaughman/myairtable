@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-import { TeamPayTypeOption, TeamZodType, TeamRecord, TeamZodSchema, TeamTable } from "./output";
+import { TeamPayTypeOption, TeamRecord, TeamTable } from "./output";
+import { AirtableModel } from "./output/static/airtable-model";
 import { TeamPayTypeOptions } from "./output/dynamic/types/team";
 import { AirtableTs } from "airtable-ts";
 import * as z from "zod";
@@ -9,20 +10,13 @@ import * as z from "zod";
 
 const program = new Command();
 program.action(async () => {
-	class Model {
-		id: string;
 
-		constructor(id: string) {
-			this.id = id;
-		}
-	}
-
-	class TeamsModel extends Model {
-		constructor(data: TeamZodType) {
+	class TeamsModel extends AirtableModel {
+		constructor(data: TeamRecord) {
 			super(data.id);
-			this._name = this._nameSchema.parse(data.name);
-			this._email = this._emailSchema.parse(data.email);
-			this._payType = this._payTypeSchema.parse(data.payType);
+			this._name = data.name;
+			this._email = data.email;
+			this._payType = data.payType;
 		}
 		
 		private _name: string | null;
@@ -60,12 +54,12 @@ program.action(async () => {
 	// console.log("Team Members:", teamMember);
 	// const parsedTeamMember = TeamZodSchema.parse(teamMember);
 
-	const parsed = TeamZodSchema.safeParse(teamMember);
-	if (!parsed.success) {
-		console.error("Validation error:", teamMember, parsed.error);
-		throw new Error("Validation failed");
-	}
-	const teamMemberModel = new TeamsModel(parsed.data);
+	// const parsed = TeamZodSchema.safeParse(teamMember);
+	// if (!parsed.success) {
+	// 	console.error("Validation error:", teamMember, parsed.error);
+	// 	throw new Error("Validation failed");
+	// }
+	const teamMemberModel = new TeamsModel(teamMember);
 	console.log("Parsed Team Member Model:", teamMemberModel.toJSON());
 	teamMemberModel.email = "hello"
 	// const parsedTeamMembers: TeamsModel[] = await Promise.all(
