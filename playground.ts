@@ -1,23 +1,14 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-import { TeamPayTypeOption, TeamZodType, TeamRecord, TeamFieldPropertyIdMapping, TeamZodSchema } from "./output";
-import { TeamFieldPropertyTypeMapping, TeamPayTypeOptions } from "./output/dynamic/types/team";
-import { AirtableTs, Table } from "airtable-ts";
+import { TeamPayTypeOption, TeamZodType, TeamRecord, TeamZodSchema, TeamTable } from "./output";
+import { TeamPayTypeOptions } from "./output/dynamic/types/team";
+import { AirtableTs } from "airtable-ts";
 import * as z from "zod";
 
 
 const program = new Command();
 program.action(async () => {
-	// console.log("TeamFieldPropertyIdMapping", TeamFieldPropertyIdMapping);
-	const team: Table<TeamRecord> = {
-		name: "Team",
-		baseId: process.env.AIRTABLE_BASE_ID || "",
-		tableId: "tbltyutRGeqeflNU5",
-		schema: TeamFieldPropertyTypeMapping,
-		mappings: TeamFieldPropertyIdMapping,
-	};
-
 	class Model {
 		id: string;
 
@@ -40,7 +31,7 @@ program.action(async () => {
 		public set name(value: string | null) { this._name = this._nameSchema.parse(value); }
 		
 		private _email: string | null;
-		private _emailSchema = z.email().nullable();
+		private _emailSchema = z.string().nullable();
 		public get email(): string | null { return this._email; }
 		public set email(value: string | null) { this._email = this._emailSchema.parse(value); }
 		
@@ -65,7 +56,7 @@ program.action(async () => {
 		apiKey: apiKey,
 	});
 
-	const teamMember = await db.get(team, "rec01prAYWAOwsALi");
+	const teamMember = await db.get(TeamTable, "rec01prAYWAOwsALi");
 	// console.log("Team Members:", teamMember);
 	// const parsedTeamMember = TeamZodSchema.parse(teamMember);
 

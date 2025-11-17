@@ -55,9 +55,9 @@ def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
     write_types(metadata, folder)
     write_interfaces(metadata, base_id, folder)
     write_zod_schemas(metadata, base_id, folder)
-    # write_tables(metadata, folder)
+    write_tables(metadata, folder)
     # write_main_class(metadata, base_id, folder)
-    # write_formula_helpers(metadata, folder)
+    write_formula_helpers(metadata, folder)
     write_index(metadata, folder)
 
 
@@ -287,52 +287,38 @@ def write_zod_schemas(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line(f'export * from "./{table_filename}";')
 
 
-# def write_tables(metadata: BaseMetadata, folder: Path):
-#     # Step 6: Generate per-table table files
-#     for table in metadata["tables"]:
-#         table_filename = property_name_camel(table, folder)
+def write_tables(metadata: BaseMetadata, folder: Path):
+    # Step 6: Generate per-table table files
+    for table in metadata["tables"]:
+        table_filename = property_name_camel(table, folder)
 
-#         with WriteToTypeScriptFile(path=folder / "dynamic" / "tables" / f"{table_filename}.ts") as write:
-#             # Imports
-#             write.region("IMPORTS")
-#             write.line('import { AirtableTable } from "../../static/airtable-table";')
+        with WriteToTypeScriptFile(path=folder / "dynamic" / "tables" / f"{table_filename}.ts") as write:
+            # Imports
+            write.line('import { Table } from "airtable-ts";')
 
-#             # Type-only imports for types
-#             write.line("import type {")
-#             write.line_indented(f"{property_name_camel(table, folder)}FieldSet,")
-#             write.line_indented(f"{property_name_camel(table, folder)}Field,")
-#             write.line_indented(f"{property_name_camel(table, folder)}View,")
-#             write.line(f'}} from "../types/{table_filename}";')
+            write.line("import {")
+            write.line_indented(f"{property_name_pascal(table, folder)}FieldPropertyTypeMapping,")
+            write.line_indented(f"{property_name_pascal(table, folder)}FieldPropertyIdMapping,")
+            write.line(f'}} from "../types/{table_filename}";')
+            write.line(f'import type {{ {property_name_pascal(table, folder)}Record }} from "../interfaces/{table_filename}";')
+            write.line_empty()
 
-#             # Value import for ViewNameIdMapping (it's a const, not a type)
-#             write.line(f'import {{ {property_name_camel(table, folder)}ViewNameIdMapping }} from "../types/{table_filename}";')
+            # Table class
+            write.line(f"export const {property_name_pascal(table, folder)}Table: Table<{property_name_pascal(table, folder)}Record> = {{")
+            write.line_indented(f"name: '{sanitize_string(table['name'])}',")
+            write.line_indented(
+                "baseId: process.env.AIRTABLE_BASE_ID || '',",
+            )
+            write.line_indented(f"tableId: '{table['id']}',")
+            write.line_indented(f"schema: {property_name_pascal(table, folder)}FieldPropertyTypeMapping,")
+            write.line_indented(f"mappings: {property_name_pascal(table, folder)}FieldPropertyIdMapping,")
+            write.line("}")
 
-#             # Type-only import for Record (breaks circular dependency)
-#             write.line(f'import type {{ {property_name_camel(table, folder)}Record }} from "../models/{table_filename}";')
-#             write.endregion()
-#             write.line_empty()
-
-#             # Table class
-#             write.region(upper_case(table["name"]))
-
-#             write.line(
-#                 f"export class {property_name_camel(table, folder)}Table extends AirtableTable<{property_name_camel(table, folder)}FieldSet, {property_name_camel(table, folder)}Record, {property_name_camel(table, folder)}View, {property_name_camel(table, folder)}Field> {{"
-#             )
-#             write.line_indented("constructor(apiKey: string, baseId: string) {")
-#             write.line_indented(
-#                 f'super(apiKey, baseId, "{table["name"]}", {property_name_camel(table, folder)}ViewNameIdMapping, {property_name_camel(table, folder)}Record.fromRecord);',
-#                 2,
-#             )
-#             write.line_indented("}")
-#             write.line("}")
-
-#             write.endregion()
-
-#     # Step 7: Generate index.ts to re-export all tables
-#     with WriteToTypeScriptFile(path=folder / "dynamic" / "tables" / "index.ts") as write:
-#         for table in metadata["tables"]:
-#             table_filename = property_name_camel(table, folder)
-#             write.line(f'export * from "./{table_filename}";')
+    # Step 7: Generate index.ts to re-export all tables
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "tables" / "index.ts") as write:
+        for table in metadata["tables"]:
+            table_filename = property_name_camel(table, folder)
+            write.line(f'export * from "./{table_filename}";')
 
 
 # def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
@@ -360,71 +346,59 @@ def write_zod_schemas(metadata: BaseMetadata, base_id: str, folder: Path):
 #         write.line("}")
 
 
-# def write_formula_helpers(metadata: BaseMetadata, folder: Path):
-#     # Step 8: Generate per-table formula files
-#     for table in metadata["tables"]:
-#         table_filename = property_name_camel(table, folder)
+def write_formula_helpers(metadata: BaseMetadata, folder: Path):
+    # Step 8: Generate per-table formula files
+    for table in metadata["tables"]:
+        table_filename = property_name_camel(table, folder)
 
-#         with WriteToTypeScriptFile(path=folder / "dynamic" / "formulas" / f"{table_filename}.ts") as write:
-#             # Imports
-#             write.region("IMPORTS")
+        with WriteToTypeScriptFile(path=folder / "dynamic" / "formulas" / f"{table_filename}.ts") as write:
+            # Imports
+            write.line(f'import type {{ {property_name_pascal(table, folder)}Field }} from "../types/{table_filename}";')
+            write.line(
+                f'import {{ {property_name_pascal(table, folder)}Fields, {property_name_pascal(table, folder)}FieldNameIdMapping }} from "../types/{table_filename}";'
+            )
+            write.line('import { validateKey } from "../../static/helpers";')
+            write.line('import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
+            write.line_empty()
 
-#             # Type-only import for Field type
-#             write.line(f'import type {{ {property_name_camel(table, folder)}Field }} from "../types/{table_filename}";')
+            # Formula helper classes
+            def write_formula(type: str):
+                write.line(f"export class {property_name_pascal(table, folder)}{type} extends {type} {{")
+                write.line_indented(f"constructor(name: {property_name_pascal(table, folder)}Field) {{")
+                write.line_indented(f"validateKey(name, {property_name_pascal(table, folder)}Fields);", 2)
+                write.line_indented(f"super(name, {property_name_pascal(table, folder)}FieldNameIdMapping);", 2)
+                write.line_indented("}", 1)
+                write.line("}")
+                write.line_empty()
+                write.line_empty()
 
-#             # Value imports for Fields array and FieldNameIdMapping const
-#             write.line(
-#                 f'import {{ {property_name_camel(table, folder)}Fields, {property_name_camel(table, folder)}FieldNameIdMapping }} from "../types/{table_filename}";'
-#             )
+            write_formula("AttachmentsField")
+            write_formula("BooleanField")
+            write_formula("DateField")
+            write_formula("NumberField")
+            write_formula("TextField")
 
-#             # Value imports for helpers and base formula classes
-#             write.line('import { validateKey } from "../../static/helpers";')
-#             write.line('import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
-#             write.endregion()
-#             write.line_empty()
-
-#             # Formula helper classes
-#             write.region(upper_case(table["name"]))
-
-#             def write_formula(type: str):
-#                 write.line(f"export class {property_name_camel(table, folder)}{type} extends {type} {{")
-#                 write.line_indented(f"constructor(name: {property_name_camel(table, folder)}Field) {{")
-#                 write.line_indented(f"validateKey(name, {property_name_camel(table, folder)}Fields);", 2)
-#                 write.line_indented(f"super(name, {property_name_camel(table, folder)}FieldNameIdMapping);", 2)
-#                 write.line_indented("}", 1)
-#                 write.line("}")
-#                 write.line_empty()
-#                 write.line_empty()
-
-#             write_formula("AttachmentsField")
-#             write_formula("BooleanField")
-#             write_formula("DateField")
-#             write_formula("NumberField")
-#             write_formula("TextField")
-
-#             write.endregion()
-
-#     # Step 9: Generate index.ts to re-export all formulas
-#     with WriteToTypeScriptFile(path=folder / "dynamic" / "formulas" / "index.ts") as write:
-#         for table in metadata["tables"]:
-#             table_filename = property_name_camel(table, folder)
-#             write.line(f'export * from "./{table_filename}";')
+    # Step 9: Generate index.ts to re-export all formulas
+    with WriteToTypeScriptFile(path=folder / "dynamic" / "formulas" / "index.ts") as write:
+        for table in metadata["tables"]:
+            table_filename = property_name_camel(table, folder)
+            write.line(f'export * from "./{table_filename}";')
 
 
 def write_index(metadata: BaseMetadata, folder: Path):
     with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
         # write.line('export * from "./airtable-main";')
-        # write.line('export * from "./tables";')
+        write.line('export * from "./tables";')
         write.line('export * from "./types";')
         write.line('export * from "./zod";')
         write.line('export * from "./interfaces";')
         # write.line('export * from "./models";')
-        # write.line('export * from "./formulas";')
+        write.line('export * from "./formulas";')
         write.line("")
 
     with WriteToTypeScriptFile(path=folder / "index.ts") as write:
         write.line('export * from "./dynamic";')
-        # write.line('export * from "./static/formula";')
+        write.line('export * from "./static/formula";')
         write.line("")
 
 
