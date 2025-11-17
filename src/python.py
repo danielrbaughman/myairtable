@@ -135,6 +135,18 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
                 first_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
                 second_type=f"{property_name_pascal(table, csv_folder)}FieldId",
             )
+            write.dict_class(
+                f"{property_name_pascal(table, csv_folder)}FieldNamePropertyMapping",
+                [(field["name"], property_name_snake(field, csv_folder)) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}Field",
+                second_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, csv_folder)}FieldPropertyNameMapping",
+                [(property_name_snake(field, csv_folder), field["name"]) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+                second_type=f"{property_name_pascal(table, csv_folder)}Field",
+            )
 
             write.line(f"class {property_name_pascal(table, csv_folder)}FieldsDict(TypedDict, total=False):")
             for field in table["fields"]:
