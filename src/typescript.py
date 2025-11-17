@@ -484,11 +484,11 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
         case "multipleRecordLinks":
             ts_type = "RecordId[]"
         case "multipleAttachments":
-            ts_type = "AirtableAttachment[]"
-            # ts_type = "string"
+            # ts_type = "AirtableAttachment[]"
+            ts_type = "string"
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            ts_type = "AirtableCollaborator"
-            # ts_type = "string"
+            # ts_type = "AirtableCollaborator"
+            ts_type = "string"
         case "singleSelect":
             referenced_field = get_referenced_field(field, all_fields)
             if field["id"] in select_options_types:
@@ -707,9 +707,12 @@ def zod_type(table_name: str, field: FieldMetadata, warn: bool = False) -> str:
         case "multipleRecordLinks":
             ts_type = "z.array(RecordIdSchema)"
         case "multipleAttachments":
+            # ts_type = "z.array(AirtableAttachmentSchema)"
             ts_type = "z.array(AirtableAttachmentSchema)"
+            ts_type = "z.string()"  # TODO - AirtableTS seems to just return the URL string
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            ts_type = "AirtableCollaboratorSchema"
+            # ts_type = "AirtableCollaboratorSchema"
+            ts_type = "z.string()"  # TODO
         case "singleSelect":
             referenced_field = get_referenced_field(field, all_fields)
             if field["id"] in select_options_lists:

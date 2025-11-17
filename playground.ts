@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { Command } from "commander";
-import { TeamTable, TeamModel } from "./output";
+import { JobsTable, JobsModel } from "./output";
 import { AirtableTs } from "airtable-ts";
 
 
@@ -45,9 +45,10 @@ program.action(async () => {
 
 	const db = new AirtableTs({
 		apiKey: apiKey,
+		readValidation: "warning" // special types, like "infinity" fail their validation
 	});
 
-	const teamMember = await db.get(TeamTable, "rec01prAYWAOwsALi");
+	const job = await db.get(JobsTable, "recj337mJ7HEkbJ1R");
 	// console.log("Team Members:", teamMember);
 	// const parsedTeamMember = TeamZodSchema.parse(teamMember);
 
@@ -56,8 +57,8 @@ program.action(async () => {
 	// 	console.error("Validation error:", teamMember, parsed.error);
 	// 	throw new Error("Validation failed");
 	// }
-	const teamMemberModel = new TeamModel(teamMember);
-	console.log(teamMemberModel.name);
+	const jobModel = new JobsModel(job);
+	console.log(jobModel.name);
 	// console.log("Parsed Team Member Model:", teamMemberModel.toJSON());
 	// teamMemberModel.email = "hello"
 	// const parsedTeamMembers: TeamsModel[] = await Promise.all(
