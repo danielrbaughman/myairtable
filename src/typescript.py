@@ -65,7 +65,9 @@ def write_types(metadata: BaseMetadata, folder: Path):
 
     # Write individual table type files
     for table in metadata["tables"]:
-        with WriteToTypeScriptFile(path=types_dir / f"{property_name_camel(table, folder)}.ts") as write:
+        table_name = property_name_pascal(table, folder)
+        table_name_camel = property_name_camel(table, folder)
+        with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
             write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
@@ -94,60 +96,60 @@ def write_types(metadata: BaseMetadata, folder: Path):
 
             write.region(upper_case(table["name"]))
 
-            write.types(f"{property_name_pascal(table, folder)}Field", field_names, f"Field names for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}FieldId", field_ids, f"Field IDs for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}FieldProperty", property_names, f"Property names for `{table['name']}`")
+            write.types(f"{table_name}Field", field_names, f"Field names for `{table['name']}`")
+            write.types(f"{table_name}FieldId", field_ids, f"Field IDs for `{table['name']}`")
+            write.types(f"{table_name}FieldProperty", property_names, f"Property names for `{table['name']}`")
 
             write.docstring(f"Calculated fields for `{table['name']}`")
             write.str_list(
-                f"{property_name_pascal(table, folder)}CalculatedFields",
+                f"{table_name}CalculatedFields",
                 [sanitize_string(field["name"]) for field in table["fields"] if is_computed_field(field)],
             )
             write.docstring(f"Calculated fields for `{table['name']}`")
             write.str_list(
-                f"{property_name_pascal(table, folder)}CalculatedFieldIds",
+                f"{table_name}CalculatedFieldIds",
                 [field["id"] for field in table["fields"] if is_computed_field(field)],
             )
             write.line_empty()
 
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldNameIdMapping",
+                f"{table_name}FieldNameIdMapping",
                 [(sanitize_string(field["name"]), field["id"]) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}Field",
-                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                first_type=f"{table_name}Field",
+                second_type=f"{table_name}FieldId",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldIdNameMapping",
+                f"{table_name}FieldIdNameMapping",
                 [(field["id"], sanitize_string(field["name"])) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldId",
-                second_type=f"{property_name_pascal(table, folder)}Field",
+                first_type=f"{table_name}FieldId",
+                second_type=f"{table_name}Field",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldIdPropertyMapping",
+                f"{table_name}FieldIdPropertyMapping",
                 [(field["id"], property_name_camel(field, folder)) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldId",
-                second_type=f"{property_name_pascal(table, folder)}FieldProperty",
+                first_type=f"{table_name}FieldId",
+                second_type=f"{table_name}FieldProperty",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}FieldPropertyIdMapping",
+                f"{table_name}FieldPropertyIdMapping",
                 [(property_name_camel(field, folder), field["id"]) for field in table["fields"]],
-                first_type=f"{property_name_pascal(table, folder)}FieldProperty",
-                second_type=f"{property_name_pascal(table, folder)}FieldId",
+                first_type=f"{table_name}FieldProperty",
+                second_type=f"{table_name}FieldId",
                 is_value_string=True,
             )
 
-            write.line(f"export interface {property_name_pascal(table, folder)}FieldSetIds extends FieldSet {{")
+            write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
                 write.property_row(field["id"], typescript_type(table["name"], field, warn=True), optional=True)
             write.line("}")
             write.line_empty()
-            write.line(f"export interface {property_name_pascal(table, folder)}FieldSet extends FieldSet {{")
+            write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table["fields"]:
                 write.property_row(
-                    sanitize_string(field["name"]), typescript_type(table["name"], field, warn=True), is_name_string=True, optional=True
+                    sanitize_string(field["name"]), typescript_type(table["name"], field), is_name_string=True, optional=True
                 )
             write.line("}")
             write.line_empty()
@@ -156,20 +158,20 @@ def write_types(metadata: BaseMetadata, folder: Path):
             views = table["views"]
             view_names: list[str] = [sanitize_string(view["name"]) for view in views]
             view_ids: list[str] = [view["id"] for view in views]
-            write.types(f"{property_name_pascal(table, folder)}View", view_names, f"View names for `{table['name']}`")
-            write.types(f"{property_name_pascal(table, folder)}ViewId", view_ids, f"View IDs for `{table['name']}`")
+            write.types(f"{table_name}View", view_names, f"View names for `{table['name']}`")
+            write.types(f"{table_name}ViewId", view_ids, f"View IDs for `{table['name']}`")
             write.dict_class(
-                f"{property_name_pascal(table, folder)}ViewNameIdMapping",
+                f"{table_name}ViewNameIdMapping",
                 [(sanitize_string(view["name"]), view["id"]) for view in table["views"]],
-                first_type=f"{property_name_pascal(table, folder)}View",
-                second_type=f"{property_name_pascal(table, folder)}ViewId",
+                first_type=f"{table_name}View",
+                second_type=f"{table_name}ViewId",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, folder)}ViewIdNameMapping",
+                f"{table_name}ViewIdNameMapping",
                 [(view["id"], sanitize_string(view["name"])) for view in table["views"]],
-                first_type=f"{property_name_pascal(table, folder)}ViewId",
-                second_type=f"{property_name_pascal(table, folder)}View",
+                first_type=f"{table_name}ViewId",
+                second_type=f"{table_name}View",
                 is_value_string=True,
             )
 
@@ -250,7 +252,8 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
-                    write.line_indented(f"{options_name(table_name, property_name_pascal(field, folder))},")
+                    field_name = property_name_pascal(field, folder)
+                    write.line_indented(f"{options_name(table_name, field_name)},")
             write.line(f'}} from "../types/{table_name_camel}";')
 
             # Import table class for this table
@@ -261,24 +264,28 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             # Table Model
             write.region(upper_case(table["name"]))
 
-            write.line(
-                f"export class {table_name}Model extends AirtableModel<{table_name}FieldSet> {{"
-            )
+            write.line(f"export class {table_name}Model extends AirtableModel<{table_name}FieldSet> {{")
             for field in table["fields"]:
-                write.line_indented(f"public {property_name_camel(field, folder)}?: {typescript_type(table['name'], field, warn=True)};", 1)
+                field_name = property_name_camel(field, folder)
+                field_type = typescript_type(table["name"], field)
+                write.line_indented(f"public {field_name}?: {field_type};", 1)
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
             for field in table["fields"]:
-                write.line_indented(f"{property_name_camel(field, folder)},", 2)
+                field_name = property_name_camel(field, folder)
+                write.line_indented(f"{field_name},", 2)
             write.line_indented("}: {", 1)
             write.line_indented("id?: string,", 2)
             for field in table["fields"]:
-                write.line_indented(f"{property_name_camel(field, folder)}?: {typescript_type(table['name'], field, warn=True)},", 2)
+                field_name = property_name_camel(field, folder)
+                field_type = typescript_type(table["name"], field)
+                write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table["fields"]:
-                write.line_indented(f"this.{property_name_camel(field, folder)} = {property_name_camel(field, folder)};", 2)
+                field_name = property_name_camel(field, folder)
+                write.line_indented(f"this.{field_name} = {field_name};", 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getApiKey(), '{base_id}')._table, this.id, {{}});",
                 2,
@@ -287,9 +294,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(
-                f"public static fromRecord(record: Record<{table_name}FieldSet>): {table_name}Model {{"
-            )
+            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>): {table_name}Model {{")
             write.line_indented(f"const instance = new {table_name}Model(", 2)
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
@@ -301,10 +306,9 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
             for field in table["fields"]:
+                field_name = property_name_camel(field, folder)
                 if not is_computed_field(field):
-                    write.line_indented(
-                        f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{property_name_camel(field, folder)};', 2
-                    )
+                    write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name};', 2)
             write.line_indented("return fields;", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -312,7 +316,8 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
             write.line_indented("this.record = record;", 2)
             for field in table["fields"]:
-                write.line_indented(f'this.{property_name_camel(field, folder)} = record.get("{sanitize_string(field["name"])}");', 2)
+                field_name = property_name_camel(field, folder)
+                write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field["name"])}");', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -322,7 +327,8 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
             )
             for field in table["fields"]:
-                write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{property_name_camel(field, folder)});', 2)
+                field_name = property_name_camel(field, folder)
+                write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -343,9 +349,9 @@ def write_tables(metadata: BaseMetadata, folder: Path):
 
     # Write individual table files
     for table in metadata["tables"]:
-        with WriteToTypeScriptFile(path=tables_dir / f"{property_name_camel(table, folder)}.ts") as write:
-            table_name = property_name_pascal(table, folder)
-            table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, folder)
+        table_name_camel = property_name_camel(table, folder)
+        with WriteToTypeScriptFile(path=tables_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
             write.line('import { AirtableTable } from "../../static/airtable-table";')
@@ -359,9 +365,6 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             write.endregion()
             write.line_empty()
 
-            # Table Class
-            write.region(upper_case(table["name"]))
-
             write.line(
                 f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {table_name}Model, {table_name}View, {table_name}Field> {{"
             )
@@ -372,8 +375,6 @@ def write_tables(metadata: BaseMetadata, folder: Path):
             )
             write.line_indented("}")
             write.line("}")
-
-            write.endregion()
 
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=tables_dir / "index.ts") as write:
@@ -388,7 +389,8 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         write.line('import { getApiKey } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:
-            write.line_indented(f"{property_name_pascal(table, folder)}Table,")
+            table_name_pascal = property_name_pascal(table, folder)
+            write.line_indented(f"{table_name_pascal}Table,")
         write.line('} from "./tables";')
         write.line_empty()
 
@@ -404,9 +406,7 @@ def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
         for table in metadata["tables"]:
             table_name_camel = property_name_camel(table, folder)
             table_name_pascal = property_name_pascal(table, folder)
-            write.line_indented(
-                f"this.{table_name_camel} = new {table_name_pascal}Table(apiKey, baseId);", 2
-            )
+            write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(apiKey, baseId);", 2)
         write.line_indented("}")
         write.line("}")
 
@@ -418,9 +418,9 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
 
     # Write individual formula helper files
     for table in metadata["tables"]:
-        with WriteToTypeScriptFile(path=formulas_dir / f"{property_name_camel(table, folder)}.ts") as write:
-            table_name = property_name_pascal(table, folder)
-            table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, folder)
+        table_name_camel = property_name_camel(table, folder)
+        with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
             write.line("import {")

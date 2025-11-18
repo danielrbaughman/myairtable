@@ -8,8 +8,6 @@ from src.meta import gen_meta, get_base_id, get_base_meta_data
 from src.python import gen_python
 from src.typescript import gen_typescript
 
-# from src.typescript import gen_typescript
-
 app = Typer()
 
 
