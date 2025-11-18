@@ -21,6 +21,7 @@ from .helpers import (
     warn_unhandled_airtable_type,
 )
 from .meta_types import BaseMetadata, FieldMetadata, FieldType
+from .python import formula_type
 
 all_fields: dict[str, FieldMetadata] = {}
 select_options: dict[str, str] = {}
@@ -255,6 +256,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
                     field_name = property_name_pascal(field, folder)
                     write.line_indented(f"{options_name(table_name, field_name)},")
             write.line(f'}} from "../types/{table_name_camel}";')
+            write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
@@ -265,6 +267,8 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.region(upper_case(table["name"]))
 
             write.line(f"export class {table_name}Model extends AirtableModel<{table_name}FieldSet> {{")
+            write.line_indented(f"public f = {table_name}Formulas")
+            write.line_empty()
             for field in table["fields"]:
                 field_name = property_name_camel(field, folder)
                 field_type = typescript_type(table["name"], field)
@@ -415,44 +419,24 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     # Create formulas directory
     formulas_dir = folder / "dynamic" / "formulas"
     formulas_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write individual formula helper files
+    
     for table in metadata["tables"]:
         table_name = property_name_pascal(table, folder)
         table_name_camel = property_name_camel(table, folder)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
-            write.region("IMPORTS")
-            write.line("import {")
-            write.line_indented(f"{table_name}Field,")
-            write.line_indented(f"{table_name}Fields,")
-            write.line_indented(f"{table_name}FieldNameIdMapping,")
-            write.line(f'}} from "../types/{table_name_camel}";')
-            write.line('import { validateKey } from "../../static/helpers";')
-            write.line('import { AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
-            write.endregion()
+            write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
             write.line_empty()
 
-            # Formula Classes
-            write.region(upper_case(table["name"]))
-
-            def write_formula(type: str):
-                write.line(f"export class {table_name}{type} extends {type} {{")
-                write.line_indented(f"constructor(name: {table_name}Field) {{")
-                write.line_indented(f"validateKey(name, {table_name}Fields);", 2)
-                write.line_indented(f"super(name, {table_name}FieldNameIdMapping);", 2)
-                write.line_indented("}", 1)
-                write.line("}")
-                write.line_empty()
-                write.line_empty()
-
-            write_formula("AttachmentsField")
-            write_formula("BooleanField")
-            write_formula("DateField")
-            write_formula("NumberField")
-            write_formula("TextField")
-
-            write.endregion()
+            # Properties
+            write.line(f"export namespace {table_name}Formulas {{")
+            write.line_indented("export const id: ID = new ID();")
+            for field in table["fields"]:
+                property_name = property_name_camel(field, folder)
+                formula_class = formula_type(table["name"], field)
+                write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field['id']}');")
+            write.line("}")
+            write.line_empty()
 
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=formulas_dir / "index.ts") as write:

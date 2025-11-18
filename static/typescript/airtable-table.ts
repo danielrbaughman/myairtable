@@ -48,7 +48,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
 			const selectOptions: QueryParams<T> = {
-				filterByFormula: ID.equals(recordIdOrIdsOrOptions),
+				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
@@ -66,7 +66,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 			}
 
 			const selectOptions: QueryParams<T> = {
-				filterByFormula: ID.inList(recordIdOrIdsOrOptions),
+				filterByFormula: new ID().inList(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
