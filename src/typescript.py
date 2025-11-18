@@ -28,46 +28,46 @@ select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_typescript(metadata: BaseMetadata, base_id: str, folder: Path):
+def gen_typescript(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
     for table in metadata["tables"]:
         table_id_name_map[table["id"]] = table["name"]
         for field in table["fields"]:
             all_fields[field["id"]] = field
             options = get_select_options(field)
             if len(options) > 0:
-                _table_name = property_name_pascal(table, folder)
-                field_name = property_name_pascal(field, folder)
+                _table_name = property_name_pascal(table, csv_folder)
+                field_name = property_name_pascal(field, csv_folder)
                 select_options[field["id"]] = f"{options_name(_table_name, field_name)}"
-        detect_duplicate_property_names(table, folder)
+        detect_duplicate_property_names(table, csv_folder)
 
-    dynamic_folder = folder / "dynamic"
+    dynamic_folder = output_folder / "dynamic"
     if dynamic_folder.exists():
         shutil.rmtree(dynamic_folder)
         dynamic_folder.mkdir(parents=True, exist_ok=True)
 
-    static_folder = folder / "static"
+    static_folder = output_folder / "static"
     if static_folder.exists():
         shutil.rmtree(static_folder)
         static_folder.mkdir(parents=True, exist_ok=True)
 
-    copy_static_files(folder, "typescript")
-    write_types(metadata, folder)
-    write_models(metadata, base_id, folder)
-    write_tables(metadata, folder)
-    write_main_class(metadata, base_id, folder)
-    write_formula_helpers(metadata, folder)
-    write_index(metadata, folder)
+    copy_static_files(output_folder, "typescript")
+    write_types(metadata, output_folder, csv_folder)
+    write_models(metadata, base_id, output_folder, csv_folder)
+    write_tables(metadata, output_folder, csv_folder)
+    write_main_class(metadata, base_id, output_folder, csv_folder)
+    write_formula_helpers(metadata, output_folder, csv_folder)
+    write_index(metadata, output_folder)
 
 
-def write_types(metadata: BaseMetadata, folder: Path):
+def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     # Create types directory
-    types_dir = folder / "dynamic" / "types"
+    types_dir = output_folder / "dynamic" / "types"
     types_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table type files
     for table in metadata["tables"]:
-        table_name = property_name_pascal(table, folder)
-        table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, csv_folder)
+        table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -81,8 +81,8 @@ def write_types(metadata: BaseMetadata, folder: Path):
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
-                    _table_name = property_name_pascal(table, folder)
-                    field_name = property_name_pascal(field, folder)
+                    _table_name = property_name_pascal(table, csv_folder)
+                    field_name = property_name_pascal(field, csv_folder)
                     write.types(
                         options_name(_table_name, field_name),
                         options,
@@ -93,7 +93,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
             # Table Type
             field_names = [sanitize_string(field["name"]) for field in table["fields"]]
             field_ids = [field["id"] for field in table["fields"]]
-            property_names = [property_name_camel(field, folder) for field in table["fields"]]
+            property_names = [property_name_camel(field, csv_folder) for field in table["fields"]]
 
             write.region(upper_case(table["name"]))
 
@@ -129,14 +129,14 @@ def write_types(metadata: BaseMetadata, folder: Path):
             )
             write.dict_class(
                 f"{table_name}FieldIdPropertyMapping",
-                [(field["id"], property_name_camel(field, folder)) for field in table["fields"]],
+                [(field["id"], property_name_camel(field, csv_folder)) for field in table["fields"]],
                 first_type=f"{table_name}FieldId",
                 second_type=f"{table_name}FieldProperty",
                 is_value_string=True,
             )
             write.dict_class(
                 f"{table_name}FieldPropertyIdMapping",
-                [(property_name_camel(field, folder), field["id"]) for field in table["fields"]],
+                [(property_name_camel(field, csv_folder), field["id"]) for field in table["fields"]],
                 first_type=f"{table_name}FieldProperty",
                 second_type=f"{table_name}FieldId",
                 is_value_string=True,
@@ -149,9 +149,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table["fields"]:
-                write.property_row(
-                    sanitize_string(field["name"]), typescript_type(table["name"], field), is_name_string=True, optional=True
-                )
+                write.property_row(sanitize_string(field["name"]), typescript_type(table["name"], field), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
             write.line_empty()
@@ -183,8 +181,8 @@ def write_types(metadata: BaseMetadata, folder: Path):
         # Import field name ID mappings from individual table files
         write.region("IMPORTS")
         for table in metadata["tables"]:
-            table_name = property_name_pascal(table, folder)
-            table_name_camel = property_name_camel(table, folder)
+            table_name = property_name_pascal(table, csv_folder)
+            table_name_camel = property_name_camel(table, csv_folder)
             write.line(f"import {{ {table_name}FieldNameIdMapping }} from './{table_name_camel}';")
         write.endregion()
         write.line_empty()
@@ -216,7 +214,7 @@ def write_types(metadata: BaseMetadata, folder: Path):
 
         write.dict_class(
             "TableIdToFieldNameIdMapping",
-            [(table["id"], f"{property_name_pascal(table, folder)}FieldNameIdMapping") for table in metadata["tables"]],
+            [(table["id"], f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping") for table in metadata["tables"]],
             first_type="TableId",
             second_type="Record<string, string>",
         )
@@ -225,20 +223,20 @@ def write_types(metadata: BaseMetadata, folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=types_dir / "index.ts") as write:
         for table in metadata["tables"]:
-            write.line(f"export * from './{property_name_camel(table, folder)}';")
+            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
         write.line("export * from './_tables';")
         write.line("")
 
 
-def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
+def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
     # Create models directory
-    models_dir = folder / "dynamic" / "models"
+    models_dir = output_folder / "dynamic" / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table model files
     for table in metadata["tables"]:
-        table_name = property_name_pascal(table, folder)
-        table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, csv_folder)
+        table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -253,7 +251,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
-                    field_name = property_name_pascal(field, folder)
+                    field_name = property_name_pascal(field, csv_folder)
                     write.line_indented(f"{options_name(table_name, field_name)},")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
@@ -270,25 +268,25 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"public f = {table_name}Formulas")
             write.line_empty()
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 field_type = typescript_type(table["name"], field)
                 write.line_indented(f"public {field_name}?: {field_type};", 1)
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 write.line_indented(f"{field_name},", 2)
             write.line_indented("}: {", 1)
             write.line_indented("id?: string,", 2)
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 field_type = typescript_type(table["name"], field)
                 write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 write.line_indented(f"this.{field_name} = {field_name};", 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getApiKey(), '{base_id}')._table, this.id, {{}});",
@@ -310,7 +308,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 if not is_computed_field(field):
                     write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name};', 2)
             write.line_indented("return fields;", 2)
@@ -320,7 +318,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
             write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
             write.line_indented("this.record = record;", 2)
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field["name"])}");', 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -331,7 +329,7 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
             )
             for field in table["fields"]:
-                field_name = property_name_camel(field, folder)
+                field_name = property_name_camel(field, csv_folder)
                 write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -342,19 +340,19 @@ def write_models(metadata: BaseMetadata, base_id: str, folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=models_dir / "index.ts") as write:
         for table in metadata["tables"]:
-            write.line(f"export * from './{property_name_camel(table, folder)}';")
+            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
         write.line("")
 
 
-def write_tables(metadata: BaseMetadata, folder: Path):
+def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     # Create tables directory
-    tables_dir = folder / "dynamic" / "tables"
+    tables_dir = output_folder / "dynamic" / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table files
     for table in metadata["tables"]:
-        table_name = property_name_pascal(table, folder)
-        table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, csv_folder)
+        table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=tables_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -383,46 +381,46 @@ def write_tables(metadata: BaseMetadata, folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=tables_dir / "index.ts") as write:
         for table in metadata["tables"]:
-            write.line(f"export * from './{property_name_camel(table, folder)}';")
+            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
         write.line("")
 
 
-def write_main_class(metadata: BaseMetadata, base_id: str, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "airtable-main.ts") as write:
+def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
+    with WriteToTypeScriptFile(path=output_folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
         write.line('import { getApiKey } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:
-            table_name_pascal = property_name_pascal(table, folder)
+            table_name_pascal = property_name_pascal(table, csv_folder)
             write.line_indented(f"{table_name_pascal}Table,")
         write.line('} from "./tables";')
         write.line_empty()
 
         write.line("export class Airtable {")
         for table in metadata["tables"]:
-            table_name_camel = property_name_camel(table, folder)
-            table_name_pascal = property_name_pascal(table, folder)
+            table_name_camel = property_name_camel(table, csv_folder)
+            table_name_pascal = property_name_pascal(table, csv_folder)
             write.line_indented(f"public {table_name_camel}: {table_name_pascal}Table;")
         write.line_empty()
         write.line_indented("constructor() {")
         write.line_indented("const apiKey = getApiKey();", 2)
         write.line_indented(f"const baseId = '{base_id}';", 2)
         for table in metadata["tables"]:
-            table_name_camel = property_name_camel(table, folder)
-            table_name_pascal = property_name_pascal(table, folder)
+            table_name_camel = property_name_camel(table, csv_folder)
+            table_name_pascal = property_name_pascal(table, csv_folder)
             write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(apiKey, baseId);", 2)
         write.line_indented("}")
         write.line("}")
 
 
-def write_formula_helpers(metadata: BaseMetadata, folder: Path):
+def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     # Create formulas directory
-    formulas_dir = folder / "dynamic" / "formulas"
+    formulas_dir = output_folder / "dynamic" / "formulas"
     formulas_dir.mkdir(parents=True, exist_ok=True)
-    
+
     for table in metadata["tables"]:
-        table_name = property_name_pascal(table, folder)
-        table_name_camel = property_name_camel(table, folder)
+        table_name = property_name_pascal(table, csv_folder)
+        table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
@@ -432,7 +430,7 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
             write.line(f"export namespace {table_name}Formulas {{")
             write.line_indented("export const id: ID = new ID();")
             for field in table["fields"]:
-                property_name = property_name_camel(field, folder)
+                property_name = property_name_camel(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
                 write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field['id']}');")
             write.line("}")
@@ -441,12 +439,12 @@ def write_formula_helpers(metadata: BaseMetadata, folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=formulas_dir / "index.ts") as write:
         for table in metadata["tables"]:
-            write.line(f"export * from './{property_name_camel(table, folder)}';")
+            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
         write.line("")
 
 
-def write_index(metadata: BaseMetadata, folder: Path):
-    with WriteToTypeScriptFile(path=folder / "dynamic" / "index.ts") as write:
+def write_index(metadata: BaseMetadata, output_folder: Path):
+    with WriteToTypeScriptFile(path=output_folder / "dynamic" / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
         write.line('export * from "./types";')
@@ -454,7 +452,7 @@ def write_index(metadata: BaseMetadata, folder: Path):
         write.line('export * from "./formulas";')
         write.line("")
 
-    with WriteToTypeScriptFile(path=folder / "index.ts") as write:
+    with WriteToTypeScriptFile(path=output_folder / "index.ts") as write:
         write.line('export * from "./dynamic";')
         write.line('export * from "./static/formula";')
         write.line("")
