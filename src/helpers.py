@@ -129,10 +129,18 @@ class WriteToTypeScriptFile(WriteToFile):
         self.line_empty()
 
     def literal(self, name: str, list: list[str]):
-        self.line(f"export type {name} = {' | '.join(f'"{item}"' for item in list)}")
+        self.line(f"export type {name} = ")
+        for item in list:
+            if item != list[-1]:
+                self.line_indented(f'"{item}" |')
+            else:
+                self.line_indented(f'"{item}"')
 
     def str_list(self, name: str, list: list[str], type: str = "string"):
-        self.line(f"export const {name}: {type}[] = [{', '.join(f'"{item}"' for item in list)}]")
+        self.line(f"export const {name}: {type}[] = [")
+        for item in list:
+            self.line_indented(f'"{item}",')
+        self.line("]")
 
     def docstring(self, text: str):
         self.line(f"/** {text} */")
