@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig([
-  ...tseslint.configs.recommended,
+	...tseslint.configs.recommended,
 	{
 		files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
 		plugins: { js },
@@ -16,6 +16,6 @@ export default defineConfig([
 		},
 	},
 	{
-		ignores: ["dist/**", "node_modules/**", "src/**", "output/**", ".venv/**"],
+		ignores: ["dist/**", "node_modules/**", "src/**", "output/**", ".venv/**", "playground.ts"],
 	},
 ]);
