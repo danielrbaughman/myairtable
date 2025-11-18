@@ -3,7 +3,7 @@
 import { Record as ATRecord, FieldSet, RecordData } from "airtable";
 import { CreateRecordData } from "./special_types";
 
-export class AirtableRecord<T extends FieldSet> {
+export class AirtableModel<T extends FieldSet> {
 	protected record?: ATRecord<T>;
 	public id: string;
 

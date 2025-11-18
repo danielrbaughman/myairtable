@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import Airtable, { Record as ATRecord, FieldSet, Table } from "airtable";
-import { AirtableRecord } from "./airtable-record";
+import { AirtableModel } from "./airtable-model";
 import { QueryParams } from "airtable/lib/query_params";
 import { ID } from "./formula";
 
@@ -14,7 +14,7 @@ interface FullGetOptions<V, T> extends BasicGetOptions<T> {
 	formula?: string;
 }
 
-export class AirtableTable<T extends FieldSet, U extends AirtableRecord<T>, V extends string, W extends string> {
+export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V extends string, W extends string> {
 	public _table: Table<T>;
 	private recordCtor: (record: ATRecord<T>) => U;
 	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
