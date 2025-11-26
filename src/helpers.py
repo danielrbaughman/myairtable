@@ -142,8 +142,8 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f'"{item}",')
         self.line("]")
 
-    def docstring(self, text: str):
-        self.line(f"/** {text} */")
+    def docstring(self, text: str, indent: int = 1):
+        self.line_indented(f"/** {text} */", indent=indent)
 
     def types(self, name: str, list: list[str], docstring: str = ""):
         literal_name = f"{name}"
