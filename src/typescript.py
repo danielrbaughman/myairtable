@@ -145,11 +145,13 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
 
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
+                write.line_indented("//@ts-ignore")
                 write.property_row(field["id"], typescript_type(table["name"], field, warn=True), optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table["fields"]:
+                write.line_indented("//@ts-ignore")
                 write.property_row(sanitize_string(field["name"]), typescript_type(table["name"], field), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
@@ -517,8 +519,8 @@ def typescript_type(table_name: str, field: FieldMetadata, warn: bool = False) -
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
-    if not ts_type.endswith("[]") and ts_type not in ("number", "boolean"):  # TODO - why is this not allowed in Airtable JS library?
+    if not ts_type.endswith("[]"):
         if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
-            ts_type = f"{ts_type}[]"
+            ts_type = f"{ts_type} | {ts_type}[]"
 
     return ts_type
