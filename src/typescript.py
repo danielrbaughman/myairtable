@@ -15,6 +15,7 @@ from .helpers import (
     is_valid_field,
     options_name,
     property_name_camel,
+    property_name_model,
     property_name_pascal,
     sanitize_string,
     upper_case,
@@ -237,6 +238,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
     for table in metadata["tables"]:
         table_name = property_name_pascal(table, csv_folder)
         table_name_camel = property_name_camel(table, csv_folder)
+        model_name = property_name_model(table, csv_folder)
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -264,12 +266,13 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             # Table Model
             write.region(upper_case(table["name"]))
 
-            write.line(f"export class {table_name}Model extends AirtableModel<{table_name}FieldSet> {{")
+            write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet> {{")
             write.line_indented(f"public f = {table_name}Formulas")
             write.line_empty()
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
                 field_type = typescript_type(table["name"], field)
+                write.docstring(f"`{field['name']}` ({field["id"]})")
                 write.line_indented(f"public {field_name}?: {field_type};", 1)
             write.line_empty()
             write.line_indented("constructor({")
@@ -296,8 +299,8 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>): {table_name}Model {{")
-            write.line_indented(f"const instance = new {table_name}Model(", 2)
+            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>): {model_name} {{")
+            write.line_indented(f"const instance = new {model_name}(", 2)
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
             write.line_indented("instance.updateModel(record);", 2)
@@ -353,6 +356,7 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
     for table in metadata["tables"]:
         table_name = property_name_pascal(table, csv_folder)
         table_name_camel = property_name_camel(table, csv_folder)
+        model_name = property_name_model(table, csv_folder)
         with WriteToTypeScriptFile(path=tables_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -363,16 +367,16 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             write.line_indented(f"{table_name}View,")
             write.line_indented(f"{table_name}ViewNameIdMapping,")
             write.line(f'}} from "../types/{table_name_camel}";')
-            write.line(f"import {{ {table_name}Model }} from '../models/{table_name_camel}';")
+            write.line(f"import {{ {model_name} }} from '../models/{table_name_camel}';")
             write.endregion()
             write.line_empty()
 
             write.line(
-                f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {table_name}Model, {table_name}View, {table_name}Field> {{"
+                f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {model_name}, {table_name}View, {table_name}Field> {{"
             )
             write.line_indented("constructor(apiKey: string, baseId: string) {")
             write.line_indented(
-                f'super(apiKey, baseId, "{table["name"]}", {table_name}ViewNameIdMapping, {table_name}Model.fromRecord);',
+                f'super(apiKey, baseId, "{table["name"]}", {table_name}ViewNameIdMapping, {model_name}.fromRecord);',
                 2,
             )
             write.line_indented("}")
