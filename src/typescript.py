@@ -461,6 +461,7 @@ def write_index(metadata: BaseMetadata, output_folder: Path):
     with WriteToTypeScriptFile(path=output_folder / "index.ts") as write:
         write.line('export * from "./dynamic";')
         write.line('export * from "./static/formula";')
+        write.line('export * from "./static/airtable-model";')
         write.line("")
 
 
