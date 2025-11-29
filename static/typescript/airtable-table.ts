@@ -4,12 +4,12 @@ import { AirtableModel } from "./airtable-model";
 import { QueryParams } from "airtable/lib/query_params";
 import { ID } from "./formula";
 
-interface BasicGetOptions<T> {
+interface Options<T> {
 	pageSize?: number;
 	fields?: T[];
 	useFieldIds?: boolean;
 }
-interface FullGetOptions<V, T> extends BasicGetOptions<T> {
+interface QueryOptions<V, T> extends Options<T> {
 	view?: V;
 	formula?: string;
 }
@@ -36,14 +36,14 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	}
 
 	/** Get a single record by ID */
-	public async get(recordId: string, options?: BasicGetOptions<W>): Promise<U>;
+	public async get(recordId: string, options?: Options<W>): Promise<U>;
 	/** Get multiple records by IDs */
-	public async get(recordIds: string[], options?: BasicGetOptions<W>): Promise<U[]>;
+	public async get(recordIds: string[], options?: Options<W>): Promise<U[]>;
 	/** Get multiple records with query options */
-	public async get(options?: FullGetOptions<V, W>): Promise<U[]>;
+	public async get(options?: QueryOptions<V, W>): Promise<U[]>;
 	public async get(
-		recordIdOrIdsOrOptions?: string | string[] | FullGetOptions<V, W>,
-		options?: BasicGetOptions<W>,
+		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<V, W>,
+		options?: Options<W>,
 	): Promise<U | U[]> {
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
@@ -79,7 +79,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		// Query with options (first parameter is options object)
 		const queryOptions = recordIdOrIdsOrOptions || {};
 		const selectOptions: QueryParams<T> = {};
-		if (queryOptions.view) selectOptions.view = queryOptions.view;
+		if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
 		if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
 		if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 		if (queryOptions.fields) selectOptions.fields = queryOptions.fields as string[];
