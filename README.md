@@ -2,6 +2,9 @@
 
 A code generator for [pyAirtable](https://pyairtable.readthedocs.io/en/stable/) (Python) and [airtable.js](https://github.com/Airtable/airtable.js) (TypeScript), focused on developer experience.
 
+> **Warning**  
+> myAirtable is under active development.
+
 ## Python (pyAirtable)
 
 myAirtable generates strongly-typed RecordDicts and ORM classes, intended for use with the pyAirtable library.
@@ -105,7 +108,7 @@ const contacts = await new Airtable().contacts.get({ formula: formula });
 Finally, myAirtable generates custom lightweight wrapper classes, which expose airtable.js's CRUD methods with strongly-typed arguments and options, and provide easy access to the tables through a simple interface.
 
 ```typescript
-import { Airtable, ContactsModel } from "./myairtable/output"
+import { Airtable, ContactsModel } from "./myairtable/output";
 
 const at = new Airtable();
 
@@ -116,10 +119,10 @@ contact.save(); // airtable.js's ORM models have handy functions like .save(), w
 await at.contacts.update(contact); // or you can use myAirtable's wrapper if you prefer that syntax
 
 // table.get() method has type arguments for most of airtable.js's options, which are otherwise less clear. View and Fields options are typed.
-const contacts: ContactsModel[] = await at.contacts.get({ view: "Family & Friends", fields: ["Name", "Age"]});
+const contacts: ContactsModel[] = await at.contacts.get({ view: "Family & Friends", fields: ["Name", "Age"] });
 for (const contact of contacts) {
 	contact.age = contact.age + 1;
-  contact.save();
+	contact.save();
 }
 ```
 
