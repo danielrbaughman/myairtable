@@ -494,7 +494,7 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __lt__(self, date: str | datetime) -> F.Formula:
+    def __gt__(self, date: str | datetime) -> F.Formula:
         return self.after(date)
 
     @overload
@@ -520,7 +520,7 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __gt__(self, date: str | datetime) -> F.Formula:
+    def __lt__(self, date: str | datetime) -> F.Formula:
         return self.before(date)
 
     @overload
