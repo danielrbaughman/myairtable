@@ -277,6 +277,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             # Table Model
             write.region(upper_case(table["name"]))
 
+            write.docstring(f"Model for `{table['name']}` ({table['id']})", 0)
             write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet> {{")
             write.line_indented(f"public static f = {table_name}Formulas")
             write.line_empty()
