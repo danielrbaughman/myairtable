@@ -247,7 +247,8 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel } from "../../static/airtable-model";')
             write.line('import { RecordId } from "../../static/special_types";')
-            write.line('import { getApiKey, getApiVersion, getEndpointUrl, getNoRetryIfRateLimited, getRequestTimeout, getCustomHeaders, getBaseId } from "../../static/helpers";')
+            write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
+            write.line('import { getOptions, getBaseId } from "../../static/helpers";')
 
             # Import types for this table
             write.line("import {")
@@ -259,6 +260,14 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                     write.line_indented(f"{options_name(table_name, field_name)},")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
+
+            write.line("import {")
+            for _table in metadata["tables"]:
+                if _table["id"] == table["id"]:
+                    continue
+                _model_name = property_name_model(_table, csv_folder)
+                write.line_indented(f"{_model_name},")
+            write.line("} from \"../models\";")
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
@@ -275,7 +284,22 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                 field_name = property_name_camel(field, csv_folder)
                 field_type = typescript_type(table["name"], field)
                 write.docstring(f"`{field['name']}` ({field["id"]})")
-                write.line_indented(f"public {field_name}?: {field_type};", 1)
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                    linked_record_type: str = ""
+                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
+                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                        tables = metadata["tables"]
+                        for _table in tables:
+                            if _table["id"] == table_id:
+                                linked_record_type = property_name_model(_table, csv_folder)
+                                break
+
+                    if field_type == "RecordId":
+                        write.line_indented(f"public {field_name}?: LinkedRecord<{linked_record_type}>;", 1)
+                    elif field_type == "RecordId[]":
+                        write.line_indented(f"public {field_name}?: LinkedRecords<{linked_record_type}>;", 1)
+                else:
+                    write.line_indented(f"public {field_name}?: {field_type};", 1)
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
@@ -292,17 +316,25 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line_indented("super(id ?? '');", 2)
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
-                write.line_indented(f"this.{field_name} = {field_name};", 2)
-            write.line_indented("const options: AirtableOptions = {", 2)
-            write.line_indented("apiKey: getApiKey(),", 3)
-            write.line_indented("apiVersion: getApiVersion(),", 3)
-            write.line_indented("customHeaders: getCustomHeaders(),", 3)
-            write.line_indented("endpointUrl: getEndpointUrl(),", 3)
-            write.line_indented("noRetryIfRateLimited: getNoRetryIfRateLimited(),", 3)
-            write.line_indented("requestTimeout: getRequestTimeout(),", 3)
-            write.line_indented("};", 2)
+                field_type = typescript_type(table["name"], field)
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                    linked_record_type: str = ""
+                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
+                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                        tables = metadata["tables"]
+                        for _table in tables:
+                            if _table["id"] == table_id:
+                                linked_record_type = property_name_model(_table, csv_folder)
+                                break
+
+                    if field_type == "RecordId":
+                        write.line_indented(f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2)
+                    elif field_type == "RecordId[]":
+                        write.line_indented(f"this.{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2)
+                else:
+                    write.line_indented(f"this.{field_name} = {field_name};", 2)
             write.line_indented(
-                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getBaseId(), options)._table, this.id, {{}});",
+                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getBaseId(), getOptions())._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
@@ -318,12 +350,24 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line_indented("}", 1)
             write.line_empty()
 
+            write.line_indented(f"public static fromId(id: RecordId): {model_name} {{")
+            write.line_indented(f"return new {model_name}({{ id }});", 2)
+            write.line_indented("}", 1)
+            write.line_empty()
+
             write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
                 if not is_computed_field(field):
-                    write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name};', 2)
+                    field_type = typescript_type(table["name"], field)
+                    if (field_type == "RecordId" or field_type == "RecordId[]"):
+                        if field_type == "RecordId":
+                            write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.id;', 2)
+                        elif field_type == "RecordId[]":
+                            write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.ids;', 2)
+                    else:
+                        write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name};', 2)
             write.line_indented("return fields;", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -332,7 +376,23 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.line_indented("this.record = record;", 2)
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
-                write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field["name"])}");', 2)
+                field_type = typescript_type(table["name"], field)
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                    linked_record_type: str = ""
+                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
+                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                        tables = metadata["tables"]
+                        for _table in tables:
+                            if _table["id"] == table_id:
+                                linked_record_type = property_name_model(_table, csv_folder)
+                                break
+
+                    if field_type == "RecordId":
+                        write.line_indented(f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);', 2)
+                    elif field_type == "RecordId[]":
+                        write.line_indented(f'this.{field_name} = new LinkedRecords<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);', 2)
+                else:
+                    write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field["name"])}");', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -343,7 +403,14 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             )
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
-                write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name});', 2)
+                field_type = typescript_type(table["name"], field)
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                    if field_type == "RecordId":
+                        write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name}?.id);', 2)
+                    elif field_type == "RecordId[]":
+                        write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name}?.ids);', 2)
+                else:
+                    write.line_indented(f'this.record.set("{sanitize_string(field["name"])}", this.{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 

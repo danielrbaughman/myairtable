@@ -1,3 +1,4 @@
+import { AirtableOptions } from "airtable";
 import process from "node:process";
 
 export function getApiKey(): string {
@@ -59,6 +60,17 @@ export function getCustomHeaders(): { [x: string]: string | number | boolean; } 
 	} catch {
 		throw new Error("Airtable custom headers is not a valid JSON string");
 	}
+}
+
+export function getOptions(): AirtableOptions {
+	return {
+		apiKey: getApiKey(),
+		apiVersion: getApiVersion(),
+		endpointUrl: getEndpointUrl(),
+		requestTimeout: getRequestTimeout(),
+		noRetryIfRateLimited: getNoRetryIfRateLimited(),
+		customHeaders: getCustomHeaders(),
+	};
 }
 
 export function validateKey<T extends string>(name: T, names: readonly T[] | T[]): void {
