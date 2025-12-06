@@ -514,14 +514,22 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";')
-            write.line("import {")
-            write.line_indented(f"{table_name}FieldSet,")
+            has_options: bool = False
             for field in table["fields"]:
                 options = get_select_options(field)
                 if len(options) > 0:
-                    field_name = property_name_pascal(field, csv_folder)
-                    write.line_indented(f"{options_name(table_name, field_name)},")
-            write.line(f'}} from "../types/{table_name_camel}";')
+                    has_options = True
+                    break
+
+            if has_options:
+                write.line("import {")
+                for field in table["fields"]:
+                    options = get_select_options(field)
+                    if len(options) > 0:
+                        field_name = property_name_pascal(field, csv_folder)
+                        write.line_indented(f"{options_name(table_name, field_name)},")
+                write.line(f'}} from "../types/{table_name_camel}";')
+                
             write.line_empty()
 
             # Properties
