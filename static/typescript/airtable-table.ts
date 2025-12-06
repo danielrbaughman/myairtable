@@ -21,12 +21,12 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 
 	constructor(
 		baseId: string,
-		tableName: string,
+		tableNameOrId: string,
 		viewNameToIdMap: Record<V, string>,
 		recordCtor: (record: ATRecord<T>) => U,
 		options: AirtableOptions = {},
 	) {
-		this._table = new Airtable(options).base(baseId).table(tableName);
+		this._table = new Airtable(options).base(baseId).table(tableNameOrId);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}

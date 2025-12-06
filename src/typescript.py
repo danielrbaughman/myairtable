@@ -387,7 +387,7 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             )
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table["name"]}", {table_name}ViewNameIdMapping, {model_name}.fromRecord, options);',
+                f'super(baseId, "{table["id"]}", {table_name}ViewNameIdMapping, {model_name}.fromRecord, options);',
                 2,
             )
             write.line_indented("}")
