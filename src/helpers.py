@@ -465,12 +465,10 @@ def get_result_type(field: FieldMetadata, airtable_type: FieldType = "") -> Fiel
 
 def warn_unhandled_airtable_type(table_name: str, field: FieldMetadata):
     if is_valid_field(field):
-        print(
-            "[yellow]Warning: Unhandled Airtable type. This results in generic types in the output.[/]",
-        )
+        print("[yellow]Warning: Unhandled Airtable type.[/]")
     else:
         print(
-            "[yellow]Warning: Invalid Airtable field. This results in generic types in the output.[/]",
+            "[yellow]Warning: Invalid Airtable field.[/]",
             "Field:",
             f"'{field['name']}'",
             f"({field['id']})",
