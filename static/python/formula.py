@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional, overload
+from typing import Any, Generic, Optional, TypeVar, overload
 
 import dateparser
 from pyairtable import formulas as F  # noqa: N812
@@ -274,6 +274,46 @@ class TextField(Field):
             str: An Airtable formula string using REGEX_MATCH with the field name and the provided pattern.
         """
         return F.REGEX_MATCH(self, pattern)
+
+SelectOptions = TypeVar("SelectOptions", bound=str)
+
+class SingleSelectField(TextField, Generic[SelectOptions]):
+    """Select comparison formulas"""
+
+    def equals(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """
+        Slightly redundant with `.eq`, but adds options for case sensitivity and trimming whitespace.
+        """
+        return super().equals(value, case_sensitive=case_sensitive, trim=trim)
+    
+    def eq(self, value: SelectOptions) -> F.Formula:
+        return super().eq(value)
+    
+    def ne(self, value: SelectOptions) -> F.Formula:
+        return super().ne(value)
+
+class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions]):
+    """Multi-Select comparison formulas"""
+    
+    def contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return self.contains(value, case_sensitive=case_sensitive, trim=trim)
+    
+    def contains_all_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)
+    
+    def contains_any_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return self.contains_any(values, case_sensitive=case_sensitive, trim=trim)
+    
+    def not_contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return self.not_contains(value, case_sensitive=case_sensitive, trim=trim)
+    
+    def not_contains_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return AND(*[self.not_contains(value, case_sensitive=case_sensitive, trim=trim) for value in values])
 
 
 class NumberField(Field):

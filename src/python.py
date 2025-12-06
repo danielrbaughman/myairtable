@@ -470,7 +470,18 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
     for table in metadata["tables"]:
         with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
-            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, ID")
+            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID")
+            all_options: list[str] = []
+            for field in table["fields"]:
+                options = get_select_options(field)
+                all_options.extend(options)
+            if len(all_options) > 0:
+                write.line("from ..types import (")
+                for field in table["fields"]:
+                    options = get_select_options(field)
+                    if len(options) > 0:
+                        write.line_indented(f"{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))},")
+                write.line(")")
             write.line_empty()
 
             # Properties
@@ -480,7 +491,10 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
             for field in table["fields"]:
                 property_name = property_name_snake(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
-                write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field['id']}')")
+                if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
+                    write.line_indented(f"{property_name}: {formula_class}[{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}] = {formula_class}('{field['id']}')")
+                else:
+                    write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field['id']}')")
                 write.property_docstring(field, table)
             write.line_empty()
             write.endregion()
@@ -755,6 +769,10 @@ def formula_type(table_name: str, field: FieldMetadata) -> str:
             formula_type = "NumberField"
         case "multipleAttachments":
             formula_type = "AttachmentsField"
+        case "multipleSelects":
+            formula_type = "MultiSelectField"
+        case "singleSelect":
+            formula_type = "SingleSelectField"
         case _:
             formula_type = "TextField"
 

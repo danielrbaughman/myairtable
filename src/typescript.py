@@ -446,7 +446,15 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
         table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
-            write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField } from "../../static/formula";')
+            write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";')
+            write.line("import {")
+            write.line_indented(f"{table_name}FieldSet,")
+            for field in table["fields"]:
+                options = get_select_options(field)
+                if len(options) > 0:
+                    field_name = property_name_pascal(field, csv_folder)
+                    write.line_indented(f"{options_name(table_name, field_name)},")
+            write.line(f'}} from "../types/{table_name_camel}";')
             write.line_empty()
 
             # Properties
@@ -455,7 +463,10 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
             for field in table["fields"]:
                 property_name = property_name_camel(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
-                write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field['id']}');")
+                if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
+                    write.line_indented(f"export const {property_name}: {formula_class}<{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}> = new {formula_class}('{field['id']}');")
+                else:
+                    write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field['id']}');")
             write.line("}")
             write.line_empty()
 
