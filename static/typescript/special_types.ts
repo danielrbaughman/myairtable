@@ -1,4 +1,8 @@
-import { FieldSet } from "airtable";
+import { AirtableOptions, FieldSet } from "airtable";
+
+export interface ExtendedAirtableOptions extends AirtableOptions {
+	baseId?: string;
+}
 
 export interface AirtableThumbnail {
 	url?: string;

@@ -244,10 +244,10 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
-            write.line('import { Attachment, Collaborator, FieldSet, Record } from "airtable";')
+            write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel } from "../../static/airtable-model";')
             write.line('import { RecordId } from "../../static/special_types";')
-            write.line('import { getApiKey } from "../../static/helpers";')
+            write.line('import { getApiKey, getApiVersion, getEndpointUrl, getNoRetryIfRateLimited, getRequestTimeout, getCustomHeaders, getBaseId } from "../../static/helpers";')
 
             # Import types for this table
             write.line("import {")
@@ -293,8 +293,16 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
                 write.line_indented(f"this.{field_name} = {field_name};", 2)
+            write.line_indented("const options: AirtableOptions = {", 2)
+            write.line_indented("apiKey: getApiKey(),", 3)
+            write.line_indented("apiVersion: getApiVersion(),", 3)
+            write.line_indented("customHeaders: getCustomHeaders(),", 3)
+            write.line_indented("endpointUrl: getEndpointUrl(),", 3)
+            write.line_indented("noRetryIfRateLimited: getNoRetryIfRateLimited(),", 3)
+            write.line_indented("requestTimeout: getRequestTimeout(),", 3)
+            write.line_indented("};", 2)
             write.line_indented(
-                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getApiKey(), '{base_id}')._table, this.id, {{}});",
+                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getBaseId(), options)._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
@@ -370,15 +378,16 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             write.line_indented(f"{table_name}ViewNameIdMapping,")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {model_name} }} from '../models/{table_name_camel}';")
+            write.line('import { AirtableOptions } from "airtable";')
             write.endregion()
             write.line_empty()
 
             write.line(
                 f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {model_name}, {table_name}View, {table_name}Field> {{"
             )
-            write.line_indented("constructor(apiKey: string, baseId: string) {")
+            write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(apiKey, baseId, "{table["name"]}", {table_name}ViewNameIdMapping, {model_name}.fromRecord);',
+                f'super(baseId, "{table["name"]}", {table_name}ViewNameIdMapping, {model_name}.fromRecord, options);',
                 2,
             )
             write.line_indented("}")
@@ -394,7 +403,8 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
 def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
     with WriteToTypeScriptFile(path=output_folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
-        write.line('import { getApiKey } from "../static/helpers";')
+        write.line('import { ExtendedAirtableOptions } from "../static/special_types";')
+        write.line('import { getApiKey, getBaseId } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:
             table_name_pascal = property_name_pascal(table, csv_folder)
@@ -408,13 +418,20 @@ def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, 
             table_name_pascal = property_name_pascal(table, csv_folder)
             write.line_indented(f"public {table_name_camel}: {table_name_pascal}Table;")
         write.line_empty()
-        write.line_indented("constructor() {")
-        write.line_indented("const apiKey = getApiKey();", 2)
-        write.line_indented(f"const baseId = '{base_id}';", 2)
+        write.line_indented("constructor(options?: ExtendedAirtableOptions) {")
+        write.line_indented("const _baseId = options?.baseId || getBaseId();", 2)
+        write.line_indented("const _options = {", 2)
+        write.line_indented("  apiKey: options?.apiKey ?? getApiKey(),", 3)
+        write.line_indented("  apiVersion: options?.apiVersion,", 3)
+        write.line_indented("  customHeaders: options?.customHeaders,", 3)
+        write.line_indented("  endpointUrl: options?.endpointUrl,", 3)
+        write.line_indented("  noRetryIfRateLimited: options?.noRetryIfRateLimited ?? false,", 3)
+        write.line_indented("  requestTimeout: options?.requestTimeout,", 3)
+        write.line_indented("};", 2)
         for table in metadata["tables"]:
             table_name_camel = property_name_camel(table, csv_folder)
             table_name_pascal = property_name_pascal(table, csv_folder)
-            write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(apiKey, baseId);", 2)
+            write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(_baseId, _options);", 2)
         write.line_indented("}")
         write.line("}")
 

@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import Airtable, { Record as ATRecord, FieldSet, Table } from "airtable";
+import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "airtable";
 import { AirtableModel } from "./airtable-model";
 import { QueryParams } from "airtable/lib/query_params";
 import { ID } from "./formula";
@@ -20,13 +20,13 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
 
 	constructor(
-		apiKey: string,
 		baseId: string,
 		tableName: string,
 		viewNameToIdMap: Record<V, string>,
 		recordCtor: (record: ATRecord<T>) => U,
+		options: AirtableOptions = {},
 	) {
-		this._table = new Airtable({ apiKey, noRetryIfRateLimited: false }).base(baseId).table(tableName);
+		this._table = new Airtable(options).base(baseId).table(tableName);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}
