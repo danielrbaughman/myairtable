@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 import { Record as ATRecord, FieldSet, RecordData } from "airtable";
-import { CreateRecordData } from "./special_types";
+import { CreateRecordData } from "./special-types";
 
 export class AirtableModel<T extends FieldSet> {
 	protected record?: ATRecord<T>;

@@ -73,7 +73,7 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
             # Imports
             write.region("IMPORTS")
             write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
-            write.line('import { RecordId } from "../../static/special_types";')
+            write.line('import { RecordId } from "../../static/special-types";')
             write.endregion()
             write.line_empty()
 
@@ -246,7 +246,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             write.region("IMPORTS")
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel } from "../../static/airtable-model";')
-            write.line('import { RecordId } from "../../static/special_types";')
+            write.line('import { RecordId } from "../../static/special-types";')
             write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
             write.line('import { getOptions, getBaseId } from "../../static/helpers";')
 
@@ -470,7 +470,7 @@ def write_tables(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
 def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_folder: Path):
     with WriteToTypeScriptFile(path=output_folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
-        write.line('import { ExtendedAirtableOptions } from "../static/special_types";')
+        write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
         write.line('import { getApiKey, getBaseId } from "../static/helpers";')
         write.line("import {")
         for table in metadata["tables"]:

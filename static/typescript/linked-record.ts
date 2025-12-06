@@ -1,6 +1,6 @@
 import { FieldSet } from "airtable";
 import { AirtableModel } from "./airtable-model";
-import { RecordId } from "./special_types";
+import { RecordId } from "./special-types";
 
 /**
  * A reference to a linked Airtable record, providing methods to get and set the linked record.
