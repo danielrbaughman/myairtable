@@ -295,9 +295,9 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                                 break
 
                     if field_type == "RecordId":
-                        write.line_indented(f"public {field_name}?: LinkedRecord<{linked_record_type}>;", 1)
+                        write.line_indented(f"public {field_name}: LinkedRecord<{linked_record_type}>;", 1)
                     elif field_type == "RecordId[]":
-                        write.line_indented(f"public {field_name}?: LinkedRecords<{linked_record_type}>;", 1)
+                        write.line_indented(f"public {field_name}: LinkedRecords<{linked_record_type}>;", 1)
                 else:
                     write.line_indented(f"public {field_name}?: {field_type};", 1)
             write.line_empty()
