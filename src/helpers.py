@@ -182,6 +182,7 @@ def is_calculated_field(field: FieldMetadata) -> bool:
 
 
 def is_computed_field(field: FieldMetadata) -> bool:
+    """AKA read-only field"""
     return (
         is_calculated_field(field)
         or field["type"] == "createdTime"
@@ -189,6 +190,7 @@ def is_computed_field(field: FieldMetadata) -> bool:
         or field["type"] == "lastModifiedBy"
         or field["type"] == "createdBy"
         or field["type"] == "count"
+        or field["type"] == "button"
     )
 
 

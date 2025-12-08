@@ -45,7 +45,7 @@ export function getRequestTimeout(): number | undefined {
 	return parsed;
 }
 
-export function getCustomHeaders(): { [x: string]: string | number | boolean; } | undefined {
+export function getCustomHeaders(): { [x: string]: string | number | boolean } | undefined {
 	const headersEnv = process.env.AIRTABLE_CUSTOM_HEADERS;
 	if (!headersEnv) {
 		return undefined;
@@ -53,7 +53,7 @@ export function getCustomHeaders(): { [x: string]: string | number | boolean; } 
 	try {
 		const headers = JSON.parse(headersEnv);
 		if (typeof headers === "object" && headers !== null) {
-			return headers as { [x: string]: string | number | boolean; };
+			return headers as { [x: string]: string | number | boolean };
 		} else {
 			throw new Error("Airtable custom headers is not a valid object");
 		}

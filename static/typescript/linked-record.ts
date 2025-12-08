@@ -33,7 +33,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet>> {
 
 	/**
 	 * Sets the linked record value and updates the associated ID.
-	 * 
+	 *
 	 * @param value - The new record to link. If `undefined` or falsy, clears the current record and ID.
 	 */
 	public set(value: M): void {
@@ -78,7 +78,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet>> {
 
 	/**
 	 * Sets the linked record values and updates the associated IDs.
-	 * 
+	 *
 	 * @param values - The new records to link. If `undefined` or falsy, clears the current records and IDs.
 	 */
 	public set(values: M[]): void {

@@ -258,6 +258,10 @@ class RichTextField(NamedFieldMetadata):
     type: Literal["richText"]
 
 
+class ButtonField(NamedFieldMetadata):
+    type: Literal["button"]
+
+
 type FieldMetadata = (
     SingleLineTextField
     | FormulaField
@@ -282,6 +286,7 @@ type FieldMetadata = (
     | MultipleLookupValues
     | SingleSelectField
     | MultipleAttachmentsField
+    | ButtonField
 )
 
 
