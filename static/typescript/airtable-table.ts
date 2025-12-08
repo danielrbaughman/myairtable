@@ -95,7 +95,13 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	public async create(recordOrRecords: U | U[]): Promise<U | U[]> {
 		if (Array.isArray(recordOrRecords)) {
 			const records = recordOrRecords.map((record) => record.toCreateRecordData());
-			const createdRecords = await this._table.create(records);
+			const createdRecords: ATRecord<T>[] = [];
+			// Create in batches of 10 (Airtable API limit)
+			for (let i = 0; i < records.length; i += 10) {
+				const batch = records.slice(i, i + 10);
+				const batchCreated = await this._table.create(batch);
+				createdRecords.push(...batchCreated);
+			}
 			return createdRecords.map((record) => this.recordCtor(record));
 		} else {
 			const record = recordOrRecords.toCreateRecordData();
@@ -111,7 +117,13 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	public async update(recordOrRecords: U | U[]): Promise<U | U[]> {
 		if (Array.isArray(recordOrRecords)) {
 			const records = recordOrRecords.map((record) => record.toUpdateRecordData());
-			const updatedRecords = await this._table.update(records);
+			const updatedRecords: ATRecord<T>[] = [];
+			// Update in batches of 10 (Airtable API limit)
+			for (let i = 0; i < records.length; i += 10) {
+				const batch = records.slice(i, i + 10);
+				const batchUpdated = await this._table.update(batch);
+				updatedRecords.push(...batchUpdated);
+			}
 			return updatedRecords.map((record) => this.recordCtor(record));
 		} else {
 			const record = recordOrRecords.toUpdateRecordData();
@@ -126,7 +138,11 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	public async delete(recordIds: string[]): Promise<void>;
 	public async delete(recordIdOrIds: string | string[]): Promise<void> {
 		if (Array.isArray(recordIdOrIds)) {
-			await this._table.destroy(recordIdOrIds);
+			// Delete in batches of 10 (Airtable API limit)
+			for (let i = 0; i < recordIdOrIds.length; i += 10) {
+				const batch = recordIdOrIds.slice(i, i + 10);
+				await this._table.destroy(batch);
+			}
 		} else {
 			await this._table.destroy([recordIdOrIds]);
 		}
