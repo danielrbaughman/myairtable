@@ -3,21 +3,21 @@ repos:
     hooks:
       - id: ruff-check
         name: PY Linter
-        entry: ruff check
+        entry: uv run ruff check
         language: system
         types: [python]
         pass_filenames: false
 
       - id: ty-check
         name: PY Type Check
-        entry: ty check
+        entry: uv run ty check
         language: system
         types: [python]
         pass_filenames: false
 
       - id: ruff-format
         name: PY Formatter
-        entry: ruff format
+        entry: uv run ruff format
         language: system
         types: [python]
         pass_filenames: true

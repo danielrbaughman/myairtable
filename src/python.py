@@ -470,7 +470,9 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
     for table in metadata["tables"]:
         with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / f"{property_name_snake(table, csv_folder)}.py") as write:
             # Imports
-            write.line("from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID")
+            write.line(
+                "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
+            )
             all_options: list[str] = []
             for field in table["fields"]:
                 options = get_select_options(field)
@@ -492,7 +494,9 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
                 property_name = property_name_snake(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
-                    write.line_indented(f"{property_name}: {formula_class}[{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}] = {formula_class}('{field['id']}')")
+                    write.line_indented(
+                        f"{property_name}: {formula_class}[{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}] = {formula_class}('{field['id']}')"
+                    )
                 else:
                     write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field['id']}')")
                 write.property_docstring(field, table)
@@ -536,14 +540,16 @@ def write_main_class(metadata: BaseMetadata, base_id: str, output_folder: Path, 
         write.line_indented("_base_id: str")
         write.line_indented("_tables: dict[TableName, TableType] = {}")
         write.line_empty()
-        write.line_indented("def __init__(self):")
-        write.line_indented("self._base_id: str = get_base_id()", 2)
+        write.line_indented(
+            'def __init__(self, api_key: str | None = None, base_id: str | None = None, endpoint_url: str = "https://api.airtable.com"):'
+        )
+        write.line_indented("self._base_id: str = base_id or get_base_id()", 2)
         write.line_indented("if not self._base_id:", 2)
         write.line_indented('raise ValueError("Base ID must be provided.")', 3)
-        write.line_indented("api_key: str = get_api_key()", 2)
+        write.line_indented("api_key: str = api_key or get_api_key()", 2)
         write.line_indented("if not api_key:", 2)
         write.line_indented('raise ValueError("API key must be provided.")', 3)
-        write.line_indented("self._api = Api(api_key=api_key)", 2)
+        write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
         for table in metadata["tables"]:
             write.line_indented("@property")
