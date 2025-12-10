@@ -49,6 +49,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record_id: str,
         use_field_ids: bool = True,
+        fields: list[FieldType] | None = None,
         **options,
     ) -> ORMType:
         """
@@ -124,11 +125,21 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record_id = None  # type: ignore
 
         if record_id:
-            record_dict: RecordDict = self._table.get(
-                record_id,
-                use_field_ids=use_field_ids,
-                **options,
-            )
+            if fields is not None:
+                # table.get does not support fields parameter, so we use table.all with a formula instead
+                record_dicts: list[RecordDict] = self._table.all(
+                    formula=ID.equals(record_id),
+                    use_field_ids=use_field_ids,
+                    fields=fields,
+                    **options,
+                )
+                record_dict: RecordDict = record_dicts[0] if record_dicts else RecordDict()
+            else:
+                record_dict: RecordDict = self._table.get(
+                    record_id,
+                    use_field_ids=use_field_ids,
+                    **options,
+                )
             record_dict: DictType = sanitize_record_dict(record_dict)
             record_orm: ORMType = self._orm_cls.from_record(record_dict)
             return record_orm

@@ -55,6 +55,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         self,
         record_id: str,
         use_field_ids: bool = False,
+        fields: list[FieldType] | None = None,
         max_records: int | None = None,
         **options,
     ) -> DictType:
@@ -137,12 +138,23 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             record_id = None  # type: ignore
 
         if record_id and isinstance(record_id, str):
-            record: RecordDict = self._table.get(
-                record_id,
-                use_field_ids=use_field_ids,
-                max_records=max_records,
-                **options,
-            )
+            if fields is not None:
+                # table.get does not support fields parameter, so we use table.all with a formula instead
+                record_dicts: list[RecordDict] = self._table.all(
+                    formula=ID.equals(record_id),
+                    use_field_ids=use_field_ids,
+                    fields=fields,
+                    max_records=max_records,
+                    **options,
+                )
+                record: RecordDict = record_dicts[0] if record_dicts else RecordDict()
+            else:
+                record: RecordDict = self._table.get(
+                    record_id,
+                    use_field_ids=use_field_ids,
+                    max_records=max_records,
+                    **options,
+                )
             record: DictType = sanitize_record_dict(record)
             return record
         elif len(record_ids) > 0:
