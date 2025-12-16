@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
-import { Record as ATRecord, FieldSet, RecordData } from "airtable";
+import { Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
 import { CreateRecordData } from "./special-types";
 
 export class AirtableModel<T extends FieldSet> {
+	[key: string]: unknown;
+
 	protected record?: ATRecord<T>;
 	public id: string;
 
@@ -14,6 +16,26 @@ export class AirtableModel<T extends FieldSet> {
 	protected writableFields(useFieldIds: boolean = false): Partial<T> {
 		return {};
 		// To be overridden by subclasses
+	}
+
+	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
+	protected sanitizeAttachment(fieldName: string): Attachment[] {
+		const attachments = this[fieldName] as Attachment[] | undefined;
+		const writableAttachments: Attachment[] = [];
+		if (attachments && Array.isArray(attachments)) {
+			for (const attachment of attachments) {
+				const writableAttachment: Attachment = {
+					id: attachment.id,
+					url: attachment.url,
+					filename: attachment.filename,
+					size: attachment.size,
+					type: attachment.type,
+				};
+				writableAttachments.push(writableAttachment);
+			}
+		}
+
+		return writableAttachments;
 	}
 
 	protected updateModel(record: ATRecord<T>): void {

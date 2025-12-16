@@ -267,7 +267,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                     continue
                 _model_name = property_name_model(_table, csv_folder)
                 write.line_indented(f"{_model_name},")
-            write.line("} from \"../models\";")
+            write.line('} from "../models";')
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
@@ -284,7 +284,7 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
             for field in table["fields"]:
                 field_name = property_name_camel(field, csv_folder)
                 field_type = typescript_type(table["name"], field)
-                write.docstring(f"`{field['name']}` ({field["id"]})")
+                write.docstring(f"`{field['name']}` ({field['id']})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
                     linked_record_type: str = ""
                     if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
@@ -329,9 +329,13 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                                 break
 
                     if field_type == "RecordId":
-                        write.line_indented(f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2)
+                        write.line_indented(
+                            f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
+                        )
                     elif field_type == "RecordId[]":
-                        write.line_indented(f"this.{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2)
+                        write.line_indented(
+                            f"this.{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
+                        )
                 else:
                     write.line_indented(f"this.{field_name} = {field_name};", 2)
             write.line_indented(
@@ -362,11 +366,20 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                 field_name = property_name_camel(field, csv_folder)
                 if not is_computed_field(field):
                     field_type = typescript_type(table["name"], field)
-                    if (field_type == "RecordId" or field_type == "RecordId[]"):
+                    if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
-                            write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.id;', 2)
+                            write.line_indented(
+                                f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.id;', 2
+                            )
                         elif field_type == "RecordId[]":
-                            write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.ids;', 2)
+                            write.line_indented(
+                                f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name}?.ids;', 2
+                            )
+                    elif field_type == "Attachment[]":
+                        write.line_indented(
+                            f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.sanitizeAttachment("{field_name}");',
+                            2,
+                        )
                     else:
                         write.line_indented(f'fields[useFieldIds ? "{field["id"]}" : "{sanitize_string(field["name"])}"] = this.{field_name};', 2)
             write.line_indented("return fields;", 2)
@@ -389,9 +402,15 @@ def write_models(metadata: BaseMetadata, base_id: str, output_folder: Path, csv_
                                 break
 
                     if field_type == "RecordId":
-                        write.line_indented(f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);', 2)
+                        write.line_indented(
+                            f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);',
+                            2,
+                        )
                     elif field_type == "RecordId[]":
-                        write.line_indented(f'this.{field_name} = new LinkedRecords<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);', 2)
+                        write.line_indented(
+                            f'this.{field_name} = new LinkedRecords<{linked_record_type}>(record.get("{sanitize_string(field["name"])}"), {linked_record_type}.fromId);',
+                            2,
+                        )
                 else:
                     write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field["name"])}");', 2)
             write.line_indented("}", 1)
@@ -514,7 +533,9 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
         table_name_camel = property_name_camel(table, csv_folder)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
-            write.line('import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";')
+            write.line(
+                'import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
+            )
             has_options: bool = False
             for field in table["fields"]:
                 options = get_select_options(field)
@@ -530,7 +551,7 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
                         field_name = property_name_pascal(field, csv_folder)
                         write.line_indented(f"{options_name(table_name, field_name)},")
                 write.line(f'}} from "../types/{table_name_camel}";')
-                
+
             write.line_empty()
 
             # Properties
@@ -540,7 +561,9 @@ def write_formula_helpers(metadata: BaseMetadata, output_folder: Path, csv_folde
                 property_name = property_name_camel(field, csv_folder)
                 formula_class = formula_type(table["name"], field)
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
-                    write.line_indented(f"export const {property_name}: {formula_class}<{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}> = new {formula_class}('{field['id']}');")
+                    write.line_indented(
+                        f"export const {property_name}: {formula_class}<{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}> = new {formula_class}('{field['id']}');"
+                    )
                 else:
                     write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field['id']}');")
             write.line("}")
