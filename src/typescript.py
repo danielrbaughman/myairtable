@@ -142,6 +142,20 @@ def write_types(metadata: BaseMetadata, output_folder: Path, csv_folder: Path):
                 second_type=f"{table_name}FieldId",
                 is_value_string=True,
             )
+            write.dict_class(
+                f"{property_name_pascal(table, csv_folder)}FieldNamePropertyMapping",
+                [(field["name"], property_name_camel(field, csv_folder)) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}Field",
+                second_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+                is_value_string=True,
+            )
+            write.dict_class(
+                f"{property_name_pascal(table, csv_folder)}FieldPropertyNameMapping",
+                [(property_name_camel(field, csv_folder), field["name"]) for field in table["fields"]],
+                first_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+                second_type=f"{property_name_pascal(table, csv_folder)}Field",
+                is_value_string=True,
+            )
 
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table["fields"]:
