@@ -6,7 +6,7 @@ from pyairtable.formulas import Formula
 
 from .formula import ID
 from .helpers import validate_keys
-from .table_helpers import DictType, FieldType, ORMType, ViewType, sanitize_record_dict
+from .table_helpers import DictType, FieldType, ORMType, ViewType, prepare_fields_for_save, sanitize_record_dict
 
 
 class ORMTable(Generic[ORMType, ViewType, FieldType]):
@@ -241,16 +241,22 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             records = record
             record = None  # type: ignore
 
-        if records:
-            self._orm_cls.batch_save(records)
-            updated_records = self.get(record_ids=[r.id for r in records])
-            return updated_records
+        if isinstance(records, list):
+            records: list[RecordDict] = [r.to_record() for r in records]  # type: ignore
+            for r in records:
+                r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)
+            update_dicts: list[RecordDict] = [{"id": r["id"], "fields": r["fields"]} for r in records]
+            records = self._table.batch_update(update_dicts, use_field_ids=True)
+            records = [sanitize_record_dict(r) for r in records]
+            orm_records = [self._orm_cls.from_record(r) for r in records]
+            return orm_records
         else:
-            if not record:
-                raise ValueError("Record cannot be None.")
-            record.save()  # type: ignore
-            updated_record = self.get(record_id=record.id)  # type: ignore
-            return updated_record
+            record: RecordDict = record.to_record()  # type: ignore
+            record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)  # type: ignore
+            record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True)
+            record = sanitize_record_dict(record)
+            record = self._orm_cls.from_record(record)
+            return record
 
     @overload
     def delete(
