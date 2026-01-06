@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from .meta_types import FieldMetadata, FieldType, TableMetadata
+from .meta import Field, FieldType, Table
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
@@ -70,16 +70,16 @@ class WriteToPythonFile(WriteToFile):
             self.line(f'"""{docstring}"""')
         self.line_empty()
 
-    def property_docstring(self, field: FieldMetadata, table: TableMetadata):
-        if field["id"] == table["primaryFieldId"]:
+    def property_docstring(self, field: Field, table: Table):
+        if field.id == table.primary_field_id:
             if is_computed_field(field):
-                self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}` - `Primary Key` - `Read-Only Field`"""')
+                self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Primary Key` - `Read-Only Field`"""')
             else:
-                self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}` - `Primary Key`"""')
+                self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Primary Key`"""')
         elif is_computed_field(field):
-            self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}` - `Read-Only Field`"""')
+            self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Read-Only Field`"""')
         else:
-            self.line_indented(f'"""{sanitize_string(field["name"])} `{field["id"]}`"""')
+            self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}`"""')
 
     def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str", value_is_string: bool = True):
         self.line(f"{name}: dict[{first_type}, {second_type}] = {{")
@@ -177,27 +177,27 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f"{name}{'?' if optional else ''}: {type}")
 
 
-def is_calculated_field(field: FieldMetadata) -> bool:
-    return field["type"] == "formula" or field["type"] == "rollup" or field["type"] == "lookup" or field["type"] == "multipleLookupValues"
+def is_calculated_field(field: Field) -> bool:
+    return field.type == "formula" or field.type == "rollup" or field.type == "lookup" or field.type == "multipleLookupValues"
 
 
-def is_computed_field(field: FieldMetadata) -> bool:
+def is_computed_field(field: Field) -> bool:
     """AKA read-only field"""
     return (
         is_calculated_field(field)
-        or field["type"] == "createdTime"
-        or field["type"] == "lastModifiedTime"
-        or field["type"] == "lastModifiedBy"
-        or field["type"] == "createdBy"
-        or field["type"] == "count"
-        or field["type"] == "button"
+        or field.type == "createdTime"
+        or field.type == "lastModifiedTime"
+        or field.type == "lastModifiedBy"
+        or field.type == "createdBy"
+        or field.type == "count"
+        or field.type == "button"
     )
 
 
-def get_select_options(field: FieldMetadata) -> list[str]:
+def get_select_options(field: Field) -> list[str]:
     """Get the options of a select field"""
 
-    airtable_type = field["type"]
+    airtable_type = field.type
 
     if (
         airtable_type == "singleSelect"
@@ -206,15 +206,15 @@ def get_select_options(field: FieldMetadata) -> list[str]:
         or airtable_type == "multipleLookupValues"
         or airtable_type == "formula"
     ):
-        if "options" in field and field["options"]:
-            if "choices" in field["options"] and field["options"]["choices"]:
-                options = [choice["name"] for choice in field["options"]["choices"]]
+        if field.options:
+            if field.options.choices:
+                options = [choice.name for choice in field.options.choices]
                 options.sort()
                 return options
-            elif "result" in field["options"] and field["options"]["result"]:
-                if "options" in field["options"]["result"] and field["options"]["result"]["options"]:
-                    if "choices" in field["options"]["result"]["options"]:
-                        options = [choice["name"] for choice in field["options"]["result"]["options"]["choices"]]
+            elif field.options.result:
+                if field.options.result.options:
+                    if field.options.result.options.choices:
+                        options = [choice.name for choice in field.options.result.options.choices]
                         options.sort()
                         return options
 
@@ -234,19 +234,19 @@ def upper_case(text: str) -> str:
     return alpha_only(text).upper()
 
 
-def detect_duplicate_property_names(table: TableMetadata, csv_folder: Path) -> None:
+def detect_duplicate_property_names(table: Table, csv_folder: Path) -> None:
     """Detect duplicate property names in a table's fields."""
     property_names: list[str] = []
-    for field in table["fields"]:
+    for field in table.fields:
         property_name = property_name_snake(field, csv_folder)
         property_names.append(property_name)
     for name in set(property_names):
         count = property_names.count(name)
         if count > 1:
-            print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table['name']}'")
+            print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{table.name}'")
 
 
-def property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+def property_name(field_or_table: Field | Table, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Converts the field or table name to a sanitized property name in snake_case."""
 
     if use_custom and csv_folder:
@@ -255,7 +255,7 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Pat
             text = text.replace(" ", "_")
             return text
 
-    text = field_or_table["name"]
+    text = field_or_table.name
 
     text = sanitize_property_name(text)
     text = remove_extra_spaces(text)
@@ -267,31 +267,25 @@ def property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Pat
     return text
 
 
-def property_name_snake(
-    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
-) -> str:
+def property_name_snake(field_or_table: Field | Table, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Formats as snake_case, and sanitizes the name to remove any characters that are not allowed in property names"""
     text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return text
 
 
-def property_name_camel(
-    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
-) -> str:
+def property_name_camel(field_or_table: Field | Table, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Formats as camelCase, and sanitizes the name to remove any characters that are not allowed in property names"""
     text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return to_camel(text)
 
 
-def property_name_pascal(
-    field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME
-) -> str:
+def property_name_pascal(field_or_table: Field | Table, csv_folder: Path, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
     """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
     text = property_name(field_or_table, csv_folder, use_custom, custom_key)
     return to_pascal(text)
 
 
-def property_name_model(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, use_custom: bool = True) -> str:
+def property_name_model(field_or_table: Field | Table, csv_folder: Path, use_custom: bool = True) -> str:
     """Formats as PascalCase, and sanitizes the name to remove any characters that are not allowed in property names"""
     if use_custom and csv_folder:
         text = get_custom_property_name(field_or_table, csv_folder, key=MODEL_NAME)
@@ -414,10 +408,10 @@ fields_dataframe: pd.DataFrame = None  # type: ignore
 tables_dataframe: pd.DataFrame = None  # type: ignore
 
 
-def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, csv_folder: Path, key: str = "Property Name (snake_case)") -> str | None:
+def get_custom_property_name(field_or_table: Field | Table, csv_folder: Path, key: str = "Property Name (snake_case)") -> str | None:
     """Gets the custom property name for a field or table, if it exists."""
 
-    is_table = "primaryFieldId" in field_or_table
+    is_table = hasattr(field_or_table, "primary_field_id")
 
     if is_table:
         global tables_dataframe
@@ -427,7 +421,7 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, csv_
                 return None
             tables_dataframe = pd.read_csv(tables_path)
 
-        match = tables_dataframe[tables_dataframe["Table ID"] == field_or_table["id"]]
+        match = tables_dataframe[tables_dataframe["Table ID"] == field_or_table.id]
         if not match.empty:
             if key in match.columns:
                 custom_property_name = match.iloc[0][key]
@@ -443,8 +437,8 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, csv_
                 return None
             fields_dataframe = pd.read_csv(fields_path)
 
-        id = "Table ID" if "primaryFieldId" in field_or_table else "Field ID"
-        match = fields_dataframe[fields_dataframe[id] == field_or_table["id"]]
+        id = "Table ID" if is_table else "Field ID"
+        match = fields_dataframe[fields_dataframe[id] == field_or_table.id]
         if not match.empty:
             if key in match.columns:
                 custom_property_name = match.iloc[0][key]
@@ -456,24 +450,24 @@ def get_custom_property_name(field_or_table: FieldMetadata | TableMetadata, csv_
     return None
 
 
-def get_result_type(field: FieldMetadata, airtable_type: FieldType = "") -> FieldType:
-    if "options" in field and field["options"]:  # type: ignore
-        if "result" in field["options"] and field["options"]["result"]:  # type: ignore
-            if "type" in field["options"]["result"]:  # type: ignore
-                airtable_type = field["options"]["result"]["type"]  # type: ignore
+def get_result_type(field: Field, airtable_type: FieldType = "") -> FieldType:
+    if field.options:
+        if field.options.result:
+            if field.options.result.type:
+                airtable_type = field.options.result.type
 
     return airtable_type
 
 
-def warn_unhandled_airtable_type(table_name: str, field: FieldMetadata):
+def warn_unhandled_airtable_type(table_name: str, field: Field):
     if is_valid_field(field):
         print("[yellow]Warning: Unhandled Airtable type.[/]")
     else:
         print(
             "[yellow]Warning: Invalid Airtable field.[/]",
             "Field:",
-            f"'{field['name']}'",
-            f"({field['id']})",
+            f"'{field.name}'",
+            f"({field.id})",
             "in Table:",
             f"'{table_name}'",
         )
@@ -483,21 +477,22 @@ def sanitize_string(text: str) -> str:
     return text.replace('"', "'")
 
 
-def is_valid_field(field: FieldMetadata) -> bool:
+def is_valid_field(field: Field) -> bool:
     """Check if the field is `valid` according to Airtable."""
-    if "options" in field and "isValid" in field["options"]:  # type: ignore
-        return bool(field["options"]["isValid"])  # type: ignore
+    if field.options and hasattr(field.options, "is_valid"):
+        return bool(field.options.is_valid)
     return True
 
 
-def involves_lookup_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> bool:
+def involves_lookup_field(field: Field, all_fields: dict[str, Field]) -> bool:
     """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
-    if field["type"] == "multipleLookupValues" or field["type"] == "lookup":
+    if field.type == "multipleLookupValues" or field.type == "lookup":
         return True
+    if field.options is None:
+        return False
 
     # Check if field has referencedFieldIds and recursively check each one
-    options = field.get("options", {})
-    referenced_field_ids = options.get("referencedFieldIds", [])
+    referenced_field_ids = field.options.referenced_field_ids or []
 
     if referenced_field_ids:
         for referenced_field_id in referenced_field_ids:
@@ -508,14 +503,15 @@ def involves_lookup_field(field: FieldMetadata, all_fields: dict[str, FieldMetad
     return False
 
 
-def involves_rollup_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> bool:
+def involves_rollup_field(field: Field, all_fields: dict[str, Field]) -> bool:
     """Check if a field involves rollup, either directly or through any referenced fields."""
-    if field["type"] == "rollup":
+    if field.type == "rollup":
         return True
 
     # Check if field has referencedFieldIds and recursively check each one
-    options = field.get("options", {})
-    referenced_field_ids = options.get("referencedFieldIds", [])
+    if field.options is None:
+        return False
+    referenced_field_ids = field.options.referenced_field_ids or []
 
     if referenced_field_ids:
         for referenced_field_id in referenced_field_ids:
@@ -526,9 +522,10 @@ def involves_rollup_field(field: FieldMetadata, all_fields: dict[str, FieldMetad
     return False
 
 
-def get_referenced_field(field: FieldMetadata, all_fields: dict[str, FieldMetadata]) -> FieldMetadata | None:
-    options = field.get("options", {})
-    referenced_field_id = options.get("fieldIdInLinkedTable")
+def get_referenced_field(field: Field, all_fields: dict[str, Field]) -> Field | None:
+    if field.options is None:
+        return None
+    referenced_field_id = field.options.field_id_in_linked_table
     if referenced_field_id and referenced_field_id in all_fields:
         return all_fields[referenced_field_id]
 

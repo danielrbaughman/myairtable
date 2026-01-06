@@ -4,7 +4,7 @@ from typing import Annotated
 from typer import Argument, Option, Typer
 
 from src.csv import gen_csv
-from src.meta import gen_meta, get_base_id, get_base_meta_data
+from src.meta import Base, gen_meta, get_base_id, get_base_meta_data
 from src.python import gen_python
 from src.typescript import gen_typescript
 
@@ -48,13 +48,14 @@ def py(
     """Generate types and models in Python"""
     base_id = get_base_id()
     metadata = get_base_meta_data(base_id)
+    base = Base.from_dict(metadata, base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     if fresh:
         gen_csv(metadata=metadata, folder=csv_folder_path, fresh=True)
     gen_python(
-        metadata=metadata,
+        base=base,
         base_id=base_id,
         output_folder=folder_path,
         csv_folder=csv_folder_path,
@@ -79,6 +80,15 @@ def ts(
     if fresh:
         gen_csv(metadata=metadata, folder=csv_folder_path, fresh=True)
     gen_typescript(metadata, base_id, output_folder=folder_path, csv_folder=csv_folder_path)
+
+
+@app.command()
+def parse():
+    """Parse meta.json to verify its structure."""
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    base = Base.from_dict(metadata, base_id)
+    print(base.tables[0].fields[0].id)
 
 
 if __name__ == "__main__":
