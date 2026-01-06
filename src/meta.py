@@ -2,12 +2,19 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 import httpx
+import pandas as pd
 from pydantic import BaseModel, PrivateAttr
+from pydantic.alias_generators import to_camel, to_pascal
+from rich import print
 
-from src.meta_types import BaseMetadata
+from src.helpers import remove_extra_spaces, sanitize_leading_trailing_characters, sanitize_property_name, sanitize_reserved_names
+from src.meta_types import BaseMetadata, FieldType
+
+PROPERTY_NAME = "Property Name (snake_case)"
+MODEL_NAME = "Model Name (snake_case)"
 
 
 def get_base_meta_data(base_id: str) -> BaseMetadata:
@@ -44,41 +51,6 @@ def gen_meta(metadata: BaseMetadata, folder: Path):
     with open(p, "w") as f:
         f.write(json.dumps(metadata, indent=4))
     print(f"Base metadata written to {p.as_posix()}")
-
-
-FieldType = Literal[
-    "singleLineText",
-    "multilineText",
-    "number",
-    "singleSelect",
-    "multipleSelects",
-    "multipleRecordLinks",
-    "multipleLookupValues",
-    "multipleAttachments",
-    "checkbox",
-    "date",
-    "dateTime",
-    "createdTime",
-    "lastModifiedTime",
-    "formula",
-    "count",
-    "rollup",
-    "lookup",
-    "singleCollaborator",
-    "autoNumber",
-    "barcode",
-    "phoneNumber",
-    "email",
-    "url",
-    "percent",
-    "rating",
-    "duration",
-    "richText",
-    "currency",
-    "createdBy",
-    "button",
-    "lastModifiedBy",
-]
 
 
 class Choice(BaseModel):
@@ -118,13 +90,231 @@ class Options(BaseModel):
     field_id: str | None = None
 
 
-class Field(BaseModel):
+fields_dataframe: pd.DataFrame = None  # type: ignore
+tables_dataframe: pd.DataFrame = None  # type: ignore
+
+
+class TableOrField(BaseModel):
+    id: str
+    name: str
+    csv_folder: Path | None = None
+
+    def is_table(self) -> bool:
+        return hasattr(self, "primary_field_id")
+
+    def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+        """Converts the field or table name to a sanitized property name in snake_case."""
+        if use_custom and self.csv_folder:
+            text = self._custom_property_name(key=custom_key)
+            if text:
+                text = text.replace(" ", "_")
+                return text
+
+        text = self.name
+
+        text = sanitize_property_name(text)
+        text = remove_extra_spaces(text)
+        text = text.replace(" ", "_")
+        text = text.lower()
+        text = sanitize_leading_trailing_characters(text)
+        text = sanitize_reserved_names(text)
+
+        return text
+
+    def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
+        """Gets the custom property name for a field or table, if it exists."""
+
+        if self.is_table():
+            global tables_dataframe
+            if tables_dataframe is None:
+                tables_path = self.csv_folder / "tables.csv"
+                if not tables_path.exists():
+                    return None
+                tables_dataframe = pd.read_csv(tables_path)
+
+            match = tables_dataframe[tables_dataframe["Table ID"] == self.id]
+            if not match.empty:
+                if key in match.columns:
+                    custom_property_name = match.iloc[0][key]
+                    if isinstance(custom_property_name, str) and custom_property_name.strip():
+                        name = remove_extra_spaces(custom_property_name.strip())
+                        if name:
+                            return name
+        else:
+            global fields_dataframe
+            if fields_dataframe is None:
+                fields_path = self.csv_folder / "fields.csv"
+                if not fields_path.exists():
+                    return None
+                fields_dataframe = pd.read_csv(fields_path)
+
+            id = "Table ID" if self.is_table() else "Field ID"
+            match = fields_dataframe[fields_dataframe[id] == self.id]
+            if not match.empty:
+                if key in match.columns:
+                    custom_property_name = match.iloc[0][key]
+                    if isinstance(custom_property_name, str) and custom_property_name.strip():
+                        name = remove_extra_spaces(custom_property_name.strip())
+                        if name:
+                            return name
+
+        return None
+
+    def name_snake(self, use_custom: bool = True) -> str:
+        """Get the property name in snake_case."""
+        return self._property_name(use_custom=use_custom)
+
+    def name_camel(self, use_custom: bool = True) -> str:
+        """Get the property name in camelCase."""
+        text = self._property_name(use_custom=use_custom)
+        return to_camel(text)
+
+    def name_pascal(self, use_custom: bool = True) -> str:
+        """Get the property name in PascalCase."""
+        text = self._property_name(use_custom=use_custom)
+        return to_pascal(text)
+
+    def name_model(self, use_custom: bool = True) -> str:
+        """Get the model name (PascalCase with 'Model' suffix)."""
+        if use_custom and self.csv_folder:
+            text = self._custom_property_name(key=MODEL_NAME)
+            if text:
+                text = text.replace(" ", "_")
+                return to_pascal(text)
+
+        name = self.name_pascal(use_custom=use_custom) + "Model"
+        return name
+
+
+class Field(TableOrField):
     id: str
     name: str
     type: FieldType
     description: str | None = None
     options: Options | None = None
     table_id: str
+
+    def is_valid(self) -> bool:
+        """Check if the field is `valid` according to Airtable."""
+        if self.options and hasattr(self.options, "is_valid"):
+            return bool(self.options.is_valid)
+        return True
+
+    def is_calculated(self) -> bool:
+        """A field whose value is dependent on other fields."""
+        calculated_types: list[FieldType] = [
+            "formula",
+            "rollup",
+            "lookup",
+            "multipleLookupValues",
+        ]
+        return self.type in calculated_types
+
+    def is_computed(self) -> bool:
+        """A field whose value is calculated by Airtable, and thus read-only."""
+        computed_types: list[FieldType] = [
+            "formula",
+            "rollup",
+            "lookup",
+            "multipleLookupValues",
+            "createdTime",
+            "lastModifiedTime",
+            "lastModifiedBy",
+            "createdBy",
+            "count",
+            "button",
+        ]
+        return self.type in computed_types
+
+    def get_result_type(self, airtable_type: FieldType = "") -> FieldType:
+        if self.options:
+            if self.options.result:
+                if self.options.result.type:
+                    airtable_type = self.options.result.type
+        return airtable_type
+
+    def get_referenced_field(self, all_fields: dict[str, "Field"]) -> "Field | None":
+        if self.options is None:
+            return None
+        referenced_field_id = self.options.field_id_in_linked_table
+        if referenced_field_id and referenced_field_id in all_fields:
+            return all_fields[referenced_field_id]
+
+        return None
+
+    def involves_lookup(self, all_fields: dict[str, "Field"]) -> bool:
+        """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
+        if self.type == "multipleLookupValues" or self.type == "lookup":
+            return True
+        if self.options is None:
+            return False
+
+        # Check if field has referencedFieldIds and recursively check each one
+        referenced_field_ids = self.options.referenced_field_ids or []
+        if referenced_field_ids:
+            for referenced_field_id in referenced_field_ids:
+                if referenced_field_id in all_fields:
+                    referenced_field = all_fields[referenced_field_id]
+                    if referenced_field.involves_lookup(all_fields):
+                        return True
+        return False
+
+    def involves_rollup(self, all_fields: dict[str, "Field"]) -> bool:
+        """Check if a field involves rollup, either directly or through any referenced fields."""
+        if self.type == "rollup":
+            return True
+
+        # Check if field has referencedFieldIds and recursively check each one
+        if self.options is None:
+            return False
+        referenced_field_ids = self.options.referenced_field_ids or []
+
+        if referenced_field_ids:
+            for referenced_field_id in referenced_field_ids:
+                if referenced_field_id in all_fields:
+                    referenced_field = all_fields[referenced_field_id]
+                    if referenced_field.involves_rollup(all_fields):
+                        return True
+        return False
+
+    def get_select_options(self) -> list[str]:
+        """Get the options of a select field"""
+
+        airtable_type = self.type
+
+        if (
+            airtable_type == "singleSelect"
+            or airtable_type == "multipleSelects"
+            or airtable_type == "singleCollaborator"
+            or airtable_type == "multipleLookupValues"
+            or airtable_type == "formula"
+        ):
+            if self.options:
+                if self.options.choices:
+                    options = [choice.name for choice in self.options.choices]
+                    options.sort()
+                    return options
+                elif self.options.result:
+                    if self.options.result.options:
+                        if self.options.result.options.choices:
+                            options = [choice.name for choice in self.options.result.options.choices]
+                            options.sort()
+                            return options
+
+        return []
+
+    def warn_unhandled_airtable_type(self, table_name: str):
+        if self.is_valid():
+            print("[yellow]Warning: Unhandled Airtable type.[/]")
+        else:
+            print(
+                "[yellow]Warning: Invalid Airtable field.[/]",
+                "Field:",
+                f"'{self.name}'",
+                f"({self.id})",
+                "in Table:",
+                f"'{table_name}'",
+            )
 
 
 class View(BaseModel):
@@ -134,7 +324,7 @@ class View(BaseModel):
     table_id: str
 
 
-class Table(BaseModel):
+class Table(TableOrField):
     id: str
     name: str
     primary_field_id: str
@@ -154,6 +344,17 @@ class Table(BaseModel):
                 return field
         return None
 
+    def detect_duplicate_property_names(self) -> None:
+        """Detect duplicate property names in a table's fields."""
+        property_names: list[str] = []
+        for field in self.fields:
+            property_name = field.name_snake()
+            property_names.append(property_name)
+        for name in set(property_names):
+            count = property_names.count(name)
+            if count > 1:
+                print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
+
 
 class Base(BaseModel):
     id: str
@@ -161,7 +362,7 @@ class Base(BaseModel):
     _original_metadata: BaseMetadata = PrivateAttr()
 
     @classmethod
-    def from_dict(cls, meta: BaseMetadata | dict, base_id: str) -> "Base":
+    def from_dict(cls, meta: BaseMetadata | dict, base_id: str, csv_folder: Path | None = None) -> "Base":
         base: Base = cls(
             id=base_id,
             tables=[],
@@ -175,6 +376,7 @@ class Base(BaseModel):
                 fields=[],
                 views=[],
                 base_id=base_id,
+                csv_folder=csv_folder,
             )
             for field_meta in table_meta["fields"]:
                 options: dict[str, Any] = field_meta.get("options", {})
@@ -184,6 +386,7 @@ class Base(BaseModel):
                     type=field_meta["type"],
                     description=field_meta.get("description"),
                     table_id=table_meta["id"],
+                    csv_folder=csv_folder,
                     options=Options(
                         field_id=field_meta["id"],
                         formula=options.get("formula"),

@@ -33,7 +33,8 @@ def csv(
     metadata = get_base_meta_data(base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
-    gen_csv(metadata=metadata, folder=folder_path, fresh=fresh)
+    base = Base.from_dict(metadata, base_id, csv_folder=folder_path)
+    gen_csv(base=base, folder=folder_path, fresh=fresh)
 
 
 @app.command()
@@ -46,17 +47,16 @@ def py(
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
 ):
     """Generate types and models in Python"""
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
-    base = Base.from_dict(metadata, base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    base = Base.from_dict(metadata, base_id, csv_folder=csv_folder_path)
     if fresh:
-        gen_csv(metadata=metadata, folder=csv_folder_path, fresh=True)
+        gen_csv(base=base, folder=csv_folder_path, fresh=True)
     gen_python(
         base=base,
-        base_id=base_id,
         output_folder=folder_path,
         csv_folder=csv_folder_path,
         formulas=formulas,
@@ -72,23 +72,15 @@ def ts(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
 ):
     """Generate types and models in TypeScript"""
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
-    if fresh:
-        gen_csv(metadata=metadata, folder=csv_folder_path, fresh=True)
-    gen_typescript(metadata, base_id, output_folder=folder_path, csv_folder=csv_folder_path)
-
-
-@app.command()
-def parse():
-    """Parse meta.json to verify its structure."""
     base_id = get_base_id()
     metadata = get_base_meta_data(base_id)
-    base = Base.from_dict(metadata, base_id)
-    print(base.tables[0].fields[0].id)
+    base = Base.from_dict(metadata, base_id, csv_folder=csv_folder_path)
+    if fresh:
+        gen_csv(base=base, folder=csv_folder_path, fresh=True)
+    gen_typescript(base=base, output_folder=folder_path)
 
 
 if __name__ == "__main__":

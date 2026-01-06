@@ -3,25 +3,25 @@ from pathlib import Path
 import pandas as pd
 from pydantic.alias_generators import to_snake
 
-from src.helpers import MODEL_NAME, PROPERTY_NAME, property_name_model, property_name_snake, sanitize_string
-from src.meta_types import BaseMetadata
+from src.helpers import sanitize_string
+from src.meta import MODEL_NAME, PROPERTY_NAME, Base
 from src.python import python_type
 from src.typescript import typescript_type
 
 
-def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
+def gen_csv(base: Base, folder: Path, fresh: bool):
     """Export Airtable data to CSV format."""
 
     use_custom = not fresh
 
     table_rows = []
-    for table in metadata["tables"]:
+    for table in base.tables:
         table_rows.append(
             {
-                "Table ID": table["id"],
-                "Table Name": table["name"],
-                PROPERTY_NAME: property_name_snake(table, folder, use_custom=use_custom),
-                MODEL_NAME: to_snake(property_name_model(table, folder, use_custom=use_custom)),
+                "Table ID": table.id,
+                "Table Name": table.name,
+                PROPERTY_NAME: table.name_snake(use_custom=use_custom),
+                MODEL_NAME: to_snake(table.name_model(use_custom=use_custom)),
             }
         )
 
@@ -42,18 +42,18 @@ def gen_csv(metadata: BaseMetadata, folder: Path, fresh: bool):
     use_custom = use_custom and fields_output_path.exists()
 
     field_rows: list[dict] = []
-    for table in metadata["tables"]:
-        for field in table["fields"]:
+    for table in base.tables:
+        for field in table.fields:
             field_rows.append(
                 {
-                    "Table ID": table["id"],
-                    "Table Name": table["name"],
-                    "Field ID": field["id"],
-                    "Field Name": sanitize_string(field["name"]),
-                    PROPERTY_NAME: property_name_snake(field, folder, use_custom=use_custom),
-                    "Airtable Type": field["type"],
-                    "Python Type": python_type(table["name"], field, warn=False),
-                    "TypeScript Type": typescript_type(table["name"], field, warn=False),
+                    "Table ID": table.id,
+                    "Table Name": table.name,
+                    "Field ID": field.id,
+                    "Field Name": sanitize_string(field.name),
+                    PROPERTY_NAME: field.name_snake(use_custom=use_custom),
+                    "Airtable Type": field.type,
+                    "Python Type": python_type(table.name, field, warn=False),
+                    "TypeScript Type": typescript_type(table.name, field, warn=False),
                 }
             )
 

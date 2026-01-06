@@ -2,44 +2,31 @@ import shutil
 from pathlib import Path
 
 from .helpers import (
-    WriteToTypeScriptFile,
     copy_static_files,
-    detect_duplicate_property_names,
-    get_referenced_field,
-    get_result_type,
-    get_select_options,
-    involves_lookup_field,
-    involves_rollup_field,
-    is_calculated_field,
-    is_computed_field,
-    is_valid_field,
     options_name,
-    property_name_camel,
-    property_name_model,
-    property_name_pascal,
     sanitize_string,
     upper_case,
-    warn_unhandled_airtable_type,
 )
 from .meta import Base, Field, FieldType
 from .python import formula_type
+from .write_to_file import WriteToTypeScriptFile
 
 all_fields: dict[str, Field] = {}
 select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
-def gen_typescript(base: Base, base_id: str, output_folder: Path, csv_folder: Path):
+def gen_typescript(base: Base, output_folder: Path):
     for table in base.tables:
         table_id_name_map[table.id] = table.name
         for field in table.fields:
             all_fields[field.id] = field
-            options = get_select_options(field)
+            options = field.get_select_options()
             if len(options) > 0:
-                _table_name = property_name_pascal(table, csv_folder)
-                field_name = property_name_pascal(field, csv_folder)
+                _table_name = table.name_pascal()
+                field_name = field.name_pascal()
                 select_options[field.id] = f"{options_name(_table_name, field_name)}"
-        detect_duplicate_property_names(table, csv_folder)
+        table.detect_duplicate_property_names()
 
     dynamic_folder = output_folder / "dynamic"
     if dynamic_folder.exists():
@@ -52,23 +39,23 @@ def gen_typescript(base: Base, base_id: str, output_folder: Path, csv_folder: Pa
         static_folder.mkdir(parents=True, exist_ok=True)
 
     copy_static_files(output_folder, "typescript")
-    write_types(base, output_folder, csv_folder)
-    write_models(base, base_id, output_folder, csv_folder)
-    write_tables(base, output_folder, csv_folder)
-    write_main_class(base, base_id, output_folder, csv_folder)
-    write_formula_helpers(base, output_folder, csv_folder)
-    write_index(base, output_folder)
+    write_types(base, output_folder)
+    write_models(base, output_folder)
+    write_tables(base, output_folder)
+    write_main_class(base, output_folder)
+    write_formula_helpers(base, output_folder)
+    write_index(output_folder)
 
 
-def write_types(base: Base, output_folder: Path, csv_folder: Path):
+def write_types(base: Base, output_folder: Path):
     # Create types directory
     types_dir = output_folder / "dynamic" / "types"
     types_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table type files
     for table in base.tables:
-        table_name = property_name_pascal(table, csv_folder)
-        table_name_camel = property_name_camel(table, csv_folder)
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -80,10 +67,10 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
             # Field Options
             write.region("FIELD OPTIONS")
             for field in table.fields:
-                options = get_select_options(field)
+                options = field.get_select_options()
                 if len(options) > 0:
-                    _table_name = property_name_pascal(table, csv_folder)
-                    field_name = property_name_pascal(field, csv_folder)
+                    _table_name = table.name_pascal()
+                    field_name = field.name_pascal()
                     write.types(
                         options_name(_table_name, field_name),
                         options,
@@ -94,7 +81,7 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
             # Table Type
             field_names = [sanitize_string(field.name) for field in table.fields]
             field_ids = [field.id for field in table.fields]
-            property_names = [property_name_camel(field, csv_folder) for field in table.fields]
+            property_names = [field.name_camel() for field in table.fields]
 
             write.region(upper_case(table.name))
             write.types(f"{table_name}Field", field_names, f"Field names for `{table.name}`")
@@ -104,12 +91,12 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
             write.docstring(f"Calculated fields for `{table.name}`")
             write.str_list(
                 f"{table_name}CalculatedFields",
-                [sanitize_string(field.name) for field in table.fields if is_computed_field(field)],
+                [sanitize_string(field.name) for field in table.fields if field.is_computed()],
             )
             write.docstring(f"Calculated fields for `{table.name}`")
             write.str_list(
                 f"{table_name}CalculatedFieldIds",
-                [field.id for field in table.fields if is_computed_field(field)],
+                [field.id for field in table.fields if field.is_computed()],
             )
             write.line_empty()
 
@@ -129,30 +116,30 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
             )
             write.dict_class(
                 f"{table_name}FieldIdPropertyMapping",
-                [(field.id, property_name_camel(field, csv_folder)) for field in table.fields],
+                [(field.id, field.name_camel()) for field in table.fields],
                 first_type=f"{table_name}FieldId",
                 second_type=f"{table_name}FieldProperty",
                 is_value_string=True,
             )
             write.dict_class(
                 f"{table_name}FieldPropertyIdMapping",
-                [(property_name_camel(field, csv_folder), field.id) for field in table.fields],
+                [(field.name_camel(), field.id) for field in table.fields],
                 first_type=f"{table_name}FieldProperty",
                 second_type=f"{table_name}FieldId",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, csv_folder)}FieldNamePropertyMapping",
-                [(field.name, property_name_camel(field, csv_folder)) for field in table.fields],
-                first_type=f"{property_name_pascal(table, csv_folder)}Field",
-                second_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
+                f"{table_name}FieldNamePropertyMapping",
+                [(field.name, field.name_camel()) for field in table.fields],
+                first_type=f"{table_name}Field",
+                second_type=f"{table_name}FieldProperty",
                 is_value_string=True,
             )
             write.dict_class(
-                f"{property_name_pascal(table, csv_folder)}FieldPropertyNameMapping",
-                [(property_name_camel(field, csv_folder), field.name) for field in table.fields],
-                first_type=f"{property_name_pascal(table, csv_folder)}FieldProperty",
-                second_type=f"{property_name_pascal(table, csv_folder)}Field",
+                f"{table_name}FieldPropertyNameMapping",
+                [(field.name_camel(), field.name) for field in table.fields],
+                first_type=f"{table_name}FieldProperty",
+                second_type=f"{table_name}Field",
                 is_value_string=True,
             )
 
@@ -197,8 +184,8 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
         # Import field name ID mappings from individual table files
         write.region("IMPORTS")
         for table in base.tables:
-            table_name = property_name_pascal(table, csv_folder)
-            table_name_camel = property_name_camel(table, csv_folder)
+            table_name = table.name_pascal()
+            table_name_camel = table.name_camel()
             write.line(f"import {{ {table_name}FieldNameIdMapping }} from './{table_name_camel}';")
         write.endregion()
         write.line_empty()
@@ -230,7 +217,7 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
 
         write.dict_class(
             "TableIdToFieldNameIdMapping",
-            [(table.id, f"{property_name_pascal(table, csv_folder)}FieldNameIdMapping") for table in base.tables],
+            [(table.id, f"{table.name_pascal()}FieldNameIdMapping") for table in base.tables],
             first_type="TableId",
             second_type="Record<string, string>",
         )
@@ -239,21 +226,21 @@ def write_types(base: Base, output_folder: Path, csv_folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=types_dir / "index.ts") as write:
         for table in base.tables:
-            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
+            write.line(f"export * from './{table.name_camel()}';")
         write.line("export * from './_tables';")
         write.line("")
 
 
-def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path):
+def write_models(base: Base, output_folder: Path):
     # Create models directory
     models_dir = output_folder / "dynamic" / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table model files
     for table in base.tables:
-        table_name = property_name_pascal(table, csv_folder)
-        table_name_camel = property_name_camel(table, csv_folder)
-        model_name = property_name_model(table, csv_folder)
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
+        model_name = table.name_model()
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -267,9 +254,9 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             write.line("import {")
             write.line_indented(f"{table_name}FieldSet,")
             for field in table.fields:
-                options = get_select_options(field)
+                options = field.get_select_options()
                 if len(options) > 0:
-                    field_name = property_name_pascal(field, csv_folder)
+                    field_name = field.name_pascal()
                     write.line_indented(f"{options_name(table_name, field_name)},")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
@@ -278,7 +265,7 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             for _table in base.tables:
                 if _table.id == table.id:
                     continue
-                _model_name = property_name_model(_table, csv_folder)
+                _model_name = _table.name_model()
                 write.line_indented(f"{_model_name},")
             write.line('} from "../models";')
 
@@ -295,17 +282,17 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             write.line_indented(f"public static f = {table_name}Formulas")
             write.line_empty()
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 field_type = typescript_type(table.name, field)
                 write.docstring(f"`{field.name}` ({field.id})")
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
-                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
-                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                    if field.options and field.options.linked_table_id:
+                        table_id = field.options.linked_table_id
                         tables = base.tables
                         for _table in tables:
                             if _table.id == table_id:
-                                linked_record_type = property_name_model(_table, csv_folder)
+                                linked_record_type = _table.name_model()
                                 break
 
                     if field_type == "RecordId":
@@ -318,27 +305,27 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 write.line_indented(f"{field_name},", 2)
             write.line_indented("}: {", 1)
             write.line_indented("id?: string,", 2)
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 field_type = typescript_type(table.name, field)
                 write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 field_type = typescript_type(table.name, field)
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
-                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
-                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                    if field.options and field.options.linked_table_id:
+                        table_id = field.options.linked_table_id
                         tables = base.tables
                         for _table in tables:
                             if _table.id == table_id:
-                                linked_record_type = property_name_model(_table, csv_folder)
+                                linked_record_type = _table.name_model()
                                 break
 
                     if field_type == "RecordId":
@@ -376,8 +363,8 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
-                if not is_computed_field(field):
+                field_name = field.name_camel()
+                if not field.is_computed():
                     field_type = typescript_type(table.name, field)
                     if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
@@ -398,16 +385,16 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
             write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 field_type = typescript_type(table.name, field)
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
-                    if "options" in field and "linkedTableId" in field["options"]:  # type: ignore
-                        table_id = field["options"]["linkedTableId"]  # type: ignore
+                    if field.options and field.options.linked_table_id:
+                        table_id = field.options.linked_table_id
                         tables = base.tables
                         for _table in tables:
                             if _table.id == table_id:
-                                linked_record_type = property_name_model(_table, csv_folder)
+                                linked_record_type = _table.name_model()
                                 break
 
                     if field_type == "RecordId":
@@ -431,9 +418,9 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
             )
             for field in table.fields:
-                field_name = property_name_camel(field, csv_folder)
+                field_name = field.name_camel()
                 field_type = typescript_type(table.name, field)
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not is_computed_field(field):
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
                         write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)
                     elif field_type == "RecordId[]":
@@ -449,20 +436,20 @@ def write_models(base: Base, base_id: str, output_folder: Path, csv_folder: Path
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=models_dir / "index.ts") as write:
         for table in base.tables:
-            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
+            write.line(f"export * from './{table.name_camel()}';")
         write.line("")
 
 
-def write_tables(base: Base, output_folder: Path, csv_folder: Path):
+def write_tables(base: Base, output_folder: Path):
     # Create tables directory
     tables_dir = output_folder / "dynamic" / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table files
     for table in base.tables:
-        table_name = property_name_pascal(table, csv_folder)
-        table_name_camel = property_name_camel(table, csv_folder)
-        model_name = property_name_model(table, csv_folder)
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
+        model_name = table.name_model()
         with WriteToTypeScriptFile(path=tables_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -492,26 +479,26 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=tables_dir / "index.ts") as write:
         for table in base.tables:
-            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
+            write.line(f"export * from './{table.name_camel()}';")
         write.line("")
 
 
-def write_main_class(base: Base, base_id: str, output_folder: Path, csv_folder: Path):
+def write_main_class(base: Base, output_folder: Path):
     with WriteToTypeScriptFile(path=output_folder / "dynamic" / "airtable-main.ts") as write:
         # Imports
         write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
         write.line('import { getApiKey, getBaseId } from "../static/helpers";')
         write.line("import {")
         for table in base.tables:
-            table_name_pascal = property_name_pascal(table, csv_folder)
+            table_name_pascal = table.name_pascal()
             write.line_indented(f"{table_name_pascal}Table,")
         write.line('} from "./tables";')
         write.line_empty()
 
         write.line("export class Airtable {")
         for table in base.tables:
-            table_name_camel = property_name_camel(table, csv_folder)
-            table_name_pascal = property_name_pascal(table, csv_folder)
+            table_name_camel = table.name_camel()
+            table_name_pascal = table.name_pascal()
             write.line_indented(f"public {table_name_camel}: {table_name_pascal}Table;")
         write.line_empty()
         write.line_indented("constructor(options?: ExtendedAirtableOptions) {")
@@ -525,21 +512,21 @@ def write_main_class(base: Base, base_id: str, output_folder: Path, csv_folder: 
         write.line_indented("  requestTimeout: options?.requestTimeout,", 3)
         write.line_indented("};", 2)
         for table in base.tables:
-            table_name_camel = property_name_camel(table, csv_folder)
-            table_name_pascal = property_name_pascal(table, csv_folder)
+            table_name_camel = table.name_camel()
+            table_name_pascal = table.name_pascal()
             write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(_baseId, _options);", 2)
         write.line_indented("}")
         write.line("}")
 
 
-def write_formula_helpers(base: Base, output_folder: Path, csv_folder: Path):
+def write_formula_helpers(base: Base, output_folder: Path):
     # Create formulas directory
     formulas_dir = output_folder / "dynamic" / "formulas"
     formulas_dir.mkdir(parents=True, exist_ok=True)
 
     for table in base.tables:
-        table_name = property_name_pascal(table, csv_folder)
-        table_name_camel = property_name_camel(table, csv_folder)
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.line(
@@ -547,7 +534,7 @@ def write_formula_helpers(base: Base, output_folder: Path, csv_folder: Path):
             )
             has_options: bool = False
             for field in table.fields:
-                options = get_select_options(field)
+                options = field.get_select_options()
                 if len(options) > 0:
                     has_options = True
                     break
@@ -555,9 +542,9 @@ def write_formula_helpers(base: Base, output_folder: Path, csv_folder: Path):
             if has_options:
                 write.line("import {")
                 for field in table.fields:
-                    options = get_select_options(field)
+                    options = field.get_select_options()
                     if len(options) > 0:
-                        field_name = property_name_pascal(field, csv_folder)
+                        field_name = field.name_pascal()
                         write.line_indented(f"{options_name(table_name, field_name)},")
                 write.line(f'}} from "../types/{table_name_camel}";')
 
@@ -567,11 +554,11 @@ def write_formula_helpers(base: Base, output_folder: Path, csv_folder: Path):
             write.line(f"export namespace {table_name}Formulas {{")
             write.line_indented("export const id: ID = new ID();")
             for field in table.fields:
-                property_name = property_name_camel(field, csv_folder)
-                formula_class = formula_type(table.name, field)
+                property_name = field.name_camel()
+                formula_class = formula_type(field)
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     write.line_indented(
-                        f"export const {property_name}: {formula_class}<{options_name(property_name_pascal(table, csv_folder), property_name_pascal(field, csv_folder))}> = new {formula_class}('{field.id}');"
+                        f"export const {property_name}: {formula_class}<{options_name(table_name, field.name_pascal())}> = new {formula_class}('{field.id}');"
                     )
                 else:
                     write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field.id}');")
@@ -581,11 +568,11 @@ def write_formula_helpers(base: Base, output_folder: Path, csv_folder: Path):
     # Write barrel export index.ts
     with WriteToTypeScriptFile(path=formulas_dir / "index.ts") as write:
         for table in base.tables:
-            write.line(f"export * from './{property_name_camel(table, csv_folder)}';")
+            write.line(f"export * from './{table.name_camel()}';")
         write.line("")
 
 
-def write_index(base: Base, output_folder: Path):
+def write_index(output_folder: Path):
     with WriteToTypeScriptFile(path=output_folder / "dynamic" / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
@@ -608,8 +595,8 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
     ts_type: str = "Any"
 
     # With calculated fields, we want to know the type of the result
-    if is_calculated_field(field):
-        airtable_type = get_result_type(field)
+    if field.is_calculated():
+        airtable_type = field.get_result_type()
 
     match airtable_type:
         case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
@@ -629,35 +616,35 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             ts_type = "Collaborator"
         case "singleSelect":
-            referenced_field = get_referenced_field(field, all_fields)
+            referenced_field = field.get_referenced_field(all_fields)
             if field.id in select_options:
                 ts_type = select_options[field.id]
             elif referenced_field and referenced_field["type"] == "singleSelect" and referenced_field["id"] in select_options:
                 ts_type = select_options[referenced_field["id"]]
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field)
+                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "multipleSelects":
             if field.id in select_options:
                 ts_type = f"{select_options[field.id]}[]"
             else:
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field)
+                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
-            if not is_valid_field(field):
+            if not field.is_valid():
                 if warn:
-                    warn_unhandled_airtable_type(table_name, field)
+                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
     if not ts_type.endswith("[]"):
-        if involves_lookup_field(field, all_fields) or involves_rollup_field(field, all_fields):
+        if field.involves_lookup(all_fields) or field.involves_rollup(all_fields):
             ts_type = f"{ts_type} | {ts_type}[]"
 
     return ts_type

@@ -15,6 +15,7 @@ FieldType = Literal[
     "singleLineText",
     "multilineText",
     "number",
+    "singleSelect",
     "multipleSelects",
     "multipleRecordLinks",
     "multipleLookupValues",
@@ -41,6 +42,7 @@ FieldType = Literal[
     "currency",
     "createdBy",
     "button",
+    "lastModifiedBy",
 ]
 
 
