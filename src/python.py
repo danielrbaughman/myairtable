@@ -1,10 +1,10 @@
-import shutil
 from pathlib import Path
 
 from rich import print
 
 from .helpers import (
     copy_static_files,
+    reset_folder,
     sanitize_string,
 )
 from .meta import Base, Field, FieldType, Table
@@ -57,13 +57,6 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
         write_init(output_folder, formulas, wrappers)
 
         spinner.update(description="Python Generation complete!")
-
-
-def reset_folder(folder: Path) -> None:
-    """Remove and recreate a folder if it exists."""
-    if folder.exists():
-        shutil.rmtree(folder)
-    folder.mkdir(parents=True, exist_ok=True)
 
 
 def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:

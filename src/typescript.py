@@ -1,8 +1,8 @@
-import shutil
 from pathlib import Path
 
 from .helpers import (
     copy_static_files,
+    reset_folder,
     sanitize_string,
 )
 from .meta import Base, Field, FieldType
@@ -24,15 +24,8 @@ def gen_typescript(base: Base, output_folder: Path):
         for table in base.tables:
             table.detect_duplicate_property_names()
 
-        dynamic_folder = output_folder / Paths.DYNAMIC
-        if dynamic_folder.exists():
-            shutil.rmtree(dynamic_folder)
-            dynamic_folder.mkdir(parents=True, exist_ok=True)
-
-        static_folder = output_folder / Paths.STATIC
-        if static_folder.exists():
-            shutil.rmtree(static_folder)
-            static_folder.mkdir(parents=True, exist_ok=True)
+        reset_folder(output_folder / Paths.DYNAMIC)
+        reset_folder(output_folder / Paths.STATIC)
 
         copy_static_files(output_folder, "typescript")
         spinner.update(description="Generating types...")

@@ -122,3 +122,10 @@ def copy_static_files(output_folder: Path, type: str):
         for file in source.iterdir():
             if file.is_file():
                 shutil.copy2(file, destination / file.name)
+
+
+def reset_folder(folder: Path) -> None:
+    """Remove and recreate a folder if it exists."""
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True, exist_ok=True)
