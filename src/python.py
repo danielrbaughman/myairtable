@@ -17,15 +17,8 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
         for table in base.tables:
             table.detect_duplicate_property_names()
 
-        dynamic_folder = output_folder / "dynamic"
-        if dynamic_folder.exists():
-            shutil.rmtree(dynamic_folder)
-            dynamic_folder.mkdir(parents=True, exist_ok=True)
-
-        static_folder = output_folder / "static"
-        if static_folder.exists():
-            shutil.rmtree(static_folder)
-            static_folder.mkdir(parents=True, exist_ok=True)
+        reset_folder(output_folder / "dynamic")
+        reset_folder(output_folder / "static")
 
         copy_static_files(output_folder, "python")
         spinner.update(description="Generating types...")
@@ -52,6 +45,13 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
         write_init(output_folder, formulas, wrappers)
 
         spinner.update(description="Python Generation complete!")
+
+
+def reset_folder(folder: Path) -> None:
+    """Remove and recreate a folder if it exists."""
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True, exist_ok=True)
 
 
 def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:
