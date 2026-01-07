@@ -8,7 +8,6 @@ dependencies = [
     "dateparser>=1.2.2",
     "dotenv>=0.9.9",
     "httpx>=0.28.1",
-    "pandas>=2.3.2",
     "pyairtable>=3.2.0",
     "pydantic>=2.11.7",
     "typer>=0.16.1",
@@ -32,6 +31,12 @@ skip-magic-trailing-comma = false
 include = ["playground.py"]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
+
+[[tool.ty.overrides]]
+include = ["src/meta.py", "src/csv.py"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"  # ty lacks type stubs for csv module
+unresolved-attribute = "ignore"  # ty lacks type stubs for csv module
 
 [dependency-groups]
 dev = [
