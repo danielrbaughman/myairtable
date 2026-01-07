@@ -56,6 +56,15 @@ def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | 
         write.line("")
 
 
+def get_linked_model_name(field: Field, base: Base) -> str:
+    """Get the model name for a linked record field."""
+    if field.options and field.options.linked_table_id:
+        for table in base.tables:
+            if table.id == field.options.linked_table_id:
+                return table.name_model()
+    return ""
+
+
 def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -285,15 +294,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_type = typescript_type(field)
                 write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type: str = ""
-                    if field.options and field.options.linked_table_id:
-                        table_id = field.options.linked_table_id
-                        tables = base.tables
-                        for _table in tables:
-                            if _table.id == table_id:
-                                linked_record_type = _table.name_model()
-                                break
-
+                    linked_record_type = get_linked_model_name(field, base)
                     if field_type == "RecordId":
                         write.line_indented(f"public {field_name}: LinkedRecord<{linked_record_type}>;", 1)
                     elif field_type == "RecordId[]":
@@ -318,15 +319,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_name = field.name_camel()
                 field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type: str = ""
-                    if field.options and field.options.linked_table_id:
-                        table_id = field.options.linked_table_id
-                        tables = base.tables
-                        for _table in tables:
-                            if _table.id == table_id:
-                                linked_record_type = _table.name_model()
-                                break
-
+                    linked_record_type = get_linked_model_name(field, base)
                     if field_type == "RecordId":
                         write.line_indented(
                             f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
@@ -387,15 +380,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_name = field.name_camel()
                 field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type: str = ""
-                    if field.options and field.options.linked_table_id:
-                        table_id = field.options.linked_table_id
-                        tables = base.tables
-                        for _table in tables:
-                            if _table.id == table_id:
-                                linked_record_type = _table.name_model()
-                                break
-
+                    linked_record_type = get_linked_model_name(field, base)
                     if field_type == "RecordId":
                         write.line_indented(
                             f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field.name)}"), {linked_record_type}.fromId);',
