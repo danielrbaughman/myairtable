@@ -545,53 +545,66 @@ def write_index(output_folder: Path) -> None:
         write.line("")
 
 
+# Simple Airtable type → TypeScript type mappings
+SIMPLE_TS_TYPES: dict[str, str] = {
+    "singleLineText": "string",
+    "multilineText": "string",
+    "url": "string",
+    "richText": "string",
+    "email": "string",
+    "phoneNumber": "string",
+    "barcode": "string",
+    "checkbox": "boolean",
+    "date": "string",
+    "dateTime": "string",
+    "createdTime": "string",
+    "lastModifiedTime": "string",
+    "count": "number",
+    "autoNumber": "number",
+    "percent": "number",
+    "currency": "number",
+    "number": "number",
+    "duration": "number",
+    "multipleRecordLinks": "RecordId[]",
+    "multipleAttachments": "Attachment[]",
+    "singleCollaborator": "Collaborator",
+    "lastModifiedBy": "Collaborator",
+    "createdBy": "Collaborator",
+    "button": "string",
+}
+
+
 def typescript_type(field: Field) -> str:
     """Returns the appropriate TypeScript type for a given Airtable field."""
-
     airtable_type: FieldType = field.type
-    ts_type: str = "Any"
+    ts_type: str = "any"
 
     # With calculated fields, we want to know the type of the result
     if field.is_calculated():
         airtable_type = field.result_type()
 
-    match airtable_type:
-        case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
-            ts_type = "string"
-        case "checkbox":
-            ts_type = "boolean"
-        case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
-            ts_type = "string"
-        case "count" | "autoNumber" | "percent" | "currency" | "number":
-            ts_type = "number"
-        case "duration":
-            ts_type = "number"
-        case "multipleRecordLinks":
-            ts_type = "RecordId[]"
-        case "multipleAttachments":
-            ts_type = "Attachment[]"
-        case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            ts_type = "Collaborator"
-        case "singleSelect":
-            referenced_field = field.referenced_field()
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                ts_type = field.options_name()
-            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-                ts_type = referenced_field.options_name()
-            else:
-                ts_type = "any"
-        case "multipleSelects":
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                ts_type = f"{field.options_name()}[]"
-            else:
-                ts_type = "any"
-        case "button":
-            ts_type = "string"  # Unsupported by Airtable's JS library
-        case _:
-            if not field.is_valid():
-                ts_type = "any"
+    # Handle simple type mappings via lookup
+    if airtable_type in SIMPLE_TS_TYPES:
+        ts_type = SIMPLE_TS_TYPES[airtable_type]
+
+    # Handle complex types with special logic
+    elif airtable_type == "singleSelect":
+        referenced_field = field.referenced_field()
+        select_fields_ids = field.base.select_fields_ids()
+        if field.id in select_fields_ids:
+            ts_type = field.options_name()
+        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+            ts_type = referenced_field.options_name()
+        else:
+            ts_type = "any"
+    elif airtable_type == "multipleSelects":
+        select_fields_ids = field.base.select_fields_ids()
+        if field.id in select_fields_ids:
+            ts_type = f"{field.options_name()}[]"
+        else:
+            ts_type = "any"
+    elif not field.is_valid():
+        ts_type = "any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
