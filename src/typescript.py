@@ -65,6 +65,13 @@ def get_linked_model_name(field: Field, base: Base) -> str:
     return ""
 
 
+def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
+    """Create a subdirectory under dynamic/ and return its path."""
+    path = output_folder / Paths.DYNAMIC / subdir
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -96,9 +103,7 @@ def gen_typescript(base: Base, output_folder: Path) -> None:
 
 
 def write_types(base: Base, output_folder: Path) -> None:
-    # Create types directory
-    types_dir = output_folder / Paths.DYNAMIC / Paths.TYPES
-    types_dir.mkdir(parents=True, exist_ok=True)
+    types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
 
     # Write individual table type files
     for table in base.tables:
@@ -241,9 +246,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
 
 def write_models(base: Base, output_folder: Path) -> None:
-    # Create models directory
-    models_dir = output_folder / Paths.DYNAMIC / Paths.MODELS
-    models_dir.mkdir(parents=True, exist_ok=True)
+    models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     # Write individual table model files
     for table in base.tables:
@@ -422,9 +425,7 @@ def write_models(base: Base, output_folder: Path) -> None:
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
-    # Create tables directory
-    tables_dir = output_folder / Paths.DYNAMIC / Paths.TABLES
-    tables_dir.mkdir(parents=True, exist_ok=True)
+    tables_dir = create_dynamic_subdir(output_folder, Paths.TABLES)
 
     # Write individual table files
     for table in base.tables:
@@ -498,9 +499,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
 
 
 def write_formula_helpers(base: Base, output_folder: Path) -> None:
-    # Create formulas directory
-    formulas_dir = output_folder / Paths.DYNAMIC / Paths.FORMULAS
-    formulas_dir.mkdir(parents=True, exist_ok=True)
+    formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
         table_name = table.name_pascal()
