@@ -316,7 +316,7 @@ class Field(TableOrField):
                 "in Table:",
                 f"'{table_name}'",
             )
-    
+
     def options_name(self) -> str:
         return f"{self.table.name_pascal()}{self.name_pascal()}Option"
 
@@ -427,7 +427,7 @@ class Base(BaseModel):
 
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata
-    
+
     def get_all_fields(self) -> list[Field]:
         fields = []
         for table in self.tables:
@@ -458,7 +458,7 @@ class Base(BaseModel):
             if field:
                 return field
         return None
-    
+
     def get_select_fields(self) -> list[Field]:
         select_fields: list[Field] = []
         for field in self.get_all_fields():
@@ -466,7 +466,7 @@ class Base(BaseModel):
             if len(options) > 0:
                 select_fields.append(field)
         return select_fields
-    
+
     def get_select_fields_ids(self) -> list[str]:
         select_field_ids: list[str] = []
         for field in self.get_all_fields():
@@ -474,7 +474,7 @@ class Base(BaseModel):
             if len(options) > 0:
                 select_field_ids.append(field.id)
         return select_field_ids
-    
+
     def get_select_field_by_id(self, field_id: str) -> Field | None:
         field = self.get_field_by_id(field_id)
         if field:
