@@ -92,21 +92,64 @@ class Options(BaseModel):
     field_id: str | None = None
 
 
-fields_dataframe: pd.DataFrame = None  # type: ignore
-tables_dataframe: pd.DataFrame = None  # type: ignore
+class CsvCache:
+    """Cache for CSV lookups - provides O(1) access by ID."""
+
+    def __init__(self, csv_folder: Path | None = None):
+        self.fields: dict[str, dict[str, str]] = {}  # field_id -> {column: value}
+        self.tables: dict[str, dict[str, str]] = {}  # table_id -> {column: value}
+
+        if csv_folder:
+            self._load_fields(csv_folder / "fields.csv")
+            self._load_tables(csv_folder / "tables.csv")
+
+    def _load_fields(self, path: Path) -> None:
+        if not path.exists():
+            return
+        df = pd.read_csv(path)
+        for _, row in df.iterrows():
+            field_id = row.get("Field ID")
+            if field_id:
+                self.fields[field_id] = row.to_dict()
+
+    def _load_tables(self, path: Path) -> None:
+        if not path.exists():
+            return
+        df = pd.read_csv(path)
+        for _, row in df.iterrows():
+            table_id = row.get("Table ID")
+            if table_id:
+                self.tables[table_id] = row.to_dict()
+
+    def get_field_value(self, field_id: str, key: str) -> str | None:
+        """Get a value for a field by ID and column key. O(1) lookup."""
+        row = self.fields.get(field_id)
+        if row and key in row:
+            value = row[key]
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def get_table_value(self, table_id: str, key: str) -> str | None:
+        """Get a value for a table by ID and column key. O(1) lookup."""
+        row = self.tables.get(table_id)
+        if row and key in row:
+            value = row[key]
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
 
 class TableOrField(BaseModel):
     id: str
     name: str
-    csv_folder: Path | None = None
 
     def is_table(self) -> bool:
         return hasattr(self, "primary_field_id")
 
     def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
         """Converts the field or table name to a sanitized property name in snake_case."""
-        if use_custom and self.csv_folder:
+        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
             text = self._custom_property_name(key=custom_key)
             if text:
                 text = text.replace(" ", "_")
@@ -125,41 +168,21 @@ class TableOrField(BaseModel):
 
     def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
         """Gets the custom property name for a field or table, if it exists."""
+        # Access cache from base (both Field and Table have base attribute)
+        if not hasattr(self, "base") or self.base is None:
+            return None
+
+        cache = self.base._csv_cache
+        if cache is None:
+            return None
 
         if self.is_table():
-            global tables_dataframe
-            if tables_dataframe is None:
-                tables_path = self.csv_folder / "tables.csv"
-                if not tables_path.exists():
-                    return None
-                tables_dataframe = pd.read_csv(tables_path)
-
-            match = tables_dataframe[tables_dataframe["Table ID"] == self.id]
-            if not match.empty:
-                if key in match.columns:
-                    custom_property_name = match.iloc[0][key]
-                    if isinstance(custom_property_name, str) and custom_property_name.strip():
-                        name = remove_extra_spaces(custom_property_name.strip())
-                        if name:
-                            return name
+            value = cache.get_table_value(self.id, key)
         else:
-            global fields_dataframe
-            if fields_dataframe is None:
-                fields_path = self.csv_folder / "fields.csv"
-                if not fields_path.exists():
-                    return None
-                fields_dataframe = pd.read_csv(fields_path)
+            value = cache.get_field_value(self.id, key)
 
-            id = "Table ID" if self.is_table() else "Field ID"
-            match = fields_dataframe[fields_dataframe[id] == self.id]
-            if not match.empty:
-                if key in match.columns:
-                    custom_property_name = match.iloc[0][key]
-                    if isinstance(custom_property_name, str) and custom_property_name.strip():
-                        name = remove_extra_spaces(custom_property_name.strip())
-                        if name:
-                            return name
-
+        if value:
+            return remove_extra_spaces(value)
         return None
 
     def name_snake(self, use_custom: bool = True) -> str:
@@ -178,7 +201,7 @@ class TableOrField(BaseModel):
 
     def name_model(self, use_custom: bool = True) -> str:
         """Get the model name (PascalCase with 'Model' suffix)."""
-        if use_custom and self.csv_folder:
+        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
             text = self._custom_property_name(key=MODEL_NAME)
             if text:
                 text = text.replace(" ", "_")
@@ -433,6 +456,7 @@ class Base(BaseModel):
     id: str
     tables: list[Table]
     _original_metadata: BaseMetadata
+    _csv_cache: CsvCache | None = None
 
     @classmethod
     def new(cls, csv_folder: Path | None = None) -> "Base":
@@ -442,6 +466,7 @@ class Base(BaseModel):
             tables=[],
         )
         base._original_metadata = meta
+        base._csv_cache = CsvCache(csv_folder) if csv_folder else None
         for table_meta in meta["tables"]:
             table = Table(
                 id=table_meta["id"],
@@ -450,7 +475,6 @@ class Base(BaseModel):
                 fields=[],
                 views=[],
                 base=base,
-                csv_folder=csv_folder,
             )
             for field_meta in table_meta["fields"]:
                 options: dict[str, Any] = field_meta.get("options", {})
@@ -461,7 +485,6 @@ class Base(BaseModel):
                     description=field_meta.get("description"),
                     table=table,
                     base=base,
-                    csv_folder=csv_folder,
                     options=Options(
                         field_id=field_meta["id"],
                         formula=options.get("formula"),
