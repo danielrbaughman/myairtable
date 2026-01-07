@@ -12,13 +12,25 @@ from .progress import progress_spinner
 from .write_to_file import WriteToPythonFile
 
 
+class Paths:
+    """Constants for generated folder/file paths."""
+
+    DYNAMIC = "dynamic"
+    STATIC = "static"
+    TYPES = "types"
+    DICTS = "dicts"
+    MODELS = "models"
+    TABLES = "tables"
+    FORMULAS = "formulas"
+
+
 def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str):
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()
 
-        reset_folder(output_folder / "dynamic")
-        reset_folder(output_folder / "static")
+        reset_folder(output_folder / Paths.DYNAMIC)
+        reset_folder(output_folder / Paths.STATIC)
 
         copy_static_files(output_folder, "python")
         spinner.update(description="Generating types...")
@@ -56,7 +68,7 @@ def reset_folder(folder: Path) -> None:
 
 def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:
     """Generate __init__.py that re-exports all table modules."""
-    with WriteToPythonFile(path=output_folder / "dynamic" / subdir / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / subdir / "__init__.py") as write:
         if extra_imports:
             for line in extra_imports:
                 write.line(line)
@@ -68,7 +80,7 @@ def write_module_init(base: Base, output_folder: Path, subdir: str, extra_import
 def write_types(base: Base, output_folder: Path):
     # Table Types
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / "dynamic" / "types" / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TYPES / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from datetime import datetime, timedelta")
@@ -166,7 +178,7 @@ def write_types(base: Base, output_folder: Path):
 
             write.endregion()
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "_tables.py") as write:
+    with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TYPES / "_tables.py") as write:
         write.line("from typing import Literal")
         for table in base.tables:
             snake = table.name_snake()
@@ -224,7 +236,7 @@ def write_types(base: Base, output_folder: Path):
             value_is_string=False,
         )
 
-    write_module_init(base, output_folder, "types", extra_imports=["from ._tables import *  # noqa: F403"])
+    write_module_init(base, output_folder, Paths.TYPES, extra_imports=["from ._tables import *  # noqa: F403"])
 
 
 # endregion
@@ -233,7 +245,7 @@ def write_types(base: Base, output_folder: Path):
 # region DICTS
 def write_dicts(base: Base, output_folder: Path):
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / "dynamic" / "dicts" / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.DICTS / f"{table.name_snake()}.py") as write:
             # Imports
             write.line("from typing import Any")
             write.line_empty()
@@ -267,7 +279,7 @@ def write_dicts(base: Base, output_folder: Path):
                 write.line_empty()
                 write.line_empty()
 
-    write_module_init(base, output_folder, "dicts")
+    write_module_init(base, output_folder, Paths.DICTS)
 
 
 # endregion
@@ -308,7 +320,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
 
 def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str):
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.MODELS / f"{table.name_snake()}.py") as write:
             # Imports
             write.line("from datetime import datetime")
             write.line("from typing import Any, TYPE_CHECKING")
@@ -361,7 +373,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 write.property_docstring(field, table)
             write.line_empty()
 
-    write_module_init(base, output_folder, "models")
+    write_module_init(base, output_folder, Paths.MODELS)
 
 
 # endregion
@@ -370,7 +382,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
 # region TABLES
 def write_tables(base: Base, output_folder: Path, csv_folder: Path):
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / "dynamic" / "tables" / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TABLES / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from pyairtable import Table")
@@ -425,7 +437,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
             write.endregion()
             write.line_empty()
 
-    write_module_init(base, output_folder, "tables")
+    write_module_init(base, output_folder, Paths.TABLES)
 
 
 # endregion
@@ -436,7 +448,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
 
 def write_formula_helpers(base: Base, output_folder: Path):
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.FORMULAS / f"{table.name_snake()}.py") as write:
             # Imports
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
@@ -459,7 +471,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line_empty()
             write.endregion()
 
-    write_module_init(base, output_folder, "formulas")
+    write_module_init(base, output_folder, Paths.FORMULAS)
 
 
 # endregion
@@ -469,7 +481,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
 
 
 def write_main_class(base: Base, output_folder: Path):
-    with WriteToPythonFile(path=output_folder / "dynamic" / "airtable_main.py") as write:
+    with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
         write.line("from pyairtable import Api")
@@ -515,7 +527,7 @@ def write_main_class(base: Base, output_folder: Path):
 
 
 def write_init(output_folder: Path, formulas: bool, wrappers: bool):
-    with WriteToPythonFile(path=output_folder / "dynamic" / "__init__.py") as write:
+    with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
         write.line("from .dicts import *  # noqa: F403")
