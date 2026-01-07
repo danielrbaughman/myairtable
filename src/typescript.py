@@ -6,7 +6,6 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, FieldType
-from .python import formula_type
 from .write_to_file import WriteToTypeScriptFile
 
 
@@ -538,7 +537,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line_indented("export const id: ID = new ID();")
             for field in table.fields:
                 property_name = field.name_camel()
-                formula_class = formula_type(field)
+                formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     write.line_indented(f"export const {property_name}: {formula_class}<{field.options_name()}> = new {formula_class}('{field.id}');")
                 else:

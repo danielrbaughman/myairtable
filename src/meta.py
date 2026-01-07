@@ -328,6 +328,36 @@ class Field(TableOrField):
     def options_name(self) -> str:
         return f"{self.table.name_pascal()}{self.name_pascal()}Option"
 
+    def formula_class(self) -> str:
+        """Returns the appropriate myAirtable formula type for a given Airtable field."""
+
+        airtable_type: FieldType = self.type
+        formula_type: str = "TextField"
+
+        # With calculated fields, we want to know the type of the result
+        if self.is_calculated():
+            airtable_type = self.get_result_type()
+
+        match airtable_type:
+            case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
+                formula_type = "TextField"
+            case "checkbox":
+                formula_type = "BooleanField"
+            case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
+                formula_type = "DateField"
+            case "count" | "autoNumber" | "percent" | "currency" | "duration" | "number":
+                formula_type = "NumberField"
+            case "multipleAttachments":
+                formula_type = "AttachmentsField"
+            case "multipleSelects":
+                formula_type = "MultiSelectField"
+            case "singleSelect":
+                formula_type = "SingleSelectField"
+            case _:
+                formula_type = "TextField"
+
+        return formula_type
+
 
 class View(BaseModel):
     id: str

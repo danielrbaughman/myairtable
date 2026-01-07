@@ -28,7 +28,7 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
     copy_static_files(output_folder, "python")
     write_types(base, output_folder)
     write_dicts(base, output_folder)
-    write_models(base, output_folder, csv_folder=csv_folder, formulas=formulas, package_prefix=package_prefix)
+    write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
     if formulas:
         write_formula_helpers(base, output_folder)
     if wrappers:
@@ -274,7 +274,7 @@ def write_dicts(base: Base, output_folder: Path):
 
 
 # region MODELS
-def write_models(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, package_prefix: str):
+def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str):
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{table.name_snake()}.py") as write:
             # Imports
@@ -357,7 +357,7 @@ def write_models(base: Base, output_folder: Path, csv_folder: Path, formulas: bo
             # properties
             for field in table.fields:
                 field_name = field.name_snake()
-                pyairtable_type = pyairtable_orm_type(table.name, field, base, csv_folder, output_folder, package_prefix=package_prefix)
+                pyairtable_type = pyairtable_orm_type(table.name, field, base, output_folder, package_prefix=package_prefix)
                 write.line_indented(f"{field_name}: {pyairtable_type}")
                 write.property_docstring(field, table)
             write.line_empty()
@@ -453,7 +453,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line_indented("id: ID = ID()")
             for field in table.fields:
                 property_name = field.name_snake()
-                formula_class = formula_type(field)
+                formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     write.line_indented(f"{property_name}: {formula_class}[{field.options_name()}] = {formula_class}('{field.id}')")
                 else:
@@ -707,38 +707,7 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
     return py_type
 
 
-def formula_type(field: Field) -> str:
-    """Returns the appropriate myAirtable formula type for a given Airtable field."""
-
-    airtable_type: FieldType = field.type
-    formula_type: str = "TextField"
-
-    # With calculated fields, we want to know the type of the result
-    if field.is_calculated():
-        airtable_type = field.get_result_type()
-
-    match airtable_type:
-        case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
-            formula_type = "TextField"
-        case "checkbox":
-            formula_type = "BooleanField"
-        case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
-            formula_type = "DateField"
-        case "count" | "autoNumber" | "percent" | "currency" | "duration" | "number":
-            formula_type = "NumberField"
-        case "multipleAttachments":
-            formula_type = "AttachmentsField"
-        case "multipleSelects":
-            formula_type = "MultiSelectField"
-        case "singleSelect":
-            formula_type = "SingleSelectField"
-        case _:
-            formula_type = "TextField"
-
-    return formula_type
-
-
-def pyairtable_orm_type(table_name: str, field: Field, base: Base, csv_folder: Path, output_folder: Path, package_prefix: str) -> str:
+def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field.type
