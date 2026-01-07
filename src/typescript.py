@@ -19,6 +19,32 @@ class Paths:
     FORMULAS = "formulas"
 
 
+# Configuration for field mapping dict classes: (suffix, key_attr, value_attr, key_type_suffix, value_type_suffix)
+FIELD_MAPPING_CONFIGS = [
+    ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
+    ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
+    ("FieldIdPropertyMapping", "id", "name_camel", "FieldId", "FieldProperty"),
+    ("FieldPropertyIdMapping", "name_camel", "id", "FieldProperty", "FieldId"),
+    ("FieldNamePropertyMapping", "name", "name_camel", "Field", "FieldProperty"),
+    ("FieldPropertyNameMapping", "name_camel", "name", "FieldProperty", "Field"),
+]
+
+
+def _get_field_value(field: Field, attr: str) -> str:
+    """Get a field attribute value by name."""
+    match attr:
+        case "id":
+            return field.id
+        case "name":
+            return field.name
+        case "name_sanitized":
+            return sanitize_string(field.name)
+        case "name_camel":
+            return field.name_camel()
+        case _:
+            raise ValueError(f"Unknown field attribute: {attr}")
+
+
 def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -101,48 +127,14 @@ def write_types(base: Base, output_folder: Path) -> None:
             )
             write.line_empty()
 
-            write.dict_class(
-                f"{table_name}FieldNameIdMapping",
-                [(sanitize_string(field.name), field.id) for field in table.fields],
-                first_type=f"{table_name}Field",
-                second_type=f"{table_name}FieldId",
-                is_value_string=True,
-            )
-            write.dict_class(
-                f"{table_name}FieldIdNameMapping",
-                [(field.id, sanitize_string(field.name)) for field in table.fields],
-                first_type=f"{table_name}FieldId",
-                second_type=f"{table_name}Field",
-                is_value_string=True,
-            )
-            write.dict_class(
-                f"{table_name}FieldIdPropertyMapping",
-                [(field.id, field.name_camel()) for field in table.fields],
-                first_type=f"{table_name}FieldId",
-                second_type=f"{table_name}FieldProperty",
-                is_value_string=True,
-            )
-            write.dict_class(
-                f"{table_name}FieldPropertyIdMapping",
-                [(field.name_camel(), field.id) for field in table.fields],
-                first_type=f"{table_name}FieldProperty",
-                second_type=f"{table_name}FieldId",
-                is_value_string=True,
-            )
-            write.dict_class(
-                f"{table_name}FieldNamePropertyMapping",
-                [(field.name, field.name_camel()) for field in table.fields],
-                first_type=f"{table_name}Field",
-                second_type=f"{table_name}FieldProperty",
-                is_value_string=True,
-            )
-            write.dict_class(
-                f"{table_name}FieldPropertyNameMapping",
-                [(field.name_camel(), field.name) for field in table.fields],
-                first_type=f"{table_name}FieldProperty",
-                second_type=f"{table_name}Field",
-                is_value_string=True,
-            )
+            for suffix, key_attr, value_attr, key_type, value_type in FIELD_MAPPING_CONFIGS:
+                write.dict_class(
+                    f"{table_name}{suffix}",
+                    [(_get_field_value(field, key_attr), _get_field_value(field, value_attr)) for field in table.fields],
+                    first_type=f"{table_name}{key_type}",
+                    second_type=f"{table_name}{value_type}",
+                    is_value_string=True,
+                )
 
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
