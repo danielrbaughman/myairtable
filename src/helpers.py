@@ -2,15 +2,6 @@ import shutil
 from pathlib import Path
 
 
-def upper_case(text: str) -> str:
-    """Formats as UPPERCASE"""
-
-    def alpha_only(text: str) -> str:
-        return "".join(c for c in text if c.isalpha())
-
-    return alpha_only(text).upper()
-
-
 def sanitize_property_name(text: str) -> str:
     """Sanitizes the property name to remove any characters that are not allowed in property names"""
 

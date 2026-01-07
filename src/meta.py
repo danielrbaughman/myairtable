@@ -185,6 +185,14 @@ class TableOrField(BaseModel):
         name = self.name_pascal(use_custom=use_custom) + "Model"
         return name
 
+    def name_upper(self) -> str:
+        """Get the name with only alphabetic characters in UPPERCASE."""
+
+        def alpha_only(text: str) -> str:
+            return "".join(c for c in text if c.isalpha())
+
+        return alpha_only(self.name).upper()
+
 
 class Field(TableOrField):
     id: str

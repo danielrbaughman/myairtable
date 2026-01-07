@@ -4,7 +4,6 @@ from pathlib import Path
 from .helpers import (
     copy_static_files,
     sanitize_string,
-    upper_case,
 )
 from .meta import Base, Field, FieldType
 from .python import formula_type
@@ -72,7 +71,7 @@ def write_types(base: Base, output_folder: Path):
             field_ids = [field.id for field in table.fields]
             property_names = [field.name_camel() for field in table.fields]
 
-            write.region(upper_case(table.name))
+            write.region(table.name_upper())
             write.types(f"{table_name}Field", field_names, f"Field names for `{table.name}`")
             write.types(f"{table_name}FieldId", field_ids, f"Field IDs for `{table.name}`")
             write.types(f"{table_name}FieldProperty", property_names, f"Property names for `{table.name}`")
@@ -263,7 +262,7 @@ def write_models(base: Base, output_folder: Path):
             write.line_empty()
 
             # Table Model
-            write.region(upper_case(table.name))
+            write.region(table.name_upper())
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet> {{")

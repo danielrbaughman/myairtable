@@ -7,7 +7,6 @@ from rich import print
 from .helpers import (
     copy_static_files,
     sanitize_string,
-    upper_case,
 )
 from .meta import Base, Field, FieldType, Table
 from .write_to_file import WriteToPythonFile
@@ -31,7 +30,6 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
     write_types(base, output_folder)
     write_dicts(base, output_folder)
     write_models(base, output_folder, csv_folder=csv_folder, formulas=formulas, package_prefix=package_prefix)
-    # write_pydantic_models(metadata, folder)
     if formulas:
         write_formula_helpers(base, output_folder)
     if wrappers:
@@ -69,7 +67,7 @@ def write_types(base: Base, output_folder: Path):
             field_ids = [field.id for field in table.fields]
             property_names = [field.name_snake() for field in table.fields]
 
-            write.region(upper_case(table.name))
+            write.region(table.name_upper())
 
             write.types(f"{table.name_pascal()}Field", field_names, f"Field names for `{table.name}`")
             write.types(f"{table.name_pascal()}FieldId", field_ids, f"Field IDs for `{table.name}`")
@@ -407,7 +405,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
             write.line_empty()
 
             # Tables
-            write.region(upper_case(table.name))
+            write.region(table.name_upper())
             class_name = table.name_pascal()
             model_name = table.name_model()
             write.line(
