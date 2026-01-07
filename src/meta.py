@@ -336,17 +336,17 @@ class Field(TableOrField):
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
-        if referenced_field_id and referenced_field_id in self.base.field_ids():
+        # field_by_id uses O(1) index lookup and returns None if not found
+        if referenced_field_id:
             return self.base.field_by_id(referenced_field_id)
-
         return None
 
     def get_linked_model_name(self) -> str:
-        """Get the model name for a linked record field."""
+        """Get the model name for a linked record field. Uses O(1) table lookup."""
         if self.options and self.options.linked_table_id:
-            for table in self.base.tables:
-                if table.id == self.options.linked_table_id:
-                    return table.name_model()
+            linked_table = self.base.table_by_id(self.options.linked_table_id)
+            if linked_table:
+                return linked_table.name_model()
         return ""
 
     def involves_lookup(self) -> bool:
@@ -365,11 +365,11 @@ class Field(TableOrField):
             # Check if field has referencedFieldIds and recursively check each one
             referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in self.base.field_ids():
-                    referenced_field = self.base.field_by_id(referenced_field_id)
-                    if referenced_field and referenced_field.involves_lookup():
-                        result = True
-                        break
+                # field_by_id uses O(1) index lookup and returns None if not found
+                referenced_field = self.base.field_by_id(referenced_field_id)
+                if referenced_field and referenced_field.involves_lookup():
+                    result = True
+                    break
 
         # Cache and return result
         self.base._involves_lookup_cache[self.id] = result
@@ -391,11 +391,11 @@ class Field(TableOrField):
             # Check if field has referencedFieldIds and recursively check each one
             referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in self.base.field_ids():
-                    referenced_field = self.base.field_by_id(referenced_field_id)
-                    if referenced_field and referenced_field.involves_rollup():
-                        result = True
-                        break
+                # field_by_id uses O(1) index lookup and returns None if not found
+                referenced_field = self.base.field_by_id(referenced_field_id)
+                if referenced_field and referenced_field.involves_rollup():
+                    result = True
+                    break
 
         # Cache and return result
         self.base._involves_rollup_cache[self.id] = result
