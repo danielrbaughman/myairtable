@@ -486,9 +486,11 @@ class Table(TableOrField):
         return [field.name for field in self.fields]
 
     def field_by_id(self, field_id: str) -> Field | None:
-        for field in self.fields:
-            if field.id == field_id:
-                return field
+        """Get a field by ID. O(1) lookup using base's field index."""
+        field = self.base.field_by_id(field_id)
+        # Ensure the field belongs to this table
+        if field and field.table.id == self.id:
+            return field
         return None
 
     def detect_duplicate_property_names(self) -> None:
