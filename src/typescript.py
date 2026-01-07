@@ -73,7 +73,6 @@ def write_types(base: Base, output_folder: Path) -> None:
             for field in table.fields:
                 options = field.select_options()
                 if len(options) > 0:
-                    _table_name = table.name_pascal()
                     write.types(
                         field.options_name(),
                         options,
