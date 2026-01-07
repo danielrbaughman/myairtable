@@ -312,19 +312,6 @@ class Field(TableOrField):
 
         return []
 
-    def warn_unhandled_airtable_type(self, table_name: str):
-        if self.is_valid():
-            print("[yellow]Warning: Unhandled Airtable type.[/]")
-        else:
-            print(
-                "[yellow]Warning: Invalid Airtable field.[/]",
-                "Field:",
-                f"'{self.name}'",
-                f"({self.id})",
-                "in Table:",
-                f"'{table_name}'",
-            )
-
     def options_name(self) -> str:
         return f"{self.table.name_pascal()}{self.name_pascal()}Option"
 
@@ -475,7 +462,7 @@ class Base(BaseModel):
                         inverse_link_field_id=options.get("inverseLinkFieldId"),
                         icon=options.get("icon"),
                         color=options.get("color"),
-                        is_valid=options.get("isValid"),
+                        is_valid=options.get("isValid", True),
                         duration_format=options.get("durationFormat"),
                         record_link_field_id=options.get("recordLinkFieldId"),
                         field_id_in_linked_table=options.get("fieldIdInLinkedTable"),

@@ -52,8 +52,8 @@ def gen_csv(base: Base, folder: Path, fresh: bool):
                     "Field Name": sanitize_string(field.name),
                     PROPERTY_NAME: field.name_snake(use_custom=use_custom),
                     "Airtable Type": field.type,
-                    "Python Type": python_type(table.name, field, warn=False),
-                    "TypeScript Type": typescript_type(table.name, field, warn=False),
+                    "Python Type": python_type(field),
+                    "TypeScript Type": typescript_type(field),
                 }
             )
 

@@ -130,13 +130,13 @@ def write_types(base: Base, output_folder: Path):
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(field.id, typescript_type(table.name, field, warn=True), optional=True)
+                write.property_row(field.id, typescript_type(field), optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(sanitize_string(field.name), typescript_type(table.name, field), is_name_string=True, optional=True)
+                write.property_row(sanitize_string(field.name), typescript_type(field), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
             write.line_empty()
@@ -266,7 +266,7 @@ def write_models(base: Base, output_folder: Path):
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(table.name, field)
+                field_type = typescript_type(field)
                 write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
@@ -294,13 +294,13 @@ def write_models(base: Base, output_folder: Path):
             write.line_indented("id?: string,", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(table.name, field)
+                field_type = typescript_type(field)
                 write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(table.name, field)
+                field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
                     if field.options and field.options.linked_table_id:
@@ -348,7 +348,7 @@ def write_models(base: Base, output_folder: Path):
             for field in table.fields:
                 field_name = field.name_camel()
                 if not field.is_computed():
-                    field_type = typescript_type(table.name, field)
+                    field_type = typescript_type(field)
                     if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
                             write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.id;', 2)
@@ -369,7 +369,7 @@ def write_models(base: Base, output_folder: Path):
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(table.name, field)
+                field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type: str = ""
                     if field.options and field.options.linked_table_id:
@@ -402,7 +402,7 @@ def write_models(base: Base, output_folder: Path):
             )
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(table.name, field)
+                field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
                         write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)
@@ -568,7 +568,7 @@ def write_index(output_folder: Path):
         write.line("")
 
 
-def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
+def typescript_type(field: Field) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FieldType = field.type
@@ -603,23 +603,17 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
             elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
                 ts_type = referenced_field.options_name()
             else:
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "multipleSelects":
             select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 ts_type = f"{field.options_name()}[]"
             else:
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "button":
             ts_type = "string"  # Unsupported by Airtable's JS library
         case _:
             if not field.is_valid():
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.

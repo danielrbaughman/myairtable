@@ -123,7 +123,7 @@ def write_types(base: Base, output_folder: Path):
 
             write.line(f"class {table.name_pascal()}FieldsDict(TypedDict, total=False):")
             for field in table.fields:
-                write.property_row(field.id, python_type(table.name, field, warn=True))
+                write.property_row(field.id, python_type(field))
             write.line_empty()
             write.line_empty()
 
@@ -357,7 +357,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             # properties
             for field in table.fields:
                 field_name = field.name_snake()
-                pyairtable_type = pyairtable_orm_type(table.name, field, base, output_folder, package_prefix=package_prefix)
+                pyairtable_type = pyairtable_orm_type(field, base, output_folder, package_prefix=package_prefix)
                 write.line_indented(f"{field_name}: {pyairtable_type}")
                 write.property_docstring(field, table)
             write.line_empty()
@@ -633,7 +633,7 @@ def main_doc_string() -> str:
 
 
 # region TYPE PARSING
-def python_type(table_name: str, field: Field, warn: bool = False) -> str:
+def python_type(field: Field) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
 
     airtable_type: FieldType = field.type
@@ -678,23 +678,17 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
             elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
                 py_type = referenced_field.options_name()
             else:
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 py_type = "Any"
         case "multipleSelects":
             select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 py_type = f"list[{field.options_name()}]"
             else:
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 py_type = "Any"
         case "button":
             py_type = "AirtableButton"
         case _:
             if not field.is_valid():
-                if warn:
-                    field.warn_unhandled_airtable_type(table_name)
                 py_type = "Any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
@@ -707,7 +701,7 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
     return py_type
 
 
-def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
+def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
 
     airtable_type = field.type
@@ -781,7 +775,7 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder
         case "button":
             orm_type = f"ButtonField = ButtonField({params})"
         case "lookup" | "multipleLookupValues":
-            orm_type = f"LookupField = LookupField[{python_type(table_name, field)}]({params})"
+            orm_type = f"LookupField = LookupField[{python_type(field)}]({params})"
         case "multipleRecordLinks":
             if field.options and field.options.linked_table_id:
                 table_id = field.options.linked_table_id
@@ -796,7 +790,7 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder
                 else:
                     orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
             else:
-                print(table_name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
+                print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
         case _:
             if not field.is_valid():
                 orm_type = "Any"

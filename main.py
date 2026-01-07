@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
+from rich import print
 from typer import Argument, Option, Typer
 
 from src.csv import gen_csv
@@ -81,6 +82,18 @@ def ts(
     if fresh:
         gen_csv(base=base, folder=csv_folder_path, fresh=True)
     gen_typescript(base=base, output_folder=folder_path)
+
+
+@app.command()
+def invalid():
+    """Check for invalid field types in the Airtable base."""
+    base_id = get_base_id()
+    metadata = get_base_meta_data(base_id)
+    base = Base.from_dict(metadata, base_id)
+    for table in base.tables:
+        for field in table.fields:
+            if not field.is_valid():
+                print(f"[yellow]Invalid field:[/] Table '{table.name}', Field '{field.name}' ({field.id})")
 
 
 if __name__ == "__main__":
