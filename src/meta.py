@@ -508,12 +508,8 @@ class Table(TableOrField):
                 print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
 
     def select_fields(self) -> list[Field]:
-        select_fields: list[Field] = []
-        for field in self.fields:
-            options = field.select_options()
-            if len(options) > 0:
-                select_fields.append(field)
-        return select_fields
+        """Get fields with select options. Uses list comprehension for efficiency."""
+        return [field for field in self.fields if field.select_options()]
 
     def linked_tables(self) -> list["Table"]:
         """Get the list of linked tables for this table. O(n) where n=fields, using O(1) table lookups."""
@@ -625,20 +621,16 @@ class Base(BaseModel):
         return self._original_metadata
 
     def fields(self) -> list[Field]:
-        fields = []
-        for table in self.tables:
-            fields.extend(table.fields)
-        return fields
+        """Get all fields. Uses pre-built index for efficiency."""
+        return list(self._field_index.values())
 
     def field_ids(self) -> list[str]:
-        """Get all field IDs. O(1) using index keys."""
+        """Get all field IDs. Uses pre-built index keys."""
         return list(self._field_index.keys())
 
     def field_names(self) -> list[str]:
-        names: list[str] = []
-        for table in self.tables:
-            names.extend(table.field_names())
-        return names
+        """Get all field names. Uses pre-built index for efficiency."""
+        return [field.name for field in self._field_index.values()]
 
     def table_by_id(self, table_id: str) -> Table | None:
         """Get a table by ID. O(1) lookup using index."""
