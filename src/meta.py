@@ -287,6 +287,8 @@ class Field(TableOrField):
     options: Options | None = None
     table: "Table"
     base: "Base"
+    # Memoization cache for select options (computed once, includes sorting)
+    _select_options_cache: list[str] | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -397,7 +399,10 @@ class Field(TableOrField):
         return result
 
     def select_options(self) -> list[str]:
-        """Get the options of a select field"""
+        """Get the options of a select field. Cached after first call."""
+        # Return cached result if available
+        if self._select_options_cache is not None:
+            return self._select_options_cache
 
         airtable_type = self.type
 
@@ -412,14 +417,17 @@ class Field(TableOrField):
                 if self.options.choices:
                     options = [choice.name for choice in self.options.choices]
                     options.sort()
+                    self._select_options_cache = options
                     return options
                 elif self.options.result:
                     if self.options.result.options:
                         if self.options.result.options.choices:
                             options = [choice.name for choice in self.options.result.options.choices]
                             options.sort()
+                            self._select_options_cache = options
                             return options
 
+        self._select_options_cache = []
         return []
 
     def options_name(self) -> str:
