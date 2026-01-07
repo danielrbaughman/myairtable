@@ -246,37 +246,37 @@ def write_dicts(base: Base, output_folder: Path):
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}CreateRecordDict(CreateRecordDict):")
-            write.line_indented(name_record_doc_string(table.name, id=False, created_time=False))
+            write.line_indented(record_doc_string(table.name, id=False, created_time=False))
             write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}IdsCreateRecordDict(CreateRecordDict):")
-            write.line_indented(id_record_doc_string(table.name, id=False, created_time=False))
+            write.line_indented(record_doc_string(table.name, id=False, created_time=False, use_field_ids=True))
             write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
             write.line_empty()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}UpdateRecordDict(UpdateRecordDict):")
-            write.line_indented(name_record_doc_string(table.name, id=True, created_time=False))
+            write.line_indented(record_doc_string(table.name, id=True, created_time=False))
             write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}IdsUpdateRecordDict(UpdateRecordDict):")
-            write.line_indented(id_record_doc_string(table.name, id=True, created_time=False))
+            write.line_indented(record_doc_string(table.name, id=True, created_time=False, use_field_ids=True))
             write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
             write.line_empty()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}RecordDict(RecordDict):")
-            write.line_indented(name_record_doc_string(table.name, id=True, created_time=True))
+            write.line_indented(record_doc_string(table.name, id=True, created_time=True))
             write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
             write.line_empty()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}IdsRecordDict(RecordDict):")
-            write.line_indented(id_record_doc_string(table.name, id=True, created_time=False))
+            write.line_indented(record_doc_string(table.name, id=True, created_time=False, use_field_ids=True))
             write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
             write.line_empty()
             write.line_empty()
@@ -553,38 +553,25 @@ def write_init(output_folder: Path, formulas: bool, wrappers: bool):
 
 
 # region DOCSTRINGS
-def id_record_doc_string(table_name: str, id: bool, created_time: bool) -> str:
+def record_doc_string(table_name: str, id: bool, created_time: bool, use_field_ids: bool = False) -> str:
+    """Generate docstring for record TypedDict classes."""
+    field_desc: str = "field ids" if use_field_ids else "field names"
+    example_fields: str = (
+        '"fld75gvKPpwKmG58B": "Alice",\n            "fldrEdQBTxp1Y8kKL": "Engineering"'
+        if use_field_ids
+        else '"Name": "Alice",\n            "Department": "Engineering"'
+    )
     return f'''"""
     TypedDict representation for Airtable records from the `{table_name}` table.
 
     A type-hinted version of the pyairtable `RecordDict` class.
 
-    `fields` are all Airtable field ids
+    `fields` are all Airtable {field_desc}
 
     ```
     {{
         {'"id": "recAdw9EjV90xbW",\n' if id else ""}{'"createdTime": "2023-05-22T21:24:15.333134Z",\n' if created_time else ""}\t\t\t"fields": {{
-            "fld75gvKPpwKmG58B": "Alice",
-            "fldrEdQBTxp1Y8kKL": "Engineering"
-        }}
-    }}
-    ```
-    """'''
-
-
-def name_record_doc_string(table_name: str, id: bool, created_time: bool) -> str:
-    return f'''"""
-    TypedDict representation for Airtable records from the `{table_name}` table.
-
-    A type-hinted version of the pyairtable `RecordDict` class.
-    
-    `fields` are all Airtable field names
-
-    ```
-    {{
-        {'"id": "recAdw9EjV90xbW",\n' if id else ""}{'"createdTime": "2023-05-22T21:24:15.333134Z",\n' if created_time else ""}\t\t\t"fields": {{
-            "Name": "Alice",
-            "Department": "Engineering"
+            {example_fields}
         }}
     }}
     ```
