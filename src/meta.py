@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
@@ -193,6 +193,8 @@ class CsvCache:
 class TableOrField(BaseModel):
     id: str
     name: str
+    # Memoization cache for computed property names (prevents redundant string operations)
+    _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def is_table(self) -> bool:
         return hasattr(self, "primary_field_id")
@@ -236,37 +238,45 @@ class TableOrField(BaseModel):
         return None
 
     def name_snake(self, use_custom: bool = True) -> str:
-        """Get the property name in snake_case."""
-        return self._property_name(use_custom=use_custom)
+        """Get the property name in snake_case. Cached after first call."""
+        cache_key = f"snake_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = self._property_name(use_custom=use_custom)
+        return self._name_cache[cache_key]
 
     def name_camel(self, use_custom: bool = True) -> str:
-        """Get the property name in camelCase."""
-        text = self._property_name(use_custom=use_custom)
-        return to_camel(text)
+        """Get the property name in camelCase. Cached after first call."""
+        cache_key = f"camel_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_camel(self._property_name(use_custom=use_custom))
+        return self._name_cache[cache_key]
 
     def name_pascal(self, use_custom: bool = True) -> str:
-        """Get the property name in PascalCase."""
-        text = self._property_name(use_custom=use_custom)
-        return to_pascal(text)
+        """Get the property name in PascalCase. Cached after first call."""
+        cache_key = f"pascal_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=use_custom))
+        return self._name_cache[cache_key]
 
     def name_model(self, use_custom: bool = True) -> str:
-        """Get the model name (PascalCase with 'Model' suffix)."""
-        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-            text = self._custom_property_name(key=MODEL_NAME)
-            if text:
-                text = text.replace(" ", "_")
-                return to_pascal(text)
-
-        name = self.name_pascal(use_custom=use_custom) + "Model"
-        return name
+        """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
+        cache_key = f"model_{use_custom}"
+        if cache_key not in self._name_cache:
+            if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self._custom_property_name(key=MODEL_NAME)
+                if text:
+                    text = text.replace(" ", "_")
+                    self._name_cache[cache_key] = to_pascal(text)
+                    return self._name_cache[cache_key]
+            self._name_cache[cache_key] = self.name_pascal(use_custom=use_custom) + "Model"
+        return self._name_cache[cache_key]
 
     def name_upper(self) -> str:
-        """Get the name with only alphabetic characters in UPPERCASE."""
-
-        def alpha_only(text: str) -> str:
-            return "".join(c for c in text if c.isalpha())
-
-        return alpha_only(self.name).upper()
+        """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
+        cache_key = "upper"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = "".join(c for c in self.name if c.isalpha()).upper()
+        return self._name_cache[cache_key]
 
 
 class Field(TableOrField):
