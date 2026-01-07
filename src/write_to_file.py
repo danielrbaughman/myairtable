@@ -121,6 +121,12 @@ class WriteToPythonFile(WriteToFile):
             self.line_indented(f"{item},")
         self.line(")")
 
+    def select_options_import(self, table: Table) -> None:
+        """Import select field option types if the table has any select fields."""
+        select_fields = table.select_fields()
+        if len(select_fields) > 0:
+            self.multiline_import("..types", [field.options_name() for field in select_fields])
+
 
 class WriteToTypeScriptFile(WriteToFile):
     def __init__(self, path: Path):

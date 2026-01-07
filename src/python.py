@@ -315,12 +315,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
-            select_fields = table.select_fields()
-            if len(select_fields) > 0:
-                write.multiline_import(
-                    "..types",
-                    [field.options_name() for field in select_fields],
-                )
+            write.select_options_import(table)
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
             linked_tables = table.linked_tables()
@@ -443,9 +438,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
             )
-            select_fields = table.select_fields()
-            if len(select_fields) > 0:
-                write.multiline_import("..types", [field.options_name() for field in select_fields])
+            write.select_options_import(table)
             write.line_empty()
 
             # Properties
