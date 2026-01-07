@@ -151,9 +151,9 @@ def write_types(base: Base, output_folder: Path):
     with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "_tables.py") as write:
         write.line("from typing import Literal")
         for table in base.tables:
-            table_name_snake = table.name_snake()
-            table_name_pascal = table.name_pascal()
-            write.line(f"from .{table_name_snake} import {table_name_pascal}Field, {table_name_pascal}Fields, {table_name_pascal}FieldNameIdMapping")
+            snake = table.name_snake()
+            pascal = table.name_pascal()
+            write.line(f"from .{snake} import {pascal}Field, {pascal}Fields, {pascal}FieldNameIdMapping")
         write.line_empty()
 
         # Table Lists
@@ -316,20 +316,14 @@ def write_models(base: Base, output_folder: Path, csv_folder: Path, formulas: bo
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
-            all_options: list[str] = []
-            for field in table.fields:
-                options = field.get_select_options()
-                all_options.extend(options)
-            if len(all_options) > 0:
+            if len(table.get_select_fields()) > 0:
                 write.line("from ..types import (")
-                for field in table.fields:
-                    options = field.get_select_options()
-                    if len(options) > 0:
-                        write.line_indented(f"{field.options_name()},")
+                for field in table.get_select_fields():
+                    write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
-            linked_tables = get_linked_tables(table, base, csv_folder)
+            linked_tables = get_linked_tables(table, base)
             if len(linked_tables) > 0:
                 write.line("if TYPE_CHECKING:")
             for linked_table in linked_tables:
@@ -447,16 +441,10 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
             )
-            all_options: list[str] = []
-            for field in table.fields:
-                options = field.get_select_options()
-                all_options.extend(options)
-            if len(all_options) > 0:
+            if len(table.get_select_fields()) > 0:
                 write.line("from ..types import (")
-                for field in table.fields:
-                    options = field.get_select_options()
-                    if len(options) > 0:
-                        write.line_indented(f"{field.options_name()},")
+                for field in table.get_select_fields():
+                    write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line_empty()
 
@@ -525,12 +513,10 @@ def write_main_class(base: Base, output_folder: Path):
         write.line_empty()
         for table in base.tables:
             write.line_indented("@property")
-            table_name_property = table.name_snake()
-            table_name_class = table.name_pascal()
-            write.line_indented(f"def {table_name_property}(self) -> {table_name_class}Table:")
+            write.line_indented(f"def {table.name_snake()}(self) -> {table.name_pascal()}Table:")
             write.line_indented(f"if '{table.name}' not in self._tables:", 2)
             write.line_indented(
-                f'self._tables["{table.name}"] = {table_name_class}Table.from_table(self._api.table(self._base_id, "{table.name}"))', 3
+                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self._base_id, "{table.name}"))', 3
             )
             write.line_indented(f'return self._tables["{table.name}"]', 2)
             write.line_empty()
@@ -856,7 +842,7 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, csv_folder: P
     return orm_type
 
 
-def get_linked_tables(table: Table, base: Base, csv_folder: Path) -> list[Table]:
+def get_linked_tables(table: Table, base: Base) -> list[Table]:
     """Get the list of linked models for a given table"""
 
     linked_tables: list[Table] = []

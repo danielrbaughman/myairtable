@@ -367,6 +367,14 @@ class Table(TableOrField):
             if count > 1:
                 print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
 
+    def get_select_fields(self) -> list[Field]:
+        select_fields: list[Field] = []
+        for field in self.fields:
+            options = field.get_select_options()
+            if len(options) > 0:
+                select_fields.append(field)
+        return select_fields
+
 
 class Base(BaseModel):
     id: str
