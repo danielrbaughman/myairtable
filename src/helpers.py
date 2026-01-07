@@ -124,11 +124,20 @@ def copy_static_files(output_folder: Path, type: str):
                 shutil.copy2(file, destination / file.name)
 
 
-def reset_folder(folder: Path) -> None:
+def reset_folder(folder: Path | str) -> Path:
     """Remove and recreate a folder if it exists."""
+    folder = Path(folder)
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def create_folder(folder: Path | str) -> Path:
+    """Create a folder if it does not exist."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 class Paths:

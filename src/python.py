@@ -15,7 +15,7 @@ from .write_to_file import WriteToPythonFile
 
 
 # region MAIN
-def generate_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
+def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()
@@ -39,7 +39,7 @@ def generate_python(base: Base, output_folder: Path, csv_folder: Path, formulas:
 
         if wrappers:
             spinner.update(description="Generating tables...")
-            write_tables(base, output_folder, csv_folder)
+            write_tables(base, output_folder)
 
             spinner.update(description="Generating main class...")
             write_main_class(base, output_folder)
@@ -372,7 +372,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
 
 
 # region TABLES
-def write_tables(base: Base, output_folder: Path, csv_folder: Path) -> None:
+def write_tables(base: Base, output_folder: Path) -> None:
     tables_dir = create_dynamic_subdir(output_folder, Paths.TABLES)
 
     for table in base.tables:
@@ -413,7 +413,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path) -> None:
             write.line(
                 f"class {class_name}Table(AirtableTable[{class_name}RecordDict, {class_name}CreateRecordDict, {class_name}UpdateRecordDict, {model_name}, {class_name}View, {class_name}Field]):"
             )
-            write.line_indented(table_doc_string(table, csv_folder))
+            write.line_indented(table_doc_string(table))
             write.line_indented("@classmethod")
             write.line_indented("def from_table(cls, table: Table):")
             write.line_indented("cls = super().from_table(", 2)
@@ -578,7 +578,7 @@ def orm_model_doc_string(table_name: str) -> str:
     """'''
 
 
-def table_doc_string(table: Table, csv_folder: Path) -> str:
+def table_doc_string(table: Table) -> str:
     return f'''"""
     An abstraction of pyAirtable's `Api.table` for the `{table.name}` table, and an interface for working with custom-typed versions of the models/dicts created by the type generator.
 

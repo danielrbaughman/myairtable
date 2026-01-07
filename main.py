@@ -5,6 +5,7 @@ from rich import print
 from typer import Argument, Option, Typer
 
 from src.csv import generate_csv
+from src.helpers import create_folder, reset_folder
 from src.meta import Base, generate_meta, get_base_meta_data
 from src.python import generate_python
 from src.typescript import generate_typescript
@@ -29,8 +30,7 @@ def csv(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
 ):
     """Export Airtable metadata to CSV format."""
-    folder_path = Path(folder)
-    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = reset_folder(Path(folder))
     base = Base.new(csv_folder=folder_path)
     generate_csv(base=base, folder=folder_path, fresh=fresh)
 
@@ -45,8 +45,7 @@ def py(
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
 ):
     """Generate types and models in Python"""
-    folder_path = Path(folder)
-    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base.new(csv_folder=csv_folder_path)
     if fresh:
@@ -54,7 +53,6 @@ def py(
     generate_python(
         base=base,
         output_folder=folder_path,
-        csv_folder=csv_folder_path,
         formulas=formulas,
         wrappers=wrappers,
         package_prefix=package_prefix,
@@ -68,8 +66,7 @@ def ts(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
 ):
     """Generate types and models in TypeScript"""
-    folder_path = Path(folder)
-    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base.new(csv_folder=csv_folder_path)
     if fresh:
@@ -81,10 +78,50 @@ def ts(
 def invalid():
     """Check for invalid fields"""
     base = Base.new()
+    check_invalid(base)
+
+
+def check_invalid(base: Base) -> None:
     for table in base.tables:
         for field in table.fields:
             if not field.is_valid():
                 print(f"[yellow]Invalid field:[/] Table '{table.name}', Field '{field.name}' ({field.id})")
+
+
+@app.command()
+def all(
+    meta_folder: Annotated[str, Option(help="Path to the folder containing the generated JSON.")] = "",
+    csv_folder: Annotated[str, Option(help="Path to the folder containing the generated CSV.")] = "",
+    py_folder: Annotated[str, Option(help="Path to the Python output folder")] = "",
+    ts_folder: Annotated[str, Option(help="Path to the TypeScript output folder")] = "",
+    fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
+    formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
+    wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
+):
+    """Generate json, CSV, Python, and TypeScript code."""
+
+    csv_folder_path = create_folder(csv_folder) if csv_folder else None
+    base = Base.new(csv_folder=csv_folder_path)
+
+    if meta_folder:
+        meta_folder_path = create_folder(meta_folder)
+        generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
+    if csv_folder_path:
+        generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
+    if py_folder:
+        py_folder_path = reset_folder(py_folder)
+        generate_python(
+            base=base,
+            output_folder=py_folder_path,
+            formulas=formulas,
+            wrappers=wrappers,
+            package_prefix=py_package_prefix,
+        )
+    if ts_folder:
+        ts_folder_path = reset_folder(ts_folder)
+        generate_typescript(base=base, output_folder=ts_folder_path)
+    check_invalid(base)
 
 
 if __name__ == "__main__":
