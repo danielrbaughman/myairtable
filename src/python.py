@@ -8,33 +8,50 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, FieldType, Table
+from .progress import progress_spinner
 from .write_to_file import WriteToPythonFile
 
 
 def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str):
-    for table in base.tables:
-        table.detect_duplicate_property_names()
+    with progress_spinner(message="Copying static files...", transient=False) as spinner:
+        for table in base.tables:
+            table.detect_duplicate_property_names()
 
-    dynamic_folder = output_folder / "dynamic"
-    if dynamic_folder.exists():
-        shutil.rmtree(dynamic_folder)
-        dynamic_folder.mkdir(parents=True, exist_ok=True)
+        dynamic_folder = output_folder / "dynamic"
+        if dynamic_folder.exists():
+            shutil.rmtree(dynamic_folder)
+            dynamic_folder.mkdir(parents=True, exist_ok=True)
 
-    static_folder = output_folder / "static"
-    if static_folder.exists():
-        shutil.rmtree(static_folder)
-        static_folder.mkdir(parents=True, exist_ok=True)
+        static_folder = output_folder / "static"
+        if static_folder.exists():
+            shutil.rmtree(static_folder)
+            static_folder.mkdir(parents=True, exist_ok=True)
 
-    copy_static_files(output_folder, "python")
-    write_types(base, output_folder)
-    write_dicts(base, output_folder)
-    write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
-    if formulas:
-        write_formula_helpers(base, output_folder)
-    if wrappers:
-        write_tables(base, output_folder, csv_folder)
-        write_main_class(base, output_folder)
-    write_init(output_folder, formulas, wrappers)
+        copy_static_files(output_folder, "python")
+        spinner.update(description="Generating types...")
+        write_types(base, output_folder)
+
+        spinner.update(description="Generating dicts...")
+        write_dicts(base, output_folder)
+
+        spinner.update(description="Generating models...")
+        write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
+
+        if formulas:
+            spinner.update(description="Generating formula helpers...")
+            write_formula_helpers(base, output_folder)
+
+        if wrappers:
+            spinner.update(description="Generating tables...")
+            write_tables(base, output_folder, csv_folder)
+
+            spinner.update(description="Generating main class...")
+            write_main_class(base, output_folder)
+
+        spinner.update(description="Generating init...")
+        write_init(output_folder, formulas, wrappers)
+
+        spinner.update(description="Python Generation complete!")
 
 
 # region TYPES

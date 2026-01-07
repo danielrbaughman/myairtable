@@ -50,7 +50,7 @@ def gen_meta(metadata: BaseMetadata, folder: Path):
     p = folder / "meta.json"
     with open(p, "w") as f:
         f.write(json.dumps(metadata, indent=4))
-    print(f"Base metadata written to {p.as_posix()}")
+    print(f"Base metadata written to '{p.as_posix()}'")
 
 
 class Choice(BaseModel):

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 from pydantic.alias_generators import to_snake
+from rich import print
 
 from src.helpers import sanitize_string
 from src.meta import MODEL_NAME, PROPERTY_NAME, Base
@@ -36,7 +37,7 @@ def gen_csv(base: Base, folder: Path, fresh: bool):
     )
     tables_csv_path = Path(folder) / "tables.csv"
     df.to_csv(tables_csv_path, index=False)
-    print(f"Table CSV exported to {tables_csv_path}")
+    print(f"Table CSV exported to '{tables_csv_path}'")
 
     fields_output_path = Path(folder) / "fields.csv"
     use_custom = use_custom and fields_output_path.exists()
@@ -71,4 +72,4 @@ def gen_csv(base: Base, folder: Path, fresh: bool):
         ],
     )
     fields_df.to_csv(fields_output_path, index=False)
-    print(f"Fields CSV exported to {fields_output_path}")
+    print(f"Fields CSV exported to '{fields_output_path}'")
