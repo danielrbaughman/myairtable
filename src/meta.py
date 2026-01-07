@@ -286,38 +286,55 @@ class Field(TableOrField):
 
     def involves_lookup(self) -> bool:
         """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
-        if self.type == "multipleLookupValues" or self.type == "lookup":
-            return True
-        if self.options is None:
-            return False
+        # Check memoization cache first
+        if self.id in self.base._involves_lookup_cache:
+            return self.base._involves_lookup_cache[self.id]
 
-        # Check if field has referencedFieldIds and recursively check each one
-        referenced_field_ids = self.options.referenced_field_ids or []
-        if referenced_field_ids:
+        # Compute result
+        if self.type == "multipleLookupValues" or self.type == "lookup":
+            result = True
+        elif self.options is None:
+            result = False
+        else:
+            result = False
+            # Check if field has referencedFieldIds and recursively check each one
+            referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
                 if referenced_field_id in self.base.field_ids():
                     referenced_field = self.base.field_by_id(referenced_field_id)
-                    if referenced_field.involves_lookup():
-                        return True
-        return False
+                    if referenced_field and referenced_field.involves_lookup():
+                        result = True
+                        break
+
+        # Cache and return result
+        self.base._involves_lookup_cache[self.id] = result
+        return result
 
     def involves_rollup(self) -> bool:
         """Check if a field involves rollup, either directly or through any referenced fields."""
+        # Check memoization cache first
+        if self.id in self.base._involves_rollup_cache:
+            return self.base._involves_rollup_cache[self.id]
+
+        # Compute result
         if self.type == "rollup":
-            return True
-
-        # Check if field has referencedFieldIds and recursively check each one
-        if self.options is None:
-            return False
-        referenced_field_ids = self.options.referenced_field_ids or []
-
-        if referenced_field_ids:
+            result = True
+        elif self.options is None:
+            result = False
+        else:
+            result = False
+            # Check if field has referencedFieldIds and recursively check each one
+            referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
                 if referenced_field_id in self.base.field_ids():
                     referenced_field = self.base.field_by_id(referenced_field_id)
-                    if referenced_field.involves_rollup():
-                        return True
-        return False
+                    if referenced_field and referenced_field.involves_rollup():
+                        result = True
+                        break
+
+        # Cache and return result
+        self.base._involves_rollup_cache[self.id] = result
+        return result
 
     def select_options(self) -> list[str]:
         """Get the options of a select field"""
@@ -457,6 +474,9 @@ class Base(BaseModel):
     tables: list[Table]
     _original_metadata: BaseMetadata
     _csv_cache: CsvCache | None = None
+    # Memoization caches for recursive field analysis (prevents exponential traversal)
+    _involves_lookup_cache: dict[str, bool] = {}
+    _involves_rollup_cache: dict[str, bool] = {}
 
     @classmethod
     def new(cls, csv_folder: Path | None = None) -> "Base":
@@ -467,6 +487,9 @@ class Base(BaseModel):
         )
         base._original_metadata = meta
         base._csv_cache = CsvCache(csv_folder) if csv_folder else None
+        # Initialize fresh caches for this base instance
+        base._involves_lookup_cache = {}
+        base._involves_rollup_cache = {}
         for table_meta in meta["tables"]:
             table = Table(
                 id=table_meta["id"],
