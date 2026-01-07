@@ -24,7 +24,7 @@ class Paths:
     FORMULAS = "formulas"
 
 
-def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str):
+def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()
@@ -77,7 +77,7 @@ def write_module_init(base: Base, output_folder: Path, subdir: str, extra_import
 
 
 # region TYPES
-def write_types(base: Base, output_folder: Path):
+def write_types(base: Base, output_folder: Path) -> None:
     # Table Types
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TYPES / f"{table.name_snake()}.py") as write:
@@ -243,7 +243,7 @@ def write_types(base: Base, output_folder: Path):
 
 
 # region DICTS
-def write_dicts(base: Base, output_folder: Path):
+def write_dicts(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.DICTS / f"{table.name_snake()}.py") as write:
             # Imports
@@ -318,7 +318,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
 )
 
 
-def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str):
+def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str) -> None:
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.MODELS / f"{table.name_snake()}.py") as write:
             # Imports
@@ -380,7 +380,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
 
 
 # region TABLES
-def write_tables(base: Base, output_folder: Path, csv_folder: Path):
+def write_tables(base: Base, output_folder: Path, csv_folder: Path) -> None:
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TABLES / f"{table.name_snake()}.py") as write:
             # Imports
@@ -446,7 +446,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
 # region FORMULA
 
 
-def write_formula_helpers(base: Base, output_folder: Path):
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.FORMULAS / f"{table.name_snake()}.py") as write:
             # Imports
@@ -480,7 +480,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
 # region MAIN
 
 
-def write_main_class(base: Base, output_folder: Path):
+def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
@@ -526,7 +526,7 @@ def write_main_class(base: Base, output_folder: Path):
         write.endregion()
 
 
-def write_init(output_folder: Path, formulas: bool, wrappers: bool):
+def write_init(output_folder: Path, formulas: bool, wrappers: bool) -> None:
     with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "__init__.py") as write:
         # Imports
         write.line("from .types import *  # noqa: F403")
