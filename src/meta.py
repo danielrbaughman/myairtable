@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -16,6 +17,59 @@ from src.meta_types import BaseMetadata, FieldType
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
 
+# Retry configuration
+_MAX_RETRIES = 5
+_INITIAL_DELAY = 1.0  # seconds
+_MAX_DELAY = 60.0  # seconds
+_BACKOFF_MULTIPLIER = 2.0
+_JITTER = 0.5  # ±50% randomization
+
+
+def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
+    """Fetch URL with exponential backoff and jitter on transient errors."""
+    last_exception: Exception | None = None
+    delay = _INITIAL_DELAY
+
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            response = httpx.get(url, headers=headers, timeout=30.0)
+
+            # Handle rate limiting (429) with retry
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", delay))
+                print(f"[yellow]Rate limited. Retrying in {retry_after}s (attempt {attempt}/{_MAX_RETRIES})...[/]")
+                time.sleep(retry_after)
+                continue
+
+            # Raise for other HTTP errors
+            response.raise_for_status()
+            return response
+
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+            last_exception = e
+            if attempt < _MAX_RETRIES:
+                # Add jitter: delay * (1 ± jitter)
+                jittered_delay = delay * (1 + random.uniform(-_JITTER, _JITTER))
+                print(f"[yellow]Request failed: {type(e).__name__}. Retrying in {jittered_delay:.1f}s (attempt {attempt}/{_MAX_RETRIES})...[/]")
+                time.sleep(jittered_delay)
+                # Exponential backoff, capped at max delay
+                delay = min(delay * _BACKOFF_MULTIPLIER, _MAX_DELAY)
+
+        except httpx.HTTPStatusError as e:
+            # Don't retry client errors (4xx) except 429 (handled above)
+            if 400 <= e.response.status_code < 500:
+                raise
+            # Retry server errors (5xx)
+            last_exception = e
+            if attempt < _MAX_RETRIES:
+                jittered_delay = delay * (1 + random.uniform(-_JITTER, _JITTER))
+                print(f"[yellow]Server error {e.response.status_code}. Retrying in {jittered_delay:.1f}s (attempt {attempt}/{_MAX_RETRIES})...[/]")
+                time.sleep(jittered_delay)
+                delay = min(delay * _BACKOFF_MULTIPLIER, _MAX_DELAY)
+
+    # All retries exhausted
+    raise Exception(f"Failed to fetch after {_MAX_RETRIES} attempts") from last_exception
+
 
 def get_base_meta_data() -> BaseMetadata:
     api_key = os.getenv("AIRTABLE_API_KEY")
@@ -23,14 +77,10 @@ def get_base_meta_data() -> BaseMetadata:
         raise Exception("AIRTABLE_API_KEY not found in environment")
 
     base_id = get_base_id()
-
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
-    try:
-        response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
-    except httpx.ReadTimeout:
-        print("Request timed out, retrying in 5 seconds...")
-        time.sleep(5)
-        response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
+
+    response = _fetch_with_retry(url, headers={"Authorization": f"Bearer {api_key}"})
+
     data: BaseMetadata = response.json()
     data["tables"].sort(key=lambda t: t["name"].lower())
     for table in data["tables"]:
