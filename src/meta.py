@@ -513,29 +513,21 @@ class Table(TableOrField):
         return select_fields
 
     def linked_tables(self) -> list["Table"]:
-        """Get the list of linked models for a given table"""
-
+        """Get the list of linked tables for this table. O(n) where n=fields, using O(1) table lookups."""
         linked_tables: list[Table] = []
+        seen: set[str] = set()
 
         for field in self.fields:
             if field.type == "multipleRecordLinks":
                 if field.options and field.options.linked_table_id:
                     table_id = field.options.linked_table_id
-                    tables = self.base.tables
-                    for linked_table in tables:
-                        if linked_table.id == table_id:
+                    # Skip duplicates and self-references in one pass
+                    if table_id not in seen and table_id != self.id:
+                        linked_table = self.base.table_by_id(table_id)  # O(1) lookup
+                        if linked_table:
+                            seen.add(table_id)
                             linked_tables.append(linked_table)
-                            break
 
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_linked_tables = []
-        for linked_table in linked_tables:
-            if linked_table.id not in seen and linked_table.id != self.id:
-                seen.add(linked_table.id)
-                unique_linked_tables.append(linked_table)
-
-        linked_tables = unique_linked_tables
         return linked_tables
 
 
