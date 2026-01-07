@@ -1,7 +1,6 @@
 import shutil
 from pathlib import Path
 
-from pydantic import BaseModel
 from rich import print
 
 from .helpers import (
@@ -867,131 +866,6 @@ def get_linked_tables(table: Table, base: Base) -> list[Table]:
 
     linked_tables = unique_linked_tables
     return linked_tables
-
-
-class TypeAndReferencedField(BaseModel):
-    type: FieldType
-    field: Field | None
-    types: list[FieldType] = []
-
-
-def get_calculated_type(field: Field, airtable_type: FieldType) -> TypeAndReferencedField:
-    """Get the resulting type of a calculated field"""
-
-    result: TypeAndReferencedField = TypeAndReferencedField(type=airtable_type, field=None)
-
-    match airtable_type:
-        case "formula":
-            if is_formula_that_references_field_type(field, "formula"):
-                result.type = "formula"
-                result.field = get_referenced_field_from_formula(field, "formula")
-            elif is_formula_that_references_field_type(field, "rollup"):
-                result.type = "rollup"
-                result.field = get_referenced_field_from_formula(field, "rollup")
-            elif is_formula_that_references_field_type(field, "lookup"):
-                result.type = "lookup"
-                result.field = get_referenced_field_from_formula(field, "lookup")
-            elif is_formula_that_references_field_type(field, "multipleLookupValues"):
-                result.type = "multipleLookupValues"
-                result.field = get_referenced_field_from_formula(field, "multipleLookupValues")
-            elif is_formula_that_references_field_type(field, "multipleRecordLinks"):
-                result.type = "multipleRecordLinks"
-                result.field = get_referenced_field_from_formula(field, "multipleRecordLinks")
-            else:
-                result.type = field.get_result_type(airtable_type)
-        case "rollup":
-            if is_rollup_that_references_field_type(field, "formula"):
-                result.type = "formula"
-                result.field = field.get_referenced_field()
-            elif is_rollup_that_references_field_type(field, "rollup"):
-                result.type = "rollup"
-                result.field = field.get_referenced_field()
-            elif is_rollup_that_references_field_type(field, "lookup"):
-                result.type = "lookup"
-                result.field = field.get_referenced_field()
-            elif is_rollup_that_references_field_type(field, "multipleLookupValues"):
-                result.type = "multipleLookupValues"
-                result.field = field.get_referenced_field()
-            elif is_rollup_that_references_field_type(field, "multipleRecordLinks"):
-                result.type = "multipleRecordLinks"
-                result.field = field.get_referenced_field()
-            else:
-                result.type = field.get_result_type(airtable_type)
-        case "lookup" | "multipleLookupValues":
-            if is_lookup_that_references_field_type(field, "formula"):
-                result.type = "formula"
-                result.field = field.get_referenced_field()
-            elif is_lookup_that_references_field_type(field, "rollup"):
-                result.type = "rollup"
-                result.field = field.get_referenced_field()
-            elif is_lookup_that_references_field_type(field, "lookup"):
-                result.type = "lookup"
-                result.field = field.get_referenced_field()
-            elif is_lookup_that_references_field_type(field, "multipleLookupValues"):
-                result.type = "multipleLookupValues"
-                result.field = field.get_referenced_field()
-            elif is_lookup_that_references_field_type(field, "multipleRecordLinks"):
-                result.type = "multipleRecordLinks"
-                result.field = field.get_referenced_field()
-            else:
-                result.type = field.get_result_type(airtable_type)
-
-    result.types.append(result.type)
-
-    return result
-
-
-def get_referenced_field_from_formula(field: Field, type: FieldType) -> Field | None:
-    """Check if a formula field references a field of the given type"""
-
-    if field.type == "formula":
-        if field.options and field.options.referenced_field_ids:
-            field_ids = field.options.referenced_field_ids
-            for field_id in field_ids:
-                referenced_field = field.base.get_field_by_id(field_id)
-                if referenced_field and referenced_field.type == type:
-                    return referenced_field
-
-    return None
-
-
-def is_lookup_that_references_field_type(field: Field, target_type: FieldType) -> bool:
-    """Check if a lookup field references a field of the given type."""
-
-    if field.type == "lookup" or field.type == "multipleLookupValues":
-        options = field.options
-        referenced_field_id = options.field_id_in_linked_table if options else None
-        referenced_field = field.base.get_field_by_id(referenced_field_id) if referenced_field_id else None
-        if referenced_field and referenced_field_id:
-            return referenced_field.type == target_type
-
-    return False
-
-
-def is_rollup_that_references_field_type(field: Field, target_type: FieldType) -> bool:
-    """Check if a rollup field references a field of the given type."""
-
-    if field.type == "rollup":
-        options = field.options
-        referenced_field_id = options.field_id_in_linked_table if options else None
-        referenced_field = field.base.get_field_by_id(referenced_field_id) if referenced_field_id else None
-        if referenced_field and referenced_field_id:
-            return referenced_field.type == target_type
-
-    return False
-
-
-def is_formula_that_references_field_type(field: Field, type: FieldType) -> bool:
-    """Check if a formula field references a field of the given type"""
-
-    if field.type == "formula":
-        if field.options and field.options.referenced_field_ids:
-            for field_id in field.options.referenced_field_ids:
-                referenced_field = field.base.get_field_by_id(field_id)
-                if referenced_field and referenced_field.type == type:
-                    return True
-
-    return False
 
 
 # endregion
