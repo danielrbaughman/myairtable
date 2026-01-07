@@ -245,41 +245,24 @@ def write_dicts(base: Base, output_folder: Path):
             write.line(")")
             write.line_empty()
 
-            write.line(f"class {table.name_pascal()}CreateRecordDict(CreateRecordDict):")
-            write.line_indented(record_doc_string(table.name, id=False, created_time=False))
-            write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
-            write.line_empty()
-            write.line_empty()
-
-            write.line(f"class {table.name_pascal()}IdsCreateRecordDict(CreateRecordDict):")
-            write.line_indented(record_doc_string(table.name, id=False, created_time=False, use_field_ids=True))
-            write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
-            write.line_empty()
-            write.line_empty()
-
-            write.line(f"class {table.name_pascal()}UpdateRecordDict(UpdateRecordDict):")
-            write.line_indented(record_doc_string(table.name, id=True, created_time=False))
-            write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
-            write.line_empty()
-            write.line_empty()
-
-            write.line(f"class {table.name_pascal()}IdsUpdateRecordDict(UpdateRecordDict):")
-            write.line_indented(record_doc_string(table.name, id=True, created_time=False, use_field_ids=True))
-            write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
-            write.line_empty()
-            write.line_empty()
-
-            write.line(f"class {table.name_pascal()}RecordDict(RecordDict):")
-            write.line_indented(record_doc_string(table.name, id=True, created_time=True))
-            write.line_indented(f"fields: dict[{f'{table.name_pascal()}Field'}, Any]")
-            write.line_empty()
-            write.line_empty()
-
-            write.line(f"class {table.name_pascal()}IdsRecordDict(RecordDict):")
-            write.line_indented(record_doc_string(table.name, id=True, created_time=False, use_field_ids=True))
-            write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
-            write.line_empty()
-            write.line_empty()
+            # (class_suffix, parent_class, has_id, has_created_time, use_field_ids)
+            dict_classes: list[tuple[str, str, bool, bool, bool]] = [
+                ("CreateRecordDict", "CreateRecordDict", False, False, False),
+                ("IdsCreateRecordDict", "CreateRecordDict", False, False, True),
+                ("UpdateRecordDict", "UpdateRecordDict", True, False, False),
+                ("IdsUpdateRecordDict", "UpdateRecordDict", True, False, True),
+                ("RecordDict", "RecordDict", True, True, False),
+                ("IdsRecordDict", "RecordDict", True, False, True),
+            ]
+            for suffix, parent, has_id, has_created_time, use_field_ids in dict_classes:
+                write.line(f"class {table.name_pascal()}{suffix}({parent}):")
+                write.line_indented(record_doc_string(table.name, id=has_id, created_time=has_created_time, use_field_ids=use_field_ids))
+                if use_field_ids:
+                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
+                else:
+                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]")
+                write.line_empty()
+                write.line_empty()
 
     write_module_init(base, output_folder, "dicts")
 
