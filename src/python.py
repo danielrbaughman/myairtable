@@ -111,42 +111,34 @@ def write_types(base: Base, output_folder: Path):
             write.line(f'"""Calculated fields for `{table.name}`"""')
             write.line_empty()
 
-            write.dict_class(
-                f"{table.name_pascal()}FieldNameIdMapping",
-                [(sanitize_string(field.name), field.id) for field in table.fields],
-                first_type=f"{table.name_pascal()}Field",
-                second_type=f"{table.name_pascal()}FieldId",
-            )
-            write.dict_class(
-                f"{table.name_pascal()}FieldIdNameMapping",
-                [(field.id, sanitize_string(field.name)) for field in table.fields],
-                first_type=f"{table.name_pascal()}FieldId",
-                second_type=f"{table.name_pascal()}Field",
-            )
-            write.dict_class(
-                f"{table.name_pascal()}FieldIdPropertyMapping",
-                [(field.id, field.name_snake()) for field in table.fields],
-                first_type=f"{table.name_pascal()}FieldId",
-                second_type=f"{table.name_pascal()}FieldProperty",
-            )
-            write.dict_class(
-                f"{table.name_pascal()}FieldPropertyIdMapping",
-                [(field.name_snake(), field.id) for field in table.fields],
-                first_type=f"{table.name_pascal()}FieldProperty",
-                second_type=f"{table.name_pascal()}FieldId",
-            )
-            write.dict_class(
-                f"{table.name_pascal()}FieldNamePropertyMapping",
-                [(field.name, field.name_snake()) for field in table.fields],
-                first_type=f"{table.name_pascal()}Field",
-                second_type=f"{table.name_pascal()}FieldProperty",
-            )
-            write.dict_class(
-                f"{table.name_pascal()}FieldPropertyNameMapping",
-                [(field.name_snake(), field.name) for field in table.fields],
-                first_type=f"{table.name_pascal()}FieldProperty",
-                second_type=f"{table.name_pascal()}Field",
-            )
+            field_mappings: list[tuple[str, str, str, str, str]] = [
+                ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
+                ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
+                ("FieldIdPropertyMapping", "id", "name_snake", "FieldId", "FieldProperty"),
+                ("FieldPropertyIdMapping", "name_snake", "id", "FieldProperty", "FieldId"),
+                ("FieldNamePropertyMapping", "name", "name_snake", "Field", "FieldProperty"),
+                ("FieldPropertyNameMapping", "name_snake", "name", "FieldProperty", "Field"),
+            ]
+
+            def _get(field: Field, getter: str) -> str:
+                """Get a field value based on the getter name."""
+                if getter == "id":
+                    return field.id
+                elif getter == "name":
+                    return field.name
+                elif getter == "name_snake":
+                    return field.name_snake()
+                elif getter == "name_sanitized":
+                    return sanitize_string(field.name)
+                raise ValueError(f"Unknown getter: {getter}")
+
+            for suffix, get_1, get_2, type_1, type_2 in field_mappings:
+                write.dict_class(
+                    f"{table.name_pascal()}{suffix}",
+                    [(_get(field, get_1), _get(field, get_2)) for field in table.fields],
+                    first_type=f"{table.name_pascal()}{type_1}",
+                    second_type=f"{table.name_pascal()}{type_2}",
+                )
 
             write.line(f"class {table.name_pascal()}FieldsDict(TypedDict, total=False):")
             for field in table.fields:
