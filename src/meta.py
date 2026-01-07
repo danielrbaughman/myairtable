@@ -17,10 +17,12 @@ PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
 
 
-def get_base_meta_data(base_id: str) -> BaseMetadata:
+def get_base_meta_data() -> BaseMetadata:
     api_key = os.getenv("AIRTABLE_API_KEY")
     if not api_key:
         raise Exception("AIRTABLE_API_KEY not found in environment")
+
+    base_id = get_base_id()
 
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
     try:
@@ -433,9 +435,10 @@ class Base(BaseModel):
     _original_metadata: BaseMetadata
 
     @classmethod
-    def from_dict(cls, meta: BaseMetadata | dict, base_id: str, csv_folder: Path | None = None) -> "Base":
+    def new(cls, csv_folder: Path | None = None) -> "Base":
+        meta = get_base_meta_data()
         base: Base = cls(
-            id=base_id,
+            id=get_base_id(),
             tables=[],
         )
         base._original_metadata = meta

@@ -5,7 +5,7 @@ from rich import print
 from typer import Argument, Option, Typer
 
 from src.csv import gen_csv
-from src.meta import Base, gen_meta, get_base_id, get_base_meta_data
+from src.meta import Base, gen_meta, get_base_meta_data
 from src.python import gen_python
 from src.typescript import gen_typescript
 
@@ -17,8 +17,7 @@ def meta(
     folder: Annotated[str, Argument(help="Path to the output folder")],
 ):
     """Fetch Airtable metadata into a json file."""
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
+    metadata = get_base_meta_data()
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     gen_meta(metadata=metadata, folder=folder_path)
@@ -30,11 +29,9 @@ def csv(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
 ):
     """Export Airtable metadata to CSV format."""
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
-    base = Base.from_dict(metadata, base_id, csv_folder=folder_path)
+    base = Base.new(csv_folder=folder_path)
     gen_csv(base=base, folder=folder_path, fresh=fresh)
 
 
@@ -51,9 +48,7 @@ def py(
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
-    base = Base.from_dict(metadata, base_id, csv_folder=csv_folder_path)
+    base = Base.new(csv_folder=csv_folder_path)
     if fresh:
         gen_csv(base=base, folder=csv_folder_path, fresh=True)
     gen_python(
@@ -76,9 +71,7 @@ def ts(
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
-    base = Base.from_dict(metadata, base_id, csv_folder=csv_folder_path)
+    base = Base.new(csv_folder=csv_folder_path)
     if fresh:
         gen_csv(base=base, folder=csv_folder_path, fresh=True)
     gen_typescript(base=base, output_folder=folder_path)
@@ -86,10 +79,8 @@ def ts(
 
 @app.command()
 def invalid():
-    """Check for invalid field types in the Airtable base."""
-    base_id = get_base_id()
-    metadata = get_base_meta_data(base_id)
-    base = Base.from_dict(metadata, base_id)
+    """Check for invalid fields"""
+    base = Base.new()
     for table in base.tables:
         for field in table.fields:
             if not field.is_valid():
