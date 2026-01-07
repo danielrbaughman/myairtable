@@ -274,6 +274,38 @@ def write_dicts(base: Base, output_folder: Path):
 
 
 # region MODELS
+# PyAirtable ORM field types used in model generation
+PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
+    "SingleLineTextField",
+    "MultilineTextField",
+    "PhoneNumberField",
+    "EmailField",
+    "LinkField",
+    "SingleLinkField",
+    "UrlField",
+    "DateField",
+    "CreatedTimeField",
+    "LastModifiedTimeField",
+    "NumberField",
+    "SelectField",
+    "MultipleSelectField",
+    "CheckboxField",
+    "RichTextField",
+    "CurrencyField",
+    "PercentField",
+    "LookupField",
+    "AttachmentsField",
+    "CreatedByField",
+    "ButtonField",
+    "CountField",
+    "DatetimeField",
+    "DurationField",
+    "LastModifiedByField",
+    "AutoNumberField",
+    "CollaboratorField",
+)
+
+
 def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str):
     for table in base.tables:
         with WriteToPythonFile(path=output_folder / "dynamic" / "models" / f"{table.name_snake()}.py") as write:
@@ -282,36 +314,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line("from typing import Any, TYPE_CHECKING")
             write.line_empty()
             write.line("from pyairtable.orm import Model")
-            pyairtable_field_types: list[str] = [
-                "SingleLineTextField",
-                "MultilineTextField",
-                "PhoneNumberField",
-                "EmailField",
-                "LinkField",
-                "SingleLinkField",
-                "UrlField",
-                "DateField",
-                "CreatedTimeField",
-                "LastModifiedTimeField",
-                "NumberField",
-                "SelectField",
-                "MultipleSelectField",
-                "CheckboxField",
-                "RichTextField",
-                "CurrencyField",
-                "PercentField",
-                "LookupField",
-                "AttachmentsField",
-                "CreatedByField",
-                "ButtonField",
-                "CountField",
-                "DatetimeField",
-                "DurationField",
-                "LastModifiedByField",
-                "AutoNumberField",
-                "CollaboratorField",
-            ]
-            write.line(f"from pyairtable.orm.fields import {', '.join(pyairtable_field_types)}")
+            write.line(f"from pyairtable.orm.fields import {', '.join(PYAIRTABLE_FIELD_TYPES)}")
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
