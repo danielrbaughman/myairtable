@@ -10,17 +10,26 @@ from .progress import progress_spinner
 from .write_to_file import WriteToTypeScriptFile
 
 
+class Paths:
+    DYNAMIC = "dynamic"
+    STATIC = "static"
+    TYPES = "types"
+    MODELS = "models"
+    TABLES = "tables"
+    FORMULAS = "formulas"
+
+
 def gen_typescript(base: Base, output_folder: Path):
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()
 
-        dynamic_folder = output_folder / "dynamic"
+        dynamic_folder = output_folder / Paths.DYNAMIC
         if dynamic_folder.exists():
             shutil.rmtree(dynamic_folder)
             dynamic_folder.mkdir(parents=True, exist_ok=True)
 
-        static_folder = output_folder / "static"
+        static_folder = output_folder / Paths.STATIC
         if static_folder.exists():
             shutil.rmtree(static_folder)
             static_folder.mkdir(parents=True, exist_ok=True)
@@ -49,7 +58,7 @@ def gen_typescript(base: Base, output_folder: Path):
 
 def write_types(base: Base, output_folder: Path):
     # Create types directory
-    types_dir = output_folder / "dynamic" / "types"
+    types_dir = output_folder / Paths.DYNAMIC / Paths.TYPES
     types_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table type files
@@ -232,7 +241,7 @@ def write_types(base: Base, output_folder: Path):
 
 def write_models(base: Base, output_folder: Path):
     # Create models directory
-    models_dir = output_folder / "dynamic" / "models"
+    models_dir = output_folder / Paths.DYNAMIC / Paths.MODELS
     models_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table model files
@@ -440,7 +449,7 @@ def write_models(base: Base, output_folder: Path):
 
 def write_tables(base: Base, output_folder: Path):
     # Create tables directory
-    tables_dir = output_folder / "dynamic" / "tables"
+    tables_dir = output_folder / Paths.DYNAMIC / Paths.TABLES
     tables_dir.mkdir(parents=True, exist_ok=True)
 
     # Write individual table files
@@ -482,7 +491,7 @@ def write_tables(base: Base, output_folder: Path):
 
 
 def write_main_class(base: Base, output_folder: Path):
-    with WriteToTypeScriptFile(path=output_folder / "dynamic" / "airtable-main.ts") as write:
+    with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.ts") as write:
         # Imports
         write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
         write.line('import { getApiKey, getBaseId } from "../static/helpers";')
@@ -519,7 +528,7 @@ def write_main_class(base: Base, output_folder: Path):
 
 def write_formula_helpers(base: Base, output_folder: Path):
     # Create formulas directory
-    formulas_dir = output_folder / "dynamic" / "formulas"
+    formulas_dir = output_folder / Paths.DYNAMIC / Paths.FORMULAS
     formulas_dir.mkdir(parents=True, exist_ok=True)
 
     for table in base.tables:
@@ -568,7 +577,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
 
 
 def write_index(output_folder: Path):
-    with WriteToTypeScriptFile(path=output_folder / "dynamic" / "index.ts") as write:
+    with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
         write.line('export * from "./types";')
