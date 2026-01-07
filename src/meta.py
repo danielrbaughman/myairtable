@@ -2,11 +2,11 @@ import json
 import os
 import random
 import time
+from csv import DictReader
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-import pandas as pd
 from pydantic import BaseModel
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
@@ -156,20 +156,20 @@ class CsvCache:
     def _load_fields(self, path: Path) -> None:
         if not path.exists():
             return
-        df = pd.read_csv(path)
-        for _, row in df.iterrows():
-            field_id = row.get("Field ID")
-            if field_id:
-                self.fields[field_id] = row.to_dict()
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in DictReader(f):
+                field_id = row.get("Field ID")
+                if field_id:
+                    self.fields[field_id] = dict(row)
 
     def _load_tables(self, path: Path) -> None:
         if not path.exists():
             return
-        df = pd.read_csv(path)
-        for _, row in df.iterrows():
-            table_id = row.get("Table ID")
-            if table_id:
-                self.tables[table_id] = row.to_dict()
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in DictReader(f):
+                table_id = row.get("Table ID")
+                if table_id:
+                    self.tables[table_id] = dict(row)
 
     def get_field_value(self, field_id: str, key: str) -> str | None:
         """Get a value for a field by ID and column key. O(1) lookup."""
