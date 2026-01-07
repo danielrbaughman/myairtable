@@ -527,6 +527,9 @@ class Base(BaseModel):
     # Memoization caches for recursive field analysis (prevents exponential traversal)
     _involves_lookup_cache: dict[str, bool] = {}
     _involves_rollup_cache: dict[str, bool] = {}
+    # Indexes for O(1) lookups (built once after loading)
+    _field_index: dict[str, "Field"] = {}
+    _table_index: dict[str, "Table"] = {}
 
     @classmethod
     def new(cls, csv_folder: Path | None = None) -> "Base":
@@ -589,6 +592,15 @@ class Base(BaseModel):
                 )
                 table.views.append(view)
             base.tables.append(table)
+
+        # Build indexes for O(1) lookups
+        base._field_index = {}
+        base._table_index = {}
+        for table in base.tables:
+            base._table_index[table.id] = table
+            for field in table.fields:
+                base._field_index[field.id] = field
+
         return base
 
     def to_dict(self) -> BaseMetadata:
@@ -601,10 +613,8 @@ class Base(BaseModel):
         return fields
 
     def field_ids(self) -> list[str]:
-        ids: list[str] = []
-        for table in self.tables:
-            ids.extend(table.field_ids())
-        return ids
+        """Get all field IDs. O(1) using index keys."""
+        return list(self._field_index.keys())
 
     def field_names(self) -> list[str]:
         names: list[str] = []
@@ -613,17 +623,12 @@ class Base(BaseModel):
         return names
 
     def table_by_id(self, table_id: str) -> Table | None:
-        for table in self.tables:
-            if table.id == table_id:
-                return table
-        return None
+        """Get a table by ID. O(1) lookup using index."""
+        return self._table_index.get(table_id)
 
     def field_by_id(self, field_id: str) -> Field | None:
-        for table in self.tables:
-            field = table.field_by_id(field_id)
-            if field:
-                return field
-        return None
+        """Get a field by ID. O(1) lookup using index."""
+        return self._field_index.get(field_id)
 
     def select_fields(self) -> list[Field]:
         select_fields: list[Field] = []
