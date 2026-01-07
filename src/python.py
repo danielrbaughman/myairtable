@@ -677,12 +677,38 @@ def python_type(field: Field) -> str:
     return py_type
 
 
+# Simple Airtable type → PyAirtable ORM field class mappings
+SIMPLE_ORM_TYPES: dict[str, str] = {
+    "singleLineText": "SingleLineTextField",
+    "multilineText": "MultilineTextField",
+    "url": "UrlField",
+    "richText": "RichTextField",
+    "email": "EmailField",
+    "phoneNumber": "PhoneNumberField",
+    "barcode": "BarcodeField",
+    "lastModifiedBy": "LastModifiedByField",
+    "createdBy": "CreatedByField",
+    "checkbox": "CheckboxField",
+    "date": "DateField",
+    "dateTime": "DatetimeField",
+    "createdTime": "CreatedTimeField",
+    "lastModifiedTime": "LastModifiedTimeField",
+    "count": "CountField",
+    "autoNumber": "AutoNumberField",
+    "percent": "PercentField",
+    "duration": "DurationField",
+    "currency": "CurrencyField",
+    "number": "NumberField",
+    "multipleAttachments": "AttachmentsField",
+    "singleCollaborator": "CollaboratorField",
+    "button": "ButtonField",
+}
+
+
 def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
-
     airtable_type = field.type
     original_id = field.id
-
     is_read_only: bool = field.is_computed()
 
     # With formula/rollup fields, we want to know the type of the result
@@ -691,87 +717,39 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
 
     params = f'field_name="{original_id}"' + (", readonly=True" if is_read_only else "")
 
-    orm_type: str = "Any"
+    # Handle simple type mappings via lookup
+    if airtable_type in SIMPLE_ORM_TYPES:
+        orm_class = SIMPLE_ORM_TYPES[airtable_type]
+        return f"{orm_class} = {orm_class}({params})"
 
+    # Handle complex types with special logic
     match airtable_type:
-        case "singleLineText":
-            orm_type = f"SingleLineTextField = SingleLineTextField({params})"
-        case "multilineText":
-            orm_type = f"MultilineTextField = MultilineTextField({params})"
-        case "url":
-            orm_type = f"UrlField = UrlField({params})"
-        case "richText":
-            orm_type = f"RichTextField = RichTextField({params})"
-        case "email":
-            orm_type = f"EmailField = EmailField({params})"
-        case "phoneNumber":
-            orm_type = f"PhoneNumberField = PhoneNumberField({params})"
-        case "barcode":
-            orm_type = f"BarcodeField = BarcodeField({params})"
-        case "lastModifiedBy":
-            orm_type = f"LastModifiedByField = LastModifiedByField({params})"
-        case "createdBy":
-            orm_type = f"CreatedByField = CreatedByField({params})"
-        case "checkbox":
-            orm_type = f"CheckboxField = CheckboxField({params})"
-        case "date":
-            orm_type = f"DateField = DateField({params})"
-        case "dateTime":
-            orm_type = f"DatetimeField = DatetimeField({params})"
-        case "createdTime":
-            orm_type = f"CreatedTimeField = CreatedTimeField({params})"
-        case "lastModifiedTime":
-            orm_type = f"LastModifiedTimeField = LastModifiedTimeField({params})"
-        case "count":
-            orm_type = f"CountField = CountField({params})"
-        case "autoNumber":
-            orm_type = f"AutoNumberField = AutoNumberField({params})"
-        case "percent":
-            orm_type = f"PercentField = PercentField({params})"
-        case "duration":
-            orm_type = f"DurationField = DurationField({params})"
-        case "currency":
-            orm_type = f"CurrencyField = CurrencyField({params})"
-        case "number":
-            orm_type = f"NumberField = NumberField({params})"
-        case "multipleAttachments":
-            orm_type = f"AttachmentsField = AttachmentsField({params})"
-        case "singleCollaborator":
-            orm_type = f"CollaboratorField = CollaboratorField({params})"
         case "singleSelect":
             if field.id in field.base.select_fields_ids():
-                orm_type = f"{field.options_name()} = SelectField({params})"
-            else:
-                orm_type = f"SelectField = SelectField({params})"
+                return f"{field.options_name()} = SelectField({params})"
+            return f"SelectField = SelectField({params})"
         case "multipleSelects":
             if field.id in field.base.select_fields_ids():
-                orm_type = f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
-            else:
-                orm_type = f"MultipleSelectField = MultipleSelectField({params})"
-        case "button":
-            orm_type = f"ButtonField = ButtonField({params})"
+                return f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
+            return f"MultipleSelectField = MultipleSelectField({params})"
         case "lookup" | "multipleLookupValues":
-            orm_type = f"LookupField = LookupField[{python_type(field)}]({params})"
+            return f"LookupField = LookupField[{python_type(field)}]({params})"
         case "multipleRecordLinks":
             if field.options and field.options.linked_table_id:
-                table_id = field.options.linked_table_id
-                tables = base.tables
-                for table in tables:
+                table_id: str = field.options.linked_table_id
+                for table in base.tables:
                     if table.id == table_id:
                         linked_orm_class = table.name_model()
                         break
                 prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
                 if field.options.prefers_single_record_link:
-                    orm_type = f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
-                else:
-                    orm_type = f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
-            else:
-                print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
+                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
+                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
+            print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
         case _:
-            if not field.is_valid():
-                orm_type = "Any"
+            pass
 
-    return orm_type
+    return "Any"
 
 
 # endregion
