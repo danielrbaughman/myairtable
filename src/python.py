@@ -322,7 +322,7 @@ def write_models(base: Base, output_folder: Path, csv_folder: Path, formulas: bo
                 write.line(")")
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
-            linked_tables = get_linked_tables(table, base)
+            linked_tables = table.get_linked_tables()
             if len(linked_tables) > 0:
                 write.line("if TYPE_CHECKING:")
             for linked_table in linked_tables:
@@ -632,12 +632,6 @@ def main_doc_string() -> str:
 # endregion
 
 
-# region NAMES
-
-
-# endregion
-
-
 # region TYPE PARSING
 def python_type(table_name: str, field: Field, warn: bool = False) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
@@ -839,33 +833,6 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, csv_folder: P
                 orm_type = "Any"
 
     return orm_type
-
-
-def get_linked_tables(table: Table, base: Base) -> list[Table]:
-    """Get the list of linked models for a given table"""
-
-    linked_tables: list[Table] = []
-
-    for field in table.fields:
-        if field.type == "multipleRecordLinks":
-            if field.options and field.options.linked_table_id:
-                table_id = field.options.linked_table_id
-                tables = base.tables
-                for linked_table in tables:
-                    if linked_table.id == table_id:
-                        linked_tables.append(linked_table)
-                        break
-
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_linked_tables = []
-    for linked_table in linked_tables:
-        if linked_table.id not in seen and linked_table.id != table.id:
-            seen.add(linked_table.id)
-            unique_linked_tables.append(linked_table)
-
-    linked_tables = unique_linked_tables
-    return linked_tables
 
 
 # endregion

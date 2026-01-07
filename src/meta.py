@@ -375,6 +375,32 @@ class Table(TableOrField):
                 select_fields.append(field)
         return select_fields
 
+    def get_linked_tables(self) -> list["Table"]:
+        """Get the list of linked models for a given table"""
+
+        linked_tables: list[Table] = []
+
+        for field in self.fields:
+            if field.type == "multipleRecordLinks":
+                if field.options and field.options.linked_table_id:
+                    table_id = field.options.linked_table_id
+                    tables = self.base.tables
+                    for linked_table in tables:
+                        if linked_table.id == table_id:
+                            linked_tables.append(linked_table)
+                            break
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_linked_tables = []
+        for linked_table in linked_tables:
+            if linked_table.id not in seen and linked_table.id != self.id:
+                seen.add(linked_table.id)
+                unique_linked_tables.append(linked_table)
+
+        linked_tables = unique_linked_tables
+        return linked_tables
+
 
 class Base(BaseModel):
     id: str
