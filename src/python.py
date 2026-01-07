@@ -239,10 +239,13 @@ def write_dicts(base: Base, output_folder: Path):
             write.line_empty()
             write.line("from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict")
             write.line_empty()
-            write.line("from ..types import (")
-            write.line_indented(f"{table.name_pascal()}FieldsDict,")
-            write.line_indented(f"{table.name_pascal()}Field,")
-            write.line(")")
+            write.multiline_import(
+                "..types",
+                [
+                    f"{table.name_pascal()}FieldsDict",
+                    f"{table.name_pascal()}Field",
+                ],
+            )
             write.line_empty()
 
             # (class_suffix, parent_class, has_id, has_created_time, use_field_ids)
@@ -312,11 +315,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
-            if len(table.select_fields()) > 0:
-                write.line("from ..types import (")
-                for field in table.select_fields():
-                    write.line_indented(f"{field.options_name()},")
-                write.line(")")
+            select_fields = table.select_fields()
+            if len(select_fields) > 0:
+                write.multiline_import(
+                    "..types",
+                    [field.options_name() for field in select_fields],
+                )
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
             linked_tables = table.linked_tables()
@@ -374,19 +378,25 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
             write.line("from pyairtable import Table")
             write.line_empty()
             write.line("from ...static.airtable_table import AirtableTable")
-            write.line("from ..types import (")
-            write.line_indented(f"{table.name_pascal()}Field,")
-            write.line_indented(f"{table.name_pascal()}CalculatedFields,")
-            write.line_indented(f"{table.name_pascal()}CalculatedFieldIds,")
-            write.line_indented(f"{table.name_pascal()}View,")
-            write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,")
-            write.line_indented(f"{table.name_pascal()}Fields,")
-            write.line(")")
-            write.line("from ..dicts import (")
-            write.line_indented(f"{table.name_pascal()}RecordDict,")
-            write.line_indented(f"{table.name_pascal()}CreateRecordDict,")
-            write.line_indented(f"{table.name_pascal()}UpdateRecordDict,")
-            write.line(")")
+            write.multiline_import(
+                "..types",
+                [
+                    f"{table.name_pascal()}Field",
+                    f"{table.name_pascal()}CalculatedFields",
+                    f"{table.name_pascal()}CalculatedFieldIds",
+                    f"{table.name_pascal()}View",
+                    f"{table.name_pascal()}ViewNameIdMapping",
+                    f"{table.name_pascal()}Fields",
+                ],
+            )
+            write.multiline_import(
+                "..dicts",
+                [
+                    f"{table.name_pascal()}RecordDict",
+                    f"{table.name_pascal()}CreateRecordDict",
+                    f"{table.name_pascal()}UpdateRecordDict",
+                ],
+            )
             write.line(f"from ..models import {table.name_model()}")
             write.endregion()
             write.line_empty()
@@ -433,11 +443,9 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
             )
-            if len(table.select_fields()) > 0:
-                write.line("from ..types import (")
-                for field in table.select_fields():
-                    write.line_indented(f"{field.options_name()},")
-                write.line(")")
+            select_fields = table.select_fields()
+            if len(select_fields) > 0:
+                write.multiline_import("..types", [field.options_name() for field in select_fields])
             write.line_empty()
 
             # Properties
@@ -473,10 +481,7 @@ def write_main_class(base: Base, output_folder: Path):
         write.line("from .types import TableName")
         write.line("from ..static.airtable_table import TableType")
         write.line("from ..static.helpers import get_api_key, get_base_id")
-        write.line("from .tables import (")
-        for table in base.tables:
-            write.line_indented(f"{table.name_pascal()}Table,")
-        write.line(")")
+        write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
         write.endregion()
         write.line_empty()
         write.line_empty()

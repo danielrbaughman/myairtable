@@ -114,6 +114,13 @@ class WriteToPythonFile(WriteToFile):
         self.lines.append("# endregion")
         self.line_empty()
 
+    def multiline_import(self, module: str, items: list[str]) -> None:
+        """Write a multi-line import statement."""
+        self.line(f"from {module} import (")
+        for item in items:
+            self.line_indented(f"{item},")
+        self.line(")")
+
 
 class WriteToTypeScriptFile(WriteToFile):
     def __init__(self, path: Path):
