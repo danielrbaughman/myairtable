@@ -510,21 +510,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line(
                 'import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
             )
-            has_options: bool = False
-            for field in table.fields:
-                options = field.select_options()
-                if len(options) > 0:
-                    has_options = True
-                    break
-
-            if has_options:
-                write.line("import {")
-                for field in table.fields:
-                    options = field.select_options()
-                    if len(options) > 0:
-                        write.line_indented(f"{field.options_name()},")
-                write.line(f'}} from "../types/{table_name_camel}";')
-
+            write.select_options_import(table, f"../types/{table_name_camel}")
             write.line_empty()
 
             # Properties

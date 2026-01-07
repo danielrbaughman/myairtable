@@ -186,3 +186,12 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f'"{name}"{"?" if optional else ""}: {type},')
         else:
             self.line_indented(f"{name}{'?' if optional else ''}: {type}")
+
+    def select_options_import(self, table: Table, from_path: str) -> None:
+        """Import select field option types if the table has any select fields."""
+        select_fields = table.select_fields()
+        if len(select_fields) > 0:
+            self.line("import {")
+            for field in select_fields:
+                self.line_indented(f"{field.options_name()},")
+            self.line(f'}} from "{from_path}";')
