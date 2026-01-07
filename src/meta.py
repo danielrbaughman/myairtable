@@ -425,12 +425,12 @@ class Table(TableOrField):
 
     def detect_duplicate_property_names(self) -> None:
         """Detect duplicate property names in a table's fields."""
-        property_names: list[str] = []
-        for field in self.fields:
-            property_name = field.name_snake()
-            property_names.append(property_name)
-        for name in set(property_names):
-            count = property_names.count(name)
+        from collections import Counter
+
+        property_names = [field.name_snake() for field in self.fields]
+        counts = Counter(property_names)
+
+        for name, count in counts.items():
             if count > 1:
                 print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
 
