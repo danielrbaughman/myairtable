@@ -530,6 +530,9 @@ class Base(BaseModel):
     # Indexes for O(1) lookups (built once after loading)
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
+    # Cached computed properties (lazy initialization)
+    _select_fields_cache: list["Field"] | None = None
+    _select_field_ids_cache: list[str] | None = None
 
     @classmethod
     def new(cls, csv_folder: Path | None = None) -> "Base":
@@ -631,20 +634,16 @@ class Base(BaseModel):
         return self._field_index.get(field_id)
 
     def select_fields(self) -> list[Field]:
-        select_fields: list[Field] = []
-        for field in self.fields():
-            options = field.select_options()
-            if len(options) > 0:
-                select_fields.append(field)
-        return select_fields
+        """Get all fields with select options. Cached after first call."""
+        if self._select_fields_cache is None:
+            self._select_fields_cache = [field for field in self.fields() if field.select_options()]
+        return self._select_fields_cache
 
     def select_fields_ids(self) -> list[str]:
-        select_field_ids: list[str] = []
-        for field in self.fields():
-            options = field.select_options()
-            if len(options) > 0:
-                select_field_ids.append(field.id)
-        return select_field_ids
+        """Get IDs of all fields with select options. Cached after first call."""
+        if self._select_field_ids_cache is None:
+            self._select_field_ids_cache = [field.id for field in self.select_fields()]
+        return self._select_field_ids_cache
 
     def select_field_by_id(self, field_id: str) -> Field | None:
         field = self.field_by_id(field_id)
