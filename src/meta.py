@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import httpx
 import pandas as pd
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
@@ -192,7 +192,8 @@ class Field(TableOrField):
     type: FieldType
     description: str | None = None
     options: Options | None = None
-    table_id: str
+    table: "Table"
+    base: "Base"
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -233,16 +234,16 @@ class Field(TableOrField):
                     airtable_type = self.options.result.type
         return airtable_type
 
-    def get_referenced_field(self, all_fields: dict[str, "Field"]) -> "Field | None":
+    def get_referenced_field(self) -> "Field | None":
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
-        if referenced_field_id and referenced_field_id in all_fields:
-            return all_fields[referenced_field_id]
+        if referenced_field_id and referenced_field_id in self.base.get_all_field_ids():
+            return self.base.get_field_by_id(referenced_field_id)
 
         return None
 
-    def involves_lookup(self, all_fields: dict[str, "Field"]) -> bool:
+    def involves_lookup(self) -> bool:
         """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
         if self.type == "multipleLookupValues" or self.type == "lookup":
             return True
@@ -253,13 +254,13 @@ class Field(TableOrField):
         referenced_field_ids = self.options.referenced_field_ids or []
         if referenced_field_ids:
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in all_fields:
-                    referenced_field = all_fields[referenced_field_id]
-                    if referenced_field.involves_lookup(all_fields):
+                if referenced_field_id in self.base.get_all_field_ids():
+                    referenced_field = self.base.get_field_by_id(referenced_field_id)
+                    if referenced_field.involves_lookup():
                         return True
         return False
 
-    def involves_rollup(self, all_fields: dict[str, "Field"]) -> bool:
+    def involves_rollup(self) -> bool:
         """Check if a field involves rollup, either directly or through any referenced fields."""
         if self.type == "rollup":
             return True
@@ -271,9 +272,9 @@ class Field(TableOrField):
 
         if referenced_field_ids:
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in all_fields:
-                    referenced_field = all_fields[referenced_field_id]
-                    if referenced_field.involves_rollup(all_fields):
+                if referenced_field_id in self.base.get_all_field_ids():
+                    referenced_field = self.base.get_field_by_id(referenced_field_id)
+                    if referenced_field.involves_rollup():
                         return True
         return False
 
@@ -315,6 +316,9 @@ class Field(TableOrField):
                 "in Table:",
                 f"'{table_name}'",
             )
+    
+    def options_name(self) -> str:
+        return f"{self.table.name_pascal()}{self.name_pascal()}Option"
 
 
 class View(BaseModel):
@@ -330,7 +334,7 @@ class Table(TableOrField):
     primary_field_id: str
     fields: list[Field]
     views: list[View]
-    base_id: str
+    base: "Base"
 
     def get_all_field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
@@ -359,7 +363,7 @@ class Table(TableOrField):
 class Base(BaseModel):
     id: str
     tables: list[Table]
-    _original_metadata: BaseMetadata = PrivateAttr()
+    _original_metadata: BaseMetadata
 
     @classmethod
     def from_dict(cls, meta: BaseMetadata | dict, base_id: str, csv_folder: Path | None = None) -> "Base":
@@ -367,7 +371,7 @@ class Base(BaseModel):
             id=base_id,
             tables=[],
         )
-        base._original_metadata = (meta,)
+        base._original_metadata = meta
         for table_meta in meta["tables"]:
             table = Table(
                 id=table_meta["id"],
@@ -375,7 +379,7 @@ class Base(BaseModel):
                 primary_field_id=table_meta["primaryFieldId"],
                 fields=[],
                 views=[],
-                base_id=base_id,
+                base=base,
                 csv_folder=csv_folder,
             )
             for field_meta in table_meta["fields"]:
@@ -385,7 +389,8 @@ class Base(BaseModel):
                     name=field_meta["name"],
                     type=field_meta["type"],
                     description=field_meta.get("description"),
-                    table_id=table_meta["id"],
+                    table=table,
+                    base=base,
                     csv_folder=csv_folder,
                     options=Options(
                         field_id=field_meta["id"],
@@ -422,15 +427,21 @@ class Base(BaseModel):
 
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata
+    
+    def get_all_fields(self) -> list[Field]:
+        fields = []
+        for table in self.tables:
+            fields.extend(table.fields)
+        return fields
 
     def get_all_field_ids(self) -> list[str]:
-        ids = []
+        ids: list[str] = []
         for table in self.tables:
             ids.extend(table.get_all_field_ids())
         return ids
 
     def get_all_field_names(self) -> list[str]:
-        names = []
+        names: list[str] = []
         for table in self.tables:
             names.extend(table.get_all_field_names())
         return names
@@ -445,5 +456,29 @@ class Base(BaseModel):
         for table in self.tables:
             field = table.get_field_by_id(field_id)
             if field:
+                return field
+        return None
+    
+    def get_select_fields(self) -> list[Field]:
+        select_fields: list[Field] = []
+        for field in self.get_all_fields():
+            options = field.get_select_options()
+            if len(options) > 0:
+                select_fields.append(field)
+        return select_fields
+    
+    def get_select_fields_ids(self) -> list[str]:
+        select_field_ids: list[str] = []
+        for field in self.get_all_fields():
+            options = field.get_select_options()
+            if len(options) > 0:
+                select_field_ids.append(field.id)
+        return select_field_ids
+    
+    def get_select_field_by_id(self, field_id: str) -> Field | None:
+        field = self.get_field_by_id(field_id)
+        if field:
+            options = field.get_select_options()
+            if len(options) > 0:
                 return field
         return None

@@ -2,10 +2,6 @@ import shutil
 from pathlib import Path
 
 
-def options_name(table_name: str, field_name: str) -> str:
-    return f"{table_name}{field_name}Option"
-
-
 def upper_case(text: str) -> str:
     """Formats as UPPERCASE"""
 

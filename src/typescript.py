@@ -3,7 +3,6 @@ from pathlib import Path
 
 from .helpers import (
     copy_static_files,
-    options_name,
     sanitize_string,
     upper_case,
 )
@@ -11,21 +10,12 @@ from .meta import Base, Field, FieldType
 from .python import formula_type
 from .write_to_file import WriteToTypeScriptFile
 
-all_fields: dict[str, Field] = {}
-select_options: dict[str, str] = {}
 table_id_name_map: dict[str, str] = {}
 
 
 def gen_typescript(base: Base, output_folder: Path):
     for table in base.tables:
         table_id_name_map[table.id] = table.name
-        for field in table.fields:
-            all_fields[field.id] = field
-            options = field.get_select_options()
-            if len(options) > 0:
-                _table_name = table.name_pascal()
-                field_name = field.name_pascal()
-                select_options[field.id] = f"{options_name(_table_name, field_name)}"
         table.detect_duplicate_property_names()
 
     dynamic_folder = output_folder / "dynamic"
@@ -70,9 +60,8 @@ def write_types(base: Base, output_folder: Path):
                 options = field.get_select_options()
                 if len(options) > 0:
                     _table_name = table.name_pascal()
-                    field_name = field.name_pascal()
                     write.types(
-                        options_name(_table_name, field_name),
+                        field.options_name(),
                         options,
                         f"Select options for `{sanitize_string(field.name)}`",
                     )
@@ -256,8 +245,7 @@ def write_models(base: Base, output_folder: Path):
             for field in table.fields:
                 options = field.get_select_options()
                 if len(options) > 0:
-                    field_name = field.name_pascal()
-                    write.line_indented(f"{options_name(table_name, field_name)},")
+                    write.line_indented(f"{field.options_name()},")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
 
@@ -544,8 +532,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
                 for field in table.fields:
                     options = field.get_select_options()
                     if len(options) > 0:
-                        field_name = field.name_pascal()
-                        write.line_indented(f"{options_name(table_name, field_name)},")
+                        write.line_indented(f"{field.options_name()},")
                 write.line(f'}} from "../types/{table_name_camel}";')
 
             write.line_empty()
@@ -558,7 +545,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
                 formula_class = formula_type(field)
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     write.line_indented(
-                        f"export const {property_name}: {formula_class}<{options_name(table_name, field.name_pascal())}> = new {formula_class}('{field.id}');"
+                        f"export const {property_name}: {formula_class}<{field.options_name()}> = new {formula_class}('{field.id}');"
                     )
                 else:
                     write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field.id}');")
@@ -616,18 +603,20 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             ts_type = "Collaborator"
         case "singleSelect":
-            referenced_field = field.get_referenced_field(all_fields)
-            if field.id in select_options:
-                ts_type = select_options[field.id]
-            elif referenced_field and referenced_field["type"] == "singleSelect" and referenced_field["id"] in select_options:
-                ts_type = select_options[referenced_field["id"]]
+            referenced_field = field.get_referenced_field()
+            select_fields_ids = field.base.get_select_fields_ids()
+            if field.id in select_fields_ids:
+                ts_type = field.options_name()
+            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+                ts_type = referenced_field.options_name()
             else:
                 if warn:
                     field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "multipleSelects":
-            if field.id in select_options:
-                ts_type = f"{select_options[field.id]}[]"
+            select_fields_ids = field.base.get_select_fields_ids()
+            if field.id in select_fields_ids:
+                ts_type = f"{field.options_name()}[]"
             else:
                 if warn:
                     field.warn_unhandled_airtable_type(table_name)
@@ -644,7 +633,7 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
     if not ts_type.endswith("[]"):
-        if field.involves_lookup(all_fields) or field.involves_rollup(all_fields):
+        if field.involves_lookup() or field.involves_rollup():
             ts_type = f"{ts_type} | {ts_type}[]"
 
     return ts_type

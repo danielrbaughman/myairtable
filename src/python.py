@@ -6,24 +6,15 @@ from rich import print
 
 from .helpers import (
     copy_static_files,
-    options_name,
     sanitize_string,
     upper_case,
 )
 from .meta import Base, Field, FieldType, Table
 from .write_to_file import WriteToPythonFile
 
-all_fields: dict[str, Field] = {}
-select_options: dict[str, str] = {}
-
 
 def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str):
     for table in base.tables:
-        for field in table.fields:
-            all_fields[field.id] = field
-            options = field.get_select_options()
-            if len(options) > 0:
-                select_options[field.id] = f"{options_name(table.name_pascal(), field.name_pascal())}"
         table.detect_duplicate_property_names()
 
     dynamic_folder = output_folder / "dynamic"
@@ -68,7 +59,7 @@ def write_types(base: Base, output_folder: Path):
                 options = field.get_select_options()
                 if len(options) > 0:
                     write.types(
-                        options_name(table.name_pascal(), field.name_pascal()),
+                        field.options_name(),
                         options,
                         f"Select options for `{sanitize_string(field.name)}`",
                     )
@@ -336,7 +327,7 @@ def write_models(base: Base, output_folder: Path, csv_folder: Path, formulas: bo
                 for field in table.fields:
                     options = field.get_select_options()
                     if len(options) > 0:
-                        write.line_indented(f"{options_name(table.name_pascal(), field.name_pascal())},")
+                        write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
@@ -467,7 +458,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
                 for field in table.fields:
                     options = field.get_select_options()
                     if len(options) > 0:
-                        write.line_indented(f"{options_name(table.name_pascal(), field.name_pascal())},")
+                        write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line_empty()
 
@@ -480,7 +471,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
                 formula_class = formula_type(field)
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     write.line_indented(
-                        f"{property_name}: {formula_class}[{options_name(table.name_pascal(), field.name_pascal())}] = {formula_class}('{field.id}')"
+                        f"{property_name}: {formula_class}[{field.options_name()}] = {formula_class}('{field.id}')"
                     )
                 else:
                     write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field.id}')")
@@ -705,18 +696,20 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             py_type = "AirtableCollaborator"
         case "singleSelect":
-            referenced_field = field.get_referenced_field(all_fields)
-            if field.id in select_options:
-                py_type = select_options[field.id]
-            elif referenced_field and referenced_field["type"] == "singleSelect" and referenced_field["id"] in select_options:
-                py_type = select_options[referenced_field["id"]]
+            referenced_field = field.get_referenced_field()
+            select_fields_ids = field.base.get_select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = field.options_name()
+            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+                py_type = referenced_field.options_name()
             else:
                 if warn:
                     field.warn_unhandled_airtable_type(table_name)
                 py_type = "Any"
         case "multipleSelects":
-            if field.id in select_options:
-                py_type = f"list[{select_options[field.id]}]"
+            select_fields_ids = field.base.get_select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = f"list[{field.options_name()}]"
             else:
                 if warn:
                     field.warn_unhandled_airtable_type(table_name)
@@ -733,7 +726,7 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
     # Although the type prediction is basically right, I haven't figured out how to predict if
     # it's a list or not, and sometimes the result is a list with a single null value.
     if "list" not in py_type:
-        if field.involves_lookup(all_fields) or field.involves_rollup(all_fields):
+        if field.involves_lookup() or field.involves_rollup():
             py_type = f"list[{py_type} | None] | {py_type}"
 
     return py_type
@@ -832,15 +825,13 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, csv_folder: P
         case "singleCollaborator":
             orm_type = f"CollaboratorField = CollaboratorField({params})"
         case "singleSelect":
-            if field.id in select_options:
-                options_const = select_options[field.id]
-                orm_type = f"{options_const} = SelectField({params})"
+            if field.id in field.base.get_select_fields_ids():
+                orm_type = f"{field.options_name()} = SelectField({params})"
             else:
                 orm_type = f"SelectField = SelectField({params})"
         case "multipleSelects":
-            if field.id in select_options:
-                options_const = select_options[field.id]
-                orm_type = f"list[{options_const}] = MultipleSelectField({params}) # type: ignore"
+            if field.id in field.base.get_select_fields_ids():
+                orm_type = f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
             else:
                 orm_type = f"MultipleSelectField = MultipleSelectField({params})"
         case "button":
@@ -929,37 +920,37 @@ def get_calculated_type(field: Field, airtable_type: FieldType) -> TypeAndRefere
         case "rollup":
             if is_rollup_that_references_field_type(field, "formula"):
                 result.type = "formula"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_rollup_that_references_field_type(field, "rollup"):
                 result.type = "rollup"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_rollup_that_references_field_type(field, "lookup"):
                 result.type = "lookup"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_rollup_that_references_field_type(field, "multipleLookupValues"):
                 result.type = "multipleLookupValues"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_rollup_that_references_field_type(field, "multipleRecordLinks"):
                 result.type = "multipleRecordLinks"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             else:
                 result.type = field.get_result_type(airtable_type)
         case "lookup" | "multipleLookupValues":
             if is_lookup_that_references_field_type(field, "formula"):
                 result.type = "formula"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_lookup_that_references_field_type(field, "rollup"):
                 result.type = "rollup"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_lookup_that_references_field_type(field, "lookup"):
                 result.type = "lookup"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_lookup_that_references_field_type(field, "multipleLookupValues"):
                 result.type = "multipleLookupValues"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             elif is_lookup_that_references_field_type(field, "multipleRecordLinks"):
                 result.type = "multipleRecordLinks"
-                result.field = field.get_referenced_field(all_fields)
+                result.field = field.get_referenced_field()
             else:
                 result.type = field.get_result_type(airtable_type)
 
@@ -975,8 +966,9 @@ def get_referenced_field_from_formula(field: Field, type: FieldType) -> Field | 
         if field.options and field.options.referenced_field_ids:
             field_ids = field.options.referenced_field_ids
             for field_id in field_ids:
-                if all_fields[field_id].type == type:
-                    return all_fields[field_id]
+                referenced_field = field.base.get_field_by_id(field_id)
+                if referenced_field and referenced_field.type == type:
+                    return referenced_field
 
     return None
 
@@ -987,8 +979,9 @@ def is_lookup_that_references_field_type(field: Field, target_type: FieldType) -
     if field.type == "lookup" or field.type == "multipleLookupValues":
         options = field.options
         referenced_field_id = options.field_id_in_linked_table if options else None
-        if referenced_field_id and referenced_field_id in all_fields:
-            return all_fields[referenced_field_id].type == target_type
+        referenced_field = field.base.get_field_by_id(referenced_field_id) if referenced_field_id else None
+        if referenced_field and referenced_field_id:
+            return referenced_field.type == target_type
 
     return False
 
@@ -999,8 +992,9 @@ def is_rollup_that_references_field_type(field: Field, target_type: FieldType) -
     if field.type == "rollup":
         options = field.options
         referenced_field_id = options.field_id_in_linked_table if options else None
-        if referenced_field_id and referenced_field_id in all_fields:
-            return all_fields[referenced_field_id].type == target_type
+        referenced_field = field.base.get_field_by_id(referenced_field_id) if referenced_field_id else None
+        if referenced_field and referenced_field_id:
+            return referenced_field.type == target_type
 
     return False
 
@@ -1011,16 +1005,11 @@ def is_formula_that_references_field_type(field: Field, type: FieldType) -> bool
     if field.type == "formula":
         if field.options and field.options.referenced_field_ids:
             for field_id in field.options.referenced_field_ids:
-                if all_fields[field_id].type == type:
+                referenced_field = field.base.get_field_by_id(field_id)
+                if referenced_field and referenced_field.type == type:
                     return True
 
     return False
-
-
-# endregion
-
-
-# region HELPERS
 
 
 # endregion
