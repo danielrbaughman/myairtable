@@ -54,6 +54,16 @@ def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool
         spinner.update(description="Python Generation complete!")
 
 
+def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:
+    """Generate __init__.py that re-exports all table modules."""
+    with WriteToPythonFile(path=output_folder / "dynamic" / subdir / "__init__.py") as write:
+        if extra_imports:
+            for line in extra_imports:
+                write.line(line)
+        for table in base.tables:
+            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+
+
 # region TYPES
 def write_types(base: Base, output_folder: Path):
     # Table Types
@@ -222,10 +232,7 @@ def write_types(base: Base, output_folder: Path):
             value_is_string=False,
         )
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "types" / "__init__.py") as write:
-        write.line("from ._tables import *  # noqa: F403")
-        for table in base.tables:
-            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+    write_module_init(base, output_folder, "types", extra_imports=["from ._tables import *  # noqa: F403"])
 
 
 # endregion
@@ -282,9 +289,7 @@ def write_dicts(base: Base, output_folder: Path):
             write.line_empty()
             write.line_empty()
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "dicts" / "__init__.py") as write:
-        for table in base.tables:
-            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+    write_module_init(base, output_folder, "dicts")
 
 
 # endregion
@@ -379,9 +384,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 write.property_docstring(field, table)
             write.line_empty()
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "models" / "__init__.py") as write:
-        for table in base.tables:
-            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+    write_module_init(base, output_folder, "models")
 
 
 # endregion
@@ -439,9 +442,7 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path):
             write.endregion()
             write.line_empty()
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "tables" / "__init__.py") as write:
-        for table in base.tables:
-            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+    write_module_init(base, output_folder, "tables")
 
 
 # endregion
@@ -479,9 +480,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line_empty()
             write.endregion()
 
-    with WriteToPythonFile(path=output_folder / "dynamic" / "formulas" / "__init__.py") as write:
-        for table in base.tables:
-            write.line(f"from .{table.name_snake()} import *  # noqa: F403")
+    write_module_init(base, output_folder, "formulas")
 
 
 # endregion
