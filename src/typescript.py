@@ -19,7 +19,7 @@ class Paths:
     FORMULAS = "formulas"
 
 
-def gen_typescript(base: Base, output_folder: Path):
+def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()
@@ -49,7 +49,7 @@ def gen_typescript(base: Base, output_folder: Path):
         spinner.update(description="TypeScript Generation complete!")
 
 
-def write_types(base: Base, output_folder: Path):
+def write_types(base: Base, output_folder: Path) -> None:
     # Create types directory
     types_dir = output_folder / Paths.DYNAMIC / Paths.TYPES
     types_dir.mkdir(parents=True, exist_ok=True)
@@ -232,7 +232,7 @@ def write_types(base: Base, output_folder: Path):
         write.line("")
 
 
-def write_models(base: Base, output_folder: Path):
+def write_models(base: Base, output_folder: Path) -> None:
     # Create models directory
     models_dir = output_folder / Paths.DYNAMIC / Paths.MODELS
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -440,7 +440,7 @@ def write_models(base: Base, output_folder: Path):
         write.line("")
 
 
-def write_tables(base: Base, output_folder: Path):
+def write_tables(base: Base, output_folder: Path) -> None:
     # Create tables directory
     tables_dir = output_folder / Paths.DYNAMIC / Paths.TABLES
     tables_dir.mkdir(parents=True, exist_ok=True)
@@ -483,7 +483,7 @@ def write_tables(base: Base, output_folder: Path):
         write.line("")
 
 
-def write_main_class(base: Base, output_folder: Path):
+def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.ts") as write:
         # Imports
         write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
@@ -519,7 +519,7 @@ def write_main_class(base: Base, output_folder: Path):
         write.line("}")
 
 
-def write_formula_helpers(base: Base, output_folder: Path):
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
     # Create formulas directory
     formulas_dir = output_folder / Paths.DYNAMIC / Paths.FORMULAS
     formulas_dir.mkdir(parents=True, exist_ok=True)
@@ -569,7 +569,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
         write.line("")
 
 
-def write_index(output_folder: Path):
+def write_index(output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "index.ts") as write:
         write.line('export * from "./airtable-main";')
         write.line('export * from "./tables";')
@@ -586,7 +586,7 @@ def write_index(output_folder: Path):
 
 
 def typescript_type(field: Field) -> str:
-    """Returns the appropriate Python type for a given Airtable field."""
+    """Returns the appropriate TypeScript type for a given Airtable field."""
 
     airtable_type: FieldType = field.type
     ts_type: str = "Any"
