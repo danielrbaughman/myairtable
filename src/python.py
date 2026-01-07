@@ -609,63 +609,70 @@ def main_doc_string() -> str:
 
 
 # region TYPE PARSING
+
+# Simple Airtable type → Python type mappings
+SIMPLE_PYTHON_TYPES: dict[str, str] = {
+    "singleLineText": "str",
+    "multilineText": "str",
+    "url": "str",
+    "richText": "str",
+    "email": "str",
+    "phoneNumber": "str",
+    "barcode": "str",
+    "checkbox": "bool",
+    "date": "datetime",
+    "dateTime": "datetime",
+    "createdTime": "datetime",
+    "lastModifiedTime": "datetime",
+    "count": "int",
+    "autoNumber": "int",
+    "percent": "float",
+    "currency": "float",
+    "duration": "timedelta",
+    "multipleRecordLinks": "list[RecordId]",
+    "multipleAttachments": "list[AirtableAttachment]",
+    "singleCollaborator": "AirtableCollaborator",
+    "lastModifiedBy": "AirtableCollaborator",
+    "createdBy": "AirtableCollaborator",
+    "button": "AirtableButton",
+}
+
+
 def python_type(field: Field) -> str:
     """Returns the appropriate Python type for a given Airtable field."""
-
     airtable_type: FieldType = field.type
-    py_type: str = "Any"
 
     # With calculated fields, we want to know the type of the result
     if field.is_calculated():
         airtable_type = field.result_type()
 
-    match airtable_type:
-        case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
-            py_type = "str"
-        case "checkbox":
-            py_type = "bool"
-        case "date" | "dateTime" | "createdTime" | "lastModifiedTime":
-            py_type = "datetime"
-        case "count" | "autoNumber":
+    # Handle simple type mappings via lookup
+    if airtable_type in SIMPLE_PYTHON_TYPES:
+        py_type = SIMPLE_PYTHON_TYPES[airtable_type]
+
+    # Handle complex types with special logic
+    elif airtable_type == "number":
+        if field.options and field.options.precision is not None and field.options.precision == 0:
             py_type = "int"
-        case "percent" | "currency":
+        else:
             py_type = "float"
-        case "duration":
-            py_type = "timedelta"
-        case "number":
-            if field.options and field.options.precision is not None:
-                if field.options.precision == 0:
-                    py_type = "int"
-                else:
-                    py_type = "float"
-            else:
-                py_type = "float"
-        case "multipleRecordLinks":
-            py_type = "list[RecordId]"
-        case "multipleAttachments":
-            py_type = "list[AirtableAttachment]"
-        case "singleCollaborator" | "lastModifiedBy" | "createdBy":
-            py_type = "AirtableCollaborator"
-        case "singleSelect":
-            referenced_field = field.referenced_field()
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                py_type = field.options_name()
-            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-                py_type = referenced_field.options_name()
-            else:
-                py_type = "Any"
-        case "multipleSelects":
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                py_type = f"list[{field.options_name()}]"
-            else:
-                py_type = "Any"
-        case "button":
-            py_type = "AirtableButton"
-        case _:
-            if not field.is_valid():
-                py_type = "Any"
+    elif airtable_type == "singleSelect":
+        referenced_field = field.referenced_field()
+        select_fields_ids = field.base.select_fields_ids()
+        if field.id in select_fields_ids:
+            py_type = field.options_name()
+        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+            py_type = referenced_field.options_name()
+        else:
+            py_type = "Any"
+    elif airtable_type == "multipleSelects":
+        select_fields_ids = field.base.select_fields_ids()
+        if field.id in select_fields_ids:
+            py_type = f"list[{field.options_name()}]"
+        else:
+            py_type = "Any"
+    else:
+        py_type = "Any"
 
     # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
     # Although the type prediction is basically right, I haven't figured out how to predict if
