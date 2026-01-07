@@ -46,7 +46,7 @@ def get_base_id() -> str:
     return base_id
 
 
-def gen_meta(metadata: BaseMetadata, folder: Path):
+def generate_meta(metadata: BaseMetadata, folder: Path):
     """Fetch Airtable metadata into a json file."""
 
     p = folder / "meta.json"

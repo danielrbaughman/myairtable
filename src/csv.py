@@ -10,7 +10,7 @@ from src.python import python_type
 from src.typescript import typescript_type
 
 
-def gen_csv(base: Base, folder: Path, fresh: bool):
+def generate_csv(base: Base, folder: Path, fresh: bool):
     """Export Airtable data to CSV format."""
 
     use_custom = not fresh

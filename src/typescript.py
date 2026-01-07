@@ -13,7 +13,7 @@ from .write_to_file import WriteToTypeScriptFile
 
 
 # region MAIN
-def gen_typescript(base: Base, output_folder: Path) -> None:
+def generate_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()

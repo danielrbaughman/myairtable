@@ -15,7 +15,7 @@ from .write_to_file import WriteToPythonFile
 
 
 # region MAIN
-def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
+def generate_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
             table.detect_duplicate_property_names()

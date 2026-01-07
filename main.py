@@ -4,10 +4,10 @@ from typing import Annotated
 from rich import print
 from typer import Argument, Option, Typer
 
-from src.csv import gen_csv
-from src.meta import Base, gen_meta, get_base_meta_data
-from src.python import gen_python
-from src.typescript import gen_typescript
+from src.csv import generate_csv
+from src.meta import Base, generate_meta, get_base_meta_data
+from src.python import generate_python
+from src.typescript import generate_typescript
 
 app = Typer()
 
@@ -20,7 +20,7 @@ def meta(
     metadata = get_base_meta_data()
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
-    gen_meta(metadata=metadata, folder=folder_path)
+    generate_meta(metadata=metadata, folder=folder_path)
 
 
 @app.command()
@@ -32,7 +32,7 @@ def csv(
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
     base = Base.new(csv_folder=folder_path)
-    gen_csv(base=base, folder=folder_path, fresh=fresh)
+    generate_csv(base=base, folder=folder_path, fresh=fresh)
 
 
 @app.command()
@@ -50,8 +50,8 @@ def py(
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base.new(csv_folder=csv_folder_path)
     if fresh:
-        gen_csv(base=base, folder=csv_folder_path, fresh=True)
-    gen_python(
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    generate_python(
         base=base,
         output_folder=folder_path,
         csv_folder=csv_folder_path,
@@ -73,8 +73,8 @@ def ts(
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base.new(csv_folder=csv_folder_path)
     if fresh:
-        gen_csv(base=base, folder=csv_folder_path, fresh=True)
-    gen_typescript(base=base, output_folder=folder_path)
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    generate_typescript(base=base, output_folder=folder_path)
 
 
 @app.command()
