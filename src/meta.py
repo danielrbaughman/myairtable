@@ -251,6 +251,14 @@ class Field(TableOrField):
 
         return None
 
+    def get_linked_model_name(self) -> str:
+        """Get the model name for a linked record field."""
+        if self.options and self.options.linked_table_id:
+            for table in self.base.tables:
+                if table.id == self.options.linked_table_id:
+                    return table.name_model()
+        return ""
+
     def involves_lookup(self) -> bool:
         """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
         if self.type == "multipleLookupValues" or self.type == "lookup":

@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from .helpers import (
+    Paths,
     copy_static_files,
+    create_dynamic_subdir,
     reset_folder,
     sanitize_string,
 )
@@ -10,68 +12,7 @@ from .progress import progress_spinner
 from .write_to_file import WriteToTypeScriptFile
 
 
-class Paths:
-    DYNAMIC = "dynamic"
-    STATIC = "static"
-    TYPES = "types"
-    MODELS = "models"
-    TABLES = "tables"
-    FORMULAS = "formulas"
-
-
-# Configuration for field mapping dict classes: (suffix, key_attr, value_attr, key_type_suffix, value_type_suffix)
-FIELD_MAPPING_CONFIGS = [
-    ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
-    ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
-    ("FieldIdPropertyMapping", "id", "name_camel", "FieldId", "FieldProperty"),
-    ("FieldPropertyIdMapping", "name_camel", "id", "FieldProperty", "FieldId"),
-    ("FieldNamePropertyMapping", "name", "name_camel", "Field", "FieldProperty"),
-    ("FieldPropertyNameMapping", "name_camel", "name", "FieldProperty", "Field"),
-]
-
-
-def _get_field_value(field: Field, attr: str) -> str:
-    """Get a field attribute value by name."""
-    match attr:
-        case "id":
-            return field.id
-        case "name":
-            return field.name
-        case "name_sanitized":
-            return sanitize_string(field.name)
-        case "name_camel":
-            return field.name_camel()
-        case _:
-            raise ValueError(f"Unknown field attribute: {attr}")
-
-
-def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:
-    """Generate index.ts barrel export for a directory."""
-    with WriteToTypeScriptFile(path=directory / "index.ts") as write:
-        for table in base.tables:
-            write.line(f"export * from './{table.name_camel()}';")
-        if extra_exports:
-            for export in extra_exports:
-                write.line(export)
-        write.line("")
-
-
-def get_linked_model_name(field: Field, base: Base) -> str:
-    """Get the model name for a linked record field."""
-    if field.options and field.options.linked_table_id:
-        for table in base.tables:
-            if table.id == field.options.linked_table_id:
-                return table.name_model()
-    return ""
-
-
-def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
-    """Create a subdirectory under dynamic/ and return its path."""
-    path = output_folder / Paths.DYNAMIC / subdir
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
+# region MAIN
 def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -87,14 +28,14 @@ def gen_typescript(base: Base, output_folder: Path) -> None:
         spinner.update(description="Generating models...")
         write_models(base, output_folder)
 
+        spinner.update(description="Generating formula helpers...")
+        write_formula_helpers(base, output_folder)
+
         spinner.update(description="Generating tables...")
         write_tables(base, output_folder)
 
         spinner.update(description="Generating main class...")
         write_main_class(base, output_folder)
-
-        spinner.update(description="Generating formula helpers...")
-        write_formula_helpers(base, output_folder)
 
         spinner.update(description="Generating index...")
         write_index(output_folder)
@@ -102,10 +43,24 @@ def gen_typescript(base: Base, output_folder: Path) -> None:
         spinner.update(description="TypeScript Generation complete!")
 
 
+def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:
+    """Generate index.ts barrel export for a directory."""
+    with WriteToTypeScriptFile(path=directory / "index.ts") as write:
+        for table in base.tables:
+            write.line(f"export * from './{table.name_camel()}';")
+        if extra_exports:
+            for export in extra_exports:
+                write.line(export)
+        write.line("")
+
+
+# endregion
+
+
+# region TYPES
 def write_types(base: Base, output_folder: Path) -> None:
     types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
 
-    # Write individual table type files
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
@@ -152,12 +107,36 @@ def write_types(base: Base, output_folder: Path) -> None:
             )
             write.line_empty()
 
-            for suffix, key_attr, value_attr, key_type, value_type in FIELD_MAPPING_CONFIGS:
+            # Configuration for field mapping dict classes: (suffix, key_attr, value_attr, key_type_suffix, value_type_suffix)
+            field_mappings = [
+                ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
+                ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
+                ("FieldIdPropertyMapping", "id", "name_camel", "FieldId", "FieldProperty"),
+                ("FieldPropertyIdMapping", "name_camel", "id", "FieldProperty", "FieldId"),
+                ("FieldNamePropertyMapping", "name", "name_camel", "Field", "FieldProperty"),
+                ("FieldPropertyNameMapping", "name_camel", "name", "FieldProperty", "Field"),
+            ]
+
+            def _get(field: Field, attr: str) -> str:
+                """Get a field attribute value by name."""
+                match attr:
+                    case "id":
+                        return field.id
+                    case "name":
+                        return field.name
+                    case "name_sanitized":
+                        return sanitize_string(field.name)
+                    case "name_camel":
+                        return field.name_camel()
+                    case _:
+                        raise ValueError(f"Unknown field attribute: {attr}")
+
+            for suffix, get_1, get_2, type_1, type_2 in field_mappings:
                 write.dict_class(
                     f"{table_name}{suffix}",
-                    [(_get_field_value(field, key_attr), _get_field_value(field, value_attr)) for field in table.fields],
-                    first_type=f"{table_name}{key_type}",
-                    second_type=f"{table_name}{value_type}",
+                    [(_get(field, get_1), _get(field, get_2)) for field in table.fields],
+                    first_type=f"{table_name}{type_1}",
+                    second_type=f"{table_name}{type_2}",
                     is_value_string=True,
                 )
 
@@ -245,6 +224,10 @@ def write_types(base: Base, output_folder: Path) -> None:
     write_barrel_export(base, types_dir, extra_exports=["export * from './_tables';"])
 
 
+# endregion
+
+
+# region MODELS
 def write_models(base: Base, output_folder: Path) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
@@ -297,7 +280,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_type = typescript_type(field)
                 write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = get_linked_model_name(field, base)
+                    linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(f"public {field_name}: LinkedRecord<{linked_record_type}>;", 1)
                     elif field_type == "RecordId[]":
@@ -322,7 +305,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_name = field.name_camel()
                 field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = get_linked_model_name(field, base)
+                    linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
                             f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
@@ -383,7 +366,7 @@ def write_models(base: Base, output_folder: Path) -> None:
                 field_name = field.name_camel()
                 field_type = typescript_type(field)
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = get_linked_model_name(field, base)
+                    linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
                             f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field.name)}"), {linked_record_type}.fromId);',
@@ -424,10 +407,13 @@ def write_models(base: Base, output_folder: Path) -> None:
     write_barrel_export(base, models_dir)
 
 
+# endregion
+
+
+# region TABLES
 def write_tables(base: Base, output_folder: Path) -> None:
     tables_dir = create_dynamic_subdir(output_folder, Paths.TABLES)
 
-    # Write individual table files
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
@@ -462,6 +448,45 @@ def write_tables(base: Base, output_folder: Path) -> None:
     write_barrel_export(base, tables_dir)
 
 
+# endregion
+
+
+# region FORMULA
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
+
+    for table in base.tables:
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
+        with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
+            # Imports
+            write.line(
+                'import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
+            )
+            write.select_options_import(table, f"../types/{table_name_camel}")
+            write.line_empty()
+
+            # Properties
+            write.line(f"export namespace {table_name}Formulas {{")
+            write.line_indented("export const id: ID = new ID();")
+            for field in table.fields:
+                property_name = field.name_camel()
+                formula_class = field.formula_class()
+                if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
+                    write.line_indented(f"export const {property_name}: {formula_class}<{field.options_name()}> = new {formula_class}('{field.id}');")
+                else:
+                    write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field.id}');")
+            write.line("}")
+            write.line_empty()
+
+    # Write barrel export index.ts
+    write_barrel_export(base, formulas_dir)
+
+
+# endregion
+
+
+# region MAIN CLASS
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.ts") as write:
         # Imports
@@ -498,37 +523,10 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line("}")
 
 
-def write_formula_helpers(base: Base, output_folder: Path) -> None:
-    formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
-
-    for table in base.tables:
-        table_name = table.name_pascal()
-        table_name_camel = table.name_camel()
-        with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
-            # Imports
-            write.line(
-                'import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
-            )
-            write.select_options_import(table, f"../types/{table_name_camel}")
-            write.line_empty()
-
-            # Properties
-            write.line(f"export namespace {table_name}Formulas {{")
-            write.line_indented("export const id: ID = new ID();")
-            for field in table.fields:
-                property_name = field.name_camel()
-                formula_class = field.formula_class()
-                if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
-                    write.line_indented(f"export const {property_name}: {formula_class}<{field.options_name()}> = new {formula_class}('{field.id}');")
-                else:
-                    write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field.id}');")
-            write.line("}")
-            write.line_empty()
-
-    # Write barrel export index.ts
-    write_barrel_export(base, formulas_dir)
+# endregion
 
 
+# region INDEX
 def write_index(output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "index.ts") as write:
         write.line('export * from "./airtable-main";')
@@ -545,6 +543,9 @@ def write_index(output_folder: Path) -> None:
         write.line("")
 
 
+# endregion
+
+# region TYPE MAPPING
 # Simple Airtable type → TypeScript type mappings
 SIMPLE_TS_TYPES: dict[str, str] = {
     "singleLineText": "string",
@@ -614,3 +615,6 @@ def typescript_type(field: Field) -> str:
             ts_type = f"{ts_type} | {ts_type}[]"
 
     return ts_type
+
+
+# endregion

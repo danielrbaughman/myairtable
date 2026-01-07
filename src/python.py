@@ -3,7 +3,9 @@ from pathlib import Path
 from rich import print
 
 from .helpers import (
+    Paths,
     copy_static_files,
+    create_dynamic_subdir,
     reset_folder,
     sanitize_string,
 )
@@ -12,18 +14,7 @@ from .progress import progress_spinner
 from .write_to_file import WriteToPythonFile
 
 
-class Paths:
-    """Constants for generated folder/file paths."""
-
-    DYNAMIC = "dynamic"
-    STATIC = "static"
-    TYPES = "types"
-    DICTS = "dicts"
-    MODELS = "models"
-    TABLES = "tables"
-    FORMULAS = "formulas"
-
-
+# region MAIN
 def gen_python(base: Base, output_folder: Path, csv_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -69,11 +60,16 @@ def write_module_init(base: Base, output_folder: Path, subdir: str, extra_import
             write.line(f"from .{table.name_snake()} import *  # noqa: F403")
 
 
+# endregion
+
+
 # region TYPES
 def write_types(base: Base, output_folder: Path) -> None:
+    types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
+
     # Table Types
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TYPES / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=types_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from datetime import datetime, timedelta")
@@ -171,7 +167,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
             write.endregion()
 
-    with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TYPES / "_tables.py") as write:
+    with WriteToPythonFile(path=types_dir / "_tables.py") as write:
         write.line("from typing import Literal")
         for table in base.tables:
             snake = table.name_snake()
@@ -237,8 +233,10 @@ def write_types(base: Base, output_folder: Path) -> None:
 
 # region DICTS
 def write_dicts(base: Base, output_folder: Path) -> None:
+    dicts_dir = create_dynamic_subdir(output_folder, Paths.DICTS)
+
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.DICTS / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=dicts_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.line("from typing import Any")
             write.line_empty()
@@ -277,7 +275,6 @@ def write_dicts(base: Base, output_folder: Path) -> None:
 
 # endregion
 
-
 # region MODELS
 # PyAirtable ORM field types used in model generation
 PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
@@ -312,8 +309,10 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
 
 
 def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str) -> None:
+    models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
+
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.MODELS / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=models_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.line("from datetime import datetime")
             write.line("from typing import Any, TYPE_CHECKING")
@@ -374,8 +373,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
 
 # region TABLES
 def write_tables(base: Base, output_folder: Path, csv_folder: Path) -> None:
+    tables_dir = create_dynamic_subdir(output_folder, Paths.TABLES)
+
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.TABLES / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=tables_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
             write.line("from pyairtable import Table")
@@ -437,11 +438,11 @@ def write_tables(base: Base, output_folder: Path, csv_folder: Path) -> None:
 
 
 # region FORMULA
-
-
 def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
+
     for table in base.tables:
-        with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / Paths.FORMULAS / f"{table.name_snake()}.py") as write:
+        with WriteToPythonFile(path=formulas_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
@@ -470,9 +471,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 # endregion
 
 
-# region MAIN
-
-
+# region MAIN CLASS
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "airtable_main.py") as write:
         # Imports
@@ -519,6 +518,10 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.endregion()
 
 
+# endregion
+
+
+# region INIT
 def write_init(output_folder: Path, formulas: bool, wrappers: bool) -> None:
     with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "__init__.py") as write:
         # Imports
@@ -615,8 +618,7 @@ def main_doc_string() -> str:
 
 # endregion
 
-
-# region TYPE PARSING
+# region TYPE MAPPING
 
 # Simple Airtable type → Python type mappings
 SIMPLE_PYTHON_TYPES: dict[str, str] = {

@@ -129,3 +129,22 @@ def reset_folder(folder: Path) -> None:
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir(parents=True, exist_ok=True)
+
+
+class Paths:
+    """Constants for generated folder/file paths."""
+
+    DYNAMIC = "dynamic"
+    STATIC = "static"
+    TYPES = "types"
+    DICTS = "dicts"
+    MODELS = "models"
+    TABLES = "tables"
+    FORMULAS = "formulas"
+
+
+def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
+    """Create a subdirectory under dynamic/ and return its path."""
+    path = output_folder / Paths.DYNAMIC / subdir
+    path.mkdir(parents=True, exist_ok=True)
+    return path
