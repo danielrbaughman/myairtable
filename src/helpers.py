@@ -115,14 +115,12 @@ def sanitize_string(text: str) -> str:
 
 
 def copy_static_files(output_folder: Path, type: str):
+    """Copy static template files to output folder. Uses optimized copytree."""
     source = Path(f"./static/{type}")
     destination = output_folder / "static"
-    destination.mkdir(parents=True, exist_ok=True)
 
     if source.exists():
-        for file in source.iterdir():
-            if file.is_file():
-                shutil.copy2(file, destination / file.name)
+        shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
 def reset_folder(folder: Path | str) -> Path:
