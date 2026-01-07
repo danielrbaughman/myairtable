@@ -82,10 +82,18 @@ def invalid():
 
 
 def check_invalid(base: Base) -> None:
+    print("Checking for invalid fields")
+    invalid_found = False
     for table in base.tables:
         for field in table.fields:
             if not field.is_valid():
-                print(f"[yellow]Invalid field:[/] Table '{table.name}', Field '{field.name}' ({field.id})")
+                print(f"[dim] - Table '{table.name}', Field '{field.name}' ({field.id})[/]")
+                invalid_found = True
+    if not invalid_found:
+        print("[green] - No invalid fields found.[/]")
+    else:
+        print("[yellow] - Invalid fields detected.[/]")
+    print("")
 
 
 @app.command()
@@ -100,7 +108,6 @@ def all(
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
 ):
     """Generate json, CSV, Python, and TypeScript code."""
-
     csv_folder_path = create_folder(csv_folder) if csv_folder else None
     base = Base.new(csv_folder=csv_folder_path)
 
@@ -122,6 +129,8 @@ def all(
         ts_folder_path = reset_folder(ts_folder)
         generate_typescript(base=base, output_folder=ts_folder_path)
     check_invalid(base)
+    print("[green]Generation complete.[/]")
+    print("")
 
 
 if __name__ == "__main__":

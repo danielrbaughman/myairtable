@@ -99,10 +99,12 @@ def get_base_id() -> str:
 def generate_meta(metadata: BaseMetadata, folder: Path):
     """Fetch Airtable metadata into a json file."""
 
+    print("Generating Airtable metadata JSON")
     p = folder / "meta.json"
     with open(p, "w") as f:
         f.write(json.dumps(metadata, indent=4))
-    print(f"Base metadata written to '{p.as_posix()}'")
+    print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
+    print("")
 
 
 class Choice(BaseModel):

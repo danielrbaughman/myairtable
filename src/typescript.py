@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from rich import print
+
 from .helpers import (
     Paths,
     copy_static_files,
@@ -8,39 +10,33 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, FieldType
-from .progress import progress_spinner
 from .write_to_file import WriteToTypeScriptFile
 
 
 # region MAIN
 def generate_typescript(base: Base, output_folder: Path) -> None:
-    with progress_spinner(message="Copying static files...", transient=False) as spinner:
-        for table in base.tables:
-            table.detect_duplicate_property_names()
+    print("Generating TypeScript code")
+    for table in base.tables:
+        table.detect_duplicate_property_names()
 
-        reset_folder(output_folder / Paths.DYNAMIC)
-        reset_folder(output_folder / Paths.STATIC)
+    reset_folder(output_folder / Paths.DYNAMIC)
+    reset_folder(output_folder / Paths.STATIC)
 
-        copy_static_files(output_folder, "typescript")
-        spinner.update(description="Generating types...")
-        write_types(base, output_folder)
-
-        spinner.update(description="Generating models...")
-        write_models(base, output_folder)
-
-        spinner.update(description="Generating formula helpers...")
-        write_formula_helpers(base, output_folder)
-
-        spinner.update(description="Generating tables...")
-        write_tables(base, output_folder)
-
-        spinner.update(description="Generating main class...")
-        write_main_class(base, output_folder)
-
-        spinner.update(description="Generating index...")
-        write_index(output_folder)
-
-        spinner.update(description="TypeScript Generation complete!")
+    copy_static_files(output_folder, "typescript")
+    print("[dim] - TypeScript static files copied.[/]")
+    write_types(base, output_folder)
+    print("[dim] - TypeScript types generated.[/]")
+    write_models(base, output_folder)
+    print("[dim] - TypeScript models generated.[/]")
+    write_formula_helpers(base, output_folder)
+    print("[dim] - TypeScript formula helpers generated.[/]")
+    write_tables(base, output_folder)
+    print("[dim] - TypeScript tables generated.[/]")
+    write_main_class(base, output_folder)
+    print("[dim] - TypeScript main class generated.[/]")
+    write_index(output_folder)
+    print("[green] - TypeScript code generation complete.[/]")
+    print("")
 
 
 def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:

@@ -10,44 +10,37 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, FieldType, Table
-from .progress import progress_spinner
 from .write_to_file import WriteToPythonFile
 
 
 # region MAIN
 def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
-    with progress_spinner(message="Copying static files...", transient=False) as spinner:
-        for table in base.tables:
-            table.detect_duplicate_property_names()
+    print("Generating Python code")
+    for table in base.tables:
+        table.detect_duplicate_property_names()
 
-        reset_folder(output_folder / Paths.DYNAMIC)
-        reset_folder(output_folder / Paths.STATIC)
+    reset_folder(output_folder / Paths.DYNAMIC)
+    reset_folder(output_folder / Paths.STATIC)
 
-        copy_static_files(output_folder, "python")
-        spinner.update(description="Generating types...")
-        write_types(base, output_folder)
-
-        spinner.update(description="Generating dicts...")
-        write_dicts(base, output_folder)
-
-        spinner.update(description="Generating models...")
-        write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
-
-        if formulas:
-            spinner.update(description="Generating formula helpers...")
-            write_formula_helpers(base, output_folder)
-
-        if wrappers:
-            spinner.update(description="Generating tables...")
-            write_tables(base, output_folder)
-
-            spinner.update(description="Generating main class...")
-            write_main_class(base, output_folder)
-
-        spinner.update(description="Generating init...")
-        write_init(output_folder, formulas, wrappers)
-
-        spinner.update(description="Python Generation complete!")
+    copy_static_files(output_folder, "python")
+    print("[dim] - Python static files copied.[/]")
+    write_types(base, output_folder)
+    print("[dim] - Python types generated.[/]")
+    write_dicts(base, output_folder)
+    print("[dim] - Python dicts generated.[/]")
+    write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
+    print("[dim] - Python models generated.[/]")
+    if formulas:
+        write_formula_helpers(base, output_folder)
+        print("[dim] - Python formula helpers generated.[/]")
+    if wrappers:
+        write_tables(base, output_folder)
+        print("[dim] - Python tables generated.[/]")
+        write_main_class(base, output_folder)
+        print("[dim] - Python main class generated.[/]")
+    write_init(output_folder, formulas, wrappers)
+    print("[green] - Python code generation complete.[/]")
+    print("")
 
 
 def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:

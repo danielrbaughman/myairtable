@@ -30,6 +30,7 @@ FIELD_COLUMNS = [
 
 def generate_csv(base: Base, folder: Path, fresh: bool):
     """Export Airtable data to CSV format."""
+    print("Generating CSVs")
     use_custom = not fresh
 
     # Generate tables CSV
@@ -46,7 +47,7 @@ def generate_csv(base: Base, folder: Path, fresh: bool):
                     MODEL_NAME: to_snake(table.name_model(use_custom=use_custom)),
                 }
             )
-    print(f"Table CSV exported to '{tables_csv_path}'")
+    print(f"[dim] - Table CSV exported to '{tables_csv_path}'[/]")
 
     # Generate fields CSV
     fields_output_path = Path(folder) / "fields.csv"
@@ -69,4 +70,6 @@ def generate_csv(base: Base, folder: Path, fresh: bool):
                         "TypeScript Type": typescript_type(field),
                     }
                 )
-    print(f"Fields CSV exported to '{fields_output_path}'")
+    print(f"[dim] - Fields CSV exported to '{fields_output_path}'[/]")
+    print("[green] - CSV generation complete.[/]")
+    print("")
