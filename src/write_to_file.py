@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -13,10 +13,9 @@ MODEL_NAME = "Model Name (snake_case)"
 
 
 class WriteToFile(BaseModel):
-    """Abstracts file writing operations."""
+    """Abstracts file writing operations with buffered single-write output."""
 
     path: Path
-    file: Optional[object] = None
     lines: list[str] = []
     language: Literal["python", "typescript"] = "python"
 
@@ -25,24 +24,28 @@ class WriteToFile(BaseModel):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None:
-            if self.path.exists():
-                os.remove(self.path)
             os.makedirs(self.path.parent, exist_ok=True)
-            self.file = open(self.path, "a")
-            match self.language:
-                case "python":
-                    self.file.write("# ==========================================\n")
-                    self.file.write("# Auto-generated file. Do not edit directly.\n")
-                    self.file.write("# ==========================================\n")
-                    self.file.write("\n")
-                case "typescript":
-                    self.file.write("// ==========================================\n")
-                    self.file.write("// Auto-generated file. Do not edit directly.\n")
-                    self.file.write("// ==========================================\n")
-                    self.file.write("\n")
-            for line in self.lines:
-                self.file.write(line + "\n")
-            self.file.close()
+
+            # Build header based on language
+            if self.language == "python":
+                header = (
+                    "# ==========================================\n"
+                    "# Auto-generated file. Do not edit directly.\n"
+                    "# ==========================================\n\n"
+                )
+            else:
+                header = (
+                    "// ==========================================\n"
+                    "// Auto-generated file. Do not edit directly.\n"
+                    "// ==========================================\n\n"
+                )
+
+            # Single write operation: header + all lines joined
+            content = header + "\n".join(self.lines) + ("\n" if self.lines else "")
+
+            # Write mode truncates/creates file (no need to delete first)
+            with open(self.path, "w") as f:
+                f.write(content)
 
     def line(self, text: str):
         self.lines.append(text)
