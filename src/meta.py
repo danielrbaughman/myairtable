@@ -235,19 +235,19 @@ class Field(TableOrField):
         ]
         return self.type in computed_types
 
-    def get_result_type(self, airtable_type: FieldType = "") -> FieldType:
+    def result_type(self) -> FieldType:
         if self.options:
             if self.options.result:
                 if self.options.result.type:
-                    airtable_type = self.options.result.type
-        return airtable_type
+                    return self.options.result.type
+        return self.type
 
-    def get_referenced_field(self) -> "Field | None":
+    def referenced_field(self) -> "Field | None":
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
-        if referenced_field_id and referenced_field_id in self.base.get_all_field_ids():
-            return self.base.get_field_by_id(referenced_field_id)
+        if referenced_field_id and referenced_field_id in self.base.field_ids():
+            return self.base.field_by_id(referenced_field_id)
 
         return None
 
@@ -262,8 +262,8 @@ class Field(TableOrField):
         referenced_field_ids = self.options.referenced_field_ids or []
         if referenced_field_ids:
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in self.base.get_all_field_ids():
-                    referenced_field = self.base.get_field_by_id(referenced_field_id)
+                if referenced_field_id in self.base.field_ids():
+                    referenced_field = self.base.field_by_id(referenced_field_id)
                     if referenced_field.involves_lookup():
                         return True
         return False
@@ -280,13 +280,13 @@ class Field(TableOrField):
 
         if referenced_field_ids:
             for referenced_field_id in referenced_field_ids:
-                if referenced_field_id in self.base.get_all_field_ids():
-                    referenced_field = self.base.get_field_by_id(referenced_field_id)
+                if referenced_field_id in self.base.field_ids():
+                    referenced_field = self.base.field_by_id(referenced_field_id)
                     if referenced_field.involves_rollup():
                         return True
         return False
 
-    def get_select_options(self) -> list[str]:
+    def select_options(self) -> list[str]:
         """Get the options of a select field"""
 
         airtable_type = self.type
@@ -336,7 +336,7 @@ class Field(TableOrField):
 
         # With calculated fields, we want to know the type of the result
         if self.is_calculated():
-            airtable_type = self.get_result_type()
+            airtable_type = self.result_type()
 
         match airtable_type:
             case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
@@ -374,13 +374,13 @@ class Table(TableOrField):
     views: list[View]
     base: "Base"
 
-    def get_all_field_ids(self) -> list[str]:
+    def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
 
-    def get_all_field_names(self) -> list[str]:
+    def field_names(self) -> list[str]:
         return [field.name for field in self.fields]
 
-    def get_field_by_id(self, field_id: str) -> Field | None:
+    def field_by_id(self, field_id: str) -> Field | None:
         for field in self.fields:
             if field.id == field_id:
                 return field
@@ -397,15 +397,15 @@ class Table(TableOrField):
             if count > 1:
                 print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
 
-    def get_select_fields(self) -> list[Field]:
+    def select_fields(self) -> list[Field]:
         select_fields: list[Field] = []
         for field in self.fields:
-            options = field.get_select_options()
+            options = field.select_options()
             if len(options) > 0:
                 select_fields.append(field)
         return select_fields
 
-    def get_linked_tables(self) -> list["Table"]:
+    def linked_tables(self) -> list["Table"]:
         """Get the list of linked models for a given table"""
 
         linked_tables: list[Table] = []
@@ -500,57 +500,57 @@ class Base(BaseModel):
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata
 
-    def get_all_fields(self) -> list[Field]:
+    def fields(self) -> list[Field]:
         fields = []
         for table in self.tables:
             fields.extend(table.fields)
         return fields
 
-    def get_all_field_ids(self) -> list[str]:
+    def field_ids(self) -> list[str]:
         ids: list[str] = []
         for table in self.tables:
-            ids.extend(table.get_all_field_ids())
+            ids.extend(table.field_ids())
         return ids
 
-    def get_all_field_names(self) -> list[str]:
+    def field_names(self) -> list[str]:
         names: list[str] = []
         for table in self.tables:
-            names.extend(table.get_all_field_names())
+            names.extend(table.field_names())
         return names
 
-    def get_table_by_id(self, table_id: str) -> Table | None:
+    def table_by_id(self, table_id: str) -> Table | None:
         for table in self.tables:
             if table.id == table_id:
                 return table
         return None
 
-    def get_field_by_id(self, field_id: str) -> Field | None:
+    def field_by_id(self, field_id: str) -> Field | None:
         for table in self.tables:
-            field = table.get_field_by_id(field_id)
+            field = table.field_by_id(field_id)
             if field:
                 return field
         return None
 
-    def get_select_fields(self) -> list[Field]:
+    def select_fields(self) -> list[Field]:
         select_fields: list[Field] = []
-        for field in self.get_all_fields():
-            options = field.get_select_options()
+        for field in self.fields():
+            options = field.select_options()
             if len(options) > 0:
                 select_fields.append(field)
         return select_fields
 
-    def get_select_fields_ids(self) -> list[str]:
+    def select_fields_ids(self) -> list[str]:
         select_field_ids: list[str] = []
-        for field in self.get_all_fields():
-            options = field.get_select_options()
+        for field in self.fields():
+            options = field.select_options()
             if len(options) > 0:
                 select_field_ids.append(field.id)
         return select_field_ids
 
-    def get_select_field_by_id(self, field_id: str) -> Field | None:
-        field = self.get_field_by_id(field_id)
+    def select_field_by_id(self, field_id: str) -> Field | None:
+        field = self.field_by_id(field_id)
         if field:
-            options = field.get_select_options()
+            options = field.select_options()
             if len(options) > 0:
                 return field
         return None

@@ -53,7 +53,7 @@ def write_types(base: Base, output_folder: Path):
 
             write.region("OPTIONS")
             for field in table.fields:
-                options = field.get_select_options()
+                options = field.select_options()
                 if len(options) > 0:
                     write.types(
                         field.options_name(),
@@ -315,14 +315,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
-            if len(table.get_select_fields()) > 0:
+            if len(table.select_fields()) > 0:
                 write.line("from ..types import (")
-                for field in table.get_select_fields():
+                for field in table.select_fields():
                     write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
-            linked_tables = table.get_linked_tables()
+            linked_tables = table.linked_tables()
             if len(linked_tables) > 0:
                 write.line("if TYPE_CHECKING:")
             for linked_table in linked_tables:
@@ -440,9 +440,9 @@ def write_formula_helpers(base: Base, output_folder: Path):
             write.line(
                 "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
             )
-            if len(table.get_select_fields()) > 0:
+            if len(table.select_fields()) > 0:
                 write.line("from ..types import (")
-                for field in table.get_select_fields():
+                for field in table.select_fields():
                     write.line_indented(f"{field.options_name()},")
                 write.line(")")
             write.line_empty()
@@ -641,7 +641,7 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
 
     # With calculated fields, we want to know the type of the result
     if field.is_calculated():
-        airtable_type = field.get_result_type()
+        airtable_type = field.result_type()
 
     match airtable_type:
         case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
@@ -671,8 +671,8 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             py_type = "AirtableCollaborator"
         case "singleSelect":
-            referenced_field = field.get_referenced_field()
-            select_fields_ids = field.base.get_select_fields_ids()
+            referenced_field = field.referenced_field()
+            select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 py_type = field.options_name()
             elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
@@ -682,7 +682,7 @@ def python_type(table_name: str, field: Field, warn: bool = False) -> str:
                     field.warn_unhandled_airtable_type(table_name)
                 py_type = "Any"
         case "multipleSelects":
-            select_fields_ids = field.base.get_select_fields_ids()
+            select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 py_type = f"list[{field.options_name()}]"
             else:
@@ -717,7 +717,7 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder
 
     # With formula/rollup fields, we want to know the type of the result
     if field.type in ["formula", "rollup"]:
-        airtable_type = field.get_result_type()
+        airtable_type = field.result_type()
 
     params = f'field_name="{original_id}"' + (", readonly=True" if is_read_only else "")
 
@@ -769,12 +769,12 @@ def pyairtable_orm_type(table_name: str, field: Field, base: Base, output_folder
         case "singleCollaborator":
             orm_type = f"CollaboratorField = CollaboratorField({params})"
         case "singleSelect":
-            if field.id in field.base.get_select_fields_ids():
+            if field.id in field.base.select_fields_ids():
                 orm_type = f"{field.options_name()} = SelectField({params})"
             else:
                 orm_type = f"SelectField = SelectField({params})"
         case "multipleSelects":
-            if field.id in field.base.get_select_fields_ids():
+            if field.id in field.base.select_fields_ids():
                 orm_type = f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
             else:
                 orm_type = f"MultipleSelectField = MultipleSelectField({params})"

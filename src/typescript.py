@@ -52,7 +52,7 @@ def write_types(base: Base, output_folder: Path):
             # Field Options
             write.region("FIELD OPTIONS")
             for field in table.fields:
-                options = field.get_select_options()
+                options = field.select_options()
                 if len(options) > 0:
                     _table_name = table.name_pascal()
                     write.types(
@@ -238,7 +238,7 @@ def write_models(base: Base, output_folder: Path):
             write.line("import {")
             write.line_indented(f"{table_name}FieldSet,")
             for field in table.fields:
-                options = field.get_select_options()
+                options = field.select_options()
                 if len(options) > 0:
                     write.line_indented(f"{field.options_name()},")
             write.line(f'}} from "../types/{table_name_camel}";')
@@ -517,7 +517,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             )
             has_options: bool = False
             for field in table.fields:
-                options = field.get_select_options()
+                options = field.select_options()
                 if len(options) > 0:
                     has_options = True
                     break
@@ -525,7 +525,7 @@ def write_formula_helpers(base: Base, output_folder: Path):
             if has_options:
                 write.line("import {")
                 for field in table.fields:
-                    options = field.get_select_options()
+                    options = field.select_options()
                     if len(options) > 0:
                         write.line_indented(f"{field.options_name()},")
                 write.line(f'}} from "../types/{table_name_camel}";')
@@ -576,7 +576,7 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
 
     # With calculated fields, we want to know the type of the result
     if field.is_calculated():
-        airtable_type = field.get_result_type()
+        airtable_type = field.result_type()
 
     match airtable_type:
         case "singleLineText" | "multilineText" | "url" | "richText" | "email" | "phoneNumber" | "barcode":
@@ -596,8 +596,8 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
         case "singleCollaborator" | "lastModifiedBy" | "createdBy":
             ts_type = "Collaborator"
         case "singleSelect":
-            referenced_field = field.get_referenced_field()
-            select_fields_ids = field.base.get_select_fields_ids()
+            referenced_field = field.referenced_field()
+            select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 ts_type = field.options_name()
             elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
@@ -607,7 +607,7 @@ def typescript_type(table_name: str, field: Field, warn: bool = False) -> str:
                     field.warn_unhandled_airtable_type(table_name)
                 ts_type = "any"
         case "multipleSelects":
-            select_fields_ids = field.base.get_select_fields_ids()
+            select_fields_ids = field.base.select_fields_ids()
             if field.id in select_fields_ids:
                 ts_type = f"{field.options_name()}[]"
             else:
