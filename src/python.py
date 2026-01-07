@@ -649,7 +649,11 @@ SIMPLE_PYTHON_TYPES: dict[str, str] = {
 
 
 def python_type(field: Field) -> str:
-    """Returns the appropriate Python type for a given Airtable field."""
+    """Returns the appropriate Python type for a given Airtable field. Cached after first call."""
+    # Return cached result if available
+    if field._python_type_cache is not None:
+        return field._python_type_cache
+
     airtable_type: FieldType = field.type
 
     # With calculated fields, we want to know the type of the result
@@ -691,6 +695,7 @@ def python_type(field: Field) -> str:
         if field.involves_lookup() or field.involves_rollup():
             py_type = f"list[{py_type} | None] | {py_type}"
 
+    field._python_type_cache = py_type
     return py_type
 
 

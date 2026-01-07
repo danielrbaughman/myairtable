@@ -289,6 +289,9 @@ class Field(TableOrField):
     base: "Base"
     # Memoization cache for select options (computed once, includes sorting)
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
+    # Memoization caches for computed type strings (used by python.py and typescript.py)
+    _python_type_cache: str | None = PrivateAttr(default=None)
+    _typescript_type_cache: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""

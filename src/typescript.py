@@ -576,7 +576,11 @@ SIMPLE_TS_TYPES: dict[str, str] = {
 
 
 def typescript_type(field: Field) -> str:
-    """Returns the appropriate TypeScript type for a given Airtable field."""
+    """Returns the appropriate TypeScript type for a given Airtable field. Cached after first call."""
+    # Return cached result if available
+    if field._typescript_type_cache is not None:
+        return field._typescript_type_cache
+
     airtable_type: FieldType = field.type
     ts_type: str = "any"
 
@@ -614,6 +618,7 @@ def typescript_type(field: Field) -> str:
         if field.involves_lookup() or field.involves_rollup():
             ts_type = f"{ts_type} | {ts_type}[]"
 
+    field._typescript_type_cache = ts_type
     return ts_type
 
 
