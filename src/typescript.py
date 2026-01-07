@@ -9,12 +9,9 @@ from .meta import Base, Field, FieldType
 from .python import formula_type
 from .write_to_file import WriteToTypeScriptFile
 
-table_id_name_map: dict[str, str] = {}
-
 
 def gen_typescript(base: Base, output_folder: Path):
     for table in base.tables:
-        table_id_name_map[table.id] = table.name
         table.detect_duplicate_property_names()
 
     dynamic_folder = output_folder / "dynamic"
