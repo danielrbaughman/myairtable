@@ -45,6 +45,17 @@ def _get_field_value(field: Field, attr: str) -> str:
             raise ValueError(f"Unknown field attribute: {attr}")
 
 
+def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:
+    """Generate index.ts barrel export for a directory."""
+    with WriteToTypeScriptFile(path=directory / "index.ts") as write:
+        for table in base.tables:
+            write.line(f"export * from './{table.name_camel()}';")
+        if extra_exports:
+            for export in extra_exports:
+                write.line(export)
+        write.line("")
+
+
 def gen_typescript(base: Base, output_folder: Path) -> None:
     with progress_spinner(message="Copying static files...", transient=False) as spinner:
         for table in base.tables:
@@ -217,11 +228,7 @@ def write_types(base: Base, output_folder: Path) -> None:
         write.endregion()
 
     # Write barrel export index.ts
-    with WriteToTypeScriptFile(path=types_dir / "index.ts") as write:
-        for table in base.tables:
-            write.line(f"export * from './{table.name_camel()}';")
-        write.line("export * from './_tables';")
-        write.line("")
+    write_barrel_export(base, types_dir, extra_exports=["export * from './_tables';"])
 
 
 def write_models(base: Base, output_folder: Path) -> None:
@@ -426,10 +433,7 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.endregion()
 
     # Write barrel export index.ts
-    with WriteToTypeScriptFile(path=models_dir / "index.ts") as write:
-        for table in base.tables:
-            write.line(f"export * from './{table.name_camel()}';")
-        write.line("")
+    write_barrel_export(base, models_dir)
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
@@ -469,10 +473,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line("}")
 
     # Write barrel export index.ts
-    with WriteToTypeScriptFile(path=tables_dir / "index.ts") as write:
-        for table in base.tables:
-            write.line(f"export * from './{table.name_camel()}';")
-        write.line("")
+    write_barrel_export(base, tables_dir)
 
 
 def write_main_class(base: Base, output_folder: Path) -> None:
@@ -555,10 +556,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
     # Write barrel export index.ts
-    with WriteToTypeScriptFile(path=formulas_dir / "index.ts") as write:
-        for table in base.tables:
-            write.line(f"export * from './{table.name_camel()}';")
-        write.line("")
+    write_barrel_export(base, formulas_dir)
 
 
 def write_index(output_folder: Path) -> None:
