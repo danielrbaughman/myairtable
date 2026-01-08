@@ -149,6 +149,7 @@ class Paths:
     MODELS = "models"
     TABLES = "tables"
     FORMULAS = "formulas"
+    DOCS = "docs"
 
 
 def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
@@ -156,3 +157,8 @@ def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
     path = output_folder / Paths.DYNAMIC / subdir
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def sanitize_for_markdown(text: str) -> str:
+    """Sanitizes text for use in Markdown by escaping special characters."""
+    return text.replace("#", "\\#").replace("|", "\\|")

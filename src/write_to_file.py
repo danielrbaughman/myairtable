@@ -13,7 +13,7 @@ class WriteToFile(BaseModel):
 
     path: Path
     lines: list[str] = []
-    language: Literal["python", "typescript"] = "python"
+    language: Literal["python", "typescript", "markdown"]
 
     def __enter__(self):
         return self
@@ -23,18 +23,21 @@ class WriteToFile(BaseModel):
             os.makedirs(self.path.parent, exist_ok=True)
 
             # Build header based on language
-            if self.language == "python":
-                header = (
-                    "# ==========================================\n"
-                    "# Auto-generated file. Do not edit directly.\n"
-                    "# ==========================================\n\n"
-                )
-            else:
-                header = (
-                    "// ==========================================\n"
-                    "// Auto-generated file. Do not edit directly.\n"
-                    "// ==========================================\n\n"
-                )
+            match self.language:
+                case "python":
+                    header: str = (
+                        "# ==========================================\n"
+                        "# Auto-generated file. Do not edit directly.\n"
+                        "# ==========================================\n\n"
+                    )
+                case "typescript":
+                    header: str = (
+                        "// ==========================================\n"
+                        "// Auto-generated file. Do not edit directly.\n"
+                        "// ==========================================\n\n"
+                    )
+                case _:
+                    header: str = ""
 
             # Single write operation: header + all lines joined
             content = header + "\n".join(self.lines) + ("\n" if self.lines else "")

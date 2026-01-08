@@ -6,6 +6,7 @@ from typer import Argument, Option, Typer
 
 from src.csv import generate_csv
 from src.helpers import create_folder, reset_folder
+from src.markdown import generate_markdown
 from src.meta import Base, generate_meta, get_base_meta_data
 from src.python import generate_python
 from src.typescript import generate_typescript
@@ -72,6 +73,14 @@ def ts(
     if fresh:
         generate_csv(base=base, folder=csv_folder_path, fresh=True)
     generate_typescript(base=base, output_folder=folder_path)
+
+
+@app.command()
+def md(folder: Annotated[str, Argument(help="Path to the output folder")]):
+    """Generate Markdown documentation for the base. Intended for use in Obsidian."""
+    folder_path = reset_folder(Path(folder))
+    base = Base.new()
+    generate_markdown(base=base, output_folder=folder_path)
 
 
 @app.command()

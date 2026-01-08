@@ -11,7 +11,13 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from src.helpers import remove_extra_spaces, sanitize_leading_trailing_characters, sanitize_property_name, sanitize_reserved_names
+from src.helpers import (
+    remove_extra_spaces,
+    sanitize_for_markdown,
+    sanitize_leading_trailing_characters,
+    sanitize_property_name,
+    sanitize_reserved_names,
+)
 from src.meta_types import BaseMetadata, FieldType
 
 PROPERTY_NAME = "Property Name (snake_case)"
@@ -107,9 +113,100 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
     print("")
 
 
-class Choice(BaseModel):
+class Named(BaseModel):
     id: str
     name: str
+    # Memoization cache for computed property names (prevents redundant string operations)
+    _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def is_table(self) -> bool:
+        return hasattr(self, "primary_field_id")
+
+    def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+        """Converts the field or table name to a sanitized property name in snake_case."""
+        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
+            text = self._custom_property_name(key=custom_key)
+            if text:
+                text = text.replace(" ", "_")
+                return text
+
+        text = self.name
+
+        text = sanitize_property_name(text)
+        text = remove_extra_spaces(text)
+        text = text.replace(" ", "_")
+        text = text.lower()
+        text = sanitize_leading_trailing_characters(text)
+        text = sanitize_reserved_names(text)
+
+        return text
+
+    def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
+        """Gets the custom property name for a field or table, if it exists."""
+        # Access cache from base (both Field and Table have base attribute)
+        if not hasattr(self, "base") or self.base is None:
+            return None
+
+        cache = self.base._csv_cache
+        if cache is None:
+            return None
+
+        if self.is_table():
+            value = cache.get_table_value(self.id, key)
+        else:
+            value = cache.get_field_value(self.id, key)
+
+        if value:
+            return remove_extra_spaces(value)
+        return None
+
+    def name_snake(self, use_custom: bool = True) -> str:
+        """Get the property name in snake_case. Cached after first call."""
+        cache_key = f"snake_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = self._property_name(use_custom=use_custom)
+        return self._name_cache[cache_key]
+
+    def name_camel(self, use_custom: bool = True) -> str:
+        """Get the property name in camelCase. Cached after first call."""
+        cache_key = f"camel_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_camel(self._property_name(use_custom=use_custom))
+        return self._name_cache[cache_key]
+
+    def name_pascal(self, use_custom: bool = True) -> str:
+        """Get the property name in PascalCase. Cached after first call."""
+        cache_key = f"pascal_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=use_custom))
+        return self._name_cache[cache_key]
+
+    def name_model(self, use_custom: bool = True) -> str:
+        """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
+        cache_key = f"model_{use_custom}"
+        if cache_key not in self._name_cache:
+            if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self._custom_property_name(key=MODEL_NAME)
+                if text:
+                    text = text.replace(" ", "_")
+                    self._name_cache[cache_key] = to_pascal(text)
+                    return self._name_cache[cache_key]
+            self._name_cache[cache_key] = self.name_pascal(use_custom=use_custom) + "Model"
+        return self._name_cache[cache_key]
+
+    def name_markdown(self) -> str:
+        """Get the name suitable for Markdown."""
+        return sanitize_for_markdown(self.name)
+
+    def name_upper(self) -> str:
+        """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
+        cache_key = "upper"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = "".join(c for c in self.name if c.isalpha()).upper()
+        return self._name_cache[cache_key]
+
+
+class Choice(Named):
     color: str | None = None
 
 
@@ -192,96 +289,7 @@ class CsvCache:
         return None
 
 
-class TableOrField(BaseModel):
-    id: str
-    name: str
-    # Memoization cache for computed property names (prevents redundant string operations)
-    _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
-
-    def is_table(self) -> bool:
-        return hasattr(self, "primary_field_id")
-
-    def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
-        """Converts the field or table name to a sanitized property name in snake_case."""
-        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-            text = self._custom_property_name(key=custom_key)
-            if text:
-                text = text.replace(" ", "_")
-                return text
-
-        text = self.name
-
-        text = sanitize_property_name(text)
-        text = remove_extra_spaces(text)
-        text = text.replace(" ", "_")
-        text = text.lower()
-        text = sanitize_leading_trailing_characters(text)
-        text = sanitize_reserved_names(text)
-
-        return text
-
-    def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
-        """Gets the custom property name for a field or table, if it exists."""
-        # Access cache from base (both Field and Table have base attribute)
-        if not hasattr(self, "base") or self.base is None:
-            return None
-
-        cache = self.base._csv_cache
-        if cache is None:
-            return None
-
-        if self.is_table():
-            value = cache.get_table_value(self.id, key)
-        else:
-            value = cache.get_field_value(self.id, key)
-
-        if value:
-            return remove_extra_spaces(value)
-        return None
-
-    def name_snake(self, use_custom: bool = True) -> str:
-        """Get the property name in snake_case. Cached after first call."""
-        cache_key = f"snake_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = self._property_name(use_custom=use_custom)
-        return self._name_cache[cache_key]
-
-    def name_camel(self, use_custom: bool = True) -> str:
-        """Get the property name in camelCase. Cached after first call."""
-        cache_key = f"camel_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = to_camel(self._property_name(use_custom=use_custom))
-        return self._name_cache[cache_key]
-
-    def name_pascal(self, use_custom: bool = True) -> str:
-        """Get the property name in PascalCase. Cached after first call."""
-        cache_key = f"pascal_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=use_custom))
-        return self._name_cache[cache_key]
-
-    def name_model(self, use_custom: bool = True) -> str:
-        """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
-        cache_key = f"model_{use_custom}"
-        if cache_key not in self._name_cache:
-            if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-                text = self._custom_property_name(key=MODEL_NAME)
-                if text:
-                    text = text.replace(" ", "_")
-                    self._name_cache[cache_key] = to_pascal(text)
-                    return self._name_cache[cache_key]
-            self._name_cache[cache_key] = self.name_pascal(use_custom=use_custom) + "Model"
-        return self._name_cache[cache_key]
-
-    def name_upper(self) -> str:
-        """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
-        cache_key = "upper"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = "".join(c for c in self.name if c.isalpha()).upper()
-        return self._name_cache[cache_key]
-
-
-class Field(TableOrField):
+class Field(Named):
     id: str
     name: str
     type: FieldType
@@ -327,6 +335,16 @@ class Field(TableOrField):
         ]
         return self.type in computed_types
 
+    def is_link(self) -> bool:
+        """Check if the field is a linked record field."""
+        link_types: list[FieldType] = [
+            "multipleRecordLinks",
+            "lookup",
+            "rollup",
+            "multipleLookupValues",
+        ]
+        return self.type in link_types
+
     def result_type(self) -> FieldType:
         if self.options:
             if self.options.result:
@@ -342,6 +360,18 @@ class Field(TableOrField):
         if referenced_field_id:
             return self.base.field_by_id(referenced_field_id)
         return None
+
+    def referenced_fields(self) -> list["Field"]:
+        """Get all referenced fields for this field."""
+        fields: list["Field"] = []
+        if self.referenced_field():
+            fields.append(self.referenced_field())
+        if self.options and self.options.referenced_field_ids:
+            for field_id in self.options.referenced_field_ids:
+                ref_field = self.base.field_by_id(field_id)
+                if ref_field:
+                    fields.append(ref_field)
+        return fields
 
     def get_linked_model_name(self) -> str:
         """Get the model name for a linked record field. Uses O(1) table lookup."""
@@ -468,15 +498,60 @@ class Field(TableOrField):
 
         return formula_type
 
+    def linked_table(self) -> "Table | None":
+        """Get the linked table for a multipleRecordLinks field."""
+        if self.options:
+            if self.options.linked_table_id:
+                linked_table = self.base.table_by_id(self.options.linked_table_id)
+                if linked_table:
+                    return linked_table
+            elif self.options.field_id_in_linked_table:
+                linked_field = self.base.field_by_id(self.options.field_id_in_linked_table)
+                if linked_field:
+                    return linked_field.table
 
-class View(BaseModel):
-    id: str
-    name: str
+        return None
+
+    def formula(self, sanitized: bool = False) -> str:
+        """Get the formula string if the field is a formula field."""
+        formula: str = ""
+        if self.type == "formula" and self.options and self.options.formula:
+            formula = self.options.formula
+            if sanitized:
+                formula = self.sanitize_formula(formula)
+        return formula
+
+    def sanitize_formula(self, formula: str) -> str:
+        """Replace field IDs with field names for readability."""
+        for field in self.table.fields:
+            formula = formula.replace(f"{{{field.id}}}", f"{{{field.name}}}")
+        return formula
+
+    def get_field_ids_from_formula(self) -> list[str]:
+        """Extract field IDs referenced in the formula."""
+        field_ids: list[str] = []
+        if self.type == "formula" and self.options and self.options.formula:
+            formula = self.options.formula
+            for table_field in self.table.fields:
+                if f"{{{table_field.id}}}" in formula:
+                    field_ids.append(table_field.id)
+        return field_ids
+
+    def counted_field(self) -> "Field | None":
+        """Get the field that this count field is counting."""
+        if self.type == "count" and self.options and self.options.record_link_field_id:
+            counted_field = self.base.field_by_id(self.options.record_link_field_id)
+            if counted_field:
+                return counted_field
+        return None
+
+
+class View(Named):
     type: str
     table_id: str
 
 
-class Table(TableOrField):
+class Table(Named):
     id: str
     name: str
     primary_field_id: str
