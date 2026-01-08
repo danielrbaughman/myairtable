@@ -123,16 +123,16 @@ def write_fields(base: Base, output_folder: Path) -> None:
                 write.list_item(f"**Table:** [{table.name_markdown()}](../../tables/{table.name_snake()}.md)")
                 write.list_item(f"**Type:** #{field.type}")
 
-                if field.is_link() and field.options:
+                if field.is_link_or_linked_value() and field.options:
                     if linked_table := field.linked_table():
                         write.list_item(f"**Linked Table:** [{linked_table.name_markdown()}](../../tables/{linked_table.name_snake()}.md)")
-                        if (field.type == "rollup" or field.type == "multipleLookupValues") and field.options.record_link_field_id:
-                            lookup_id = field.options.record_link_field_id
-                            lookup_field = table.field_by_id(lookup_id)
-                            if lookup_field:
-                                write.list_item(
-                                    f"**Linked via:** [{lookup_field.name_markdown()}](../../fields/{table.name_snake()}/{lookup_field.name_snake()}.md)"
-                                )
+                    if field.is_lookup_rollup() and field.options.record_link_field_id:
+                        lookup_id = field.options.record_link_field_id
+                        lookup_field = table.field_by_id(lookup_id)
+                        if lookup_field:
+                            write.list_item(
+                                f"**Linked via:** [{lookup_field.name_markdown()}](../../fields/{table.name_snake()}/{lookup_field.name_snake()}.md)"
+                            )
 
                 if field.type == "count":
                     if counted_field := field.counted_field():

@@ -116,7 +116,6 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
 class Named(BaseModel):
     id: str
     name: str
-    # Memoization cache for computed property names (prevents redundant string operations)
     _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def is_table(self) -> bool:
@@ -297,9 +296,7 @@ class Field(Named):
     options: Options | None = None
     table: "Table"
     base: "Base"
-    # Memoization cache for select options (computed once, includes sorting)
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
-    # Memoization caches for computed type strings (used by python.py and typescript.py)
     _python_type_cache: str | None = PrivateAttr(default=None)
     _typescript_type_cache: str | None = PrivateAttr(default=None)
 
@@ -335,8 +332,8 @@ class Field(Named):
         ]
         return self.type in computed_types
 
-    def is_link(self) -> bool:
-        """Check if the field is a linked record field."""
+    def is_link_or_linked_value(self) -> bool:
+        """Check if the field is a linked record or directly involves a linked record."""
         link_types: list[FieldType] = [
             "multipleRecordLinks",
             "lookup",
@@ -344,6 +341,23 @@ class Field(Named):
             "multipleLookupValues",
         ]
         return self.type in link_types
+
+    def is_lookup(self) -> bool:
+        """Check if the field is a lookup field."""
+        lookup_types: list[FieldType] = [
+            "lookup",
+            "multipleLookupValues",
+        ]
+        return self.type in lookup_types
+
+    def is_lookup_rollup(self) -> bool:
+        """Check if the field is a lookup or rollup field."""
+        lookup_rollup_types: list[FieldType] = [
+            "lookup",
+            "multipleLookupValues",
+            "rollup",
+        ]
+        return self.type in lookup_rollup_types
 
     def result_type(self) -> FieldType:
         if self.options:
@@ -356,7 +370,6 @@ class Field(Named):
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
-        # field_by_id uses O(1) index lookup and returns None if not found
         if referenced_field_id:
             return self.base.field_by_id(referenced_field_id)
         return None
@@ -397,7 +410,6 @@ class Field(Named):
             # Check if field has referencedFieldIds and recursively check each one
             referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
-                # field_by_id uses O(1) index lookup and returns None if not found
                 referenced_field = self.base.field_by_id(referenced_field_id)
                 if referenced_field and referenced_field.involves_lookup():
                     result = True
@@ -423,7 +435,6 @@ class Field(Named):
             # Check if field has referencedFieldIds and recursively check each one
             referenced_field_ids = self.options.referenced_field_ids or []
             for referenced_field_id in referenced_field_ids:
-                # field_by_id uses O(1) index lookup and returns None if not found
                 referenced_field = self.base.field_by_id(referenced_field_id)
                 if referenced_field and referenced_field.involves_rollup():
                     result = True
@@ -612,13 +623,10 @@ class Base(BaseModel):
     tables: list[Table]
     _original_metadata: BaseMetadata
     _csv_cache: CsvCache | None = None
-    # Memoization caches for recursive field analysis (prevents exponential traversal)
     _involves_lookup_cache: dict[str, bool] = {}
     _involves_rollup_cache: dict[str, bool] = {}
-    # Indexes for O(1) lookups (built once after loading)
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
-    # Cached computed properties (lazy initialization)
     _select_fields_cache: list["Field"] | None = None
     _select_field_ids_cache: list[str] | None = None
 
@@ -684,7 +692,6 @@ class Base(BaseModel):
                 table.views.append(view)
             base.tables.append(table)
 
-        # Build indexes for O(1) lookups
         base._field_index = {}
         base._table_index = {}
         for table in base.tables:
