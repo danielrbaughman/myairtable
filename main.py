@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
+import pyperclip
 from rich import print
 from typer import Argument, Option, Typer
 
@@ -103,6 +104,32 @@ def check_invalid(base: Base) -> None:
     else:
         print("[yellow] - Invalid fields detected.[/]")
     print("")
+
+
+@app.command()
+def formula(
+    field_id: Annotated[str, Argument(help="The ID of the formula field")],
+    sanitize: Annotated[bool, Option(help="Replace field IDs with field names in the formula.")] = True,
+    flatten: Annotated[bool, Option(help="Expand all nested formula field references.")] = False,
+    format: Annotated[bool, Option(help="Format the formula for better readability.")] = False,
+    highlight: Annotated[bool, Option(help="Highlight the formula syntax (outputs as HTML).")] = False,
+):
+    """Copy the formula of a formula field to the clipboard."""
+    base = Base.new()
+    for table in base.tables:
+        for field in table.fields:
+            if field.id == field_id:
+                if field.type == "formula":
+                    print(f"[green]Formula for field '{field.name}' ({field.id}):[/]")
+                    formula = field.formula(sanitized=sanitize, flatten=flatten, format=format, highlight=highlight)
+                    print(formula)
+                    pyperclip.copy(formula)
+                    print("[blue]Formula copied to clipboard.[/]")
+                    return
+                else:
+                    print(f"[red]Field '{field.name}' ({field.id}) is not a formula field.[/]")
+                    return
+    print(f"[red]Field with ID '{field_id}' not found.[/]")
 
 
 @app.command()
