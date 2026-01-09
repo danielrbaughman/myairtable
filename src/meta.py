@@ -197,6 +197,10 @@ class Named(BaseModel):
         """Get the name suitable for Markdown."""
         return sanitize_for_markdown(self.name)
 
+    def name_mermaid(self) -> str:
+        """Get the name suitable for Mermaid diagrams."""
+        return self.name.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)")
+
     def name_upper(self) -> str:
         """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
         cache_key = "upper"
@@ -600,7 +604,7 @@ class Table(Named):
         return [field for field in self.fields if field.select_options()]
 
     def linked_tables(self) -> list["Table"]:
-        """Get the list of linked tables for this table. O(n) where n=fields, using O(1) table lookups."""
+        """Get the list of tables this table links to"""
         linked_tables: list[Table] = []
         seen: set[str] = set()
 

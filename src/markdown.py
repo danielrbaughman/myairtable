@@ -1,10 +1,11 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from rich import print
 
 from .helpers import Paths, sanitize_for_markdown
-from .meta import Base
+from .meta import Base, Field, Table
 from .write_to_file import WriteToFile
 
 
@@ -91,6 +92,15 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.list_item(f"**Number of Views:** {len(table.views)}")
             write.line_empty()
 
+            if len(table.linked_tables()) > 0:
+                write.header(f"Linked Tables ({len(table.linked_tables())})", level=5)
+                for t in table.linked_tables():
+                    write.list_item(f"[{t.name_markdown()}](../tables/{t.name_snake()}.md)")
+
+            write.header("Diagram", level=5)
+            write.code_block(mermaid_table(table), language="mermaid")
+            write.line_empty()
+
             write.header(f"Fields ({len(table.fields)})", level=5)
             for field in table.fields:
                 write.line(f"![{field.name_markdown()}](../fields/{table.name_snake()}/{field.name_snake()}.md)")
@@ -162,6 +172,11 @@ def write_fields(base: Base, output_folder: Path) -> None:
                             write.list_item(f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)")
                     write.line_empty()
 
+                if field.referenced_fields():
+                    write.header("Linked Fields", level=5)
+                    write.code_block(mermaid_field(field), language="mermaid")
+                    write.line_empty()
+
                 if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
                     write.header("Options", level=5)
                     for option in field.options.choices:
@@ -187,3 +202,55 @@ def write_index(base: Base, output_folder: Path) -> None:
         write.header(f"Tables ({len(base.tables)})", level=5)
         for table in base.tables:
             write.list_item(f"[{table.name}](tables/{table.name_snake()}.md)")
+        write.code_block(mermaid_base(base), language="mermaid")
+        write.line_empty()
+
+
+class WriteToMermaidFile(WriteToFile):
+    def __init__(self, path: Path):
+        super().__init__(path=path, language="mermaid")
+
+    def flowchart(self, direction: Literal["TD", "LR", "BT", "RL"] = "TD"):
+        self.line(f"flowchart {direction}")
+
+    def box(self, id: str, text: str, indent: int = 1):
+        self.line_indented(f'{id}["{text}"]', indent=indent)
+
+    def link(self, from_id: str, to_id: str, label: str = "", indent: int = 1):
+        if label:
+            self.line_indented(f"{from_id} -->|{label}| {to_id}", indent=indent)
+        else:
+            self.line_indented(f"{from_id} --> {to_id}", indent=indent)
+
+
+def mermaid_base(base: Base) -> str:
+    write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
+    write.flowchart()
+    for table in base.tables:
+        write.box(table.id, table.name_markdown(), indent=1)
+        for t in table.linked_tables():
+            write.link(table.id, t.id, indent=2)
+
+    return "\n".join(write.lines)
+
+
+def mermaid_table(table: Table) -> str:
+    write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
+    write.flowchart("LR")
+    for field in table.fields:
+        write.box(field.id, field.name_markdown())
+        for f in field.referenced_fields():
+            write.link(field.id, to_id=f.id, indent=2)
+
+    return "\n".join(write.lines)
+
+
+def mermaid_field(field: Field) -> str:
+    write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
+    write.flowchart("LR")
+    write.box(field.id, field.name_markdown())
+    for f in field.referenced_fields():
+        write.box(f.id, f.name_markdown())
+        write.link(field.id, to_id=f.id, indent=2)
+
+    return "\n".join(write.lines)

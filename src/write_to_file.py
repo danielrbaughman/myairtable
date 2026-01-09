@@ -13,7 +13,7 @@ class WriteToFile(BaseModel):
 
     path: Path
     lines: list[str] = []
-    language: Literal["python", "typescript", "markdown"]
+    language: Literal["python", "typescript", "markdown", "mermaid"]
 
     def __enter__(self):
         return self
