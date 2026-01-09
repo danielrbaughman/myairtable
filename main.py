@@ -138,6 +138,7 @@ def all(
     csv_folder: Annotated[str, Option(help="Path to the folder containing the generated CSV.")] = "",
     py_folder: Annotated[str, Option(help="Path to the Python output folder")] = "",
     ts_folder: Annotated[str, Option(help="Path to the TypeScript output folder")] = "",
+    md_folder: Annotated[str, Option(help="Path to the Markdown output folder")] = "",
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
@@ -164,6 +165,9 @@ def all(
     if ts_folder:
         ts_folder_path = reset_folder(ts_folder)
         generate_typescript(base=base, output_folder=ts_folder_path)
+    if md_folder:
+        md_folder_path = reset_folder(md_folder)
+        generate_markdown(base=base, output_folder=md_folder_path)
     check_invalid(base)
     print("[green]Generation complete.[/]")
     print("")
