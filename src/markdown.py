@@ -161,20 +161,24 @@ def write_fields(base: Base, output_folder: Path) -> None:
                     write.line_empty()
                     write.warning("Field is #invalid")
 
+                if field.referenced_fields():
+                    write.header("Linked Fields", level=5)
+                    write.code_block(mermaid_field(field), language="mermaid")
+                    write.line_empty()
+
                 if field.type == "formula":
                     write.header("Formula", level=5)
                     write.code_block(field.formula(sanitized=True))
                     write.line_empty()
 
-                    write.header(f"Linked Fields ({len(field.get_field_ids_from_formula())})", level=5)
+                    write.header(f"Field Linked via Formula ({len(field.get_field_ids_from_formula())})", level=5)
                     for id in field.get_field_ids_from_formula():
                         if linked_field := table.field_by_id(id):
                             write.list_item(f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)")
                     write.line_empty()
 
-                if field.referenced_fields():
-                    write.header("Linked Fields", level=5)
-                    write.code_block(mermaid_field(field), language="mermaid")
+                    write.header("Formula Diagram", level=5)
+                    write.code_block(mermaid_formula(field), language="mermaid")
                     write.line_empty()
 
                 if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
@@ -252,5 +256,21 @@ def mermaid_field(field: Field) -> str:
     for f in field.referenced_fields():
         write.box(f.id, f.name_markdown())
         write.link(field.id, to_id=f.id, indent=2)
+
+    return "\n".join(write.lines)
+
+
+def mermaid_formula(field: Field) -> str:
+    write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
+    write.flowchart("LR")
+    write.box(field.id, field.name_markdown())
+
+    def field_link(fld: Field):
+        write.box(fld.id, fld.name_markdown())
+        for ref_fld in fld.referenced_fields():
+            write.link(fld.id, to_id=ref_fld.id, indent=2)
+            field_link(ref_fld)
+
+    field_link(field)
 
     return "\n".join(write.lines)
