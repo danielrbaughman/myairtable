@@ -13,7 +13,7 @@ except ImportError:
     from formula_tokenizer import FormulaTokenizer, Token, TokenType
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=1024)
 def _tokenize(formula: str) -> tuple[Token, ...]:
     """Tokenize a formula string (cached for performance)."""
     return tuple(FormulaTokenizer(formula).tokenize())

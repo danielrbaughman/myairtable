@@ -157,9 +157,21 @@ def write_types(base: Base, output_folder: Path) -> None:
                     )
             write.endregion()
 
-            field_names = [sanitize_string(field.name) for field in table.fields]
-            field_ids = [field.id for field in table.fields]
-            property_names = [field.name_snake() for field in table.fields]
+            # Single pass to collect all field data
+            field_names: list[str] = []
+            field_ids: list[str] = []
+            property_names: list[str] = []
+            computed_field_names: list[str] = []
+            computed_field_ids: list[str] = []
+
+            for field in table.fields:
+                name_sanitized = sanitize_string(field.name)
+                field_names.append(name_sanitized)
+                field_ids.append(field.id)
+                property_names.append(field.name_snake())
+                if field.is_computed():
+                    computed_field_names.append(name_sanitized)
+                    computed_field_ids.append(field.id)
 
             write.region(table.name_upper())
 
@@ -167,15 +179,9 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.types(f"{table.name_pascal()}FieldId", field_ids, f"Field IDs for `{table.name}`")
             write.types(f"{table.name_pascal()}FieldProperty", property_names, f"Property names for `{table.name}`")
 
-            write.str_list(
-                f"{table.name_pascal()}CalculatedFields",
-                [sanitize_string(field.name) for field in table.fields if field.is_computed()],
-            )
+            write.str_list(f"{table.name_pascal()}CalculatedFields", computed_field_names)
             write.line(f'"""Calculated fields for `{table.name}`"""')
-            write.str_list(
-                f"{table.name_pascal()}CalculatedFieldIds",
-                [field.id for field in table.fields if field.is_computed()],
-            )
+            write.str_list(f"{table.name_pascal()}CalculatedFieldIds", computed_field_ids)
             write.line(f'"""Calculated fields for `{table.name}`"""')
             write.line_empty()
 

@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 import time
 from csv import DictReader
 from pathlib import Path
@@ -31,6 +32,9 @@ _INITIAL_DELAY = 1.0  # seconds
 _MAX_DELAY = 60.0  # seconds
 _BACKOFF_MULTIPLIER = 2.0
 _JITTER = 0.5  # ±50% randomization
+
+# Pattern to extract field IDs from formulas (e.g., {fldXXX})
+_FIELD_REF_PATTERN = re.compile(r"\{(fld[A-Za-z0-9]+)\}")
 
 
 def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
@@ -632,15 +636,16 @@ class Field(Named):
         # Create new set to avoid mutation across branches
         _visited = _visited | {self.id}
 
-        # Get all field IDs referenced in this formula
-        for table_field in self.table.fields:
-            field_ref = f"{{{table_field.id}}}"
-            if field_ref in formula:
-                if table_field.type == "formula":
-                    nested_formula = table_field.formula(flatten=True, _visited=_visited)
-                    if nested_formula:
-                        # Wrap in parentheses to preserve order of operations
-                        formula = formula.replace(field_ref, f"({nested_formula})")
+        # Extract only the field IDs actually referenced in the formula (O(m) where m = formula length)
+        # Then do O(1) lookup for each, instead of O(n) iteration through all table fields
+        referenced_field_ids = _FIELD_REF_PATTERN.findall(formula)
+        for field_id in referenced_field_ids:
+            table_field = self.table.field_by_id(field_id)
+            if table_field and table_field.type == "formula":
+                nested_formula = table_field.formula(flatten=True, _visited=_visited)
+                if nested_formula:
+                    # Wrap in parentheses to preserve order of operations
+                    formula = formula.replace(f"{{{field_id}}}", f"({nested_formula})")
 
         # Cache result for top-level calls
         if is_top_level:

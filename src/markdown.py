@@ -77,6 +77,13 @@ class WriteToMarkdownFile(WriteToFile):
 def generate_markdown(base: Base, output_folder: Path) -> None:
     print("Generating Markdown code")
 
+    # Pre-create all folders once before generation
+    tables_folder = output_folder / Paths.DOCS / "tables"
+    tables_folder.mkdir(parents=True, exist_ok=True)
+    for table in base.tables:
+        fields_folder = output_folder / Paths.DOCS / "fields" / table.name_snake()
+        fields_folder.mkdir(parents=True, exist_ok=True)
+
     write_tables(base, output_folder)
     write_fields(base, output_folder)
     write_index(base, output_folder)
@@ -86,10 +93,8 @@ def generate_markdown(base: Base, output_folder: Path) -> None:
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
+    folder: Path = output_folder / Paths.DOCS / "tables"
     for table in base.tables:
-        folder: Path = output_folder / Paths.DOCS / "tables"
-        folder.mkdir(parents=True, exist_ok=True)
-
         with WriteToMarkdownFile(path=folder / f"{table.name_snake()}.md") as write:
             write.header(f"{table.name}", level=1)
             write.list_item(f"**Airtable ID:** `{table.id}`")
@@ -128,10 +133,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
 def write_fields(base: Base, output_folder: Path) -> None:
     for table in base.tables:
+        folder: Path = output_folder / Paths.DOCS / "fields" / table.name_snake()
         for field in table.fields:
-            folder: Path = output_folder / Paths.DOCS / "fields" / table.name_snake()
-            folder.mkdir(parents=True, exist_ok=True)
-
             with WriteToMarkdownFile(path=folder / f"{field.name_snake()}.md") as write:
                 write.header(f"{field.name_markdown()}", level=1)
 
