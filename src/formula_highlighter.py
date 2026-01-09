@@ -16,6 +16,8 @@ Usage:
     >>> html = highlight_formula("SUM({Amount}, 100)")
 """
 
+import html
+
 try:
     from .formula_tokenizer import FormulaTokenizer, Token, TokenType
 except ImportError:
@@ -36,7 +38,7 @@ PAREN_COLORS: list[str] = ["#6F42C1", "#0EA5E9"]  # Purple, Light Blue
 
 def _html_escape(text: str) -> str:
     """Escape HTML special characters to prevent injection."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+    return html.escape(text, quote=True)
 
 
 def _tokens_to_html(tokens: list[Token]) -> str:

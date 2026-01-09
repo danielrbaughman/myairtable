@@ -305,6 +305,10 @@ class Field(Named):
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
     _python_type_cache: str | None = PrivateAttr(default=None)
     _typescript_type_cache: str | None = PrivateAttr(default=None)
+    # Formula caching for performance
+    _formula_cache: dict[tuple[bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _flattened_formula_cache: str | None = PrivateAttr(default=None)
+    _sanitized_formula_cache: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -579,6 +583,11 @@ class Field(Named):
         if self.type != "formula" or not self.options or not self.options.formula:
             return ""
 
+        # Check cache for non-recursive calls (when _visited is None)
+        cache_key = (sanitized, flatten, format, highlight)
+        if _visited is None and cache_key in self._formula_cache:
+            return self._formula_cache[cache_key]
+
         result = self.options.formula
 
         if flatten:
@@ -593,6 +602,10 @@ class Field(Named):
         if highlight:
             result = highlight_formula(result)
 
+        # Cache result for non-recursive calls
+        if _visited is None:
+            self._formula_cache[cache_key] = result
+
         return result
 
     def _flatten_formula(self, formula: str, _visited: set[str] | None = None) -> str:
@@ -605,6 +618,11 @@ class Field(Named):
         Returns:
             The flattened formula string.
         """
+        # Check cache for top-level (non-recursive) calls
+        is_top_level = _visited is None
+        if is_top_level and self._flattened_formula_cache is not None:
+            return self._flattened_formula_cache
+
         # Detect circular reference
         if _visited is None:
             _visited = set()
@@ -624,13 +642,27 @@ class Field(Named):
                         # Wrap in parentheses to preserve order of operations
                         formula = formula.replace(field_ref, f"({nested_formula})")
 
+        # Cache result for top-level calls
+        if is_top_level:
+            self._flattened_formula_cache = formula
+
         return formula
 
     def _sanitize_formula(self, formula: str) -> str:
         """Replace field IDs with field names for readability."""
+        # Check cache - only applies to raw formula (not flattened)
+        if formula == self.options.formula and self._sanitized_formula_cache is not None:
+            return self._sanitized_formula_cache
+
+        result = formula
         for field in self.table.fields:
-            formula = formula.replace(f"{{{field.id}}}", f"{{{field.name}}}")
-        return formula
+            result = result.replace(f"{{{field.id}}}", f"{{{field.name}}}")
+
+        # Cache result for raw formula
+        if formula == self.options.formula:
+            self._sanitized_formula_cache = result
+
+        return result
 
 
 class View(Named):

@@ -38,7 +38,8 @@ class TestHtmlEscape:
         assert _html_escape('say "hello"') == "say &quot;hello&quot;"
 
     def test_escapes_single_quote(self):
-        assert _html_escape("it's") == "it&#39;s"
+        # html.escape uses &#x27; (hex) instead of &#39; (decimal) - both are valid
+        assert _html_escape("it's") == "it&#x27;s"
 
     def test_escapes_script_tag(self):
         result = _html_escape("<script>alert('xss')</script>")
@@ -385,8 +386,8 @@ class TestTokensToHtml:
     def test_string_no_color(self):
         tokens = [Token(TokenType.STRING, "'text'")]
         html = _tokens_to_html(tokens)
-        # Strings are plain text, no color
-        assert "&#39;text&#39;" in html
+        # Strings are plain text, no color (html.escape uses &#x27; for single quotes)
+        assert "&#x27;text&#x27;" in html
         assert "<span" not in html
 
     def test_whitespace_no_span(self):
@@ -424,8 +425,8 @@ class TestHighlightFormula:
 
     def test_string_literal(self):
         html = highlight_formula("'hello'")
-        # Strings are not colored, just plain text (with HTML escaping)
-        assert "&#39;hello&#39;" in html
+        # Strings are not colored, just plain text (html.escape uses &#x27; for single quotes)
+        assert "&#x27;hello&#x27;" in html
         assert '<span style="color:#D73A49">' not in html
 
     def test_number(self):

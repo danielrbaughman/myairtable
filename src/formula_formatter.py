@@ -5,6 +5,7 @@ proper indentation and newlines for better readability in markdown code blocks.
 """
 
 import re
+from functools import lru_cache
 
 try:
     from .formula_tokenizer import FormulaTokenizer, Token, TokenType
@@ -12,9 +13,10 @@ except ImportError:
     from formula_tokenizer import FormulaTokenizer, Token, TokenType
 
 
-def _tokenize(formula: str) -> list[Token]:
-    """Tokenize a formula string."""
-    return FormulaTokenizer(formula).tokenize()
+@lru_cache(maxsize=256)
+def _tokenize(formula: str) -> tuple[Token, ...]:
+    """Tokenize a formula string (cached for performance)."""
+    return tuple(FormulaTokenizer(formula).tokenize())
 
 
 def _tokens_to_string(tokens: list[Token]) -> str:
