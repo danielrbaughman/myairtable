@@ -370,7 +370,8 @@ class Field(Named):
                     return self.options.result.type
         return self.type
 
-    def referenced_field(self) -> "Field | None":
+    def field_in_linked_table(self) -> "Field | None":
+        """Get the field in the linked table that this field links to (lookup, rollup)."""
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
@@ -379,16 +380,23 @@ class Field(Named):
         return None
 
     def referenced_fields(self) -> list["Field"]:
-        """Get all referenced fields for this field."""
+        """Get all referenced fields for this field (link, lookup, rollup, formula)."""
         fields: list["Field"] = []
-        if self.referenced_field():
-            fields.append(self.referenced_field())
+        if self.field_in_linked_table():
+            fields.append(self.field_in_linked_table())
         if self.options and self.options.referenced_field_ids:
             for field_id in self.options.referenced_field_ids:
                 ref_field = self.base.field_by_id(field_id)
                 if ref_field:
                     fields.append(ref_field)
-        return fields
+        # Remove duplicate fields by id (keep first occurrence)
+        seen_ids = set()
+        unique_fields = []
+        for field in fields:
+            if field.id not in seen_ids:
+                seen_ids.add(field.id)
+                unique_fields.append(field)
+        return unique_fields
 
     def get_linked_model_name(self) -> str:
         """Get the model name for a linked record field. Uses O(1) table lookup."""
@@ -541,16 +549,6 @@ class Field(Named):
         for field in self.table.fields:
             formula = formula.replace(f"{{{field.id}}}", f"{{{field.name}}}")
         return formula
-
-    def get_field_ids_from_formula(self) -> list[str]:
-        """Extract field IDs referenced in the formula."""
-        field_ids: list[str] = []
-        if self.type == "formula" and self.options and self.options.formula:
-            formula = self.options.formula
-            for table_field in self.table.fields:
-                if f"{{{table_field.id}}}" in formula:
-                    field_ids.append(table_field.id)
-        return field_ids
 
     def counted_field(self) -> "Field | None":
         """Get the field that this count field is counting."""

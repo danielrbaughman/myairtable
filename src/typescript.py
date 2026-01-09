@@ -658,7 +658,7 @@ def typescript_type(field: Field) -> str:
 
     # Handle complex types with special logic
     elif airtable_type == "singleSelect":
-        referenced_field = field.referenced_field()
+        referenced_field = field.field_in_linked_table()
         select_fields_ids = field.base.select_fields_ids()
         if field.id in select_fields_ids:
             ts_type = field.options_name()

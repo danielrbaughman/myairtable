@@ -161,25 +161,25 @@ def write_fields(base: Base, output_folder: Path) -> None:
                     write.line_empty()
                     write.warning("Field is #invalid")
 
-                if field.referenced_fields():
-                    write.header("Linked Fields", level=5)
-                    write.code_block(mermaid_field(field), language="mermaid")
-                    write.line_empty()
-
                 if field.type == "formula":
                     write.header("Formula", level=5)
                     write.code_block(field.formula(sanitized=True))
                     write.line_empty()
 
-                    write.header(f"Field Linked via Formula ({len(field.get_field_ids_from_formula())})", level=5)
-                    for id in field.get_field_ids_from_formula():
-                        if linked_field := table.field_by_id(id):
+                    write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
+                    for f in field.referenced_fields():
+                        if linked_field := table.field_by_id(f.id):
                             write.list_item(f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)")
                     write.line_empty()
 
                     write.header("Formula Diagram", level=5)
                     write.code_block(mermaid_formula(field), language="mermaid")
                     write.line_empty()
+                else:
+                    if field.referenced_fields():
+                        write.header("Linked Fields", level=5)
+                        write.code_block(mermaid_field(field), language="mermaid")
+                        write.line_empty()
 
                 if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
                     write.header("Options", level=5)
@@ -217,14 +217,22 @@ class WriteToMermaidFile(WriteToFile):
     def flowchart(self, direction: Literal["TD", "LR", "BT", "RL"] = "TD"):
         self.line(f"flowchart {direction}")
 
-    def box(self, id: str, text: str, indent: int = 1):
-        self.line_indented(f'{id}["{text}"]', indent=indent)
+    def box(self, id: str, label: str, indent: int = 1):
+        self.line_indented(f'{id}["{label}"]', indent=indent)
 
     def link(self, from_id: str, to_id: str, label: str = "", indent: int = 1):
         if label:
             self.line_indented(f"{from_id} -->|{label}| {to_id}", indent=indent)
         else:
             self.line_indented(f"{from_id} --> {to_id}", indent=indent)
+
+    def subgraph(self, id: str, label: str, direction: Literal["TB", "LR", "BT", "RL"] | None = None, indent: int = 1):
+        self.line_indented(f"subgraph {id} [{label}]", indent=indent)
+        if direction:
+            self.line_indented(f"direction {direction}", indent=indent + 1)
+
+    def end(self, indent: int = 1):
+        self.line_indented("end", indent=indent)
 
 
 def mermaid_base(base: Base) -> str:
@@ -262,15 +270,36 @@ def mermaid_field(field: Field) -> str:
 
 def mermaid_formula(field: Field) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
-    write.flowchart("LR")
-    write.box(field.id, field.name_markdown())
+    write.flowchart()
 
-    def field_link(fld: Field):
-        write.box(fld.id, fld.name_markdown())
+    visited_fields: set[str] = set()
+    fields_by_table: dict[str, list[Field]] = {}  # table_id -> [fields]
+    links: list[tuple[str, str]] = []  # (from_id, to_id)
+
+    def collect_fields(fld: Field):
+        """Recursively collect all fields and links."""
+        if fld.id in visited_fields:
+            return
+        visited_fields.add(fld.id)
+        fields_by_table.setdefault(fld.table.id, []).append(fld)
+
         for ref_fld in fld.referenced_fields():
-            write.link(fld.id, to_id=ref_fld.id, indent=2)
-            field_link(ref_fld)
+            links.append((fld.id, ref_fld.id))
+            collect_fields(ref_fld)
 
-    field_link(field)
+    # Pass 1: Collect all fields and links
+    collect_fields(field)
+
+    # Pass 2: Render subgraphs with boxes
+    for table_id, fields in fields_by_table.items():
+        table = fields[0].table
+        write.subgraph(table_id, table.name_markdown())
+        for fld in fields:
+            write.box(fld.id, fld.name_markdown(), indent=2)
+        write.end()
+
+    # Pass 3: Render all links (outside subgraphs)
+    for from_id, to_id in links:
+        write.link(from_id, to_id=to_id)
 
     return "\n".join(write.lines)

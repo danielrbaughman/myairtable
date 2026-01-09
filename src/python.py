@@ -738,7 +738,7 @@ def python_type(field: Field) -> str:
         else:
             py_type = "float"
     elif airtable_type == "singleSelect":
-        referenced_field = field.referenced_field()
+        referenced_field = field.field_in_linked_table()
         select_fields_ids = field.base.select_fields_ids()
         if field.id in select_fields_ids:
             py_type = field.options_name()
