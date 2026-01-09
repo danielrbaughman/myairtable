@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from rich import print
@@ -176,7 +177,12 @@ def write_fields(base: Base, output_folder: Path) -> None:
 
 def write_index(base: Base, output_folder: Path) -> None:
     with WriteToMarkdownFile(path=output_folder / Paths.DOCS / "index.md") as write:
+        write.line(f"*Last Updated:* {datetime.now().strftime('%Y-%m-%d')}")
+        write.line_empty()
         write.line("# Airtable Documentation")
+        write.list_item(f"**Total Tables:** {len(base.tables)}")
+        write.list_item(f"**Total Fields:** {sum(len(table.fields) for table in base.tables)}")
+        write.list_item(f"**Total Views:** {sum(len(table.views) for table in base.tables)}")
         write.line_empty()
         write.header(f"Tables ({len(base.tables)})", level=5)
         for table in base.tables:
