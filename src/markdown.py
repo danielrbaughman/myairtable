@@ -166,6 +166,10 @@ def write_fields(base: Base, output_folder: Path) -> None:
                     write.code_block(field.formula(sanitized=True))
                     write.line_empty()
 
+                    write.header("Formula (Flattened)", level=5)
+                    write.code_block(field.formula_flattened(sanitized=True))
+                    write.line_empty()
+
                     write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
                     for f in field.referenced_fields():
                         if linked_field := table.field_by_id(f.id):

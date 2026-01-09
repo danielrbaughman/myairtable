@@ -544,6 +544,59 @@ class Field(Named):
                 formula = self.sanitize_formula(formula)
         return formula
 
+    def formula_flattened(self, sanitized: bool = False, _visited: set[str] | None = None) -> str:
+        """
+        Get the flattened formula string where all field references are expanded to end nodes.
+
+        Recursively replaces references to formula fields with their underlying formulas
+        until all field references point to non-formula fields.
+
+        Args:
+            sanitized: If True, replace field IDs with field names for readability.
+            _visited: Internal parameter to track visited fields and detect circular references.
+
+        Returns:
+            The flattened formula string, or empty string if not a formula field.
+        """
+        if self.type != "formula" or not self.options or not self.options.formula:
+            return ""
+
+        # Detect circular reference
+        if _visited is None:
+            _visited = set()
+        if self.id in _visited:
+            return f"{{{self.id}}}"
+
+        # Create new set to avoid mutation across branches
+        _visited = _visited | {self.id}
+
+        formula = self.options.formula
+
+        # Get all field IDs referenced in this formula
+        for table_field in self.table.fields:
+            field_ref = f"{{{table_field.id}}}"
+            if field_ref in formula:
+                if table_field.type == "formula":
+                    nested_formula = table_field.formula_flattened(sanitized=False, _visited=_visited)
+                    if nested_formula:
+                        # Wrap in parentheses to preserve order of operations
+                        formula = formula.replace(field_ref, f"({nested_formula})")
+
+        if sanitized:
+            formula = self.sanitize_formula(formula)
+
+        return formula
+
+    def get_field_ids_from_formula(self) -> list[str]:
+        """Extract field IDs referenced in the formula."""
+        field_ids: list[str] = []
+        if self.type == "formula" and self.options and self.options.formula:
+            formula = self.options.formula
+            for table_field in self.table.fields:
+                if f"{{{table_field.id}}}" in formula:
+                    field_ids.append(table_field.id)
+        return field_ids
+
     def sanitize_formula(self, formula: str) -> str:
         """Replace field IDs with field names for readability."""
         for field in self.table.fields:
