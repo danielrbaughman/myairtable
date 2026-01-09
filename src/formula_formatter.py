@@ -6,6 +6,21 @@ proper indentation and newlines for better readability in markdown code blocks.
 
 import re
 
+try:
+    from .formula_tokenizer import FormulaTokenizer, Token, TokenType
+except ImportError:
+    from formula_tokenizer import FormulaTokenizer, Token, TokenType
+
+
+def _tokenize(formula: str) -> list[Token]:
+    """Tokenize a formula string."""
+    return FormulaTokenizer(formula).tokenize()
+
+
+def _tokens_to_string(tokens: list[Token]) -> str:
+    """Convert tokens back to string."""
+    return "".join(t.value for t in tokens)
+
 
 def _find_matching_paren(formula: str, start: int) -> int:
     """Find the closing paren matching the opening paren at start position.
@@ -15,129 +30,61 @@ def _find_matching_paren(formula: str, start: int) -> int:
     if start >= len(formula) or formula[start] != "(":
         return -1
 
-    depth = 0
-    in_single = False
-    in_double = False
-    in_brace = False
+    # Tokenize from the start position onward
+    tokens = _tokenize(formula[start:])
 
-    i = start
-    while i < len(formula):
-        char = formula[i]
+    if not tokens or tokens[0].type != TokenType.PARENTHESIS or tokens[0].value != "(":
+        return -1
 
-        # Handle escape sequences in strings
-        if (in_single or in_double) and char == "\\" and i + 1 < len(formula):
-            i += 2
-            continue
+    target_depth = tokens[0].depth
+    pos = start
 
-        # Track string state
-        if char == "'" and not in_double and not in_brace:
-            in_single = not in_single
-        elif char == '"' and not in_single and not in_brace:
-            in_double = not in_double
-        elif char == "{" and not in_single and not in_double:
-            in_brace = True
-        elif char == "}" and not in_single and not in_double:
-            in_brace = False
-        # Track parens only outside strings and braces
-        elif char == "(" and not in_single and not in_double and not in_brace:
-            depth += 1
-        elif char == ")" and not in_single and not in_double and not in_brace:
-            depth -= 1
-            if depth == 0:
-                return i
-
-        i += 1
+    for token in tokens:
+        if token.type == TokenType.PARENTHESIS and token.value == ")" and token.depth == target_depth:
+            return pos + len(token.value) - 1
+        pos += len(token.value)
 
     return -1  # No matching paren found
 
 
 def _split_arguments(args_str: str) -> list[str]:
     """Split comma-separated arguments, respecting nesting, strings, and field refs."""
-    args: list[str] = []
-    current: list[str] = []
+    tokens = _tokenize(args_str)
+
+    args: list[list[Token]] = []
+    current: list[Token] = []
     depth = 0
-    in_single = False
-    in_double = False
-    in_brace = False
 
-    i = 0
-    while i < len(args_str):
-        char = args_str[i]
-
-        # Handle escape sequences
-        if (in_single or in_double) and char == "\\" and i + 1 < len(args_str):
-            current.append(char)
-            current.append(args_str[i + 1])
-            i += 2
-            continue
-
-        # Track string state
-        if char == "'" and not in_double and not in_brace:
-            in_single = not in_single
-            current.append(char)
-        elif char == '"' and not in_single and not in_brace:
-            in_double = not in_double
-            current.append(char)
-        elif char == "{" and not in_single and not in_double:
-            in_brace = True
-            current.append(char)
-        elif char == "}" and not in_single and not in_double:
-            in_brace = False
-            current.append(char)
-        elif char == "(" and not in_single and not in_double and not in_brace:
-            depth += 1
-            current.append(char)
-        elif char == ")" and not in_single and not in_double and not in_brace:
-            depth -= 1
-            current.append(char)
-        elif char == "," and depth == 0 and not in_single and not in_double and not in_brace:
-            # Split here
-            args.append("".join(current).strip())
+    for token in tokens:
+        if token.type == TokenType.PARENTHESIS:
+            if token.value == "(":
+                depth += 1
+            else:
+                depth -= 1
+            current.append(token)
+        elif token.type == TokenType.COMMA and depth == 0:
+            # This comma separates arguments at the base level
+            args.append(current)
             current = []
         else:
-            current.append(char)
-
-        i += 1
+            current.append(token)
 
     # Add last argument
     if current:
-        args.append("".join(current).strip())
+        args.append(current)
 
-    return args
+    # Convert token lists back to strings and strip whitespace
+    return [_tokens_to_string(arg_tokens).strip() for arg_tokens in args]
 
 
 def _count_nesting_depth(formula: str) -> int:
     """Count the maximum nesting depth of function calls."""
+    tokens = _tokenize(formula)
     max_depth = 0
-    current_depth = 0
-    in_single = False
-    in_double = False
-    in_brace = False
 
-    i = 0
-    while i < len(formula):
-        char = formula[i]
-
-        # Handle escape sequences
-        if (in_single or in_double) and char == "\\" and i + 1 < len(formula):
-            i += 2
-            continue
-
-        if char == "'" and not in_double and not in_brace:
-            in_single = not in_single
-        elif char == '"' and not in_single and not in_brace:
-            in_double = not in_double
-        elif char == "{" and not in_single and not in_double:
-            in_brace = True
-        elif char == "}" and not in_single and not in_double:
-            in_brace = False
-        elif char == "(" and not in_single and not in_double and not in_brace:
-            current_depth += 1
-            max_depth = max(max_depth, current_depth)
-        elif char == ")" and not in_single and not in_double and not in_brace:
-            current_depth -= 1
-
-        i += 1
+    for token in tokens:
+        if token.type == TokenType.PARENTHESIS and token.depth > max_depth:
+            max_depth = token.depth
 
     return max_depth
 
@@ -177,55 +124,20 @@ def _is_simple_formula(formula: str) -> bool:
 
 def _normalize_whitespace(formula: str) -> str:
     """Normalize whitespace in formula, preserving content inside strings and field refs."""
+    tokens = _tokenize(formula)
     result: list[str] = []
-    in_single = False
-    in_double = False
-    in_brace = False
     prev_was_space = False
 
-    i = 0
-    while i < len(formula):
-        char = formula[i]
-
-        # Handle escape sequences in strings
-        if (in_single or in_double) and char == "\\" and i + 1 < len(formula):
-            result.append(char)
-            result.append(formula[i + 1])
-            prev_was_space = False
-            i += 2
-            continue
-
-        # Track string and brace state
-        if char == "'" and not in_double and not in_brace:
-            in_single = not in_single
-            result.append(char)
-            prev_was_space = False
-        elif char == '"' and not in_single and not in_brace:
-            in_double = not in_double
-            result.append(char)
-            prev_was_space = False
-        elif char == "{" and not in_single and not in_double:
-            in_brace = True
-            result.append(char)
-            prev_was_space = False
-        elif char == "}" and not in_single and not in_double:
-            in_brace = False
-            result.append(char)
-            prev_was_space = False
-        elif in_single or in_double or in_brace:
-            # Preserve content inside strings and field refs
-            result.append(char)
-            prev_was_space = False
-        elif char in " \t\n\r":
-            # Collapse whitespace outside strings/braces
+    for token in tokens:
+        if token.type == TokenType.WHITESPACE:
+            # Collapse whitespace to single space
             if not prev_was_space:
                 result.append(" ")
                 prev_was_space = True
         else:
-            result.append(char)
+            # Preserve all other tokens exactly
+            result.append(token.value)
             prev_was_space = False
-
-        i += 1
 
     return "".join(result).strip()
 
