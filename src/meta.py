@@ -11,6 +11,8 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
+from src.formula_formatter import format_formula
+from src.formula_highlighter import highlight_formula
 from src.helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
@@ -370,6 +372,20 @@ class Field(Named):
                     return self.options.result.type
         return self.type
 
+    def linked_table(self) -> "Table | None":
+        """Get the linked table for a multipleRecordLinks field."""
+        if self.options:
+            if self.options.linked_table_id:
+                linked_table = self.base.table_by_id(self.options.linked_table_id)
+                if linked_table:
+                    return linked_table
+            elif self.options.field_id_in_linked_table:
+                linked_field = self.base.field_by_id(self.options.field_id_in_linked_table)
+                if linked_field:
+                    return linked_field.table
+
+        return None
+
     def field_in_linked_table(self) -> "Field | None":
         """Get the field in the linked table that this field links to (lookup, rollup)."""
         if self.options is None:
@@ -405,6 +421,24 @@ class Field(Named):
             if linked_table:
                 return linked_table.name_model()
         return ""
+
+    def get_field_ids_from_formula(self) -> list[str]:
+        """Extract field IDs referenced in the formula."""
+        field_ids: list[str] = []
+        if self.type == "formula" and self.options and self.options.formula:
+            formula = self.options.formula
+            for table_field in self.table.fields:
+                if f"{{{table_field.id}}}" in formula:
+                    field_ids.append(table_field.id)
+        return field_ids
+
+    def counted_field(self) -> "Field | None":
+        """Get the field that this count field is counting."""
+        if self.type == "count" and self.options and self.options.record_link_field_id:
+            counted_field = self.base.field_by_id(self.options.record_link_field_id)
+            if counted_field:
+                return counted_field
+        return None
 
     def involves_lookup(self) -> bool:
         """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
@@ -521,46 +555,56 @@ class Field(Named):
 
         return formula_type
 
-    def linked_table(self) -> "Table | None":
-        """Get the linked table for a multipleRecordLinks field."""
-        if self.options:
-            if self.options.linked_table_id:
-                linked_table = self.base.table_by_id(self.options.linked_table_id)
-                if linked_table:
-                    return linked_table
-            elif self.options.field_id_in_linked_table:
-                linked_field = self.base.field_by_id(self.options.field_id_in_linked_table)
-                if linked_field:
-                    return linked_field.table
-
-        return None
-
-    def formula(self, sanitized: bool = False) -> str:
-        """Get the formula string if the field is a formula field."""
-        formula: str = ""
-        if self.type == "formula" and self.options and self.options.formula:
-            formula = self.options.formula
-            if sanitized:
-                formula = self.sanitize_formula(formula)
-        return formula
-
-    def formula_flattened(self, sanitized: bool = False, _visited: set[str] | None = None) -> str:
-        """
-        Get the flattened formula string where all field references are expanded to end nodes.
-
-        Recursively replaces references to formula fields with their underlying formulas
-        until all field references point to non-formula fields.
+    def formula(
+        self,
+        *,
+        sanitized: bool = False,
+        flatten: bool = False,
+        format: bool = False,
+        highlight: bool = False,
+        _visited: set[str] | None = None,
+    ) -> str:
+        """Get the formula string if the field is a formula field.
 
         Args:
             sanitized: If True, replace field IDs with field names for readability.
+            flatten: If True, expand all nested formula field references.
+            format: If True, apply formatting with indentation for readability.
+            highlight: If True, apply syntax highlighting (returns HTML).
             _visited: Internal parameter to track visited fields and detect circular references.
 
         Returns:
-            The flattened formula string, or empty string if not a formula field.
+            The formula string, optionally flattened, formatted, and/or highlighted.
         """
         if self.type != "formula" or not self.options or not self.options.formula:
             return ""
 
+        result = self.options.formula
+
+        if flatten:
+            result = self._flatten_formula(result, _visited)
+
+        if sanitized:
+            result = self._sanitize_formula(result)
+
+        if format:
+            result = format_formula(result)
+
+        if highlight:
+            result = highlight_formula(result)
+
+        return result
+
+    def _flatten_formula(self, formula: str, _visited: set[str] | None = None) -> str:
+        """Recursively flatten formula by expanding nested formula field references.
+
+        Args:
+            formula: The formula string to flatten.
+            _visited: Set of visited field IDs to detect circular references.
+
+        Returns:
+            The flattened formula string.
+        """
         # Detect circular reference
         if _visited is None:
             _visited = set()
@@ -570,46 +614,23 @@ class Field(Named):
         # Create new set to avoid mutation across branches
         _visited = _visited | {self.id}
 
-        formula = self.options.formula
-
         # Get all field IDs referenced in this formula
         for table_field in self.table.fields:
             field_ref = f"{{{table_field.id}}}"
             if field_ref in formula:
                 if table_field.type == "formula":
-                    nested_formula = table_field.formula_flattened(sanitized=False, _visited=_visited)
+                    nested_formula = table_field.formula(flatten=True, _visited=_visited)
                     if nested_formula:
                         # Wrap in parentheses to preserve order of operations
                         formula = formula.replace(field_ref, f"({nested_formula})")
 
-        if sanitized:
-            formula = self.sanitize_formula(formula)
-
         return formula
 
-    def get_field_ids_from_formula(self) -> list[str]:
-        """Extract field IDs referenced in the formula."""
-        field_ids: list[str] = []
-        if self.type == "formula" and self.options and self.options.formula:
-            formula = self.options.formula
-            for table_field in self.table.fields:
-                if f"{{{table_field.id}}}" in formula:
-                    field_ids.append(table_field.id)
-        return field_ids
-
-    def sanitize_formula(self, formula: str) -> str:
+    def _sanitize_formula(self, formula: str) -> str:
         """Replace field IDs with field names for readability."""
         for field in self.table.fields:
             formula = formula.replace(f"{{{field.id}}}", f"{{{field.name}}}")
         return formula
-
-    def counted_field(self) -> "Field | None":
-        """Get the field that this count field is counting."""
-        if self.type == "count" and self.options and self.options.record_link_field_id:
-            counted_field = self.base.field_by_id(self.options.record_link_field_id)
-            if counted_field:
-                return counted_field
-        return None
 
 
 class View(Named):

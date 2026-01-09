@@ -4,9 +4,6 @@ from typing import Literal
 
 from rich import print
 
-from src.formula_highlighter import highlight_formula
-
-from .formula_formatter import format_formula
 from .helpers import Paths, sanitize_for_markdown
 from .meta import Base, Field, Table
 from .write_to_file import WriteToFile
@@ -171,20 +168,20 @@ def write_fields(base: Base, output_folder: Path) -> None:
 
                 if field.type == "formula":
                     write.header("Formula (Raw)", level=5)
-                    write.code_block(format_formula(field.formula(sanitized=True)))
+                    write.code_block(field.formula(sanitized=True, format=True))
                     write.line_empty()
 
                     write.header("Formula (Highlighted)", level=5)
-                    write.html(highlight_formula(format_formula(field.formula(sanitized=True))))
+                    write.html(field.formula(sanitized=True, format=True, highlight=True))
                     write.line_empty()
 
                     write.header("Formula (Flattened)", level=5)
                     write.line("*The flattened formula represents the formula with all nested functions expanded.*")
-                    write.code_block(format_formula(field.formula_flattened(sanitized=True)))
+                    write.code_block(field.formula(sanitized=True, flatten=True, format=True))
                     write.line_empty()
 
                     write.header("Formula (Flattened + Highlighted)", level=5)
-                    write.html(highlight_formula(format_formula(field.formula_flattened(sanitized=True))))
+                    write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
                     write.line_empty()
 
                     write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
