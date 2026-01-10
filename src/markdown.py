@@ -187,9 +187,11 @@ def write_fields(base: Base, output_folder: Path) -> None:
                             write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
-                            write.header("Formula (Flattened)", level=5)
-                            write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
-                            write.line_empty()
+                            if field.formula(condense=True) != field.formula(flatten=True, condense=True):
+                                write.header("Formula (Flattened)", level=5)
+                                write.line("*Formula with nested formulas expanded*")
+                                write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
+                                write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: raw"):
                             write.header("Formula (Raw)", level=5)
