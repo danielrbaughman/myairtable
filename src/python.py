@@ -147,31 +147,51 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             write.region("OPTIONS")
+
+            # Single pass to collect ALL field data needed for type generation
+            field_data: list[dict[str, str]] = []
+            computed_field_names: list[str] = []
+            computed_field_ids: list[str] = []
+            fields_dict_rows: list[tuple[str, str]] = []
+
             for field in table.fields:
+                name_sanitized = sanitize_string(field.name)
+                name_snake = field.name_snake()
+                py_type = python_type(field)
+
+                # Store all field attributes for later use
+                field_data.append(
+                    {
+                        "id": field.id,
+                        "name": field.name,
+                        "name_sanitized": name_sanitized,
+                        "name_snake": name_snake,
+                    }
+                )
+
+                # Collect computed fields
+                if field.is_computed():
+                    computed_field_names.append(name_sanitized)
+                    computed_field_ids.append(field.id)
+
+                # Collect FieldsDict rows
+                fields_dict_rows.append((field.id, py_type))
+
+                # Write select options inline
                 options = field.select_options()
                 if len(options) > 0:
                     write.types(
                         field.options_name(),
                         options,
-                        f"Select options for `{sanitize_string(field.name)}`",
+                        f"Select options for `{name_sanitized}`",
                     )
+
             write.endregion()
 
-            # Single pass to collect all field data
-            field_names: list[str] = []
-            field_ids: list[str] = []
-            property_names: list[str] = []
-            computed_field_names: list[str] = []
-            computed_field_ids: list[str] = []
-
-            for field in table.fields:
-                name_sanitized = sanitize_string(field.name)
-                field_names.append(name_sanitized)
-                field_ids.append(field.id)
-                property_names.append(field.name_snake())
-                if field.is_computed():
-                    computed_field_names.append(name_sanitized)
-                    computed_field_ids.append(field.id)
+            # Extract lists from pre-collected data (no re-iteration)
+            field_names = [fd["name_sanitized"] for fd in field_data]
+            field_ids = [fd["id"] for fd in field_data]
+            property_names = [fd["name_snake"] for fd in field_data]
 
             write.region(table.name_upper())
 
@@ -185,6 +205,7 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line(f'"""Calculated fields for `{table.name}`"""')
             write.line_empty()
 
+            # Generate all field mappings from pre-collected data (no re-iteration)
             field_mappings: list[tuple[str, str, str, str, str]] = [
                 ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
                 ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
@@ -194,29 +215,17 @@ def write_types(base: Base, output_folder: Path) -> None:
                 ("FieldPropertyNameMapping", "name_snake", "name", "FieldProperty", "Field"),
             ]
 
-            def _get(field: Field, getter: str) -> str:
-                """Get a field value based on the getter name."""
-                if getter == "id":
-                    return field.id
-                elif getter == "name":
-                    return field.name
-                elif getter == "name_snake":
-                    return field.name_snake()
-                elif getter == "name_sanitized":
-                    return sanitize_string(field.name)
-                raise ValueError(f"Unknown getter: {getter}")
-
-            for suffix, get_1, get_2, type_1, type_2 in field_mappings:
+            for suffix, key_1, key_2, type_1, type_2 in field_mappings:
                 write.dict_class(
                     f"{table.name_pascal()}{suffix}",
-                    [(_get(field, get_1), _get(field, get_2)) for field in table.fields],
+                    [(fd[key_1], fd[key_2]) for fd in field_data],
                     first_type=f"{table.name_pascal()}{type_1}",
                     second_type=f"{table.name_pascal()}{type_2}",
                 )
 
             write.line(f"class {table.name_pascal()}FieldsDict(TypedDict, total=False):")
-            for field in table.fields:
-                write.property_row(field.id, python_type(field))
+            for field_id, py_type in fields_dict_rows:
+                write.property_row(field_id, py_type)
             write.line_empty()
             write.line_empty()
 

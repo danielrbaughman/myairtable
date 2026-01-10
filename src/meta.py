@@ -122,6 +122,12 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
 class Named(BaseModel):
     id: str
     name: str
+    # Dedicated cache attributes for most common variants (faster than dict lookup)
+    _snake: str | None = PrivateAttr(default=None)
+    _pascal: str | None = PrivateAttr(default=None)
+    _model: str | None = PrivateAttr(default=None)
+    _upper: str | None = PrivateAttr(default=None)
+    # Dict cache for less common variants (use_custom=False, camel, etc.)
     _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def is_table(self) -> bool:
@@ -167,9 +173,15 @@ class Named(BaseModel):
 
     def name_snake(self, use_custom: bool = True) -> str:
         """Get the property name in snake_case. Cached after first call."""
-        cache_key = f"snake_{use_custom}"
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._snake is None:
+                self._snake = self._property_name(use_custom=True)
+            return self._snake
+        # Fallback to dict cache for use_custom=False
+        cache_key = "snake_False"
         if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = self._property_name(use_custom=use_custom)
+            self._name_cache[cache_key] = self._property_name(use_custom=False)
         return self._name_cache[cache_key]
 
     def name_camel(self, use_custom: bool = True) -> str:
@@ -181,22 +193,34 @@ class Named(BaseModel):
 
     def name_pascal(self, use_custom: bool = True) -> str:
         """Get the property name in PascalCase. Cached after first call."""
-        cache_key = f"pascal_{use_custom}"
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._pascal is None:
+                self._pascal = to_pascal(self._property_name(use_custom=True))
+            return self._pascal
+        # Fallback to dict cache for use_custom=False
+        cache_key = "pascal_False"
         if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=use_custom))
+            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=False))
         return self._name_cache[cache_key]
 
     def name_model(self, use_custom: bool = True) -> str:
         """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
-        cache_key = f"model_{use_custom}"
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._model is None:
+                if hasattr(self, "base") and self.base and self.base._csv_cache:
+                    text = self._custom_property_name(key=MODEL_NAME)
+                    if text:
+                        text = text.replace(" ", "_")
+                        self._model = to_pascal(text)
+                        return self._model
+                self._model = self.name_pascal(use_custom=True) + "Model"
+            return self._model
+        # Fallback to dict cache for use_custom=False
+        cache_key = "model_False"
         if cache_key not in self._name_cache:
-            if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-                text = self._custom_property_name(key=MODEL_NAME)
-                if text:
-                    text = text.replace(" ", "_")
-                    self._name_cache[cache_key] = to_pascal(text)
-                    return self._name_cache[cache_key]
-            self._name_cache[cache_key] = self.name_pascal(use_custom=use_custom) + "Model"
+            self._name_cache[cache_key] = self.name_pascal(use_custom=False) + "Model"
         return self._name_cache[cache_key]
 
     def name_markdown(self) -> str:
@@ -209,10 +233,9 @@ class Named(BaseModel):
 
     def name_upper(self) -> str:
         """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
-        cache_key = "upper"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = "".join(c for c in self.name if c.isalpha()).upper()
-        return self._name_cache[cache_key]
+        if self._upper is None:
+            self._upper = "".join(c for c in self.name if c.isalpha()).upper()
+        return self._upper
 
 
 class Choice(Named):
@@ -637,15 +660,25 @@ class Field(Named):
         _visited = _visited | {self.id}
 
         # Extract only the field IDs actually referenced in the formula (O(m) where m = formula length)
-        # Then do O(1) lookup for each, instead of O(n) iteration through all table fields
         referenced_field_ids = _FIELD_REF_PATTERN.findall(formula)
+
+        # Build replacement dictionary for all formula fields (single pass)
+        replacements: dict[str, str] = {}
         for field_id in referenced_field_ids:
-            table_field = self.table.field_by_id(field_id)
-            if table_field and table_field.type == "formula":
-                nested_formula = table_field.formula(flatten=True, _visited=_visited)
+            field = self.base.field_by_id(field_id)  # O(1) lookup via base index
+            if field and field.type == "formula":
+                nested_formula = field.formula(flatten=True, _visited=_visited)
                 if nested_formula:
-                    # Wrap in parentheses to preserve order of operations
-                    formula = formula.replace(f"{{{field_id}}}", f"({nested_formula})")
+                    replacements[field_id] = f"({nested_formula})"
+
+        # Single-pass replacement using regex callback (avoids multiple string allocations)
+        if replacements:
+
+            def replace_callback(match: re.Match[str]) -> str:
+                field_id = match.group(1)
+                return replacements.get(field_id, match.group(0))
+
+            formula = _FIELD_REF_PATTERN.sub(replace_callback, formula)
 
         # Cache result for top-level calls
         if is_top_level:
@@ -659,9 +692,17 @@ class Field(Named):
         if formula == self.options.formula and self._sanitized_formula_cache is not None:
             return self._sanitized_formula_cache
 
-        result = formula
-        for field in self.table.fields:
-            result = result.replace(f"{{{field.id}}}", f"{{{field.name}}}")
+        # Use table-level field ID→name cache for fastest lookup (direct dict access)
+        field_id_to_name = self.table.get_field_id_to_name_map()
+
+        def replace_field_ref(match: re.Match[str]) -> str:
+            field_id = match.group(1)
+            field_name = field_id_to_name.get(field_id)
+            if field_name:
+                return f"{{{field_name}}}"
+            return match.group(0)  # Keep original if field not found
+
+        result = _FIELD_REF_PATTERN.sub(replace_field_ref, formula)
 
         # Cache result for raw formula
         if formula == self.options.formula:
@@ -682,6 +723,13 @@ class Table(Named):
     fields: list[Field]
     views: list[View]
     base: "Base"
+    _field_id_to_name_cache: dict[str, str] | None = PrivateAttr(default=None)
+
+    def get_field_id_to_name_map(self) -> dict[str, str]:
+        """Get field ID to name mapping. Cached after first call."""
+        if self._field_id_to_name_cache is None:
+            self._field_id_to_name_cache = {f.id: f.name for f in self.fields}
+        return self._field_id_to_name_cache
 
     def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
