@@ -8,9 +8,11 @@ dependencies = [
     "dateparser>=1.2.2",
     "dotenv>=0.9.9",
     "httpx>=0.28.1",
+    "mermaid-cli>=0.1.2",
     "pyairtable>=3.2.0",
     "pydantic>=2.11.7",
     "pyperclip>=1.11.0",
+    "pytest>=9.0.2",
     "typer>=0.16.1",
 ]
 

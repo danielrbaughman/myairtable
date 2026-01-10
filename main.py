@@ -98,16 +98,21 @@ def ts(
 def md(
     folder: Annotated[str, Argument(help="Path to the output folder")],
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
+    svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
+    reset: Annotated[bool, Option(help="Delete the output folder before generating Markdown.")] = False,
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
     setup_benchmark(benchmark)
 
-    folder_path = reset_folder(Path(folder))
+    if reset:
+        folder_path = reset_folder(Path(folder))
+    else:
+        folder_path = create_folder(Path(folder))
 
     base = Base.new()
 
     with timer.timer("Markdown generation"):
-        generate_markdown(base=base, output_folder=folder_path)
+        generate_markdown(base=base, output_folder=folder_path, svg_enabled=svg)
 
     timer.summary()
 
@@ -172,6 +177,7 @@ def all(
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
+    svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
 ):
     """Generate json, CSV, Python, and TypeScript code."""
     setup_benchmark(benchmark)
@@ -204,7 +210,7 @@ def all(
     if md_folder:
         with timer.timer("Markdown generation"):
             md_folder_path = reset_folder(md_folder)
-            generate_markdown(base=base, output_folder=md_folder_path)
+            generate_markdown(base=base, output_folder=md_folder_path, svg_enabled=svg)
     check_invalid(base)
     print("[green]Generation complete.[/]")
 
