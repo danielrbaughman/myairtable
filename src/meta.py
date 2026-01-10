@@ -401,6 +401,82 @@ class Field(Named):
         ]
         return self.type in lookup_rollup_types
 
+    def is_datetime(self) -> bool:
+        """Check if the field is a date or dateTime field."""
+        date_types: list[FieldType] = [
+            "date",
+            "dateTime",
+            "duration",
+            "createdTime",
+            "lastModifiedTime",
+        ]
+        return self.type in date_types
+
+    def type_friendly(self) -> str:
+        match self.type:
+            case "autoNumber":
+                return "Auto-Number"
+            case "barcode":
+                return "Barcode"
+            case "button":
+                return "Button"
+            case "checkbox":
+                return "Checkbox"
+            case "createdBy":
+                return "Created By"
+            case "createdTime":
+                return "Created Time"
+            case "currency":
+                return "Currency"
+            case "date":
+                return "Date"
+            case "dateTime":
+                return "Date & Time"
+            case "duration":
+                return "Duration"
+            case "email":
+                return "Email"
+            case "formula":
+                return "Formula"
+            case "lastModifiedBy":
+                return "Last Modified By"
+            case "lastModifiedTime":
+                return "Last Modified Time"
+            case "lookup":
+                return "Lookup"
+            case "multilineText":
+                return "Long Text"
+            case "multipleAttachments":
+                return "Attachments"
+            case "multipleRecordLinks":
+                return "Link to Another Record(s)"
+            case "multipleSelects":
+                return "Multiple Select"
+            case "multipleLookupValues":
+                return "Lookup"
+            case "number":
+                return "Number"
+            case "percent":
+                return "Percent"
+            case "phoneNumber":
+                return "Phone Number"
+            case "rating":
+                return "Rating"
+            case "richText":
+                return "Rich Text"
+            case "rollup":
+                return "Rollup"
+            case "singleCollaborator":
+                return "Collaborator"
+            case "singleLineText":
+                return "Single Line Text"
+            case "singleSelect":
+                return "Single Select"
+            case "url":
+                return "URL"
+            case _:
+                return self.type
+
     def result_type(self) -> FieldType:
         if self.options:
             if self.options.result:
@@ -427,6 +503,15 @@ class Field(Named):
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
+        if referenced_field_id:
+            return self.base.field_by_id(referenced_field_id)
+        return None
+
+    def record_link_field(self) -> "Field | None":
+        """Get the link field that this field links through (lookup, rollup)."""
+        if self.options is None:
+            return None
+        referenced_field_id = self.options.record_link_field_id
         if referenced_field_id:
             return self.base.field_by_id(referenced_field_id)
         return None

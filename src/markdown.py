@@ -7,7 +7,7 @@ from rich import print
 
 from . import timer
 from .helpers import Paths, sanitize_for_markdown
-from .meta import Base, Field, Table
+from .meta import Base, Field
 from .write_to_file import WriteToFile
 
 
@@ -117,10 +117,6 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 for t in table.linked_tables():
                     write.list_item(f"[{t.name_markdown()}](../tables/{t.name_snake()}.md)")
 
-            write.header("Diagram", level=5)
-            write.code_block(mermaid_table(table), language="mermaid")
-            write.line_empty()
-
             write.header(f"Fields ({len(table.fields)})", level=5)
             for field in table.fields:
                 write.line(f"![{field.name_markdown()}](../fields/{table.name_snake()}/{field.name_snake()}.md)")
@@ -219,11 +215,6 @@ def write_fields(base: Base, output_folder: Path) -> None:
                             write.header("Formula Diagram", level=5)
                             write.code_block(mermaid_formula(field), language="mermaid")
                             write.line_empty()
-                    else:
-                        if field.referenced_fields():
-                            write.header("Linked Fields", level=5)
-                            write.code_block(mermaid_field(field), language="mermaid")
-                            write.line_empty()
 
                 with timer.timer("Markdown: write_field: options"):
                     if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
@@ -263,8 +254,59 @@ class WriteToMermaidFile(WriteToFile):
     def flowchart(self, direction: Literal["TD", "LR", "BT", "RL"] = "TD"):
         self.line(f"flowchart {direction}")
 
-    def box(self, id: str, label: str, indent: int = 1):
-        self.line_indented(f'{id}["{label}"]', indent=indent)
+    def _node(self, id: str, label: str, left_delimiter: str, right_delimiter: str, indent: int = 1):
+        self.line_indented(f'{id}{left_delimiter}"{label}"{right_delimiter}', indent=indent)
+
+    def node(
+        self,
+        id: str,
+        label: str,
+        type: Literal[
+            "Square",
+            "Round",
+            "Stadium",
+            "Subroutine",
+            "Cylinder",
+            "Circle",
+            "Rhombus",
+            "Hexagon",
+            "Parallelogram",
+            "Parallelogram Alt",
+            "Trapezoid",
+            "Trapezoid Alt",
+            "Double Circle",
+        ] = "Square",
+        indent: int = 1,
+    ):
+        match type:
+            case "Square":
+                self._node(id, label, "[", "]", indent=indent)
+            case "Round":
+                self._node(id, label, "(", ")", indent=indent)
+            case "Stadium":
+                self._node(id, label, "([", "])", indent=indent)
+            case "Subroutine":
+                self._node(id, label, "[[", "]]", indent=indent)
+            case "Cylinder":
+                self._node(id, label, "[(", ")]", indent=indent)
+            case "Circle":
+                self._node(id, label, "((", "))", indent=indent)
+            case "Rhombus":
+                self._node(id, label, "{", "}", indent=indent)
+            case "Hexagon":
+                self._node(id, label, "{{", "}}", indent=indent)
+            case "Parallelogram":
+                self._node(id, label, "[/", "/]", indent=indent)
+            case "Parallelogram Alt":
+                self._node(id, label, "[\\", "\\]", indent=indent)
+            case "Trapezoid":
+                self._node(id, label, "[/", "\\]", indent=indent)
+            case "Trapezoid Alt":
+                self._node(id, label, "[\\", "/]", indent=indent)
+            case "Double Circle":
+                self._node(id, label, "(((", ")))", indent=indent)
+            case _:
+                raise ValueError(f"Unknown node type: {type}")
 
     def link(self, from_id: str, to_id: str, label: str = "", indent: int = 1):
         if label:
@@ -280,35 +322,47 @@ class WriteToMermaidFile(WriteToFile):
     def end(self, indent: int = 1):
         self.line_indented("end", indent=indent)
 
+    def colors(self):
+        self.line("%% Colors")
+        self.line("classDef pink fill:#FFE0F0,stroke:#CC0066,stroke-width:2px;")
+        self.line("classDef purple fill:#F3E6FF,stroke:#6600CC,stroke-width:2px;")
+        self.line("classDef blue fill:#D0E6FF,stroke:#0033CC,stroke-width:2px;")
+        self.line("classDef lightblue fill:#E0F0FF,stroke:#0066CC,stroke-width:2px;")
+        self.line("classDef green fill:#DFFFE0,stroke:#339900,stroke-width:2px;")
+        self.line("classDef yellow fill:#FFF8D0,stroke:#CC9900,stroke-width:2px;")
+        self.line("classDef orange fill:#FFE6D0,stroke:#CC6600,stroke-width:2px;")
+        self.line("classDef red fill:#FFD0D0,stroke:#CC0000,stroke-width:2px;")
+        self.line("")
+
+    def color(self, id: str, color: Literal["pink", "purple", "blue", "lightblue", "green", "yellow", "orange", "red"]):
+        self.line(f"class {id} {color}")
+
 
 def mermaid_base(base: Base) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
     write.flowchart()
     for table in base.tables:
-        write.box(table.id, table.name_markdown(), indent=1)
+        write.node(table.id, table.name_markdown(), indent=1)
         for t in table.linked_tables():
             write.link(table.id, t.id, indent=2)
 
     return "\n".join(write.lines)
 
 
-def mermaid_table(table: Table) -> str:
-    write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
-    write.flowchart("LR")
-    for field in table.fields:
-        write.box(field.id, field.name_markdown())
-        for f in field.referenced_fields():
-            write.link(field.id, to_id=f.id, indent=2)
-
-    return "\n".join(write.lines)
+def box_label(field: Field) -> str:
+    label = f"""
+{field.name_markdown()}
+_({field.type_friendly()})_
+"""
+    return label
 
 
 def mermaid_field(field: Field) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
     write.flowchart("LR")
-    write.box(field.id, field.name_markdown())
+    write.node(field.id, field.name_markdown())
     for f in field.referenced_fields():
-        write.box(f.id, f.name_markdown())
+        write.node(f.id, f.name_markdown())
         write.link(field.id, to_id=f.id, indent=2)
 
     return "\n".join(write.lines)
@@ -317,6 +371,7 @@ def mermaid_field(field: Field) -> str:
 def mermaid_formula(field: Field) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
     write.flowchart()
+    write.colors()
 
     visited_fields: set[str] = set()
     fields_by_table: dict[str, list[Field]] = {}  # table_id -> [fields]
@@ -341,7 +396,33 @@ def mermaid_formula(field: Field) -> str:
         table = fields[0].table
         write.subgraph(table_id, table.name_markdown())
         for fld in fields:
-            write.box(fld.id, fld.name_markdown(), indent=2)
+            if fld.is_datetime():
+                write.node(fld.id, box_label(fld), type="Circle", indent=2)
+                write.color(fld.id, "pink")
+            elif fld.is_computed():
+                match fld.type:
+                    case "formula":
+                        write.node(fld.id, box_label(fld), type="Rhombus", indent=2)
+                        write.color(fld.id, "red")
+                    case "lookup" | "rollup" | "multipleLookupValues":
+                        write.node(fld.id, box_label(fld), type="Parallelogram", indent=2)
+                        write.color(fld.id, "orange")
+                    case _:
+                        write.node(fld.id, box_label(fld), type="Trapezoid", indent=2)
+                        write.color(fld.id, "yellow")
+            else:
+                match fld.type:
+                    case "multipleRecordLinks":
+                        write.node(fld.id, box_label(fld), "Stadium", indent=2)
+                        write.color(fld.id, "purple")
+                    case "multipleAttachments":
+                        write.node(fld.id, box_label(fld), "Cylinder", indent=2)
+                        write.color(fld.id, "blue")
+                    case "singleSelect" | "multipleSelects":
+                        write.node(fld.id, box_label(fld), "Subroutine", indent=2)
+                        write.color(fld.id, "green")
+                    case _:
+                        write.node(fld.id, box_label(fld), indent=2)
         write.end()
 
     # Pass 3: Render all links (outside subgraphs)
