@@ -181,25 +181,24 @@ def write_fields(base: Base, output_folder: Path) -> None:
 
                 with timer.timer("Markdown: write_field: formula"):
                     if field.type == "formula":
-                        with timer.timer("Markdown: write_field: formula: raw"):
-                            write.header("Formula (Raw)", level=5)
-                            write.code_block(field.formula(sanitized=True, format=True))
-                            write.line_empty()
-
                         with timer.timer("Markdown: write_field: formula: highlighted"):
-                            write.header("Formula (Highlighted)", level=5)
+                            write.header("Formula", level=5)
                             write.html(field.formula(sanitized=True, format=True, highlight=True))
                             write.line_empty()
 
-                        with timer.timer("Markdown: write_field: formula: flattened"):
+                        with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
                             write.header("Formula (Flattened)", level=5)
-                            write.line("*The flattened formula represents the formula with all nested functions expanded.*")
-                            write.code_block(field.formula(sanitized=True, flatten=True, format=True))
+                            write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
                             write.line_empty()
 
-                        with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
-                            write.header("Formula (Flattened + Highlighted)", level=5)
-                            write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
+                        with timer.timer("Markdown: write_field: formula: raw"):
+                            write.header("Formula (Raw)", level=5)
+                            write.code_block(field.formula(sanitized=True, condense=True))
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: diagram"):
+                            write.header("Formula Diagram", level=5)
+                            write.code_block(mermaid_formula(field), language="mermaid")
                             write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: field links"):
@@ -209,11 +208,6 @@ def write_fields(base: Base, output_folder: Path) -> None:
                                     write.list_item(
                                         f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)"
                                     )
-                            write.line_empty()
-
-                        with timer.timer("Markdown: write_field: formula: diagram"):
-                            write.header("Formula Diagram", level=5)
-                            write.code_block(mermaid_formula(field), language="mermaid")
                             write.line_empty()
 
                 with timer.timer("Markdown: write_field: options"):

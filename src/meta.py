@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
 from src import timer
+from src.formula_condenser import condense_formula
 from src.formula_formatter import format_formula
 from src.formula_highlighter import highlight_formula
 from src.helpers import (
@@ -338,7 +339,7 @@ class Field(Named):
     _python_type_cache: str | None = PrivateAttr(default=None)
     _typescript_type_cache: str | None = PrivateAttr(default=None)
     # Formula caching for performance
-    _formula_cache: dict[tuple[bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
     _flattened_formula_cache: str | None = PrivateAttr(default=None)
     _sanitized_formula_cache: str | None = PrivateAttr(default=None)
 
@@ -683,6 +684,7 @@ class Field(Named):
         *,
         sanitized: bool = False,
         flatten: bool = False,
+        condense: bool = False,
         format: bool = False,
         highlight: bool = False,
         _visited: set[str] | None = None,
@@ -692,19 +694,23 @@ class Field(Named):
         Args:
             sanitized: If True, replace field IDs with field names for readability.
             flatten: If True, expand all nested formula field references.
+            condense: If True, remove unnecessary whitespace (mutually exclusive with format).
             format: If True, apply formatting with indentation for readability.
             highlight: If True, apply syntax highlighting (returns HTML).
             _visited: Internal parameter to track visited fields and detect circular references.
 
         Returns:
             The formula string, optionally flattened, formatted, and/or highlighted.
+
+        Raises:
+            ValueError: If both condense and format are True.
         """
         if self.type != "formula" or not self.options or not self.options.formula:
             return ""
 
-        with timer.timer(f"Field.formula: sanitized={sanitized}, flatten={flatten}, format={format}, highlight={highlight}"):
+        with timer.timer(f"Field.formula: sanitized={sanitized}, flatten={flatten}, condense={condense}, format={format}, highlight={highlight}"):
             # Check cache for non-recursive calls (when _visited is None)
-            cache_key = (sanitized, flatten, format, highlight)
+            cache_key = (sanitized, flatten, condense, format, highlight)
             if _visited is None and cache_key in self._formula_cache:
                 return self._formula_cache[cache_key]
 
@@ -716,7 +722,13 @@ class Field(Named):
             if sanitized:
                 result = self._sanitize_formula(result)
 
-            if format:
+            # Mutual exclusivity check
+            if condense and format:
+                raise ValueError("condense and format are mutually exclusive")
+
+            if condense:
+                result = condense_formula(result)
+            elif format:
                 result = format_formula(result)
 
             if highlight:
