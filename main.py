@@ -99,13 +99,15 @@ def md(
     folder: Annotated[str, Argument(help="Path to the output folder")],
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
-    reset: Annotated[bool, Option(help="Delete the output folder before generating Markdown.")] = False,
+    reset: Annotated[bool, Option(help="Delete the output folder before generating Markdown (preserves SVG cache).")] = True,
+    reset_svg_cache: Annotated[bool, Option(help="Also reset the SVG cache when using --reset.")] = False,
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
     setup_benchmark(benchmark)
 
     if reset:
-        folder_path = reset_folder(Path(folder))
+        preserve = None if reset_svg_cache else [".svg_cache"]
+        folder_path = reset_folder(Path(folder), preserve=preserve)
     else:
         folder_path = create_folder(Path(folder))
 
@@ -178,6 +180,7 @@ def all(
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
+    reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache when regenerating markdown.")] = False,
 ):
     """Generate json, CSV, Python, and TypeScript code."""
     setup_benchmark(benchmark)
@@ -209,7 +212,8 @@ def all(
             generate_typescript(base=base, output_folder=ts_folder_path)
     if md_folder:
         with timer.timer("Markdown generation"):
-            md_folder_path = reset_folder(md_folder)
+            preserve = None if reset_svg_cache else [".svg_cache"]
+            md_folder_path = reset_folder(md_folder, preserve=preserve)
             generate_markdown(base=base, output_folder=md_folder_path, svg_enabled=svg)
     check_invalid(base)
     print("[green]Generation complete.[/]")

@@ -123,12 +123,43 @@ def copy_static_files(output_folder: Path, type: str):
         shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
-def reset_folder(folder: Path | str) -> Path:
-    """Remove and recreate a folder if it exists."""
+def reset_folder(folder: Path | str, preserve: list[str] | None = None) -> Path:
+    """Remove and recreate a folder if it exists.
+
+    Args:
+        folder: The folder to reset.
+        preserve: List of subfolder names to preserve (e.g., [".svg_cache"]).
+    """
     folder = Path(folder)
     if folder.exists():
-        shutil.rmtree(folder)
-    folder.mkdir(parents=True, exist_ok=True)
+        if preserve:
+            # Move preserved folders to temp location
+            import tempfile
+
+            temp_dir = Path(tempfile.mkdtemp())
+            preserved_paths: list[tuple[Path, Path]] = []
+            for name in preserve:
+                src = folder / name
+                if src.exists():
+                    dst = temp_dir / name
+                    shutil.move(str(src), str(dst))
+                    preserved_paths.append((dst, src))
+
+            # Remove the folder
+            shutil.rmtree(folder)
+
+            # Recreate and restore preserved folders
+            folder.mkdir(parents=True, exist_ok=True)
+            for dst, src in preserved_paths:
+                shutil.move(str(dst), str(src))
+
+            # Clean up temp dir
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        else:
+            shutil.rmtree(folder)
+            folder.mkdir(parents=True, exist_ok=True)
+    else:
+        folder.mkdir(parents=True, exist_ok=True)
     return folder
 
 

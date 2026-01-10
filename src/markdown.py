@@ -160,11 +160,10 @@ def write_fields(
     svg_cache_dir: Path | None = None,
 ) -> None:
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn()) as progress:
-        progress_task = progress.add_task("Writing field documentation...", total=sum(len(t.fields) for t in base.tables))
+        progress_task = progress.add_task("Generating field documentation...", total=sum(len(t.fields) for t in base.tables))
         for table in base.tables:
             folder: Path = output_folder / Paths.DOCS / "fields" / table.name_snake()
             for field in table.fields:
-                progress.update(progress_task, description="Writing field documentation...")
                 with WriteToMarkdownFile(path=folder / f"{field.name_snake()}.md") as write:
                     with timer.timer("Markdown: write_field: headers"):
                         write.header(f"{field.name_markdown()}", level=1)
@@ -434,7 +433,7 @@ def mermaid_formula(field: Field) -> str:
         write.subgraph(table_id, table.name_markdown())
         for fld in fields:
             if fld.is_datetime():
-                write.node(fld.id, box_label(fld), type="Circle", indent=2)
+                write.node(fld.id, box_label(fld), type="Hexagon", indent=2)
                 write.color(fld.id, "pink")
             elif fld.is_computed():
                 match fld.type:
