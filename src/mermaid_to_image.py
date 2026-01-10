@@ -1,13 +1,25 @@
 """Mermaid to SVG conversion using mermaid-cli (local Playwright/Chromium)."""
 
 import asyncio
+import base64
 import hashlib
+import json
+import zlib
 from pathlib import Path
 
 from mermaid_cli import render_mermaid
 from rich import print
 
 from . import timer
+
+
+def mermaid_live_url(mermaid_code: str) -> str:
+    """Generate a Mermaid Live Editor URL for the given mermaid code."""
+    state = {"code": mermaid_code, "mermaid": {"theme": "default"}}
+    json_bytes = json.dumps(state).encode("utf-8")
+    compressed = zlib.compress(json_bytes, level=9)
+    encoded = base64.urlsafe_b64encode(compressed).decode("ascii")
+    return f"https://mermaid.live/edit#pako:{encoded}"
 
 
 def _compute_content_hash(content: str, length: int = 12) -> str:

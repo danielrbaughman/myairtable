@@ -9,7 +9,7 @@ from src.mermaid import mermaid_base, mermaid_formula
 
 from . import timer
 from .helpers import Paths, sanitize_for_markdown
-from .mermaid_to_image import get_cached_svg, mermaid_to_svg
+from .mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
 from .meta import Base
 from .write_to_file import WriteToFile
 
@@ -222,7 +222,7 @@ def write_fields(
                         with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
                             if field.formula(condense=True) != field.formula(flatten=True, condense=True):
                                 write.header("Formula (Flattened)", level=5)
-                                write.line("*Formula with nested formulas expanded*")
+                                write.line("*Nested formulas expanded*")
                                 write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
                                 write.line_empty()
 
@@ -242,6 +242,7 @@ def write_fields(
                                     svg_path.write_text(cached_svg)
                                 else:
                                     svg_tasks.append((field.id, mermaid_code))
+                            write.line(f"[Open in Mermaid Live]({mermaid_live_url(mermaid_code)})")
                             write.code_block(mermaid_code, language="mermaid")
                             write.line_empty()
 
