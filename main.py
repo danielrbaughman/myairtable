@@ -99,17 +99,13 @@ def md(
     folder: Annotated[str, Argument(help="Path to the output folder")],
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
-    reset: Annotated[bool, Option(help="Delete the output folder before generating Markdown (preserves SVG cache).")] = True,
-    reset_svg_cache: Annotated[bool, Option(help="Also reset the SVG cache when using --reset.")] = False,
+    reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache")] = False,
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
     setup_benchmark(benchmark)
 
-    if reset:
-        preserve = None if reset_svg_cache else [".svg_cache"]
-        folder_path = reset_folder(Path(folder), preserve=preserve)
-    else:
-        folder_path = create_folder(Path(folder))
+    preserve = None if reset_svg_cache else [".svg_cache"]
+    folder_path = reset_folder(Path(folder), preserve=preserve)
 
     base = Base.new()
 
