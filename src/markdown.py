@@ -4,6 +4,7 @@ from typing import Literal
 
 from rich import print
 
+from . import timer
 from .helpers import Paths, sanitize_for_markdown
 from .meta import Base, Field, Table
 from .write_to_file import WriteToFile
@@ -84,9 +85,14 @@ def generate_markdown(base: Base, output_folder: Path) -> None:
         fields_folder = output_folder / Paths.DOCS / "fields" / table.name_snake()
         fields_folder.mkdir(parents=True, exist_ok=True)
 
-    write_tables(base, output_folder)
-    write_fields(base, output_folder)
-    write_index(base, output_folder)
+    with timer.timer("Markdown: write_tables"):
+        write_tables(base, output_folder)
+
+    with timer.timer("Markdown: write_fields"):
+        write_fields(base, output_folder)
+
+    with timer.timer("Markdown: write_index"):
+        write_index(base, output_folder)
 
     print("[green] - Markdown code generation complete.[/]")
     print("")

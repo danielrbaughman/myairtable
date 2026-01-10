@@ -5,6 +5,7 @@ import pyperclip
 from rich import print
 from typer import Argument, Option, Typer
 
+from src import timer
 from src.csv import generate_csv
 from src.helpers import create_folder, reset_folder
 from src.markdown import generate_markdown
@@ -13,6 +14,13 @@ from src.python import generate_python
 from src.typescript import generate_typescript
 
 app = Typer()
+
+
+def setup_benchmark(benchmark: bool):
+    """Enable timing if benchmark flag is set."""
+    if benchmark:
+        timer.enable()
+        timer.reset()
 
 
 @app.command()
@@ -45,20 +53,30 @@ def py(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
+    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate types and models in Python"""
+    setup_benchmark(benchmark)
+
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
+
     base = Base.new(csv_folder=csv_folder_path)
+
     if fresh:
-        generate_csv(base=base, folder=csv_folder_path, fresh=True)
-    generate_python(
-        base=base,
-        output_folder=folder_path,
-        formulas=formulas,
-        wrappers=wrappers,
-        package_prefix=package_prefix,
-    )
+        with timer.timer("CSV generation"):
+            generate_csv(base=base, folder=csv_folder_path, fresh=True)
+
+    with timer.timer("Python generation"):
+        generate_python(
+            base=base,
+            output_folder=folder_path,
+            formulas=formulas,
+            wrappers=wrappers,
+            package_prefix=package_prefix,
+        )
+
+    timer.summary()
 
 
 @app.command()
@@ -77,11 +95,21 @@ def ts(
 
 
 @app.command()
-def md(folder: Annotated[str, Argument(help="Path to the output folder")]):
+def md(
+    folder: Annotated[str, Argument(help="Path to the output folder")],
+    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
+):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
+    setup_benchmark(benchmark)
+
     folder_path = reset_folder(Path(folder))
+
     base = Base.new()
-    generate_markdown(base=base, output_folder=folder_path)
+
+    with timer.timer("Markdown generation"):
+        generate_markdown(base=base, output_folder=folder_path)
+
+    timer.summary()
 
 
 @app.command()
@@ -143,33 +171,44 @@ def all(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
+    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate json, CSV, Python, and TypeScript code."""
+    setup_benchmark(benchmark)
+
     csv_folder_path = create_folder(csv_folder) if csv_folder else None
+
     base = Base.new(csv_folder=csv_folder_path)
 
     if meta_folder:
-        meta_folder_path = create_folder(meta_folder)
-        generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
+        with timer.timer("Meta generation"):
+            meta_folder_path = create_folder(meta_folder)
+            generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
     if csv_folder_path:
-        generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
+        with timer.timer("CSV generation"):
+            generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
     if py_folder:
-        py_folder_path = reset_folder(py_folder)
-        generate_python(
-            base=base,
-            output_folder=py_folder_path,
-            formulas=formulas,
-            wrappers=wrappers,
-            package_prefix=py_package_prefix,
-        )
+        with timer.timer("Python generation"):
+            py_folder_path = reset_folder(py_folder)
+            generate_python(
+                base=base,
+                output_folder=py_folder_path,
+                formulas=formulas,
+                wrappers=wrappers,
+                package_prefix=py_package_prefix,
+            )
     if ts_folder:
-        ts_folder_path = reset_folder(ts_folder)
-        generate_typescript(base=base, output_folder=ts_folder_path)
+        with timer.timer("TypeScript generation"):
+            ts_folder_path = reset_folder(ts_folder)
+            generate_typescript(base=base, output_folder=ts_folder_path)
     if md_folder:
-        md_folder_path = reset_folder(md_folder)
-        generate_markdown(base=base, output_folder=md_folder_path)
+        with timer.timer("Markdown generation"):
+            md_folder_path = reset_folder(md_folder)
+            generate_markdown(base=base, output_folder=md_folder_path)
     check_invalid(base)
     print("[green]Generation complete.[/]")
+
+    timer.summary()
     print("")
 
 

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from . import timer
 from .helpers import (
     Paths,
     copy_static_files,
@@ -98,20 +99,33 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
 
     copy_static_files(output_folder, "python")
     print("[dim] - Python static files copied.[/]")
-    write_types(base, output_folder)
+
+    with timer.timer("Python: write_types"):
+        write_types(base, output_folder)
     print("[dim] - Python types generated.[/]")
-    write_dicts(base, output_folder)
+
+    with timer.timer("Python: write_dicts"):
+        write_dicts(base, output_folder)
     print("[dim] - Python dicts generated.[/]")
-    write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
+
+    with timer.timer("Python: write_models"):
+        write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
     print("[dim] - Python models generated.[/]")
+
     if formulas:
-        write_formula_helpers(base, output_folder)
+        with timer.timer("Python: write_formula_helpers"):
+            write_formula_helpers(base, output_folder)
         print("[dim] - Python formula helpers generated.[/]")
+
     if wrappers:
-        write_tables(base, output_folder)
+        with timer.timer("Python: write_tables"):
+            write_tables(base, output_folder)
         print("[dim] - Python tables generated.[/]")
-        write_main_class(base, output_folder)
+
+        with timer.timer("Python: write_main_class"):
+            write_main_class(base, output_folder)
         print("[dim] - Python main class generated.[/]")
+
     write_init(output_folder, formulas, wrappers)
     print("[green] - Python code generation complete.[/]")
     print("")
@@ -736,48 +750,49 @@ def python_type(field: Field) -> str:
     if field._python_type_cache is not None:
         return field._python_type_cache
 
-    airtable_type: FieldType = field.type
+    with timer.timer("python_type"):
+        airtable_type: FieldType = field.type
 
-    # With calculated fields, we want to know the type of the result
-    if field.is_calculated():
-        airtable_type = field.result_type()
+        # With calculated fields, we want to know the type of the result
+        if field.is_calculated():
+            airtable_type = field.result_type()
 
-    # Handle simple type mappings via lookup
-    if airtable_type in SIMPLE_PYTHON_TYPES:
-        py_type = SIMPLE_PYTHON_TYPES[airtable_type]
+        # Handle simple type mappings via lookup
+        if airtable_type in SIMPLE_PYTHON_TYPES:
+            py_type = SIMPLE_PYTHON_TYPES[airtable_type]
 
-    # Handle complex types with special logic
-    elif airtable_type == "number":
-        if field.options and field.options.precision is not None and field.options.precision == 0:
-            py_type = "int"
-        else:
-            py_type = "float"
-    elif airtable_type == "singleSelect":
-        referenced_field = field.field_in_linked_table()
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            py_type = field.options_name()
-        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-            py_type = referenced_field.options_name()
+        # Handle complex types with special logic
+        elif airtable_type == "number":
+            if field.options and field.options.precision is not None and field.options.precision == 0:
+                py_type = "int"
+            else:
+                py_type = "float"
+        elif airtable_type == "singleSelect":
+            referenced_field = field.field_in_linked_table()
+            select_fields_ids = field.base.select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = field.options_name()
+            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+                py_type = referenced_field.options_name()
+            else:
+                py_type = "Any"
+        elif airtable_type == "multipleSelects":
+            select_fields_ids = field.base.select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = f"list[{field.options_name()}]"
+            else:
+                py_type = "Any"
         else:
             py_type = "Any"
-    elif airtable_type == "multipleSelects":
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            py_type = f"list[{field.options_name()}]"
-        else:
-            py_type = "Any"
-    else:
-        py_type = "Any"
 
-    # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
-    # Although the type prediction is basically right, I haven't figured out how to predict if
-    # it's a list or not, and sometimes the result is a list with a single null value.
-    if "list" not in py_type:
-        if field.involves_lookup() or field.involves_rollup():
-            py_type = f"list[{py_type} | None] | {py_type}"
+        # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
+        # Although the type prediction is basically right, I haven't figured out how to predict if
+        # it's a list or not, and sometimes the result is a list with a single null value.
+        if "list" not in py_type:
+            if field.involves_lookup() or field.involves_rollup():
+                py_type = f"list[{py_type} | None] | {py_type}"
 
-    field._python_type_cache = py_type
+        field._python_type_cache = py_type
     return py_type
 
 
