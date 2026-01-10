@@ -35,6 +35,34 @@ async def _render_svg(mermaid_code: str) -> bytes | None:
         return None
 
 
+def get_cached_svg(
+    mermaid_code: str,
+    cache_dir: Path,
+    field_id: str,
+) -> str | None:
+    """
+    Check if a cached SVG exists for the given mermaid code.
+
+    Args:
+        mermaid_code: The mermaid diagram code
+        cache_dir: Directory to check for cached images
+        field_id: Field ID for cache filename prefix
+
+    Returns SVG content as string if cached, or None if not cached.
+    """
+    content_hash = _compute_content_hash(mermaid_code)
+    cache_file = cache_dir / f"{field_id}_{content_hash}.svg"
+
+    if cache_file.exists():
+        cached_content = cache_file.read_text()
+        if cached_content.strip().startswith("<svg"):
+            return cached_content
+        # Corrupted cache file, remove it
+        cache_file.unlink(missing_ok=True)
+
+    return None
+
+
 def mermaid_to_svg(
     mermaid_code: str,
     cache_dir: Path,
@@ -54,18 +82,13 @@ def mermaid_to_svg(
 
     Returns SVG content as string, or None on failure.
     """
-    # Compute hash and determine cache filename
+    # Check cache first
+    if cached := get_cached_svg(mermaid_code, cache_dir, field_id):
+        return cached
+
+    # Compute hash for cache filename
     content_hash = _compute_content_hash(mermaid_code)
     cache_file = cache_dir / f"{field_id}_{content_hash}.svg"
-
-    # Return cached if exists with matching content hash
-    if cache_file.exists():
-        cached_content = cache_file.read_text()
-        # Basic validation: ensure it's SVG
-        if cached_content.strip().startswith("<svg"):
-            return cached_content
-        # Corrupted cache file, remove and regenerate
-        cache_file.unlink(missing_ok=True)
 
     with timer.timer("mermaid-cli render (SVG)"):
         svg_data = asyncio.run(_render_svg(mermaid_code))

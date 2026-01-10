@@ -9,7 +9,7 @@ from src.mermaid import mermaid_base, mermaid_formula
 
 from . import timer
 from .helpers import Paths, sanitize_for_markdown
-from .mermaid_to_image import mermaid_to_svg
+from .mermaid_to_image import get_cached_svg, mermaid_to_svg
 from .meta import Base
 from .write_to_file import WriteToFile
 
@@ -107,9 +107,15 @@ def generate_markdown(
         write_tables(base, output_folder)
         print("[dim] - Markdown tables generated.[/]")
 
+    svg_tasks: list[tuple[str, str]] = []
     with timer.timer("Markdown: write_fields"):
-        write_fields(base, output_folder, svg_enabled, diagrams_dir, svg_cache_dir)
-        print(f"[dim] - Markdown fields {'with SVGs' if svg_enabled else ''} generated.[/]")
+        svg_tasks = write_fields(base, output_folder, svg_enabled, diagrams_dir, svg_cache_dir)
+        print("[dim] - Markdown fields generated.[/]")
+
+    with timer.timer("Markdown: write_svgs"):
+        write_svgs(svg_tasks=svg_tasks, svg_enabled=svg_enabled, diagrams_dir=diagrams_dir, svg_cache_dir=svg_cache_dir)
+        if svg_enabled:
+            print("[dim] - Function SVGs generated.[/]")
 
     with timer.timer("Markdown: write_index"):
         write_index(base, output_folder)
@@ -162,11 +168,9 @@ def write_fields(
     svg_enabled: bool = True,
     diagrams_dir: Path | None = None,
     svg_cache_dir: Path | None = None,
-) -> None:
-    # Collect SVG generation tasks: (field_id, mermaid_code)
+) -> list[tuple[str, str]]:
     svg_tasks: list[tuple[str, str]] = []
 
-    # Phase 1: Generate field documentation
     for table in base.tables:
         folder: Path = output_folder / Paths.DOCS / "fields" / table.name_snake()
         for field in table.fields:
@@ -232,7 +236,12 @@ def write_fields(
                             mermaid_code = mermaid_formula(field)
                             if svg_enabled and diagrams_dir and svg_cache_dir:
                                 write.line(f"[SVG](../../diagrams/{field.id}.svg)")
-                                svg_tasks.append((field.id, mermaid_code))
+                                # Check cache - if hit, write directly; if miss, queue for generation
+                                if cached_svg := get_cached_svg(mermaid_code, svg_cache_dir, field.id):
+                                    svg_path = diagrams_dir / f"{field.id}.svg"
+                                    svg_path.write_text(cached_svg)
+                                else:
+                                    svg_tasks.append((field.id, mermaid_code))
                             write.code_block(mermaid_code, language="mermaid")
                             write.line_empty()
 
@@ -259,7 +268,15 @@ def write_fields(
                         for ref_field in field.referenced_fields():
                             write.list_item(f"[{ref_field.name_markdown()}](../../fields/{table.name_snake()}/{ref_field.name_snake()}.md)")
 
-    # Phase 2: Generate SVGs with progress bar
+    return svg_tasks
+
+
+def write_svgs(
+    svg_tasks: list[tuple[str, str]],
+    svg_enabled: bool = True,
+    diagrams_dir: Path | None = None,
+    svg_cache_dir: Path | None = None,
+) -> None:
     if svg_enabled and diagrams_dir and svg_cache_dir and svg_tasks:
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), transient=True) as progress:
             progress_task = progress.add_task("Generating formula SVGs...", total=len(svg_tasks))
