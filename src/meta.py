@@ -904,18 +904,17 @@ class Base(BaseModel):
     _select_fields_cache: list["Field"] | None = None
     _select_field_ids_cache: list[str] | None = None
 
-    @classmethod
-    def new(cls, csv_folder: Path | None = None) -> "Base":
+    def __init__(self, csv_folder: Path | None = None):
         meta = get_base_meta_data()
-        base: Base = cls(
+        super().__init__(
             id=get_base_id(),
             tables=[],
         )
-        base._original_metadata = meta
-        base._csv_cache = CsvCache(csv_folder) if csv_folder else None
+        self._original_metadata = meta
+        self._csv_cache = CsvCache(csv_folder) if csv_folder else None
         # Initialize fresh caches for this base instance
-        base._involves_lookup_cache = {}
-        base._involves_rollup_cache = {}
+        self._involves_lookup_cache = {}
+        self._involves_rollup_cache = {}
 
         with timer.timer("Base: Build Table/Field/View models"):
             for table_meta in meta["tables"]:
@@ -925,7 +924,7 @@ class Base(BaseModel):
                     primary_field_id=table_meta["primaryFieldId"],
                     fields=[],
                     views=[],
-                    base=base,
+                    base=self,
                 )
                 for field_meta in table_meta["fields"]:
                     options: dict[str, Any] = field_meta.get("options", {})
@@ -935,7 +934,7 @@ class Base(BaseModel):
                         type=field_meta["type"],
                         description=field_meta.get("description"),
                         table=table,
-                        base=base,
+                        base=self,
                         options=Options(
                             field_id=field_meta["id"],
                             formula=options.get("formula"),
@@ -966,17 +965,15 @@ class Base(BaseModel):
                         table_id=table_meta["id"],
                     )
                     table.views.append(view)
-                base.tables.append(table)
+                self.tables.append(table)
 
         with timer.timer("Base: Build field/table indexes"):
-            base._field_index = {}
-            base._table_index = {}
-            for table in base.tables:
-                base._table_index[table.id] = table
+            self._field_index = {}
+            self._table_index = {}
+            for table in self.tables:
+                self._table_index[table.id] = table
                 for field in table.fields:
-                    base._field_index[field.id] = field
-
-        return base
+                    self._field_index[field.id] = field
 
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata

@@ -41,7 +41,7 @@ def csv(
 ):
     """Export Airtable metadata to CSV format."""
     folder_path = reset_folder(Path(folder))
-    base = Base.new(csv_folder=folder_path)
+    base = Base(csv_folder=folder_path)
     generate_csv(base=base, folder=folder_path, fresh=fresh)
 
 
@@ -61,7 +61,7 @@ def py(
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
 
-    base = Base.new(csv_folder=csv_folder_path)
+    base = Base(csv_folder=csv_folder_path)
 
     if fresh:
         with timer.timer("CSV generation"):
@@ -88,7 +88,7 @@ def ts(
     """Generate types and models in TypeScript"""
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
-    base = Base.new(csv_folder=csv_folder_path)
+    base = Base(csv_folder=csv_folder_path)
     if fresh:
         generate_csv(base=base, folder=csv_folder_path, fresh=True)
     generate_typescript(base=base, output_folder=folder_path)
@@ -107,7 +107,7 @@ def md(
     preserve = None if reset_svg_cache else [".svg_cache"]
     folder_path = reset_folder(Path(folder), preserve=preserve)
 
-    base = Base.new()
+    base = Base()
 
     with timer.timer("Markdown generation"):
         generate_markdown(base=base, output_folder=folder_path, svg_enabled=svg)
@@ -118,7 +118,7 @@ def md(
 @app.command()
 def invalid():
     """Check for invalid fields"""
-    base = Base.new()
+    base = Base()
     check_invalid(base)
 
 
@@ -146,7 +146,7 @@ def formula(
     highlight: Annotated[bool, Option(help="Highlight the formula syntax (outputs as HTML).")] = False,
 ):
     """Copy the formula of a formula field to the clipboard."""
-    base = Base.new()
+    base = Base()
     for table in base.tables:
         for field in table.fields:
             if field.id == field_id:
@@ -183,7 +183,7 @@ def all(
 
     csv_folder_path = create_folder(csv_folder) if csv_folder else None
 
-    base = Base.new(csv_folder=csv_folder_path)
+    base = Base(csv_folder=csv_folder_path)
 
     if meta_folder:
         with timer.timer("Meta generation"):
