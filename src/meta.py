@@ -617,30 +617,31 @@ class Field(Named):
         if self.type != "formula" or not self.options or not self.options.formula:
             return ""
 
-        # Check cache for non-recursive calls (when _visited is None)
-        cache_key = (sanitized, flatten, format, highlight)
-        if _visited is None and cache_key in self._formula_cache:
-            return self._formula_cache[cache_key]
+        with timer.timer(f"Field.formula: sanitized={sanitized}, flatten={flatten}, format={format}, highlight={highlight}"):
+            # Check cache for non-recursive calls (when _visited is None)
+            cache_key = (sanitized, flatten, format, highlight)
+            if _visited is None and cache_key in self._formula_cache:
+                return self._formula_cache[cache_key]
 
-        result = self.options.formula
+            result = self.options.formula
 
-        if flatten:
-            result = self._flatten_formula(result, _visited)
+            if flatten:
+                result = self._flatten_formula(result, _visited)
 
-        if sanitized:
-            result = self._sanitize_formula(result)
+            if sanitized:
+                result = self._sanitize_formula(result)
 
-        if format:
-            result = format_formula(result)
+            if format:
+                result = format_formula(result)
 
-        if highlight:
-            result = highlight_formula(result)
+            if highlight:
+                result = highlight_formula(result)
 
-        # Cache result for non-recursive calls
-        if _visited is None:
-            self._formula_cache[cache_key] = result
+            # Cache result for non-recursive calls
+            if _visited is None:
+                self._formula_cache[cache_key] = result
 
-        return result
+            return result
 
     def _flatten_formula(self, formula: str, _visited: set[str] | None = None) -> str:
         """Recursively flatten formula by expanding nested formula field references.
@@ -675,8 +676,13 @@ class Field(Named):
             replacements: dict[str, str] = {}
             for field_id in referenced_field_ids:
                 field = self.base.field_by_id(field_id)  # O(1) lookup via base index
-                if field and field.type == "formula":
-                    nested_formula = field.formula(flatten=True, _visited=_visited)
+                if field and field.type == "formula" and field.options and field.options.formula:
+                    # Use cached flattened formula if available, otherwise compute it
+                    # This avoids the cache bypass in field.formula() when _visited is passed
+                    if field._flattened_formula_cache is not None:
+                        nested_formula = field._flattened_formula_cache
+                    else:
+                        nested_formula = field._flatten_formula(field.options.formula, _visited)
                     if nested_formula:
                         replacements[field_id] = f"({nested_formula})"
 

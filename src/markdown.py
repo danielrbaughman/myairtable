@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -76,6 +77,7 @@ class WriteToMarkdownFile(WriteToFile):
 
 # region MAIN
 def generate_markdown(base: Base, output_folder: Path) -> None:
+    start = time.time()
     print("Generating Markdown code")
 
     # Pre-create all folders once before generation
@@ -96,6 +98,8 @@ def generate_markdown(base: Base, output_folder: Path) -> None:
 
     print("[green] - Markdown code generation complete.[/]")
     print("")
+    elapsed = time.time() - start
+    print(f"[dim]  » Elapsed time: {elapsed:.2f}s[/]")
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
@@ -142,83 +146,98 @@ def write_fields(base: Base, output_folder: Path) -> None:
         folder: Path = output_folder / Paths.DOCS / "fields" / table.name_snake()
         for field in table.fields:
             with WriteToMarkdownFile(path=folder / f"{field.name_snake()}.md") as write:
-                write.header(f"{field.name_markdown()}", level=1)
+                with timer.timer("Markdown: write_field: headers"):
+                    write.header(f"{field.name_markdown()}", level=1)
 
-                write.list_item(f"**Airtable ID:** `{field.id}`")
-                write.list_item(f"**Table:** [{table.name_markdown()}](../../tables/{table.name_snake()}.md)")
-                write.list_item(f"**Type:** #{field.type}")
+                    write.list_item(f"**Airtable ID:** `{field.id}`")
+                    write.list_item(f"**Table:** [{table.name_markdown()}](../../tables/{table.name_snake()}.md)")
+                    write.list_item(f"**Type:** #{field.type}")
 
-                if field.is_link_or_linked_value() and field.options:
-                    if linked_table := field.linked_table():
-                        write.list_item(f"**Linked Table:** [{linked_table.name_markdown()}](../../tables/{linked_table.name_snake()}.md)")
-                    if field.is_lookup_rollup() and field.options.record_link_field_id:
-                        lookup_id = field.options.record_link_field_id
-                        lookup_field = table.field_by_id(lookup_id)
-                        if lookup_field:
+                with timer.timer("Markdown: write_field: links"):
+                    if field.is_link_or_linked_value() and field.options:
+                        if linked_table := field.linked_table():
+                            write.list_item(f"**Linked Table:** [{linked_table.name_markdown()}](../../tables/{linked_table.name_snake()}.md)")
+                        if field.is_lookup_rollup() and field.options.record_link_field_id:
+                            lookup_id = field.options.record_link_field_id
+                            lookup_field = table.field_by_id(lookup_id)
+                            if lookup_field:
+                                write.list_item(
+                                    f"**Linked via:** [{lookup_field.name_markdown()}](../../fields/{table.name_snake()}/{lookup_field.name_snake()}.md)"
+                                )
+
+                with timer.timer("Markdown: write_field: count"):
+                    if field.type == "count":
+                        if counted_field := field.counted_field():
                             write.list_item(
-                                f"**Linked via:** [{lookup_field.name_markdown()}](../../fields/{table.name_snake()}/{lookup_field.name_snake()}.md)"
+                                f"**Counts Records in:** [{counted_field.name_markdown()}](../../fields/{table.name_snake()}/{counted_field.name_snake()}.md)"
                             )
 
-                if field.type == "count":
-                    if counted_field := field.counted_field():
-                        write.list_item(
-                            f"**Counts Records in:** [{counted_field.name_markdown()}](../../fields/{table.name_snake()}/{counted_field.name_snake()}.md)"
-                        )
-
-                if field.description:
-                    write.line_empty()
-                    write.header("Description", level=5)
-                    write.quote(sanitize_for_markdown(field.description))
-                    write.line_empty()
-
-                if not field.is_valid():
-                    write.line_empty()
-                    write.warning("Field is #invalid")
-
-                if field.type == "formula":
-                    write.header("Formula (Raw)", level=5)
-                    write.code_block(field.formula(sanitized=True, format=True))
-                    write.line_empty()
-
-                    write.header("Formula (Highlighted)", level=5)
-                    write.html(field.formula(sanitized=True, format=True, highlight=True))
-                    write.line_empty()
-
-                    write.header("Formula (Flattened)", level=5)
-                    write.line("*The flattened formula represents the formula with all nested functions expanded.*")
-                    write.code_block(field.formula(sanitized=True, flatten=True, format=True))
-                    write.line_empty()
-
-                    write.header("Formula (Flattened + Highlighted)", level=5)
-                    write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
-                    write.line_empty()
-
-                    write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
-                    for f in field.referenced_fields():
-                        if linked_field := table.field_by_id(f.id):
-                            write.list_item(f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)")
-                    write.line_empty()
-
-                    write.header("Formula Diagram", level=5)
-                    write.code_block(mermaid_formula(field), language="mermaid")
-                    write.line_empty()
-                else:
-                    if field.referenced_fields():
-                        write.header("Linked Fields", level=5)
-                        write.code_block(mermaid_field(field), language="mermaid")
+                with timer.timer("Markdown: write_field: description"):
+                    if field.description:
+                        write.line_empty()
+                        write.header("Description", level=5)
+                        write.quote(sanitize_for_markdown(field.description))
                         write.line_empty()
 
-                if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
-                    write.header("Options", level=5)
-                    for option in field.options.choices:
-                        write.list_item(f"{option.name_markdown()}")
-                    write.line_empty()
+                    if not field.is_valid():
+                        write.line_empty()
+                        write.warning("Field is #invalid")
 
-                if field.type == "lastModifiedTime":
-                    ref_fields = field.referenced_fields()
-                    write.header(f"**Monitors {len(ref_fields)} Field(s)**", level=5)
-                    for ref_field in field.referenced_fields():
-                        write.list_item(f"[{ref_field.name_markdown()}](../../fields/{table.name_snake()}/{ref_field.name_snake()}.md)")
+                with timer.timer("Markdown: write_field: formula"):
+                    if field.type == "formula":
+                        with timer.timer("Markdown: write_field: formula: raw"):
+                            write.header("Formula (Raw)", level=5)
+                            write.code_block(field.formula(sanitized=True, format=True))
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: highlighted"):
+                            write.header("Formula (Highlighted)", level=5)
+                            write.html(field.formula(sanitized=True, format=True, highlight=True))
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: flattened"):
+                            write.header("Formula (Flattened)", level=5)
+                            write.line("*The flattened formula represents the formula with all nested functions expanded.*")
+                            write.code_block(field.formula(sanitized=True, flatten=True, format=True))
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
+                            write.header("Formula (Flattened + Highlighted)", level=5)
+                            write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: field links"):
+                            write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
+                            for f in field.referenced_fields():
+                                if linked_field := table.field_by_id(f.id):
+                                    write.list_item(
+                                        f"[{linked_field.name_markdown()}](../../fields/{table.name_snake()}/{linked_field.name_snake()}.md)"
+                                    )
+                            write.line_empty()
+
+                        with timer.timer("Markdown: write_field: formula: diagram"):
+                            write.header("Formula Diagram", level=5)
+                            write.code_block(mermaid_formula(field), language="mermaid")
+                            write.line_empty()
+                    else:
+                        if field.referenced_fields():
+                            write.header("Linked Fields", level=5)
+                            write.code_block(mermaid_field(field), language="mermaid")
+                            write.line_empty()
+
+                with timer.timer("Markdown: write_field: options"):
+                    if (field.type == "singleSelect" or field.type == "multipleSelects") and field.options and field.options.choices:
+                        write.header("Options", level=5)
+                        for option in field.options.choices:
+                            write.list_item(f"{option.name_markdown()}")
+                        write.line_empty()
+
+                with timer.timer("Markdown: write_field: monitors"):
+                    if field.type == "lastModifiedTime":
+                        ref_fields = field.referenced_fields()
+                        write.header(f"**Monitors {len(ref_fields)} Field(s)**", level=5)
+                        for ref_field in field.referenced_fields():
+                            write.list_item(f"[{ref_field.name_markdown()}](../../fields/{table.name_snake()}/{ref_field.name_snake()}.md)")
 
 
 def write_index(base: Base, output_folder: Path) -> None:
