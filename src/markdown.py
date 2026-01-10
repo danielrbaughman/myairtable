@@ -401,7 +401,13 @@ def mermaid_field(field: Field) -> str:
 
 def mermaid_formula(field: Field) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
-    write.flowchart()
+    write.line("---")
+    write.line("config:")
+    write.line("  flowchart:")
+    write.line("    nodeSpacing: 20")
+    write.line("    rankSpacing: 30")
+    write.line("---")
+    write.flowchart("LR")
     write.colors()
 
     visited_fields: set[str] = set()
