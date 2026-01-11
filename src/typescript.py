@@ -83,7 +83,7 @@ class WriteToTypeScriptFile(WriteToFile):
 
 
 # region MAIN
-def generate_typescript(base: Base, output_folder: Path) -> None:
+def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True) -> None:
     print("Generating TypeScript code")
     for table in base.tables:
         table.detect_duplicate_property_names()
@@ -95,15 +95,17 @@ def generate_typescript(base: Base, output_folder: Path) -> None:
     print("[dim] - TypeScript static files copied.[/]")
     write_types(base, output_folder)
     print("[dim] - TypeScript types generated.[/]")
-    write_models(base, output_folder)
-    print("[dim] - TypeScript models generated.[/]")
-    write_formula_helpers(base, output_folder)
-    print("[dim] - TypeScript formula helpers generated.[/]")
-    write_tables(base, output_folder)
-    print("[dim] - TypeScript tables generated.[/]")
-    write_main_class(base, output_folder)
-    print("[dim] - TypeScript main class generated.[/]")
-    write_index(output_folder)
+    if formulas:
+        write_formula_helpers(base, output_folder)
+        print("[dim] - TypeScript formula helpers generated.[/]")
+    if wrappers:
+        write_models(base, output_folder, formulas=formulas)
+        print("[dim] - TypeScript models generated.[/]")
+        write_tables(base, output_folder)
+        print("[dim] - TypeScript tables generated.[/]")
+        write_main_class(base, output_folder)
+        print("[dim] - TypeScript main class generated.[/]")
+    write_index(output_folder, formulas=formulas, wrappers=wrappers)
     print("[green] - TypeScript code generation complete.[/]")
     print("")
 
@@ -292,7 +294,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
 
 # region MODELS
-def write_models(base: Base, output_folder: Path) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     # Write individual table model files
@@ -317,7 +319,8 @@ def write_models(base: Base, output_folder: Path) -> None:
                 if len(options) > 0:
                     write.line_indented(f"{field.options_name()},")
             write.line(f'}} from "../types/{table_name_camel}";')
-            write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
+            if formulas:
+                write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
 
             write.line("import {")
             for _table in base.tables:
@@ -337,7 +340,8 @@ def write_models(base: Base, output_folder: Path) -> None:
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet> {{")
-            write.line_indented(f"public static f = {table_name}Formulas")
+            if formulas:
+                write.line_indented(f"public static f = {table_name}Formulas")
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
@@ -591,19 +595,23 @@ def write_main_class(base: Base, output_folder: Path) -> None:
 
 
 # region INDEX
-def write_index(output_folder: Path) -> None:
+def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = True) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "index.ts") as write:
-        write.line('export * from "./airtable-main";')
-        write.line('export * from "./tables";')
+        if wrappers:
+            write.line('export * from "./airtable-main";')
+            write.line('export * from "./tables";')
+            write.line('export * from "./models";')
         write.line('export * from "./types";')
-        write.line('export * from "./models";')
-        write.line('export * from "./formulas";')
+        if formulas:
+            write.line('export * from "./formulas";')
         write.line("")
 
     with WriteToTypeScriptFile(path=output_folder / "index.ts") as write:
         write.line('export * from "./dynamic";')
-        write.line('export * from "./static/formula";')
-        write.line('export * from "./static/airtable-model";')
+        if formulas:
+            write.line('export * from "./static/formula";')
+        if wrappers:
+            write.line('export * from "./static/airtable-model";')
         write.line("")
 
 
