@@ -102,6 +102,13 @@ def md(
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
     reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache")] = False,
+    format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability.")] = True,
+    flatten_formulas: Annotated[
+        bool, Option("--flatten-formulas/--no-flatten-formulas", help="Show flattened formulas with nested references expanded.")
+    ] = True,
+    mermaid_formulas: Annotated[
+        bool, Option("--mermaid-formulas/--no-mermaid-formulas", help="Generate Mermaid diagrams for formula fields.")
+    ] = True,
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
     setup_benchmark(benchmark)
@@ -112,7 +119,14 @@ def md(
     base = Base()
 
     with timer.timer("Markdown generation"):
-        generate_markdown(base=base, output_folder=folder_path, svg_enabled=svg)
+        generate_markdown(
+            base=base,
+            output_folder=folder_path,
+            svg_enabled=svg,
+            format_formulas=format_formulas,
+            flatten_formulas=flatten_formulas,
+            mermaid_formulas=mermaid_formulas,
+        )
 
     timer.summary()
 
@@ -179,6 +193,13 @@ def all(
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
     reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache when regenerating markdown.")] = False,
+    format_formulas: Annotated[
+        bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability in markdown.")
+    ] = True,
+    flatten_formulas: Annotated[bool, Option("--flatten-formulas/--no-flatten-formulas", help="Show flattened formulas in markdown.")] = True,
+    mermaid_formulas: Annotated[
+        bool, Option("--mermaid-formulas/--no-mermaid-formulas", help="Generate Mermaid diagrams for formula fields in markdown.")
+    ] = True,
 ):
     """Generate json, CSV, Python, and TypeScript code."""
     setup_benchmark(benchmark)
@@ -212,7 +233,14 @@ def all(
         with timer.timer("Markdown generation"):
             preserve = None if reset_svg_cache else [".svg_cache"]
             md_folder_path = reset_folder(md_folder, preserve=preserve)
-            generate_markdown(base=base, output_folder=md_folder_path, svg_enabled=svg)
+            generate_markdown(
+                base=base,
+                output_folder=md_folder_path,
+                svg_enabled=svg,
+                format_formulas=format_formulas,
+                flatten_formulas=flatten_formulas,
+                mermaid_formulas=mermaid_formulas,
+            )
     check_invalid(base)
     print("[green]Generation complete.[/]")
 

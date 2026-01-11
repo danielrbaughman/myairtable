@@ -83,6 +83,9 @@ def generate_markdown(
     base: Base,
     output_folder: Path,
     svg_enabled: bool = True,
+    format_formulas: bool = True,
+    flatten_formulas: bool = True,
+    mermaid_formulas: bool = True,
 ) -> None:
     start = time.time()
     print("Generating Markdown code")
@@ -109,7 +112,16 @@ def generate_markdown(
 
     svg_tasks: list[tuple[str, str]] = []
     with timer.timer("Markdown: write_fields"):
-        svg_tasks = write_fields(base, output_folder, svg_enabled, diagrams_dir, svg_cache_dir)
+        svg_tasks = write_fields(
+            base,
+            output_folder,
+            svg_enabled,
+            diagrams_dir,
+            svg_cache_dir,
+            format_formulas=format_formulas,
+            flatten_formulas=flatten_formulas,
+            mermaid_formulas=mermaid_formulas,
+        )
         print("[dim] - Markdown fields generated.[/]")
 
     with timer.timer("Markdown: write_svgs"):
@@ -168,6 +180,9 @@ def write_fields(
     svg_enabled: bool = True,
     diagrams_dir: Path | None = None,
     svg_cache_dir: Path | None = None,
+    format_formulas: bool = True,
+    flatten_formulas: bool = True,
+    mermaid_formulas: bool = True,
 ) -> list[tuple[str, str]]:
     svg_tasks: list[tuple[str, str]] = []
 
@@ -216,35 +231,43 @@ def write_fields(
                     if field.type == "formula":
                         with timer.timer("Markdown: write_field: formula: highlighted"):
                             write.header("Formula", level=5)
-                            write.html(field.formula(sanitized=True, format=True, highlight=True))
+                            if format_formulas:
+                                write.html(field.formula(sanitized=True, format=True, highlight=True))
+                            else:
+                                write.code_block(field.formula(sanitized=True))
                             write.line_empty()
 
-                        with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
-                            if field.formula(condense=True) != field.formula(flatten=True, condense=True):
-                                write.header("Formula (Flattened)", level=5)
-                                write.line("*Nested formulas expanded*")
-                                write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
-                                write.line_empty()
+                        if flatten_formulas:
+                            with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
+                                if field.formula(condense=True) != field.formula(flatten=True, condense=True):
+                                    write.header("Formula (Flattened)", level=5)
+                                    write.line("*Nested formulas expanded*")
+                                    if format_formulas:
+                                        write.html(field.formula(sanitized=True, flatten=True, format=True, highlight=True))
+                                    else:
+                                        write.code_block(field.formula(sanitized=True, flatten=True))
+                                    write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: raw"):
                             write.header("Formula (Raw)", level=5)
                             write.code_block(field.formula(sanitized=True, condense=True))
                             write.line_empty()
 
-                        with timer.timer("Markdown: write_field: formula: diagram"):
-                            write.header("Formula Diagram", level=5)
-                            mermaid_code = mermaid_formula(field)
-                            if svg_enabled and diagrams_dir and svg_cache_dir:
-                                write.line(f"[SVG](../../diagrams/{field.id}.svg)")
-                                # Check cache - if hit, write directly; if miss, queue for generation
-                                if cached_svg := get_cached_svg(mermaid_code, svg_cache_dir, field.id):
-                                    svg_path = diagrams_dir / f"{field.id}.svg"
-                                    svg_path.write_text(cached_svg)
-                                else:
-                                    svg_tasks.append((field.id, mermaid_code))
-                            write.line(f"[Open in Mermaid Live]({mermaid_live_url(mermaid_code)})")
-                            write.code_block(mermaid_code, language="mermaid")
-                            write.line_empty()
+                        if mermaid_formulas:
+                            with timer.timer("Markdown: write_field: formula: diagram"):
+                                write.header("Formula Diagram", level=5)
+                                mermaid_code = mermaid_formula(field)
+                                if svg_enabled and diagrams_dir and svg_cache_dir:
+                                    write.line(f"[SVG](../../diagrams/{field.id}.svg)")
+                                    # Check cache - if hit, write directly; if miss, queue for generation
+                                    if cached_svg := get_cached_svg(mermaid_code, svg_cache_dir, field.id):
+                                        svg_path = diagrams_dir / f"{field.id}.svg"
+                                        svg_path.write_text(cached_svg)
+                                    else:
+                                        svg_tasks.append((field.id, mermaid_code))
+                                write.line(f"[Open in Mermaid Live]({mermaid_live_url(mermaid_code)})")
+                                write.code_block(mermaid_code, language="mermaid")
+                                write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: field links"):
                             write.header(f"Field Linked via Formula ({len(field.referenced_fields())})", level=5)
