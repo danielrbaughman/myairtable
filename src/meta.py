@@ -715,7 +715,7 @@ class Field(Named):
                 result = flatten_formula(
                     formula=result,
                     current_field_id=self.id,
-                    formula_map=self.base.get_formula_field_map(),
+                    formula_map_tuple=self.base.get_formula_field_map_tuple(),
                     visited=frozenset() if _visited is None else frozenset(_visited),
                 )
 
@@ -927,6 +927,18 @@ class Base(BaseModel):
                 if field.type == "formula" and field.options and field.options.formula:
                     self._formula_field_map_cache[field.id] = field.options.formula
         return self._formula_field_map_cache
+
+    def get_formula_field_map_tuple(self) -> tuple[tuple[str, str], ...]:
+        """Get a cached tuple version of the formula field map for use with flatten_formula.
+
+        This avoids repeated dict-to-tuple conversion when flattening multiple formulas.
+
+        Returns:
+            Tuple of (field_id, formula) pairs, sorted by field_id.
+        """
+        if not hasattr(self, "_formula_field_map_tuple"):
+            self._formula_field_map_tuple = tuple(sorted(self.get_formula_field_map().items()))
+        return self._formula_field_map_tuple
 
     def select_fields(self) -> list[Field]:
         """Get all fields with select options. Cached after first call."""

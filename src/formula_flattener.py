@@ -83,8 +83,10 @@ def _flatten_cached(
 def flatten_formula(
     formula: str,
     current_field_id: str,
-    formula_map: dict[str, str],
+    formula_map: dict[str, str] | None = None,
     visited: frozenset[str] | None = None,
+    *,
+    formula_map_tuple: tuple[tuple[str, str], ...] | None = None,
 ) -> str:
     """Recursively flatten formula by expanding nested formula field references.
 
@@ -95,6 +97,9 @@ def flatten_formula(
         current_field_id: ID of the field being flattened (for cycle detection)
         formula_map: Dict mapping field IDs to their formula strings (only formula fields)
         visited: Set of field IDs already visited (for cycle detection)
+        formula_map_tuple: Pre-computed tuple of (field_id, formula) pairs. If provided,
+            this is used directly instead of converting formula_map, avoiding repeated
+            dict-to-tuple conversion when flattening multiple formulas.
 
     Returns:
         Flattened formula string with nested formulas expanded
@@ -104,8 +109,14 @@ def flatten_formula(
         >>> flatten_formula("{fldA} * 2", "fldC", formula_map)
         '(((10) + 1)) * 2'
     """
-    # Convert dict to hashable tuple for caching
-    formula_mapping = tuple(sorted(formula_map.items()))
+    # Use pre-computed tuple if provided, otherwise convert dict
+    if formula_map_tuple is not None:
+        formula_mapping = formula_map_tuple
+    elif formula_map is not None:
+        formula_mapping = tuple(sorted(formula_map.items()))
+    else:
+        raise ValueError("Either formula_map or formula_map_tuple must be provided")
+
     if visited is None:
         visited = frozenset()
     return _flatten_cached(formula, current_field_id, formula_mapping, visited)
