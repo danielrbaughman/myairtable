@@ -8,10 +8,7 @@ import re
 from functools import lru_cache
 from typing import Sequence
 
-try:
-    from .formula_tokenizer import Token, TokenType, tokenize_formula
-except ImportError:
-    from formula_tokenizer import Token, TokenType, tokenize_formula
+from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 # Pre-compiled regex patterns for performance (avoid recompilation on every call)
 _ALWAYS_EXPAND_PATTERN = re.compile(r"^(IF|SWITCH|IFS)\s*\(", re.IGNORECASE)

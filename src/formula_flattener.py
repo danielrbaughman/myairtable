@@ -12,7 +12,7 @@ Example:
 import re
 from functools import lru_cache
 
-from src.formula_tokenizer import TokenType, tokenize_formula
+from .formula_tokenizer import TokenType, tokenize_formula
 
 # Pattern to validate field IDs (fldXXX format) - used for validation, not searching
 FIELD_REF_PATTERN = re.compile(r"^fld[A-Za-z0-9]+$")

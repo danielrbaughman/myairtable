@@ -20,10 +20,7 @@ import html
 from functools import lru_cache
 from typing import Sequence
 
-try:
-    from .formula_tokenizer import Token, TokenType, tokenize_formula
-except ImportError:
-    from formula_tokenizer import Token, TokenType, tokenize_formula
+from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 # Color scheme for syntax highlighting
 TOKEN_COLORS: dict[TokenType, str] = {
