@@ -9,7 +9,11 @@ from .helpers import (
     reset_folder,
     sanitize_string,
 )
-from .meta import Base, Field, FieldType, Table
+from .meta import Base, Field, Table
+from .type_mapper import (
+    calculate_all_typescript_types,
+    typescript_type,
+)
 from .write_to_file import WriteToFile
 
 
@@ -93,6 +97,8 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
 
     copy_static_files(output_folder, "typescript")
     print("[dim] - TypeScript static files copied.[/]")
+    calculate_all_typescript_types(base)
+    print("[dim] - TypeScript types calculated.[/]")
     write_types(base, output_folder)
     print("[dim] - TypeScript types generated.[/]")
     if formulas:
@@ -613,85 +619,6 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
         if wrappers:
             write.line('export * from "./static/airtable-model";')
         write.line("")
-
-
-# endregion
-
-# region TYPE MAPPING
-# Simple Airtable type → TypeScript type mappings
-SIMPLE_TS_TYPES: dict[str, str] = {
-    "singleLineText": "string",
-    "multilineText": "string",
-    "url": "string",
-    "richText": "string",
-    "email": "string",
-    "phoneNumber": "string",
-    "barcode": "string",
-    "checkbox": "boolean",
-    "date": "string",
-    "dateTime": "string",
-    "createdTime": "string",
-    "lastModifiedTime": "string",
-    "count": "number",
-    "autoNumber": "number",
-    "percent": "number",
-    "currency": "number",
-    "number": "number",
-    "duration": "number",
-    "multipleRecordLinks": "RecordId[]",
-    "multipleAttachments": "Attachment[]",
-    "singleCollaborator": "Collaborator",
-    "lastModifiedBy": "Collaborator",
-    "createdBy": "Collaborator",
-    "button": "string",
-}
-
-
-def typescript_type(field: Field) -> str:
-    """Returns the appropriate TypeScript type for a given Airtable field. Cached after first call."""
-    # Return cached result if available
-    if field._typescript_type_cache is not None:
-        return field._typescript_type_cache
-
-    airtable_type: FieldType = field.type
-    ts_type: str = "any"
-
-    # With calculated fields, we want to know the type of the result
-    if field.is_calculated():
-        airtable_type = field.result_type()
-
-    # Handle simple type mappings via lookup
-    if airtable_type in SIMPLE_TS_TYPES:
-        ts_type = SIMPLE_TS_TYPES[airtable_type]
-
-    # Handle complex types with special logic
-    elif airtable_type == "singleSelect":
-        referenced_field = field.field_in_linked_table()
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            ts_type = field.options_name()
-        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-            ts_type = referenced_field.options_name()
-        else:
-            ts_type = "any"
-    elif airtable_type == "multipleSelects":
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            ts_type = f"{field.options_name()}[]"
-        else:
-            ts_type = "any"
-    elif not field.is_valid():
-        ts_type = "any"
-
-    # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
-    # Although the type prediction is basically right, I haven't figured out how to predict if
-    # it's a list or not, and sometimes the result is a list with a single null value.
-    if not ts_type.endswith("[]"):
-        if field.involves_lookup() or field.involves_rollup():
-            ts_type = f"{ts_type} | {ts_type}[]"
-
-    field._typescript_type_cache = ts_type
-    return ts_type
 
 
 # endregion

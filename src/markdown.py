@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rich import print
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.progress import track
 
 from src.mermaid import mermaid_base, mermaid_formula
 
@@ -309,15 +309,12 @@ def write_svgs(
     svg_cache_dir: Path | None = None,
 ) -> None:
     if svg_enabled and diagrams_dir and svg_cache_dir and svg_tasks:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), transient=True) as progress:
-            progress_task = progress.add_task("Generating formula SVGs...", total=len(svg_tasks))
-            for field_id, mermaid_code in svg_tasks:
-                with timer.timer("Markdown: write_field: formula: diagram: svg generation"):
-                    svg_content = mermaid_to_svg(mermaid_code, svg_cache_dir, field_id)
-                    if svg_content:
-                        svg_path = diagrams_dir / f"{field_id}.svg"
-                        svg_path.write_text(svg_content)
-                progress.advance(progress_task)
+        for field_id, mermaid_code in track(svg_tasks, description="Generating formula SVGs..."):
+            with timer.timer("Markdown: write_field: formula: diagram: svg generation"):
+                svg_content = mermaid_to_svg(mermaid_code, svg_cache_dir, field_id)
+                if svg_content:
+                    svg_path = diagrams_dir / f"{field_id}.svg"
+                    svg_path.write_text(svg_content)
 
 
 def write_index(base: Base, output_folder: Path) -> None:

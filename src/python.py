@@ -10,7 +10,12 @@ from .helpers import (
     reset_folder,
     sanitize_string,
 )
-from .meta import Base, Field, FieldType, Table
+from .meta import Base, Field, Table
+from .type_mapper import (
+    calculate_all_python_types,
+    pyairtable_orm_type,
+    python_type,
+)
 from .write_to_file import WriteToFile
 
 
@@ -99,6 +104,10 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
 
     copy_static_files(output_folder, "python")
     print("[dim] - Python static files copied.[/]")
+
+    with timer.timer("Python: calculate_all_python_types"):
+        calculate_all_python_types(base)
+    print("[dim] - Python types calculated.[/]")
 
     with timer.timer("Python: write_types"):
         write_types(base, output_folder)
@@ -710,165 +719,6 @@ def main_doc_string() -> str:
 
     You can also use the ORM Models directly. See https://pyairtable.readthedocs.io/en/stable/orm.html#
     """'''
-
-
-# endregion
-
-# region TYPE MAPPING
-
-# Simple Airtable type → Python type mappings
-SIMPLE_PYTHON_TYPES: dict[str, str] = {
-    "singleLineText": "str",
-    "multilineText": "str",
-    "url": "str",
-    "richText": "str",
-    "email": "str",
-    "phoneNumber": "str",
-    "barcode": "str",
-    "checkbox": "bool",
-    "date": "datetime",
-    "dateTime": "datetime",
-    "createdTime": "datetime",
-    "lastModifiedTime": "datetime",
-    "count": "int",
-    "autoNumber": "int",
-    "percent": "float",
-    "currency": "float",
-    "duration": "timedelta",
-    "multipleRecordLinks": "list[RecordId]",
-    "multipleAttachments": "list[AirtableAttachment]",
-    "singleCollaborator": "AirtableCollaborator",
-    "lastModifiedBy": "AirtableCollaborator",
-    "createdBy": "AirtableCollaborator",
-    "button": "AirtableButton",
-}
-
-
-def python_type(field: Field) -> str:
-    """Returns the appropriate Python type for a given Airtable field. Cached after first call."""
-    # Return cached result if available
-    if field._python_type_cache is not None:
-        return field._python_type_cache
-
-    with timer.timer("python_type"):
-        airtable_type: FieldType = field.type
-
-        # With calculated fields, we want to know the type of the result
-        if field.is_calculated():
-            airtable_type = field.result_type()
-
-        # Handle simple type mappings via lookup
-        if airtable_type in SIMPLE_PYTHON_TYPES:
-            py_type = SIMPLE_PYTHON_TYPES[airtable_type]
-
-        # Handle complex types with special logic
-        elif airtable_type == "number":
-            if field.options and field.options.precision is not None and field.options.precision == 0:
-                py_type = "int"
-            else:
-                py_type = "float"
-        elif airtable_type == "singleSelect":
-            referenced_field = field.field_in_linked_table()
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                py_type = field.options_name()
-            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-                py_type = referenced_field.options_name()
-            else:
-                py_type = "Any"
-        elif airtable_type == "multipleSelects":
-            select_fields_ids = field.base.select_fields_ids()
-            if field.id in select_fields_ids:
-                py_type = f"list[{field.options_name()}]"
-            else:
-                py_type = "Any"
-        else:
-            py_type = "Any"
-
-        # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
-        # Although the type prediction is basically right, I haven't figured out how to predict if
-        # it's a list or not, and sometimes the result is a list with a single null value.
-        if "list" not in py_type:
-            if field.involves_lookup() or field.involves_rollup():
-                py_type = f"list[{py_type} | None] | {py_type}"
-
-        field._python_type_cache = py_type
-    return py_type
-
-
-# Simple Airtable type → PyAirtable ORM field class mappings
-SIMPLE_ORM_TYPES: dict[str, str] = {
-    "singleLineText": "SingleLineTextField",
-    "multilineText": "MultilineTextField",
-    "url": "UrlField",
-    "richText": "RichTextField",
-    "email": "EmailField",
-    "phoneNumber": "PhoneNumberField",
-    "barcode": "BarcodeField",
-    "lastModifiedBy": "LastModifiedByField",
-    "createdBy": "CreatedByField",
-    "checkbox": "CheckboxField",
-    "date": "DateField",
-    "dateTime": "DatetimeField",
-    "createdTime": "CreatedTimeField",
-    "lastModifiedTime": "LastModifiedTimeField",
-    "count": "CountField",
-    "autoNumber": "AutoNumberField",
-    "percent": "PercentField",
-    "duration": "DurationField",
-    "currency": "CurrencyField",
-    "number": "NumberField",
-    "multipleAttachments": "AttachmentsField",
-    "singleCollaborator": "CollaboratorField",
-    "button": "ButtonField",
-}
-
-
-def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
-    """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
-    airtable_type = field.type
-    original_id = field.id
-    is_read_only: bool = field.is_computed()
-
-    # With formula/rollup fields, we want to know the type of the result
-    if field.type in ["formula", "rollup"]:
-        airtable_type = field.result_type()
-
-    params = f'field_name="{original_id}"' + (", readonly=True" if is_read_only else "")
-
-    # Handle simple type mappings via lookup
-    if airtable_type in SIMPLE_ORM_TYPES:
-        orm_class = SIMPLE_ORM_TYPES[airtable_type]
-        return f"{orm_class} = {orm_class}({params})"
-
-    # Handle complex types with special logic
-    match airtable_type:
-        case "singleSelect":
-            if field.id in field.base.select_fields_ids():
-                return f"{field.options_name()} = SelectField({params})"
-            return f"SelectField = SelectField({params})"
-        case "multipleSelects":
-            if field.id in field.base.select_fields_ids():
-                return f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
-            return f"MultipleSelectField = MultipleSelectField({params})"
-        case "lookup" | "multipleLookupValues":
-            return f"LookupField = LookupField[{python_type(field)}]({params})"
-        case "multipleRecordLinks":
-            if field.options and field.options.linked_table_id:
-                table_id: str = field.options.linked_table_id
-                for table in base.tables:
-                    if table.id == table_id:
-                        linked_orm_class = table.name_model()
-                        break
-                prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
-                if field.options.prefers_single_record_link:
-                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
-                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
-            print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
-        case _:
-            pass
-
-    return "Any"
 
 
 # endregion

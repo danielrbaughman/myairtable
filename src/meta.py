@@ -28,6 +28,8 @@ from src.meta_types import BaseMetadata, FieldType
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
+PYTHON_TYPE = "Python Type"
+TYPESCRIPT_TYPE = "TypeScript Type"
 
 # Retry configuration
 _MAX_RETRIES = 5
@@ -337,6 +339,8 @@ class Field(Named):
     _typescript_type_cache: str | None = PrivateAttr(default=None)
     # Formula caching for performance
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _python_type: str | None = PrivateAttr(default=None)
+    _typescript_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -479,6 +483,28 @@ class Field(Named):
                 if self.options.result.type:
                     return self.options.result.type
         return self.type
+
+    def saved_python_type(self) -> str:
+        """Get the saved Python type from the CSV"""
+        if self._python_type_cache is None:
+            if hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self.base._csv_cache.get_field_value(self.id, PYTHON_TYPE)
+                if text:
+                    self._python_type_cache = text
+                    return text
+            self._python_type_cache = ""
+        return self._python_type_cache
+
+    def saved_typescript_type(self) -> str:
+        """Get the saved TypeScript type from the CSV"""
+        if self._typescript_type_cache is None:
+            if hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self.base._csv_cache.get_field_value(self.id, TYPESCRIPT_TYPE)
+                if text:
+                    self._typescript_type_cache = text
+                    return text
+            self._typescript_type_cache = ""
+        return self._typescript_type_cache
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""

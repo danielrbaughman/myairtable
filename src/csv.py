@@ -6,8 +6,7 @@ from rich import print
 
 from src.helpers import sanitize_string
 from src.meta import MODEL_NAME, PROPERTY_NAME, Base
-from src.python import python_type
-from src.typescript import typescript_type
+from src.type_mapper import python_type, typescript_type
 
 # Column definitions for CSV exports
 TABLE_COLUMNS = [
