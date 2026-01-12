@@ -17,6 +17,8 @@ Usage:
 """
 
 import html
+from functools import lru_cache
+from typing import Sequence
 
 try:
     from .formula_tokenizer import Token, TokenType, tokenize_formula
@@ -41,7 +43,7 @@ def _html_escape(text: str) -> str:
     return html.escape(text, quote=True)
 
 
-def _tokens_to_html(tokens: list[Token]) -> str:
+def _tokens_to_html(tokens: Sequence[Token]) -> str:
     """Convert tokens to HTML with inline styles."""
     parts: list[str] = []
 
@@ -72,9 +74,13 @@ def _tokens_to_html(tokens: list[Token]) -> str:
     return "".join(parts)
 
 
+@lru_cache(maxsize=1024)
 def highlight_formula(formula: str) -> str:
     """
     Convert Airtable formula to syntax-highlighted HTML.
+
+    Results are cached for performance - repeated calls with the same
+    formula return immediately from cache.
 
     Args:
         formula: The Airtable formula string to highlight
