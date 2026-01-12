@@ -132,6 +132,39 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		}
 	}
 
+	/** Upsert a single record */
+	public async upsert(record: U): Promise<U>;
+	/** Upsert multiple records */
+	public async upsert(records: U[]): Promise<U[]>;
+	public async upsert(recordOrRecords: U | U[]): Promise<U | U[]> {
+		const records: U[] = Array.isArray(recordOrRecords) ? recordOrRecords : [recordOrRecords];
+
+		// Batch fetch all records to check which exist
+		const recordIds = records.map((r) => r.id).filter((id) => !!id);
+		const existingRecords = recordIds.length > 0 ? await this.get(recordIds) : [];
+		const existingIds = new Set(existingRecords.map((r) => r.id));
+
+		// Separate into updates and creates
+		const toUpdate: U[] = [];
+		const toCreate: U[] = [];
+		for (const record of records) {
+			if (record.id && existingIds.has(record.id)) {
+				toUpdate.push(record);
+			} else {
+				toCreate.push(record);
+			}
+		}
+
+		// Batch update and create
+		const [updatedRecords, createdRecords] = await Promise.all([
+			toUpdate.length > 0 ? await this.update(toUpdate) : Promise.resolve([]),
+			toCreate.length > 0 ? await this.create(toCreate) : Promise.resolve([]),
+		]);
+		const upsertedRecords = [...updatedRecords, ...createdRecords];
+
+		return Array.isArray(recordOrRecords) ? upsertedRecords : upsertedRecords[0];
+	}
+
 	/** Delete a single record */
 	public async delete(recordId: string): Promise<void>;
 	/** Delete multiple records */
