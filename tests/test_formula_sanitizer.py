@@ -79,30 +79,45 @@ class TestSanitizeMixedContent:
         assert result == "{Value} + {Value} * 2"
 
 
+class TestStringLiterals:
+    """Test that field references in strings are not replaced."""
+
+    def test_field_ref_in_double_quoted_string_unchanged(self):
+        """Field refs inside strings should NOT be replaced."""
+        field_map = {"fldA": "Status", "fldB": "Name"}
+        result = sanitize_formula('IF({fldA}, "See {fldB} for details", "")', field_map)
+        # {fldA} should be replaced, but {fldB} inside string should not
+        assert result == 'IF({Status}, "See {fldB} for details", "")'
+
+    def test_field_ref_in_single_quoted_string_unchanged(self):
+        """Field refs inside single-quoted strings should NOT be replaced."""
+        field_map = {"fldA": "Status", "fldB": "Name"}
+        result = sanitize_formula("IF({fldA}, 'Contact {fldB}', '')", field_map)
+        assert result == "IF({Status}, 'Contact {fldB}', '')"
+
+    def test_mixed_real_and_string_refs(self):
+        """Real refs replaced, string refs preserved."""
+        field_map = {"fldA": "First", "fldB": "Middle", "fldC": "Last"}
+        result = sanitize_formula('{fldA} & " {fldB} " & {fldC}', field_map)
+        assert result == '{First} & " {fldB} " & {Last}'
+
+
 class TestFieldRefPattern:
-    """Test the FIELD_REF_PATTERN regex."""
+    """Test the FIELD_REF_PATTERN regex (validates field IDs, not searches)."""
 
     def test_pattern_matches_standard_id(self):
-        matches = FIELD_REF_PATTERN.findall("{fldABC123}")
-        assert matches == ["fldABC123"]
+        assert FIELD_REF_PATTERN.match("fldABC123")
 
-    def test_pattern_matches_multiple(self):
-        matches = FIELD_REF_PATTERN.findall("IF({fldA}, {fldB}, {fldC})")
-        assert matches == ["fldA", "fldB", "fldC"]
+    def test_pattern_matches_simple_id(self):
+        assert FIELD_REF_PATTERN.match("fldA")
 
     def test_pattern_no_match_regular_field(self):
         """Regular field names (not IDs) should not match."""
-        matches = FIELD_REF_PATTERN.findall("{Status}")
-        assert matches == []
+        assert not FIELD_REF_PATTERN.match("Status")
 
-    def test_pattern_no_match_without_braces(self):
-        matches = FIELD_REF_PATTERN.findall("fldABC123")
-        assert matches == []
-
-    def test_pattern_mixed_content(self):
-        """Should only match field IDs, not regular names."""
-        matches = FIELD_REF_PATTERN.findall("{fldA} + {Regular Name} + {fldB}")
-        assert matches == ["fldA", "fldB"]
+    def test_pattern_no_match_with_braces(self):
+        """Pattern validates the ID itself, not the {id} format."""
+        assert not FIELD_REF_PATTERN.match("{fldA}")
 
 
 class TestCaching:
