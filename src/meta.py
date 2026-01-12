@@ -17,6 +17,7 @@ from src import timer
 from src.formula_condenser import condense_formula
 from src.formula_formatter import format_formula
 from src.formula_highlighter import highlight_formula
+from src.formula_sanitizer import FIELD_REF_PATTERN, sanitize_formula
 from src.helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
@@ -35,9 +36,6 @@ _INITIAL_DELAY = 1.0  # seconds
 _MAX_DELAY = 60.0  # seconds
 _BACKOFF_MULTIPLIER = 2.0
 _JITTER = 0.5  # ±50% randomization
-
-# Pattern to extract field IDs from formulas (e.g., {fldXXX})
-_FIELD_REF_PATTERN = re.compile(r"\{(fld[A-Za-z0-9]+)\}")
 
 
 def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
@@ -341,7 +339,6 @@ class Field(Named):
     # Formula caching for performance
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
     _flattened_formula_cache: str | None = PrivateAttr(default=None)
-    _sanitized_formula_cache: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -720,7 +717,7 @@ class Field(Named):
                 result = self._flatten_formula(result, _visited)
 
             if sanitized:
-                result = self._sanitize_formula(result)
+                result = sanitize_formula(result, self.table.get_field_id_to_name_map())
 
             # Mutual exclusivity check
             if condense and format:
@@ -767,7 +764,7 @@ class Field(Named):
             _visited = _visited | {self.id}
 
             # Extract only the field IDs actually referenced in the formula (O(m) where m = formula length)
-            referenced_field_ids = _FIELD_REF_PATTERN.findall(formula)
+            referenced_field_ids = FIELD_REF_PATTERN.findall(formula)
 
             # Build replacement dictionary for all formula fields (single pass)
             replacements: dict[str, str] = {}
@@ -790,38 +787,13 @@ class Field(Named):
                     field_id = match.group(1)
                     return replacements.get(field_id, match.group(0))
 
-                formula = _FIELD_REF_PATTERN.sub(replace_callback, formula)
+                formula = FIELD_REF_PATTERN.sub(replace_callback, formula)
 
             # Cache result for top-level calls
             if is_top_level:
                 self._flattened_formula_cache = formula
 
         return formula
-
-    def _sanitize_formula(self, formula: str) -> str:
-        """Replace field IDs with field names for readability."""
-        # Check cache - only applies to raw formula (not flattened)
-        if formula == self.options.formula and self._sanitized_formula_cache is not None:
-            return self._sanitized_formula_cache
-
-        with timer.timer("Field._sanitize_formula"):
-            # Use table-level field ID→name cache for fastest lookup (direct dict access)
-            field_id_to_name = self.table.get_field_id_to_name_map()
-
-            def replace_field_ref(match: re.Match[str]) -> str:
-                field_id = match.group(1)
-                field_name = field_id_to_name.get(field_id)
-                if field_name:
-                    return f"{{{field_name}}}"
-                return match.group(0)  # Keep original if field not found
-
-            result = _FIELD_REF_PATTERN.sub(replace_field_ref, formula)
-
-            # Cache result for raw formula
-            if formula == self.options.formula:
-                self._sanitized_formula_cache = result
-
-        return result
 
 
 class View(Named):
