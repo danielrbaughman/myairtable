@@ -19,9 +19,9 @@ Usage:
 import html
 
 try:
-    from .formula_tokenizer import FormulaTokenizer, Token, TokenType
+    from .formula_tokenizer import Token, TokenType, tokenize_formula
 except ImportError:
-    from formula_tokenizer import FormulaTokenizer, Token, TokenType
+    from formula_tokenizer import Token, TokenType, tokenize_formula
 
 # Color scheme for syntax highlighting
 TOKEN_COLORS: dict[TokenType, str] = {
@@ -90,8 +90,7 @@ def highlight_formula(formula: str) -> str:
         return ""
 
     try:
-        tokenizer = FormulaTokenizer(formula)
-        tokens = tokenizer.tokenize()
+        tokens = tokenize_formula(formula)
         return _tokens_to_html(tokens)
     except Exception:
         # Fallback: return escaped formula without highlighting

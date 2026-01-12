@@ -8,15 +8,15 @@ import re
 from functools import lru_cache
 
 try:
-    from .formula_tokenizer import FormulaTokenizer, Token, TokenType
+    from .formula_tokenizer import Token, TokenType, tokenize_formula
 except ImportError:
-    from formula_tokenizer import FormulaTokenizer, Token, TokenType
+    from formula_tokenizer import Token, TokenType, tokenize_formula
 
 
 @lru_cache(maxsize=1024)
 def _tokenize(formula: str) -> tuple[Token, ...]:
     """Tokenize a formula string (cached for performance)."""
-    return tuple(FormulaTokenizer(formula).tokenize())
+    return tuple(tokenize_formula(formula))
 
 
 def _tokens_to_string(tokens: list[Token]) -> str:

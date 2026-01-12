@@ -140,6 +140,27 @@ MULTI_CHAR_OPERATORS: frozenset[str] = frozenset(["!=", "<=", ">="])
 SINGLE_CHAR_OPERATORS: frozenset[str] = frozenset(["=", "<", ">", "&", "+", "-", "*", "/"])
 
 
+def tokenize_formula(formula: str) -> list[Token]:
+    """
+    Tokenize an Airtable formula into a list of tokens.
+
+    This is the recommended API for tokenizing formulas. It provides a simple
+    pure function interface without requiring class instantiation.
+
+    Args:
+        formula: The Airtable formula string to tokenize
+
+    Returns:
+        List of Token objects representing the tokenized formula
+
+    Example:
+        >>> tokens = tokenize("SUM({Amount}, 100)")
+        >>> tokens[0]
+        Token(type=<TokenType.FUNCTION: 'FUNCTION'>, value='SUM', depth=0)
+    """
+    return FormulaTokenizer(formula).tokenize()
+
+
 class FormulaTokenizer:
     """
     Tokenizer for Airtable formulas.

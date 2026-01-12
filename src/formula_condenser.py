@@ -3,15 +3,15 @@
 from functools import lru_cache
 
 try:
-    from .formula_tokenizer import FormulaTokenizer, TokenType
+    from .formula_tokenizer import TokenType, tokenize_formula
 except ImportError:
-    from formula_tokenizer import FormulaTokenizer, TokenType
+    from formula_tokenizer import TokenType, tokenize_formula
 
 
 @lru_cache(maxsize=1024)
 def _tokenize_cached(formula: str) -> tuple:
     """Tokenize formula with caching. Returns tuple for hashability."""
-    return tuple(FormulaTokenizer(formula).tokenize())
+    return tuple(tokenize_formula(formula))
 
 
 def condense_formula(formula: str) -> str:
