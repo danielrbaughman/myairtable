@@ -12,6 +12,7 @@ Usage:
 
 from dataclasses import dataclass
 from enum import Enum, auto
+from functools import lru_cache
 
 
 class TokenType(Enum):
@@ -28,13 +29,17 @@ class TokenType(Enum):
     UNKNOWN = auto()
 
 
-@dataclass
+@dataclass(slots=True)
 class Token:
     """A single token from the formula."""
 
     type: TokenType
     value: str
     depth: int = 0  # Nesting depth for parentheses (1-indexed)
+
+    def __hash__(self) -> int:
+        """Make Token hashable for caching."""
+        return hash((self.type, self.value, self.depth))
 
 
 # Complete set of Airtable functions (case-insensitive matching)
@@ -140,6 +145,30 @@ MULTI_CHAR_OPERATORS: frozenset[str] = frozenset(["!=", "<=", ">="])
 SINGLE_CHAR_OPERATORS: frozenset[str] = frozenset(["=", "<", ">", "&", "+", "-", "*", "/"])
 
 
+@lru_cache(maxsize=2048)
+def tokenize_formula(formula: str) -> tuple[Token, ...]:
+    """
+    Tokenize an Airtable formula into a tuple of tokens.
+
+    This is the recommended API for tokenizing formulas. It provides a simple
+    pure function interface without requiring class instantiation. Results are
+    cached for performance - repeated calls with the same formula return
+    immediately from cache.
+
+    Args:
+        formula: The Airtable formula string to tokenize
+
+    Returns:
+        Tuple of Token objects representing the tokenized formula
+
+    Example:
+        >>> tokens = tokenize_formula("SUM({Amount}, 100)")
+        >>> tokens[0]
+        Token(type=<TokenType.FUNCTION: 'FUNCTION'>, value='SUM', depth=0)
+    """
+    return tuple(FormulaTokenizer(formula).tokenize())
+
+
 class FormulaTokenizer:
     """
     Tokenizer for Airtable formulas.
@@ -150,13 +179,14 @@ class FormulaTokenizer:
 
     def __init__(self, formula: str) -> None:
         self.formula = formula
+        self.formula_len = len(formula)  # Cache length to avoid repeated len() calls
         self.pos = 0
         self.tokens: list[Token] = []
         self.paren_depth = 0  # Track nesting depth for parentheses
 
     def tokenize(self) -> list[Token]:
         """Tokenize the formula and return list of tokens."""
-        while self.pos < len(self.formula):
+        while self.pos < self.formula_len:
             # Try each token type in priority order
             if self._try_whitespace():
                 continue
@@ -191,7 +221,7 @@ class FormulaTokenizer:
 
         start = self.pos
 
-        while self.pos < len(self.formula) and self.formula[self.pos].isspace():
+        while self.pos < self.formula_len and self.formula[self.pos].isspace():
             self.pos += 1
 
         value = self.formula[start : self.pos]
@@ -208,10 +238,10 @@ class FormulaTokenizer:
         start = self.pos
         self.pos += 1  # Skip opening quote
 
-        while self.pos < len(self.formula):
+        while self.pos < self.formula_len:
             char = self.formula[self.pos]
 
-            if char == "\\" and self.pos + 1 < len(self.formula):
+            if char == "\\" and self.pos + 1 < self.formula_len:
                 # Skip escape sequence
                 self.pos += 2
                 continue
@@ -236,7 +266,7 @@ class FormulaTokenizer:
         self.pos += 1  # Skip opening brace
         depth = 1
 
-        while self.pos < len(self.formula) and depth > 0:
+        while self.pos < self.formula_len and depth > 0:
             char = self.formula[self.pos]
 
             if char == "{":
@@ -276,24 +306,24 @@ class FormulaTokenizer:
             if not self._is_negative_number_context():
                 return False
             # Check if followed by digit
-            if self.pos + 1 >= len(self.formula) or not self.formula[self.pos + 1].isdigit():
+            if self.pos + 1 >= self.formula_len or not self.formula[self.pos + 1].isdigit():
                 return False
             self.pos += 1
 
         # Must start with digit
-        if self.pos >= len(self.formula) or not self.formula[self.pos].isdigit():
+        if self.pos >= self.formula_len or not self.formula[self.pos].isdigit():
             self.pos = start
             return False
 
         # Consume digits
-        while self.pos < len(self.formula) and self.formula[self.pos].isdigit():
+        while self.pos < self.formula_len and self.formula[self.pos].isdigit():
             self.pos += 1
 
         # Optional decimal part
-        if self.pos < len(self.formula) and self.formula[self.pos] == ".":
+        if self.pos < self.formula_len and self.formula[self.pos] == ".":
             self.pos += 1
             # Consume fractional digits
-            while self.pos < len(self.formula) and self.formula[self.pos].isdigit():
+            while self.pos < self.formula_len and self.formula[self.pos].isdigit():
                 self.pos += 1
 
         value = self.formula[start : self.pos]
@@ -303,7 +333,7 @@ class FormulaTokenizer:
     def _try_operator(self) -> bool:
         """Tokenize operators."""
         # Check two-character operators first
-        if self.pos + 1 < len(self.formula):
+        if self.pos + 1 < self.formula_len:
             two_char = self.formula[self.pos : self.pos + 2]
             if two_char in MULTI_CHAR_OPERATORS:
                 self._add_token(TokenType.OPERATOR, two_char)
@@ -352,7 +382,7 @@ class FormulaTokenizer:
         start = self.pos
 
         # Consume alphanumeric and underscore
-        while self.pos < len(self.formula):
+        while self.pos < self.formula_len:
             char = self.formula[self.pos]
             if char.isalnum() or char == "_":
                 self.pos += 1

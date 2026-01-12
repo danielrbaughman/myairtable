@@ -16,9 +16,9 @@ from formula_highlighter import (
 )
 from formula_tokenizer import (
     AIRTABLE_FUNCTIONS,
-    FormulaTokenizer,
     Token,
     TokenType,
+    tokenize_formula,
 )
 
 
@@ -57,24 +57,24 @@ class TestTokenizerWhitespace:
     """Test whitespace tokenization."""
 
     def test_single_space(self):
-        tokens = FormulaTokenizer(" ").tokenize()
+        tokens = tokenize_formula(" ")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.WHITESPACE
         assert tokens[0].value == " "
 
     def test_multiple_spaces(self):
-        tokens = FormulaTokenizer("   ").tokenize()
+        tokens = tokenize_formula("   ")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.WHITESPACE
         assert tokens[0].value == "   "
 
     def test_newline(self):
-        tokens = FormulaTokenizer("\n").tokenize()
+        tokens = tokenize_formula("\n")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.WHITESPACE
 
     def test_mixed_whitespace(self):
-        tokens = FormulaTokenizer(" \t\n ").tokenize()
+        tokens = tokenize_formula(" \t\n ")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.WHITESPACE
 
@@ -83,42 +83,42 @@ class TestTokenizerStrings:
     """Test string literal tokenization."""
 
     def test_single_quoted_string(self):
-        tokens = FormulaTokenizer("'hello'").tokenize()
+        tokens = tokenize_formula("'hello'")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == "'hello'"
 
     def test_double_quoted_string(self):
-        tokens = FormulaTokenizer('"hello"').tokenize()
+        tokens = tokenize_formula('"hello"')
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == '"hello"'
 
     def test_escaped_quote_single(self):
-        tokens = FormulaTokenizer("'it\\'s'").tokenize()
+        tokens = tokenize_formula("'it\\'s'")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == "'it\\'s'"
 
     def test_escaped_quote_double(self):
-        tokens = FormulaTokenizer('"say \\"hi\\""').tokenize()
+        tokens = tokenize_formula('"say \\"hi\\""')
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
 
     def test_empty_string(self):
-        tokens = FormulaTokenizer("''").tokenize()
+        tokens = tokenize_formula("''")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
         assert tokens[0].value == "''"
 
     def test_string_with_parens(self):
-        tokens = FormulaTokenizer("'text (with) parens'").tokenize()
+        tokens = tokenize_formula("'text (with) parens'")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
 
     def test_unclosed_string(self):
         # Should consume to end without crashing
-        tokens = FormulaTokenizer("'unclosed").tokenize()
+        tokens = tokenize_formula("'unclosed")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.STRING
 
@@ -127,30 +127,30 @@ class TestTokenizerFieldRefs:
     """Test field reference tokenization."""
 
     def test_simple_field_ref(self):
-        tokens = FormulaTokenizer("{Status}").tokenize()
+        tokens = tokenize_formula("{Status}")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.FIELD_REF
         assert tokens[0].value == "{Status}"
 
     def test_field_ref_with_id(self):
-        tokens = FormulaTokenizer("{fldABC123}").tokenize()
+        tokens = tokenize_formula("{fldABC123}")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.FIELD_REF
 
     def test_field_ref_with_spaces(self):
-        tokens = FormulaTokenizer("{Field Name}").tokenize()
+        tokens = tokenize_formula("{Field Name}")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.FIELD_REF
         assert tokens[0].value == "{Field Name}"
 
     def test_field_ref_with_special_chars(self):
-        tokens = FormulaTokenizer("{Field (with) parens}").tokenize()
+        tokens = tokenize_formula("{Field (with) parens}")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.FIELD_REF
 
     def test_unclosed_field_ref(self):
         # Should consume to end without crashing
-        tokens = FormulaTokenizer("{unclosed").tokenize()
+        tokens = tokenize_formula("{unclosed")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.FIELD_REF
 
@@ -159,42 +159,42 @@ class TestTokenizerNumbers:
     """Test number tokenization."""
 
     def test_integer(self):
-        tokens = FormulaTokenizer("42").tokenize()
+        tokens = tokenize_formula("42")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.NUMBER
         assert tokens[0].value == "42"
 
     def test_zero(self):
-        tokens = FormulaTokenizer("0").tokenize()
+        tokens = tokenize_formula("0")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.NUMBER
 
     def test_decimal(self):
-        tokens = FormulaTokenizer("3.14").tokenize()
+        tokens = tokenize_formula("3.14")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.NUMBER
         assert tokens[0].value == "3.14"
 
     def test_negative_at_start(self):
-        tokens = FormulaTokenizer("-10").tokenize()
+        tokens = tokenize_formula("-10")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.NUMBER
         assert tokens[0].value == "-10"
 
     def test_negative_after_paren(self):
-        tokens = FormulaTokenizer("(-5)").tokenize()
+        tokens = tokenize_formula("(-5)")
         assert tokens[1].type == TokenType.NUMBER
         assert tokens[1].value == "-5"
 
     def test_negative_after_comma(self):
-        tokens = FormulaTokenizer("IF(1, -5, 0)").tokenize()
+        tokens = tokenize_formula("IF(1, -5, 0)")
         # Find the -5 token
         neg_tokens = [t for t in tokens if t.value == "-5"]
         assert len(neg_tokens) == 1
         assert neg_tokens[0].type == TokenType.NUMBER
 
     def test_subtraction_not_negative(self):
-        tokens = FormulaTokenizer("5 - 3").tokenize()
+        tokens = tokenize_formula("5 - 3")
         # Should be: NUMBER, WHITESPACE, OPERATOR, WHITESPACE, NUMBER
         assert tokens[0].type == TokenType.NUMBER
         assert tokens[0].value == "5"
@@ -208,57 +208,57 @@ class TestTokenizerOperators:
     """Test operator tokenization."""
 
     def test_equals(self):
-        tokens = FormulaTokenizer("=").tokenize()
+        tokens = tokenize_formula("=")
         assert tokens[0].type == TokenType.OPERATOR
         assert tokens[0].value == "="
 
     def test_not_equals(self):
-        tokens = FormulaTokenizer("!=").tokenize()
+        tokens = tokenize_formula("!=")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.OPERATOR
         assert tokens[0].value == "!="
 
     def test_less_than(self):
-        tokens = FormulaTokenizer("<").tokenize()
+        tokens = tokenize_formula("<")
         assert tokens[0].type == TokenType.OPERATOR
 
     def test_greater_than(self):
-        tokens = FormulaTokenizer(">").tokenize()
+        tokens = tokenize_formula(">")
         assert tokens[0].type == TokenType.OPERATOR
 
     def test_less_equal(self):
-        tokens = FormulaTokenizer("<=").tokenize()
+        tokens = tokenize_formula("<=")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.OPERATOR
         assert tokens[0].value == "<="
 
     def test_greater_equal(self):
-        tokens = FormulaTokenizer(">=").tokenize()
+        tokens = tokenize_formula(">=")
         assert len(tokens) == 1
         assert tokens[0].type == TokenType.OPERATOR
         assert tokens[0].value == ">="
 
     def test_ampersand(self):
-        tokens = FormulaTokenizer("&").tokenize()
+        tokens = tokenize_formula("&")
         assert tokens[0].type == TokenType.OPERATOR
 
     def test_plus(self):
-        tokens = FormulaTokenizer("+").tokenize()
+        tokens = tokenize_formula("+")
         assert tokens[0].type == TokenType.OPERATOR
 
     def test_minus(self):
         # When not in negative number context
-        tokens = FormulaTokenizer("{a} - {b}").tokenize()
+        tokens = tokenize_formula("{a} - {b}")
         minus_tokens = [t for t in tokens if t.value == "-"]
         assert len(minus_tokens) == 1
         assert minus_tokens[0].type == TokenType.OPERATOR
 
     def test_multiply(self):
-        tokens = FormulaTokenizer("*").tokenize()
+        tokens = tokenize_formula("*")
         assert tokens[0].type == TokenType.OPERATOR
 
     def test_divide(self):
-        tokens = FormulaTokenizer("/").tokenize()
+        tokens = tokenize_formula("/")
         assert tokens[0].type == TokenType.OPERATOR
 
 
@@ -266,17 +266,17 @@ class TestTokenizerParentheses:
     """Test parenthesis tokenization."""
 
     def test_open_paren(self):
-        tokens = FormulaTokenizer("(").tokenize()
+        tokens = tokenize_formula("(")
         assert tokens[0].type == TokenType.PARENTHESIS
         assert tokens[0].value == "("
 
     def test_close_paren(self):
-        tokens = FormulaTokenizer(")").tokenize()
+        tokens = tokenize_formula(")")
         assert tokens[0].type == TokenType.PARENTHESIS
         assert tokens[0].value == ")"
 
     def test_balanced_parens(self):
-        tokens = FormulaTokenizer("()").tokenize()
+        tokens = tokenize_formula("()")
         assert len(tokens) == 2
         assert tokens[0].value == "("
         assert tokens[1].value == ")"
@@ -286,7 +286,7 @@ class TestTokenizerComma:
     """Test comma tokenization."""
 
     def test_comma(self):
-        tokens = FormulaTokenizer(",").tokenize()
+        tokens = tokenize_formula(",")
         assert tokens[0].type == TokenType.COMMA
         assert tokens[0].value == ","
 
@@ -295,33 +295,33 @@ class TestTokenizerFunctions:
     """Test function name tokenization."""
 
     def test_if_function(self):
-        tokens = FormulaTokenizer("IF").tokenize()
+        tokens = tokenize_formula("IF")
         assert tokens[0].type == TokenType.FUNCTION
         assert tokens[0].value == "IF"
 
     def test_if_lowercase(self):
-        tokens = FormulaTokenizer("if").tokenize()
+        tokens = tokenize_formula("if")
         assert tokens[0].type == TokenType.FUNCTION
 
     def test_if_mixed_case(self):
-        tokens = FormulaTokenizer("If").tokenize()
+        tokens = tokenize_formula("If")
         assert tokens[0].type == TokenType.FUNCTION
 
     def test_sum_function(self):
-        tokens = FormulaTokenizer("SUM").tokenize()
+        tokens = tokenize_formula("SUM")
         assert tokens[0].type == TokenType.FUNCTION
 
     def test_datetime_format(self):
-        tokens = FormulaTokenizer("DATETIME_FORMAT").tokenize()
+        tokens = tokenize_formula("DATETIME_FORMAT")
         assert tokens[0].type == TokenType.FUNCTION
 
     def test_unknown_identifier(self):
-        tokens = FormulaTokenizer("NOTAFUNCTION").tokenize()
+        tokens = tokenize_formula("NOTAFUNCTION")
         assert tokens[0].type == TokenType.UNKNOWN
 
     def test_all_airtable_functions_recognized(self):
         for func in AIRTABLE_FUNCTIONS:
-            tokens = FormulaTokenizer(func).tokenize()
+            tokens = tokenize_formula(func)
             assert tokens[0].type == TokenType.FUNCTION, f"{func} not recognized"
 
 
@@ -329,7 +329,7 @@ class TestTokenizerComplex:
     """Test complex formula tokenization."""
 
     def test_simple_function_call(self):
-        tokens = FormulaTokenizer("SUM(1, 2)").tokenize()
+        tokens = tokenize_formula("SUM(1, 2)")
         assert tokens[0].type == TokenType.FUNCTION
         assert tokens[0].value == "SUM"
         assert tokens[1].type == TokenType.PARENTHESIS
@@ -340,7 +340,7 @@ class TestTokenizerComplex:
 
     def test_if_with_field_and_string(self):
         formula = "IF({Status} = 'Done', TRUE(), FALSE())"
-        tokens = FormulaTokenizer(formula).tokenize()
+        tokens = tokenize_formula(formula)
 
         # Check key tokens
         func_tokens = [t for t in tokens if t.type == TokenType.FUNCTION]
@@ -356,14 +356,14 @@ class TestTokenizerComplex:
 
     def test_nested_functions(self):
         formula = "IF({a}, SUM({b}, {c}), 0)"
-        tokens = FormulaTokenizer(formula).tokenize()
+        tokens = tokenize_formula(formula)
 
         func_tokens = [t for t in tokens if t.type == TokenType.FUNCTION]
         assert len(func_tokens) == 2  # IF, SUM
 
     def test_string_concatenation(self):
         formula = '{First} & " " & {Last}'
-        tokens = FormulaTokenizer(formula).tokenize()
+        tokens = tokenize_formula(formula)
 
         amp_tokens = [t for t in tokens if t.value == "&"]
         assert len(amp_tokens) == 2

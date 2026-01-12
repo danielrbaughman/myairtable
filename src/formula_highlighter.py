@@ -17,11 +17,10 @@ Usage:
 """
 
 import html
+from functools import lru_cache
+from typing import Sequence
 
-try:
-    from .formula_tokenizer import FormulaTokenizer, Token, TokenType
-except ImportError:
-    from formula_tokenizer import FormulaTokenizer, Token, TokenType
+from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 # Color scheme for syntax highlighting
 TOKEN_COLORS: dict[TokenType, str] = {
@@ -41,7 +40,7 @@ def _html_escape(text: str) -> str:
     return html.escape(text, quote=True)
 
 
-def _tokens_to_html(tokens: list[Token]) -> str:
+def _tokens_to_html(tokens: Sequence[Token]) -> str:
     """Convert tokens to HTML with inline styles."""
     parts: list[str] = []
 
@@ -72,9 +71,13 @@ def _tokens_to_html(tokens: list[Token]) -> str:
     return "".join(parts)
 
 
+@lru_cache(maxsize=1024)
 def highlight_formula(formula: str) -> str:
     """
     Convert Airtable formula to syntax-highlighted HTML.
+
+    Results are cached for performance - repeated calls with the same
+    formula return immediately from cache.
 
     Args:
         formula: The Airtable formula string to highlight
@@ -90,8 +93,7 @@ def highlight_formula(formula: str) -> str:
         return ""
 
     try:
-        tokenizer = FormulaTokenizer(formula)
-        tokens = tokenizer.tokenize()
+        tokens = tokenize_formula(formula)
         return _tokens_to_html(tokens)
     except Exception:
         # Fallback: return escaped formula without highlighting
