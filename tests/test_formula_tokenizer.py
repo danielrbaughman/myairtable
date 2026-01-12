@@ -17,8 +17,8 @@ class TestTokenizePureFunction:
         assert callable(tokenize_formula)
 
     def test_empty_formula(self):
-        """Empty string returns empty list."""
-        assert tokenize_formula("") == []
+        """Empty string returns empty tuple."""
+        assert tokenize_formula("") == ()
 
     def test_simple_function(self):
         """Basic function call tokenizes correctly."""
@@ -61,10 +61,11 @@ class TestTokenizeEquivalence:
         ],
     )
     def test_equivalence_with_class(self, formula):
-        """Pure function must produce identical output to class."""
+        """Pure function must produce identical tokens to class."""
         from formula_tokenizer import FormulaTokenizer
 
         class_result = FormulaTokenizer(formula).tokenize()
         pure_result = tokenize_formula(formula)
 
-        assert pure_result == class_result
+        # pure_result is tuple (cached), class_result is list
+        assert list(pure_result) == class_result
