@@ -1,7 +1,9 @@
 import json
 import os
 import random
+import re
 import time
+from contextlib import nullcontext
 from csv import DictReader
 from pathlib import Path
 from typing import Any, Optional
@@ -11,7 +13,17 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from src.helpers import remove_extra_spaces, sanitize_leading_trailing_characters, sanitize_property_name, sanitize_reserved_names
+from src import timer
+from src.formula_condenser import condense_formula
+from src.formula_formatter import format_formula
+from src.formula_highlighter import highlight_formula
+from src.helpers import (
+    remove_extra_spaces,
+    sanitize_for_markdown,
+    sanitize_leading_trailing_characters,
+    sanitize_property_name,
+    sanitize_reserved_names,
+)
 from src.meta_types import BaseMetadata, FieldType
 
 PROPERTY_NAME = "Property Name (snake_case)"
@@ -23,6 +35,9 @@ _INITIAL_DELAY = 1.0  # seconds
 _MAX_DELAY = 60.0  # seconds
 _BACKOFF_MULTIPLIER = 2.0
 _JITTER = 0.5  # ±50% randomization
+
+# Pattern to extract field IDs from formulas (e.g., {fldXXX})
+_FIELD_REF_PATTERN = re.compile(r"\{(fld[A-Za-z0-9]+)\}")
 
 
 def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
@@ -79,9 +94,12 @@ def get_base_meta_data() -> BaseMetadata:
     base_id = get_base_id()
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
 
-    response = _fetch_with_retry(url, headers={"Authorization": f"Bearer {api_key}"})
+    with timer.timer("API: fetch metadata"):
+        response = _fetch_with_retry(url, headers={"Authorization": f"Bearer {api_key}"})
 
-    data: BaseMetadata = response.json()
+    with timer.timer("API: parse JSON response"):
+        data: BaseMetadata = response.json()
+
     data["tables"].sort(key=lambda t: t["name"].lower())
     for table in data["tables"]:
         table["fields"].sort(key=lambda f: f["name"].lower())
@@ -107,9 +125,126 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
     print("")
 
 
-class Choice(BaseModel):
+class Named(BaseModel):
     id: str
     name: str
+    # Dedicated cache attributes for most common variants (faster than dict lookup)
+    _snake: str | None = PrivateAttr(default=None)
+    _pascal: str | None = PrivateAttr(default=None)
+    _model: str | None = PrivateAttr(default=None)
+    _upper: str | None = PrivateAttr(default=None)
+    # Dict cache for less common variants (use_custom=False, camel, etc.)
+    _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def is_table(self) -> bool:
+        return hasattr(self, "primary_field_id")
+
+    def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
+        """Converts the field or table name to a sanitized property name in snake_case."""
+        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
+            text = self._custom_property_name(key=custom_key)
+            if text:
+                text = text.replace(" ", "_")
+                return text
+
+        text = self.name
+
+        text = sanitize_property_name(text)
+        text = remove_extra_spaces(text)
+        text = text.replace(" ", "_")
+        text = text.lower()
+        text = sanitize_leading_trailing_characters(text)
+        text = sanitize_reserved_names(text)
+
+        return text
+
+    def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
+        """Gets the custom property name for a field or table, if it exists."""
+        # Access cache from base (both Field and Table have base attribute)
+        if not hasattr(self, "base") or self.base is None:
+            return None
+
+        cache = self.base._csv_cache
+        if cache is None:
+            return None
+
+        if self.is_table():
+            value = cache.get_table_value(self.id, key)
+        else:
+            value = cache.get_field_value(self.id, key)
+
+        if value:
+            return remove_extra_spaces(value)
+        return None
+
+    def name_snake(self, use_custom: bool = True) -> str:
+        """Get the property name in snake_case. Cached after first call."""
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._snake is None:
+                self._snake = self._property_name(use_custom=True)
+            return self._snake
+        # Fallback to dict cache for use_custom=False
+        cache_key = "snake_False"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = self._property_name(use_custom=False)
+        return self._name_cache[cache_key]
+
+    def name_camel(self, use_custom: bool = True) -> str:
+        """Get the property name in camelCase. Cached after first call."""
+        cache_key = f"camel_{use_custom}"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_camel(self._property_name(use_custom=use_custom))
+        return self._name_cache[cache_key]
+
+    def name_pascal(self, use_custom: bool = True) -> str:
+        """Get the property name in PascalCase. Cached after first call."""
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._pascal is None:
+                self._pascal = to_pascal(self._property_name(use_custom=True))
+            return self._pascal
+        # Fallback to dict cache for use_custom=False
+        cache_key = "pascal_False"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=False))
+        return self._name_cache[cache_key]
+
+    def name_model(self, use_custom: bool = True) -> str:
+        """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
+        # Fast path for most common case (use_custom=True)
+        if use_custom:
+            if self._model is None:
+                if hasattr(self, "base") and self.base and self.base._csv_cache:
+                    text = self._custom_property_name(key=MODEL_NAME)
+                    if text:
+                        text = text.replace(" ", "_")
+                        self._model = to_pascal(text)
+                        return self._model
+                self._model = self.name_pascal(use_custom=True) + "Model"
+            return self._model
+        # Fallback to dict cache for use_custom=False
+        cache_key = "model_False"
+        if cache_key not in self._name_cache:
+            self._name_cache[cache_key] = self.name_pascal(use_custom=False) + "Model"
+        return self._name_cache[cache_key]
+
+    def name_markdown(self) -> str:
+        """Get the name suitable for Markdown."""
+        return sanitize_for_markdown(self.name)
+
+    def name_mermaid(self) -> str:
+        """Get the name suitable for Mermaid diagrams."""
+        return self.name.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)")
+
+    def name_upper(self) -> str:
+        """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
+        if self._upper is None:
+            self._upper = "".join(c for c in self.name if c.isalpha()).upper()
+        return self._upper
+
+
+class Choice(Named):
     color: str | None = None
 
 
@@ -192,96 +327,7 @@ class CsvCache:
         return None
 
 
-class TableOrField(BaseModel):
-    id: str
-    name: str
-    # Memoization cache for computed property names (prevents redundant string operations)
-    _name_cache: dict[str, str] = PrivateAttr(default_factory=dict)
-
-    def is_table(self) -> bool:
-        return hasattr(self, "primary_field_id")
-
-    def _property_name(self, use_custom: bool = True, custom_key: str = PROPERTY_NAME) -> str:
-        """Converts the field or table name to a sanitized property name in snake_case."""
-        if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-            text = self._custom_property_name(key=custom_key)
-            if text:
-                text = text.replace(" ", "_")
-                return text
-
-        text = self.name
-
-        text = sanitize_property_name(text)
-        text = remove_extra_spaces(text)
-        text = text.replace(" ", "_")
-        text = text.lower()
-        text = sanitize_leading_trailing_characters(text)
-        text = sanitize_reserved_names(text)
-
-        return text
-
-    def _custom_property_name(self, key: str = "Property Name (snake_case)") -> str | None:
-        """Gets the custom property name for a field or table, if it exists."""
-        # Access cache from base (both Field and Table have base attribute)
-        if not hasattr(self, "base") or self.base is None:
-            return None
-
-        cache = self.base._csv_cache
-        if cache is None:
-            return None
-
-        if self.is_table():
-            value = cache.get_table_value(self.id, key)
-        else:
-            value = cache.get_field_value(self.id, key)
-
-        if value:
-            return remove_extra_spaces(value)
-        return None
-
-    def name_snake(self, use_custom: bool = True) -> str:
-        """Get the property name in snake_case. Cached after first call."""
-        cache_key = f"snake_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = self._property_name(use_custom=use_custom)
-        return self._name_cache[cache_key]
-
-    def name_camel(self, use_custom: bool = True) -> str:
-        """Get the property name in camelCase. Cached after first call."""
-        cache_key = f"camel_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = to_camel(self._property_name(use_custom=use_custom))
-        return self._name_cache[cache_key]
-
-    def name_pascal(self, use_custom: bool = True) -> str:
-        """Get the property name in PascalCase. Cached after first call."""
-        cache_key = f"pascal_{use_custom}"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = to_pascal(self._property_name(use_custom=use_custom))
-        return self._name_cache[cache_key]
-
-    def name_model(self, use_custom: bool = True) -> str:
-        """Get the model name (PascalCase with 'Model' suffix). Cached after first call."""
-        cache_key = f"model_{use_custom}"
-        if cache_key not in self._name_cache:
-            if use_custom and hasattr(self, "base") and self.base and self.base._csv_cache:
-                text = self._custom_property_name(key=MODEL_NAME)
-                if text:
-                    text = text.replace(" ", "_")
-                    self._name_cache[cache_key] = to_pascal(text)
-                    return self._name_cache[cache_key]
-            self._name_cache[cache_key] = self.name_pascal(use_custom=use_custom) + "Model"
-        return self._name_cache[cache_key]
-
-    def name_upper(self) -> str:
-        """Get the name with only alphabetic characters in UPPERCASE. Cached after first call."""
-        cache_key = "upper"
-        if cache_key not in self._name_cache:
-            self._name_cache[cache_key] = "".join(c for c in self.name if c.isalpha()).upper()
-        return self._name_cache[cache_key]
-
-
-class Field(TableOrField):
+class Field(Named):
     id: str
     name: str
     type: FieldType
@@ -289,11 +335,13 @@ class Field(TableOrField):
     options: Options | None = None
     table: "Table"
     base: "Base"
-    # Memoization cache for select options (computed once, includes sorting)
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
-    # Memoization caches for computed type strings (used by python.py and typescript.py)
     _python_type_cache: str | None = PrivateAttr(default=None)
     _typescript_type_cache: str | None = PrivateAttr(default=None)
+    # Formula caching for performance
+    _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _flattened_formula_cache: str | None = PrivateAttr(default=None)
+    _sanitized_formula_cache: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -327,6 +375,109 @@ class Field(TableOrField):
         ]
         return self.type in computed_types
 
+    def is_link_or_linked_value(self) -> bool:
+        """Check if the field is a linked record or directly involves a linked record."""
+        link_types: list[FieldType] = [
+            "multipleRecordLinks",
+            "lookup",
+            "rollup",
+            "multipleLookupValues",
+        ]
+        return self.type in link_types
+
+    def is_lookup(self) -> bool:
+        """Check if the field is a lookup field."""
+        lookup_types: list[FieldType] = [
+            "lookup",
+            "multipleLookupValues",
+        ]
+        return self.type in lookup_types
+
+    def is_lookup_rollup(self) -> bool:
+        """Check if the field is a lookup or rollup field."""
+        lookup_rollup_types: list[FieldType] = [
+            "lookup",
+            "multipleLookupValues",
+            "rollup",
+        ]
+        return self.type in lookup_rollup_types
+
+    def is_datetime(self) -> bool:
+        """Check if the field is a date or dateTime field."""
+        date_types: list[FieldType] = [
+            "date",
+            "dateTime",
+            "duration",
+            "createdTime",
+            "lastModifiedTime",
+        ]
+        return self.type in date_types
+
+    def type_friendly(self) -> str:
+        match self.type:
+            case "autoNumber":
+                return "Auto-Number"
+            case "barcode":
+                return "Barcode"
+            case "button":
+                return "Button"
+            case "checkbox":
+                return "Checkbox"
+            case "createdBy":
+                return "Created By"
+            case "createdTime":
+                return "Created Time"
+            case "currency":
+                return "Currency"
+            case "date":
+                return "Date"
+            case "dateTime":
+                return "Date & Time"
+            case "duration":
+                return "Duration"
+            case "email":
+                return "Email"
+            case "formula":
+                return "Formula"
+            case "lastModifiedBy":
+                return "Last Modified By"
+            case "lastModifiedTime":
+                return "Last Modified Time"
+            case "lookup":
+                return "Lookup"
+            case "multilineText":
+                return "Long Text"
+            case "multipleAttachments":
+                return "Attachments"
+            case "multipleRecordLinks":
+                return "Link to Another Record(s)"
+            case "multipleSelects":
+                return "Multiple Select"
+            case "multipleLookupValues":
+                return "Lookup"
+            case "number":
+                return "Number"
+            case "percent":
+                return "Percent"
+            case "phoneNumber":
+                return "Phone Number"
+            case "rating":
+                return "Rating"
+            case "richText":
+                return "Rich Text"
+            case "rollup":
+                return "Rollup"
+            case "singleCollaborator":
+                return "Collaborator"
+            case "singleLineText":
+                return "Single Line Text"
+            case "singleSelect":
+                return "Single Select"
+            case "url":
+                return "URL"
+            case _:
+                return self.type
+
     def result_type(self) -> FieldType:
         if self.options:
             if self.options.result:
@@ -334,14 +485,56 @@ class Field(TableOrField):
                     return self.options.result.type
         return self.type
 
-    def referenced_field(self) -> "Field | None":
+    def linked_table(self) -> "Table | None":
+        """Get the linked table for a multipleRecordLinks field."""
+        if self.options:
+            if self.options.linked_table_id:
+                linked_table = self.base.table_by_id(self.options.linked_table_id)
+                if linked_table:
+                    return linked_table
+            elif self.options.field_id_in_linked_table:
+                linked_field = self.base.field_by_id(self.options.field_id_in_linked_table)
+                if linked_field:
+                    return linked_field.table
+
+        return None
+
+    def field_in_linked_table(self) -> "Field | None":
+        """Get the field in the linked table that this field links to (lookup, rollup)."""
         if self.options is None:
             return None
         referenced_field_id = self.options.field_id_in_linked_table
-        # field_by_id uses O(1) index lookup and returns None if not found
         if referenced_field_id:
             return self.base.field_by_id(referenced_field_id)
         return None
+
+    def record_link_field(self) -> "Field | None":
+        """Get the link field that this field links through (lookup, rollup)."""
+        if self.options is None:
+            return None
+        referenced_field_id = self.options.record_link_field_id
+        if referenced_field_id:
+            return self.base.field_by_id(referenced_field_id)
+        return None
+
+    def referenced_fields(self) -> list["Field"]:
+        """Get all referenced fields for this field (link, lookup, rollup, formula)."""
+        fields: list["Field"] = []
+        if self.field_in_linked_table():
+            fields.append(self.field_in_linked_table())
+        if self.options and self.options.referenced_field_ids:
+            for field_id in self.options.referenced_field_ids:
+                ref_field = self.base.field_by_id(field_id)
+                if ref_field:
+                    fields.append(ref_field)
+        # Remove duplicate fields by id (keep first occurrence)
+        seen_ids = set()
+        unique_fields = []
+        for field in fields:
+            if field.id not in seen_ids:
+                seen_ids.add(field.id)
+                unique_fields.append(field)
+        return unique_fields
 
     def get_linked_model_name(self) -> str:
         """Get the model name for a linked record field. Uses O(1) table lookup."""
@@ -351,30 +544,48 @@ class Field(TableOrField):
                 return linked_table.name_model()
         return ""
 
+    def get_field_ids_from_formula(self) -> list[str]:
+        """Extract field IDs referenced in the formula."""
+        field_ids: list[str] = []
+        if self.type == "formula" and self.options and self.options.formula:
+            formula = self.options.formula
+            for table_field in self.table.fields:
+                if f"{{{table_field.id}}}" in formula:
+                    field_ids.append(table_field.id)
+        return field_ids
+
+    def counted_field(self) -> "Field | None":
+        """Get the field that this count field is counting."""
+        if self.type == "count" and self.options and self.options.record_link_field_id:
+            counted_field = self.base.field_by_id(self.options.record_link_field_id)
+            if counted_field:
+                return counted_field
+        return None
+
     def involves_lookup(self) -> bool:
         """Check if a field involves multipleLookupValues, either directly or through any referenced fields."""
         # Check memoization cache first
         if self.id in self.base._involves_lookup_cache:
             return self.base._involves_lookup_cache[self.id]
 
-        # Compute result
-        if self.type == "multipleLookupValues" or self.type == "lookup":
-            result = True
-        elif self.options is None:
-            result = False
-        else:
-            result = False
-            # Check if field has referencedFieldIds and recursively check each one
-            referenced_field_ids = self.options.referenced_field_ids or []
-            for referenced_field_id in referenced_field_ids:
-                # field_by_id uses O(1) index lookup and returns None if not found
-                referenced_field = self.base.field_by_id(referenced_field_id)
-                if referenced_field and referenced_field.involves_lookup():
-                    result = True
-                    break
+        with timer.timer("Field.involves_lookup"):
+            # Compute result
+            if self.type == "multipleLookupValues" or self.type == "lookup":
+                result = True
+            elif self.options is None:
+                result = False
+            else:
+                result = False
+                # Check if field has referencedFieldIds and recursively check each one
+                referenced_field_ids = self.options.referenced_field_ids or []
+                for referenced_field_id in referenced_field_ids:
+                    referenced_field = self.base.field_by_id(referenced_field_id)
+                    if referenced_field and referenced_field.involves_lookup():
+                        result = True
+                        break
 
-        # Cache and return result
-        self.base._involves_lookup_cache[self.id] = result
+            # Cache and return result
+            self.base._involves_lookup_cache[self.id] = result
         return result
 
     def involves_rollup(self) -> bool:
@@ -383,24 +594,24 @@ class Field(TableOrField):
         if self.id in self.base._involves_rollup_cache:
             return self.base._involves_rollup_cache[self.id]
 
-        # Compute result
-        if self.type == "rollup":
-            result = True
-        elif self.options is None:
-            result = False
-        else:
-            result = False
-            # Check if field has referencedFieldIds and recursively check each one
-            referenced_field_ids = self.options.referenced_field_ids or []
-            for referenced_field_id in referenced_field_ids:
-                # field_by_id uses O(1) index lookup and returns None if not found
-                referenced_field = self.base.field_by_id(referenced_field_id)
-                if referenced_field and referenced_field.involves_rollup():
-                    result = True
-                    break
+        with timer.timer("Field.involves_rollup"):
+            # Compute result
+            if self.type == "rollup":
+                result = True
+            elif self.options is None:
+                result = False
+            else:
+                result = False
+                # Check if field has referencedFieldIds and recursively check each one
+                referenced_field_ids = self.options.referenced_field_ids or []
+                for referenced_field_id in referenced_field_ids:
+                    referenced_field = self.base.field_by_id(referenced_field_id)
+                    if referenced_field and referenced_field.involves_rollup():
+                        result = True
+                        break
 
-        # Cache and return result
-        self.base._involves_rollup_cache[self.id] = result
+            # Cache and return result
+            self.base._involves_rollup_cache[self.id] = result
         return result
 
     def select_options(self) -> list[str]:
@@ -468,21 +679,170 @@ class Field(TableOrField):
 
         return formula_type
 
+    def formula(
+        self,
+        *,
+        sanitized: bool = False,
+        flatten: bool = False,
+        condense: bool = False,
+        format: bool = False,
+        highlight: bool = False,
+        _visited: set[str] | None = None,
+    ) -> str:
+        """Get the formula string if the field is a formula field.
 
-class View(BaseModel):
-    id: str
-    name: str
+        Args:
+            sanitized: If True, replace field IDs with field names for readability.
+            flatten: If True, expand all nested formula field references.
+            condense: If True, remove unnecessary whitespace (mutually exclusive with format).
+            format: If True, apply formatting with indentation for readability.
+            highlight: If True, apply syntax highlighting (returns HTML).
+            _visited: Internal parameter to track visited fields and detect circular references.
+
+        Returns:
+            The formula string, optionally flattened, formatted, and/or highlighted.
+
+        Raises:
+            ValueError: If both condense and format are True.
+        """
+        if self.type != "formula" or not self.options or not self.options.formula:
+            return ""
+
+        with timer.timer(f"Field.formula: sanitized={sanitized}, flatten={flatten}, condense={condense}, format={format}, highlight={highlight}"):
+            # Check cache for non-recursive calls (when _visited is None)
+            cache_key = (sanitized, flatten, condense, format, highlight)
+            if _visited is None and cache_key in self._formula_cache:
+                return self._formula_cache[cache_key]
+
+            result = self.options.formula
+
+            if flatten:
+                result = self._flatten_formula(result, _visited)
+
+            if sanitized:
+                result = self._sanitize_formula(result)
+
+            # Mutual exclusivity check
+            if condense and format:
+                raise ValueError("condense and format are mutually exclusive")
+
+            if condense:
+                result = condense_formula(result)
+            elif format:
+                result = format_formula(result)
+
+            if highlight:
+                result = highlight_formula(result)
+
+            # Cache result for non-recursive calls
+            if _visited is None:
+                self._formula_cache[cache_key] = result
+
+            return result
+
+    def _flatten_formula(self, formula: str, _visited: set[str] | None = None) -> str:
+        """Recursively flatten formula by expanding nested formula field references.
+
+        Args:
+            formula: The formula string to flatten.
+            _visited: Set of visited field IDs to detect circular references.
+
+        Returns:
+            The flattened formula string.
+        """
+        # Check cache for top-level (non-recursive) calls
+        is_top_level = _visited is None
+        if is_top_level and self._flattened_formula_cache is not None:
+            return self._flattened_formula_cache
+
+        # Only time top-level calls to avoid double-counting recursive calls
+        with timer.timer("Field._flatten_formula") if is_top_level else nullcontext():
+            # Detect circular reference
+            if _visited is None:
+                _visited = set()
+            if self.id in _visited:
+                return f"{{{self.id}}}"
+
+            # Create new set to avoid mutation across branches
+            _visited = _visited | {self.id}
+
+            # Extract only the field IDs actually referenced in the formula (O(m) where m = formula length)
+            referenced_field_ids = _FIELD_REF_PATTERN.findall(formula)
+
+            # Build replacement dictionary for all formula fields (single pass)
+            replacements: dict[str, str] = {}
+            for field_id in referenced_field_ids:
+                field = self.base.field_by_id(field_id)  # O(1) lookup via base index
+                if field and field.type == "formula" and field.options and field.options.formula:
+                    # Use cached flattened formula if available, otherwise compute it
+                    # This avoids the cache bypass in field.formula() when _visited is passed
+                    if field._flattened_formula_cache is not None:
+                        nested_formula = field._flattened_formula_cache
+                    else:
+                        nested_formula = field._flatten_formula(field.options.formula, _visited)
+                    if nested_formula:
+                        replacements[field_id] = f"({nested_formula})"
+
+            # Single-pass replacement using regex callback (avoids multiple string allocations)
+            if replacements:
+
+                def replace_callback(match: re.Match[str]) -> str:
+                    field_id = match.group(1)
+                    return replacements.get(field_id, match.group(0))
+
+                formula = _FIELD_REF_PATTERN.sub(replace_callback, formula)
+
+            # Cache result for top-level calls
+            if is_top_level:
+                self._flattened_formula_cache = formula
+
+        return formula
+
+    def _sanitize_formula(self, formula: str) -> str:
+        """Replace field IDs with field names for readability."""
+        # Check cache - only applies to raw formula (not flattened)
+        if formula == self.options.formula and self._sanitized_formula_cache is not None:
+            return self._sanitized_formula_cache
+
+        with timer.timer("Field._sanitize_formula"):
+            # Use table-level field ID→name cache for fastest lookup (direct dict access)
+            field_id_to_name = self.table.get_field_id_to_name_map()
+
+            def replace_field_ref(match: re.Match[str]) -> str:
+                field_id = match.group(1)
+                field_name = field_id_to_name.get(field_id)
+                if field_name:
+                    return f"{{{field_name}}}"
+                return match.group(0)  # Keep original if field not found
+
+            result = _FIELD_REF_PATTERN.sub(replace_field_ref, formula)
+
+            # Cache result for raw formula
+            if formula == self.options.formula:
+                self._sanitized_formula_cache = result
+
+        return result
+
+
+class View(Named):
     type: str
     table_id: str
 
 
-class Table(TableOrField):
+class Table(Named):
     id: str
     name: str
     primary_field_id: str
     fields: list[Field]
     views: list[View]
     base: "Base"
+    _field_id_to_name_cache: dict[str, str] | None = PrivateAttr(default=None)
+
+    def get_field_id_to_name_map(self) -> dict[str, str]:
+        """Get field ID to name mapping. Cached after first call."""
+        if self._field_id_to_name_cache is None:
+            self._field_id_to_name_cache = {f.id: f.name for f in self.fields}
+        return self._field_id_to_name_cache
 
     def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
@@ -514,7 +874,7 @@ class Table(TableOrField):
         return [field for field in self.fields if field.select_options()]
 
     def linked_tables(self) -> list["Table"]:
-        """Get the list of linked tables for this table. O(n) where n=fields, using O(1) table lookups."""
+        """Get the list of tables this table links to"""
         linked_tables: list[Table] = []
         seen: set[str] = set()
 
@@ -537,87 +897,83 @@ class Base(BaseModel):
     tables: list[Table]
     _original_metadata: BaseMetadata
     _csv_cache: CsvCache | None = None
-    # Memoization caches for recursive field analysis (prevents exponential traversal)
     _involves_lookup_cache: dict[str, bool] = {}
     _involves_rollup_cache: dict[str, bool] = {}
-    # Indexes for O(1) lookups (built once after loading)
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
-    # Cached computed properties (lazy initialization)
     _select_fields_cache: list["Field"] | None = None
     _select_field_ids_cache: list[str] | None = None
 
-    @classmethod
-    def new(cls, csv_folder: Path | None = None) -> "Base":
+    def __init__(self, csv_folder: Path | None = None):
         meta = get_base_meta_data()
-        base: Base = cls(
+        super().__init__(
             id=get_base_id(),
             tables=[],
         )
-        base._original_metadata = meta
-        base._csv_cache = CsvCache(csv_folder) if csv_folder else None
+        self._original_metadata = meta
+        self._csv_cache = CsvCache(csv_folder) if csv_folder else None
         # Initialize fresh caches for this base instance
-        base._involves_lookup_cache = {}
-        base._involves_rollup_cache = {}
-        for table_meta in meta["tables"]:
-            table = Table(
-                id=table_meta["id"],
-                name=table_meta["name"],
-                primary_field_id=table_meta["primaryFieldId"],
-                fields=[],
-                views=[],
-                base=base,
-            )
-            for field_meta in table_meta["fields"]:
-                options: dict[str, Any] = field_meta.get("options", {})
-                field = Field(
-                    id=field_meta["id"],
-                    name=field_meta["name"],
-                    type=field_meta["type"],
-                    description=field_meta.get("description"),
-                    table=table,
-                    base=base,
-                    options=Options(
-                        field_id=field_meta["id"],
-                        formula=options.get("formula"),
-                        view_id_for_record_selection=options.get("viewIdForRecordSelection"),
-                        is_reversed=options.get("isReversed"),
-                        precision=options.get("precision"),
-                        linked_table_id=options.get("linkedTableId"),
-                        prefers_single_record_link=options.get("prefersSingleRecordLink"),
-                        inverse_link_field_id=options.get("inverseLinkFieldId"),
-                        icon=options.get("icon"),
-                        color=options.get("color"),
-                        is_valid=options.get("isValid", True),
-                        duration_format=options.get("durationFormat"),
-                        record_link_field_id=options.get("recordLinkFieldId"),
-                        field_id_in_linked_table=options.get("fieldIdInLinkedTable"),
-                        referenced_field_ids=options.get("referencedFieldIds"),
-                        date_format=DateFormat.model_validate(options.get("dateFormat")) if options.get("dateFormat") else None,
-                        result=Result.model_validate(options.get("result")) if options.get("result") else None,
-                        choices=[Choice.model_validate(choice) for choice in options.get("choices", [])] if options.get("choices") else None,
-                    ),
-                )
-                table.fields.append(field)
-            for view_meta in table_meta.get("views", []):
-                view = View(
-                    id=view_meta["id"],
-                    name=view_meta["name"],
-                    type=view_meta["type"],
-                    table_id=table_meta["id"],
-                )
-                table.views.append(view)
-            base.tables.append(table)
+        self._involves_lookup_cache = {}
+        self._involves_rollup_cache = {}
 
-        # Build indexes for O(1) lookups
-        base._field_index = {}
-        base._table_index = {}
-        for table in base.tables:
-            base._table_index[table.id] = table
-            for field in table.fields:
-                base._field_index[field.id] = field
+        with timer.timer("Base: Build Table/Field/View models"):
+            for table_meta in meta["tables"]:
+                table = Table(
+                    id=table_meta["id"],
+                    name=table_meta["name"],
+                    primary_field_id=table_meta["primaryFieldId"],
+                    fields=[],
+                    views=[],
+                    base=self,
+                )
+                for field_meta in table_meta["fields"]:
+                    options: dict[str, Any] = field_meta.get("options", {})
+                    field = Field(
+                        id=field_meta["id"],
+                        name=field_meta["name"],
+                        type=field_meta["type"],
+                        description=field_meta.get("description"),
+                        table=table,
+                        base=self,
+                        options=Options(
+                            field_id=field_meta["id"],
+                            formula=options.get("formula"),
+                            view_id_for_record_selection=options.get("viewIdForRecordSelection"),
+                            is_reversed=options.get("isReversed"),
+                            precision=options.get("precision"),
+                            linked_table_id=options.get("linkedTableId"),
+                            prefers_single_record_link=options.get("prefersSingleRecordLink"),
+                            inverse_link_field_id=options.get("inverseLinkFieldId"),
+                            icon=options.get("icon"),
+                            color=options.get("color"),
+                            is_valid=options.get("isValid", True),
+                            duration_format=options.get("durationFormat"),
+                            record_link_field_id=options.get("recordLinkFieldId"),
+                            field_id_in_linked_table=options.get("fieldIdInLinkedTable"),
+                            referenced_field_ids=options.get("referencedFieldIds"),
+                            date_format=DateFormat.model_validate(options.get("dateFormat")) if options.get("dateFormat") else None,
+                            result=Result.model_validate(options.get("result")) if options.get("result") else None,
+                            choices=[Choice.model_validate(choice) for choice in options.get("choices", [])] if options.get("choices") else None,
+                        ),
+                    )
+                    table.fields.append(field)
+                for view_meta in table_meta.get("views", []):
+                    view = View(
+                        id=view_meta["id"],
+                        name=view_meta["name"],
+                        type=view_meta["type"],
+                        table_id=table_meta["id"],
+                    )
+                    table.views.append(view)
+                self.tables.append(table)
 
-        return base
+        with timer.timer("Base: Build field/table indexes"):
+            self._field_index = {}
+            self._table_index = {}
+            for table in self.tables:
+                self._table_index[table.id] = table
+                for field in table.fields:
+                    self._field_index[field.id] = field
 
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata

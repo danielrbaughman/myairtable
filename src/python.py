@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from . import timer
 from .helpers import (
     Paths,
     copy_static_files,
@@ -98,20 +99,33 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
 
     copy_static_files(output_folder, "python")
     print("[dim] - Python static files copied.[/]")
-    write_types(base, output_folder)
+
+    with timer.timer("Python: write_types"):
+        write_types(base, output_folder)
     print("[dim] - Python types generated.[/]")
-    write_dicts(base, output_folder)
+
+    with timer.timer("Python: write_dicts"):
+        write_dicts(base, output_folder)
     print("[dim] - Python dicts generated.[/]")
-    write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
+
+    with timer.timer("Python: write_models"):
+        write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
     print("[dim] - Python models generated.[/]")
+
     if formulas:
-        write_formula_helpers(base, output_folder)
+        with timer.timer("Python: write_formula_helpers"):
+            write_formula_helpers(base, output_folder)
         print("[dim] - Python formula helpers generated.[/]")
+
     if wrappers:
-        write_tables(base, output_folder)
+        with timer.timer("Python: write_tables"):
+            write_tables(base, output_folder)
         print("[dim] - Python tables generated.[/]")
-        write_main_class(base, output_folder)
+
+        with timer.timer("Python: write_main_class"):
+            write_main_class(base, output_folder)
         print("[dim] - Python main class generated.[/]")
+
     write_init(output_folder, formulas, wrappers)
     print("[green] - Python code generation complete.[/]")
     print("")
@@ -147,19 +161,51 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             write.region("OPTIONS")
+
+            # Single pass to collect ALL field data needed for type generation
+            field_data: list[dict[str, str]] = []
+            computed_field_names: list[str] = []
+            computed_field_ids: list[str] = []
+            fields_dict_rows: list[tuple[str, str]] = []
+
             for field in table.fields:
+                name_sanitized = sanitize_string(field.name)
+                name_snake = field.name_snake()
+                py_type = python_type(field)
+
+                # Store all field attributes for later use
+                field_data.append(
+                    {
+                        "id": field.id,
+                        "name": field.name,
+                        "name_sanitized": name_sanitized,
+                        "name_snake": name_snake,
+                    }
+                )
+
+                # Collect computed fields
+                if field.is_computed():
+                    computed_field_names.append(name_sanitized)
+                    computed_field_ids.append(field.id)
+
+                # Collect FieldsDict rows
+                fields_dict_rows.append((field.id, py_type))
+
+                # Write select options inline
                 options = field.select_options()
                 if len(options) > 0:
                     write.types(
                         field.options_name(),
                         options,
-                        f"Select options for `{sanitize_string(field.name)}`",
+                        f"Select options for `{name_sanitized}`",
                     )
+
             write.endregion()
 
-            field_names = [sanitize_string(field.name) for field in table.fields]
-            field_ids = [field.id for field in table.fields]
-            property_names = [field.name_snake() for field in table.fields]
+            # Extract lists from pre-collected data (no re-iteration)
+            field_names = [fd["name_sanitized"] for fd in field_data]
+            field_ids = [fd["id"] for fd in field_data]
+            property_names = [fd["name_snake"] for fd in field_data]
 
             write.region(table.name_upper())
 
@@ -167,18 +213,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.types(f"{table.name_pascal()}FieldId", field_ids, f"Field IDs for `{table.name}`")
             write.types(f"{table.name_pascal()}FieldProperty", property_names, f"Property names for `{table.name}`")
 
-            write.str_list(
-                f"{table.name_pascal()}CalculatedFields",
-                [sanitize_string(field.name) for field in table.fields if field.is_computed()],
-            )
+            write.str_list(f"{table.name_pascal()}CalculatedFields", computed_field_names)
             write.line(f'"""Calculated fields for `{table.name}`"""')
-            write.str_list(
-                f"{table.name_pascal()}CalculatedFieldIds",
-                [field.id for field in table.fields if field.is_computed()],
-            )
+            write.str_list(f"{table.name_pascal()}CalculatedFieldIds", computed_field_ids)
             write.line(f'"""Calculated fields for `{table.name}`"""')
             write.line_empty()
 
+            # Generate all field mappings from pre-collected data (no re-iteration)
             field_mappings: list[tuple[str, str, str, str, str]] = [
                 ("FieldNameIdMapping", "name_sanitized", "id", "Field", "FieldId"),
                 ("FieldIdNameMapping", "id", "name_sanitized", "FieldId", "Field"),
@@ -188,29 +229,17 @@ def write_types(base: Base, output_folder: Path) -> None:
                 ("FieldPropertyNameMapping", "name_snake", "name", "FieldProperty", "Field"),
             ]
 
-            def _get(field: Field, getter: str) -> str:
-                """Get a field value based on the getter name."""
-                if getter == "id":
-                    return field.id
-                elif getter == "name":
-                    return field.name
-                elif getter == "name_snake":
-                    return field.name_snake()
-                elif getter == "name_sanitized":
-                    return sanitize_string(field.name)
-                raise ValueError(f"Unknown getter: {getter}")
-
-            for suffix, get_1, get_2, type_1, type_2 in field_mappings:
+            for suffix, key_1, key_2, type_1, type_2 in field_mappings:
                 write.dict_class(
                     f"{table.name_pascal()}{suffix}",
-                    [(_get(field, get_1), _get(field, get_2)) for field in table.fields],
+                    [(fd[key_1], fd[key_2]) for fd in field_data],
                     first_type=f"{table.name_pascal()}{type_1}",
                     second_type=f"{table.name_pascal()}{type_2}",
                 )
 
             write.line(f"class {table.name_pascal()}FieldsDict(TypedDict, total=False):")
-            for field in table.fields:
-                write.property_row(field.id, python_type(field))
+            for field_id, py_type in fields_dict_rows:
+                write.property_row(field_id, py_type)
             write.line_empty()
             write.line_empty()
 
@@ -721,48 +750,49 @@ def python_type(field: Field) -> str:
     if field._python_type_cache is not None:
         return field._python_type_cache
 
-    airtable_type: FieldType = field.type
+    with timer.timer("python_type"):
+        airtable_type: FieldType = field.type
 
-    # With calculated fields, we want to know the type of the result
-    if field.is_calculated():
-        airtable_type = field.result_type()
+        # With calculated fields, we want to know the type of the result
+        if field.is_calculated():
+            airtable_type = field.result_type()
 
-    # Handle simple type mappings via lookup
-    if airtable_type in SIMPLE_PYTHON_TYPES:
-        py_type = SIMPLE_PYTHON_TYPES[airtable_type]
+        # Handle simple type mappings via lookup
+        if airtable_type in SIMPLE_PYTHON_TYPES:
+            py_type = SIMPLE_PYTHON_TYPES[airtable_type]
 
-    # Handle complex types with special logic
-    elif airtable_type == "number":
-        if field.options and field.options.precision is not None and field.options.precision == 0:
-            py_type = "int"
-        else:
-            py_type = "float"
-    elif airtable_type == "singleSelect":
-        referenced_field = field.referenced_field()
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            py_type = field.options_name()
-        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-            py_type = referenced_field.options_name()
+        # Handle complex types with special logic
+        elif airtable_type == "number":
+            if field.options and field.options.precision is not None and field.options.precision == 0:
+                py_type = "int"
+            else:
+                py_type = "float"
+        elif airtable_type == "singleSelect":
+            referenced_field = field.field_in_linked_table()
+            select_fields_ids = field.base.select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = field.options_name()
+            elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
+                py_type = referenced_field.options_name()
+            else:
+                py_type = "Any"
+        elif airtable_type == "multipleSelects":
+            select_fields_ids = field.base.select_fields_ids()
+            if field.id in select_fields_ids:
+                py_type = f"list[{field.options_name()}]"
+            else:
+                py_type = "Any"
         else:
             py_type = "Any"
-    elif airtable_type == "multipleSelects":
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            py_type = f"list[{field.options_name()}]"
-        else:
-            py_type = "Any"
-    else:
-        py_type = "Any"
 
-    # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
-    # Although the type prediction is basically right, I haven't figured out how to predict if
-    # it's a list or not, and sometimes the result is a list with a single null value.
-    if "list" not in py_type:
-        if field.involves_lookup() or field.involves_rollup():
-            py_type = f"list[{py_type} | None] | {py_type}"
+        # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
+        # Although the type prediction is basically right, I haven't figured out how to predict if
+        # it's a list or not, and sometimes the result is a list with a single null value.
+        if "list" not in py_type:
+            if field.involves_lookup() or field.involves_rollup():
+                py_type = f"list[{py_type} | None] | {py_type}"
 
-    field._python_type_cache = py_type
+        field._python_type_cache = py_type
     return py_type
 
 
