@@ -229,6 +229,11 @@ def write_fields(
 
                 with timer.timer("Markdown: write_field: formula"):
                     if field.type == "formula":
+                        # Pre-compute formula variants to avoid redundant processing
+                        # These condensed forms are used for comparison and raw display
+                        condensed = field.formula(condense=True)
+                        raw_sanitized = field.formula(sanitized=True, condense=True)
+
                         with timer.timer("Markdown: write_field: formula: highlighted"):
                             write.header("Formula", level=5)
                             if format_formulas:
@@ -239,7 +244,9 @@ def write_fields(
 
                         if flatten_formulas:
                             with timer.timer("Markdown: write_field: formula: flattened + highlighted"):
-                                if field.formula(condense=True) != field.formula(flatten=True, condense=True):
+                                # Compare condensed forms to check if flattening changes anything
+                                flattened_condensed = field.formula(flatten=True, condense=True)
+                                if condensed != flattened_condensed:
                                     write.header("Formula (Flattened)", level=5)
                                     write.line("*Nested formulas expanded*")
                                     if format_formulas:
@@ -250,7 +257,7 @@ def write_fields(
 
                         with timer.timer("Markdown: write_field: formula: raw"):
                             write.header("Formula (Raw)", level=5)
-                            write.code_block(field.formula(sanitized=True, condense=True))
+                            write.code_block(raw_sanitized)
                             write.line_empty()
 
                         if mermaid_formulas:
