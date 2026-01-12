@@ -1,9 +1,7 @@
 import json
 import os
 import random
-import re
 import time
-from contextlib import nullcontext
 from csv import DictReader
 from pathlib import Path
 from typing import Any, Optional
@@ -15,9 +13,10 @@ from rich import print
 
 from src import timer
 from src.formula_condenser import condense_formula
+from src.formula_flattener import flatten_formula
 from src.formula_formatter import format_formula
 from src.formula_highlighter import highlight_formula
-from src.formula_sanitizer import FIELD_REF_PATTERN, sanitize_formula
+from src.formula_sanitizer import sanitize_formula
 from src.helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
@@ -338,7 +337,6 @@ class Field(Named):
     _typescript_type_cache: str | None = PrivateAttr(default=None)
     # Formula caching for performance
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
-    _flattened_formula_cache: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -714,7 +712,12 @@ class Field(Named):
             result = self.options.formula
 
             if flatten:
-                result = self._flatten_formula(result, _visited)
+                result = flatten_formula(
+                    formula=result,
+                    current_field_id=self.id,
+                    formula_map=self.base.get_formula_field_map(),
+                    visited=frozenset() if _visited is None else frozenset(_visited),
+                )
 
             if sanitized:
                 result = sanitize_formula(result, self.table.get_field_id_to_name_map())
@@ -736,64 +739,6 @@ class Field(Named):
                 self._formula_cache[cache_key] = result
 
             return result
-
-    def _flatten_formula(self, formula: str, _visited: set[str] | None = None) -> str:
-        """Recursively flatten formula by expanding nested formula field references.
-
-        Args:
-            formula: The formula string to flatten.
-            _visited: Set of visited field IDs to detect circular references.
-
-        Returns:
-            The flattened formula string.
-        """
-        # Check cache for top-level (non-recursive) calls
-        is_top_level = _visited is None
-        if is_top_level and self._flattened_formula_cache is not None:
-            return self._flattened_formula_cache
-
-        # Only time top-level calls to avoid double-counting recursive calls
-        with timer.timer("Field._flatten_formula") if is_top_level else nullcontext():
-            # Detect circular reference
-            if _visited is None:
-                _visited = set()
-            if self.id in _visited:
-                return f"{{{self.id}}}"
-
-            # Create new set to avoid mutation across branches
-            _visited = _visited | {self.id}
-
-            # Extract only the field IDs actually referenced in the formula (O(m) where m = formula length)
-            referenced_field_ids = FIELD_REF_PATTERN.findall(formula)
-
-            # Build replacement dictionary for all formula fields (single pass)
-            replacements: dict[str, str] = {}
-            for field_id in referenced_field_ids:
-                field = self.base.field_by_id(field_id)  # O(1) lookup via base index
-                if field and field.type == "formula" and field.options and field.options.formula:
-                    # Use cached flattened formula if available, otherwise compute it
-                    # This avoids the cache bypass in field.formula() when _visited is passed
-                    if field._flattened_formula_cache is not None:
-                        nested_formula = field._flattened_formula_cache
-                    else:
-                        nested_formula = field._flatten_formula(field.options.formula, _visited)
-                    if nested_formula:
-                        replacements[field_id] = f"({nested_formula})"
-
-            # Single-pass replacement using regex callback (avoids multiple string allocations)
-            if replacements:
-
-                def replace_callback(match: re.Match[str]) -> str:
-                    field_id = match.group(1)
-                    return replacements.get(field_id, match.group(0))
-
-                formula = FIELD_REF_PATTERN.sub(replace_callback, formula)
-
-            # Cache result for top-level calls
-            if is_top_level:
-                self._flattened_formula_cache = formula
-
-        return formula
 
 
 class View(Named):
@@ -969,6 +914,19 @@ class Base(BaseModel):
     def field_by_id(self, field_id: str) -> Field | None:
         """Get a field by ID. O(1) lookup using index."""
         return self._field_index.get(field_id)
+
+    def get_formula_field_map(self) -> dict[str, str]:
+        """Get a mapping of field ID to formula string for all formula fields.
+
+        Returns:
+            Dict mapping field_id -> formula for all formula-type fields with formulas.
+        """
+        if not hasattr(self, "_formula_field_map_cache"):
+            self._formula_field_map_cache: dict[str, str] = {}
+            for field in self.fields():
+                if field.type == "formula" and field.options and field.options.formula:
+                    self._formula_field_map_cache[field.id] = field.options.formula
+        return self._formula_field_map_cache
 
     def select_fields(self) -> list[Field]:
         """Get all fields with select options. Cached after first call."""
