@@ -367,7 +367,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
                 field_name = field.name_camel()
                 field_type = typescript_type(field)
                 write.line_indented(f"{field_name}?: {field_type},", 2)
-            write.line_indented("}) {")
+            write.line_indented("} = {}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
                 field_name = field.name_camel()
