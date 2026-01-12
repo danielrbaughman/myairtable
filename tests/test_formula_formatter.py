@@ -46,25 +46,25 @@ class TestSplitArguments:
     """Test the _split_arguments helper function."""
 
     def test_simple_args(self):
-        assert _split_arguments("{a}, {b}, {c}") == ["{a}", "{b}", "{c}"]
+        assert _split_arguments("{a}, {b}, {c}") == ("{a}", "{b}", "{c}")
 
     def test_nested_function(self):
         result = _split_arguments("{a}, IF({x}, {y}, {z}), {c}")
-        assert result == ["{a}", "IF({x}, {y}, {z})", "{c}"]
+        assert result == ("{a}", "IF({x}, {y}, {z})", "{c}")
 
     def test_string_with_comma(self):
         result = _split_arguments('{a}, "hello, world", {b}')
-        assert result == ["{a}", '"hello, world"', "{b}"]
+        assert result == ("{a}", '"hello, world"', "{b}")
 
     def test_field_ref_with_comma(self):
         result = _split_arguments("{a}, {field, name}, {b}")
-        assert result == ["{a}", "{field, name}", "{b}"]
+        assert result == ("{a}", "{field, name}", "{b}")
 
     def test_empty_args(self):
-        assert _split_arguments("") == []
+        assert _split_arguments("") == ()
 
     def test_single_arg(self):
-        assert _split_arguments("{a}") == ["{a}"]
+        assert _split_arguments("{a}") == ("{a}",)
 
 
 class TestCountNestingDepth:

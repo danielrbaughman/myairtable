@@ -6,20 +6,23 @@ proper indentation and newlines for better readability in markdown code blocks.
 
 import re
 from functools import lru_cache
+from typing import Sequence
 
 try:
     from .formula_tokenizer import Token, TokenType, tokenize_formula
 except ImportError:
     from formula_tokenizer import Token, TokenType, tokenize_formula
 
+# Pre-compiled regex patterns for performance (avoid recompilation on every call)
+_ALWAYS_EXPAND_PATTERN = re.compile(r"^(IF|SWITCH|IFS)\s*\(", re.IGNORECASE)
+_FUNC_START_PATTERN = re.compile(r"^([A-Z_][A-Z0-9_]*)\s*\(", re.IGNORECASE)
+_EMBEDDED_FUNC_PATTERN = re.compile(r"([A-Z_][A-Z0-9_]*)\s*\(", re.IGNORECASE)
 
-@lru_cache(maxsize=1024)
-def _tokenize(formula: str) -> tuple[Token, ...]:
-    """Tokenize a formula string (cached for performance)."""
-    return tuple(tokenize_formula(formula))
+# Functions that should ALWAYS be expanded for readability
+_ALWAYS_EXPAND_FUNCS = frozenset({"IF", "SWITCH", "IFS"})
 
 
-def _tokens_to_string(tokens: list[Token]) -> str:
+def _tokens_to_string(tokens: Sequence[Token]) -> str:
     """Convert tokens back to string."""
     return "".join(t.value for t in tokens)
 
@@ -32,8 +35,8 @@ def _find_matching_paren(formula: str, start: int) -> int:
     if start >= len(formula) or formula[start] != "(":
         return -1
 
-    # Tokenize from the start position onward
-    tokens = _tokenize(formula[start:])
+    # Tokenize from the start position onward (tokenize_formula is cached)
+    tokens = tokenize_formula(formula[start:])
 
     if not tokens or tokens[0].type != TokenType.PARENTHESIS or tokens[0].value != "(":
         return -1
@@ -49,9 +52,13 @@ def _find_matching_paren(formula: str, start: int) -> int:
     return -1  # No matching paren found
 
 
-def _split_arguments(args_str: str) -> list[str]:
-    """Split comma-separated arguments, respecting nesting, strings, and field refs."""
-    tokens = _tokenize(args_str)
+@lru_cache(maxsize=1024)
+def _split_arguments(args_str: str) -> tuple[str, ...]:
+    """Split comma-separated arguments, respecting nesting, strings, and field refs.
+
+    Returns a tuple (for caching hashability).
+    """
+    tokens = tokenize_formula(args_str)
 
     args: list[list[Token]] = []
     current: list[Token] = []
@@ -76,12 +83,12 @@ def _split_arguments(args_str: str) -> list[str]:
         args.append(current)
 
     # Convert token lists back to strings and strip whitespace
-    return [_tokens_to_string(arg_tokens).strip() for arg_tokens in args]
+    return tuple(_tokens_to_string(arg_tokens).strip() for arg_tokens in args)
 
 
 def _count_nesting_depth(formula: str) -> int:
     """Count the maximum nesting depth of function calls."""
-    tokens = _tokenize(formula)
+    tokens = tokenize_formula(formula)
     max_depth = 0
 
     for token in tokens:
@@ -99,18 +106,16 @@ def _is_simple_formula(formula: str) -> bool:
     - Nesting depth <= 1
     """
     # IF, SWITCH, IFS should always be formatted when they have arguments
-    always_expand_pattern = re.compile(r"^(IF|SWITCH|IFS)\s*\(", re.IGNORECASE)
-    if always_expand_pattern.match(formula):
+    match = _ALWAYS_EXPAND_PATTERN.match(formula)
+    if match:
         # Check if it has more than 1 argument
-        match = always_expand_pattern.match(formula)
-        if match:
-            paren_start = match.end() - 1
-            paren_end = _find_matching_paren(formula, paren_start)
-            if paren_end > 0:
-                args_str = formula[paren_start + 1 : paren_end]
-                args = _split_arguments(args_str)
-                if len(args) > 1:
-                    return False  # Not simple - needs expansion
+        paren_start = match.end() - 1
+        paren_end = _find_matching_paren(formula, paren_start)
+        if paren_end > 0:
+            args_str = formula[paren_start + 1 : paren_end]
+            args = _split_arguments(args_str)
+            if len(args) > 1:
+                return False  # Not simple - needs expansion
 
     # Length check for other formulas
     if len(formula) <= 80:
@@ -126,7 +131,7 @@ def _is_simple_formula(formula: str) -> bool:
 
 def _normalize_whitespace(formula: str) -> str:
     """Normalize whitespace in formula, preserving content inside strings and field refs."""
-    tokens = _tokenize(formula)
+    tokens = tokenize_formula(formula)
     result: list[str] = []
     prev_was_space = False
 
@@ -193,11 +198,11 @@ def _format_complex(formula: str, indent: int = 0, indent_str: str = "  ") -> st
             return formatted_prefix
 
     # Find function call pattern: NAME(
-    match = re.match(r"^([A-Z_][A-Z0-9_]*)\s*\(", formula, re.IGNORECASE)
+    match = _FUNC_START_PATTERN.match(formula)
     if not match:
         # Not a function call at the start - look for embedded function calls
         # This handles cases like: {field}*IF(...) or value+FUNC(...)
-        func_match = re.search(r"([A-Z_][A-Z0-9_]*)\s*\(", formula, re.IGNORECASE)
+        func_match = _EMBEDDED_FUNC_PATTERN.search(formula)
         if func_match:
             # Found a function call embedded in the expression
             func_start = func_match.start()
@@ -236,18 +241,16 @@ def _format_complex(formula: str, indent: int = 0, indent_str: str = "  ") -> st
     args = _split_arguments(args_str)
 
     # Check if any argument contains a function call
-    has_nested_func = any(re.search(r"[A-Z_][A-Z0-9_]*\s*\(", arg, re.IGNORECASE) for arg in args)
+    has_nested_func = any(_EMBEDDED_FUNC_PATTERN.search(arg) for arg in args)
 
     # Check if this function call should be kept on one line
     inner_content = f"{func_name}({', '.join(args)})"
 
-    # Functions that should ALWAYS be expanded for readability
-    always_expand = {"IF", "SWITCH", "IFS"}
     func_upper = func_name.upper()
 
     # Determine if we should expand this function
     should_expand = (
-        (func_upper in always_expand and len(args) > 1)  # IF/SWITCH/IFS always expand
+        (func_upper in _ALWAYS_EXPAND_FUNCS and len(args) > 1)  # IF/SWITCH/IFS always expand
         or has_nested_func  # Has nested function calls
         or len(inner_content) > 50  # Too long for single line
     )
