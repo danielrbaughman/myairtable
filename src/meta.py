@@ -889,8 +889,12 @@ class Base(BaseModel):
             self._table_index = {}
             for table in self.tables:
                 self._table_index[table.id] = table
+                # Eagerly build field ID to name map for each table
+                field_id_to_name: dict[str, str] = {}
                 for field in table.fields:
                     self._field_index[field.id] = field
+                    field_id_to_name[field.id] = field.name
+                table._field_id_to_name_cache = field_id_to_name
 
     def to_dict(self) -> BaseMetadata:
         return self._original_metadata
