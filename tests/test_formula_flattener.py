@@ -116,6 +116,29 @@ class TestCircularRefs:
         assert "(10)" in result
 
 
+class TestStringLiterals:
+    """Test that field references in strings are not expanded."""
+
+    def test_field_ref_in_double_quoted_string_unchanged(self):
+        """Field refs inside strings should NOT be expanded."""
+        formula_map = {"fldA": "10", "fldB": "20"}
+        result = flatten_formula('IF({fldA}, "check {fldB}", "no")', "fldTest", formula_map)
+        # {fldA} should expand, but {fldB} inside string should not
+        assert result == 'IF((10), "check {fldB}", "no")'
+
+    def test_field_ref_in_single_quoted_string_unchanged(self):
+        """Field refs inside single-quoted strings should NOT be expanded."""
+        formula_map = {"fldA": "10", "fldB": "20"}
+        result = flatten_formula("IF({fldA}, 'check {fldB}', 'no')", "fldTest", formula_map)
+        assert result == "IF((10), 'check {fldB}', 'no')"
+
+    def test_mixed_real_and_string_refs(self):
+        """Real refs expand, string refs don't."""
+        formula_map = {"fldA": "1", "fldB": "2", "fldC": "3"}
+        result = flatten_formula('{fldA} & " {fldB} " & {fldC}', "fldTest", formula_map)
+        assert result == '(1) & " {fldB} " & (3)'
+
+
 class TestEdgeCases:
     """Test edge cases."""
 
@@ -141,16 +164,20 @@ class TestEdgeCases:
 
 
 class TestFieldRefPattern:
-    """Test the FIELD_REF_PATTERN regex."""
+    """Test the FIELD_REF_PATTERN regex (validates field IDs, not searches)."""
 
     def test_matches_field_id(self):
-        assert FIELD_REF_PATTERN.findall("{fldABC123}") == ["fldABC123"]
+        assert FIELD_REF_PATTERN.match("fldABC123")
 
-    def test_matches_multiple(self):
-        assert FIELD_REF_PATTERN.findall("{fldA} + {fldB}") == ["fldA", "fldB"]
+    def test_matches_simple_field_id(self):
+        assert FIELD_REF_PATTERN.match("fldA")
 
     def test_no_match_regular_name(self):
-        assert FIELD_REF_PATTERN.findall("{Status}") == []
+        assert not FIELD_REF_PATTERN.match("Status")
+
+    def test_no_match_with_braces(self):
+        # The pattern validates the ID itself, not the {id} format
+        assert not FIELD_REF_PATTERN.match("{fldA}")
 
 
 if __name__ == "__main__":

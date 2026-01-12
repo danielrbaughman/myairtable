@@ -12,7 +12,10 @@ Example:
 import re
 from functools import lru_cache
 
-FIELD_REF_PATTERN = re.compile(r"\{(fld[A-Za-z0-9]+)\}")
+from src.formula_tokenizer import TokenType, tokenize_formula
+
+# Pattern to validate field IDs (fldXXX format) - used for validation, not searching
+FIELD_REF_PATTERN = re.compile(r"^fld[A-Za-z0-9]+$")
 
 
 @lru_cache(maxsize=1024)
@@ -25,20 +28,36 @@ def _flatten_cached(
     """Cached implementation of formula flattening. Takes tuples for hashability."""
     formula_map = dict(formula_mapping)
 
-    # Find all field references in formula
-    referenced_field_ids = FIELD_REF_PATTERN.findall(formula)
+    # Tokenize the formula to properly handle strings and field references
+    tokens = tokenize_formula(formula)
 
-    # Build replacements for formula fields only
-    replacements: dict[str, str] = {}
-    for field_id in referenced_field_ids:
+    # Build result by processing each token
+    result_parts: list[str] = []
+
+    for token in tokens:
+        # Non-field-ref tokens pass through unchanged
+        if token.type != TokenType.FIELD_REF:
+            result_parts.append(token.value)
+            continue
+
+        # Extract field ID from {fldXXX} format
+        field_id = token.value[1:-1]  # Strip braces
+
+        # Only process valid field IDs in fldXXX format
+        if not FIELD_REF_PATTERN.match(field_id):
+            result_parts.append(token.value)
+            continue
+
         # Skip if this reference would create a cycle
         if field_id in visited:
+            result_parts.append(token.value)
             continue
 
         nested_formula = formula_map.get(field_id)
 
         # Skip if not a formula field or empty formula
         if not nested_formula:
+            result_parts.append(token.value)
             continue
 
         # Mark this field as visited before recursing to prevent cycles
@@ -52,20 +71,13 @@ def _flatten_cached(
             new_visited,
         )
 
-        # Only add replacement if result is non-empty
+        # Replace with flattened formula wrapped in parentheses
         if flattened:
-            replacements[field_id] = f"({flattened})"
+            result_parts.append(f"({flattened})")
+        else:
+            result_parts.append(token.value)
 
-    # Apply all replacements in single pass
-    if replacements:
-
-        def replace_callback(match: re.Match[str]) -> str:
-            field_id = match.group(1)
-            return replacements.get(field_id, match.group(0))
-
-        formula = FIELD_REF_PATTERN.sub(replace_callback, formula)
-
-    return formula
+    return "".join(result_parts)
 
 
 def flatten_formula(
