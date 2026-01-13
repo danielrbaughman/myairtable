@@ -1,10 +1,12 @@
 import os
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pyairtable
 from rich import print
-from rich.progress import track
 
+from . import timer
 from .meta import Base, Field
 from .meta_types import FieldType, GenericType, ResolvedType
 from .verbose import verbose
@@ -103,6 +105,7 @@ def python_type_matches_generic(saved: str, generic_type: GenericType | None) ->
 # =============================================================================
 
 
+@timer.timed("map_types")
 def map_types(base: Base) -> None:
     """Calculate and store Python and TypeScript types for all fields. Idempotent."""
     print("Determining field types")
@@ -158,6 +161,7 @@ def map_types(base: Base) -> None:
 # =============================================================================
 
 
+@timer.timed("map_type")
 def map_type(field: Field) -> ResolvedType:
     """Calculate the generic type for a field."""
 
@@ -210,6 +214,7 @@ def map_type(field: Field) -> ResolvedType:
     return resolved
 
 
+@timer.timed("get_select_options_name")
 def get_select_options_name(field: Field) -> str | None:
     """Extract the options name for a select field (shared logic for single/multiple)."""
     select_fields_ids = field.base.select_fields_ids()
@@ -227,6 +232,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
+@timer.timed("render_python_type")
 def render_python_type(resolved: ResolvedType, field: Field) -> str:
     """Render a ResolvedType to Python syntax."""
 
@@ -245,6 +251,7 @@ def render_python_type(resolved: ResolvedType, field: Field) -> str:
     return base_type
 
 
+@timer.timed("render_typescript_type")
 def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
     """Render a ResolvedType to TypeScript syntax."""
 
@@ -263,6 +270,7 @@ def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
     return base_type
 
 
+@timer.timed("map_python_type")
 def map_python_type(field: Field) -> str:
     """Calculate the raw Python type for a field (without disambiguation)."""
 
@@ -276,6 +284,7 @@ def map_python_type(field: Field) -> str:
     return py_type
 
 
+@timer.timed("map_typescript_type")
 def map_typescript_type(field: Field) -> str:
     """Calculate the raw TypeScript type for a field (without disambiguation)."""
 
@@ -296,6 +305,7 @@ def map_typescript_type(field: Field) -> str:
 # =============================================================================
 
 
+@timer.timed("disambiguate_fields")
 def disambiguate_fields(fields: list[Field]) -> None:
     """Disambiguate multiple fields efficiently by batching API calls per table."""
 
@@ -311,10 +321,43 @@ def disambiguate_fields(fields: list[Field]) -> None:
             fields_by_table[table_id] = []
         fields_by_table[table_id].append(field)
 
-    # Process each table
+    # Process tables concurrently for better performance
     failures: list[Field] = []
-    for table_id, table_fields in track(fields_by_table.items(), description="Disambiguating calculated field types...", transient=True):
+    num_tables = len(fields_by_table)
+
+    if num_tables == 1:
+        # Single table: no concurrency overhead needed
+        sys.stdout.write("Disambiguating calculated field types (1 table)...")
+        sys.stdout.flush()
+        table_fields = next(iter(fields_by_table.values()))
         failures.extend(disambiguate_fields_per_table(api_key, table_fields))
+        sys.stdout.write(" done\n")
+        sys.stdout.flush()
+    else:
+        # Multiple tables: process concurrently
+        max_workers = min(num_tables, 5)  # Cap at 5 to avoid API rate limits
+        completed = 0
+
+        # Print initial status
+        sys.stdout.write(f"Disambiguating calculated field types (0/{num_tables} tables)...")
+        sys.stdout.flush()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_table = {
+                executor.submit(disambiguate_fields_per_table, api_key, table_fields): table_id for table_id, table_fields in fields_by_table.items()
+            }
+            for future in as_completed(future_to_table):
+                try:
+                    failures.extend(future.result())
+                except Exception as e:
+                    table_id = future_to_table[future]
+                    sys.stdout.write(f"\n[red] - Error processing table {table_id}: {e}[/]\n")
+                completed += 1
+                # Use \r to return to start, then clear line with ANSI escape, then write new status
+                sys.stdout.write(f"\rDisambiguating calculated field types ({completed}/{num_tables} tables)...\033[K")
+                sys.stdout.flush()
+        sys.stdout.write(" done\n")
+        sys.stdout.flush()
 
     if failures:
         print(f"[yellow] - Failed to disambiguate {len(failures)} fields. No records have values for these fields. Use `--verbose` for details.[/]")
@@ -323,6 +366,7 @@ def disambiguate_fields(fields: list[Field]) -> None:
                 print(f"[dim]    - Table '{field.table.name}' Field '{field.name}' (ID: {field.id})[/]")
 
 
+@timer.timed("disambiguate_fields_per_table")
 def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Field]:
     """Disambiguate all fields from a single table with minimal API calls."""
 
@@ -362,6 +406,7 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
         return fields  # Return all as failures
 
 
+@timer.timed("process_records_and_get_remaining")
 def process_records_and_get_remaining(fields: list[Field], records: list[dict]) -> list[Field]:
     """Process records and return fields that still need disambiguation."""
     remaining: list[Field] = []
@@ -374,6 +419,7 @@ def process_records_and_get_remaining(fields: list[Field], records: list[dict]) 
     return remaining
 
 
+@timer.timed("disambiguate_with_or_formula")
 def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
     """Iteratively fetch records where ANY field is non-blank until no progress."""
     remaining = list(fields)
@@ -408,6 +454,7 @@ def any_not_blank(field_ids: list[str]) -> str:
     return f"OR({', '.join(conditions)})"
 
 
+@timer.timed("disambiguate_single_field")
 def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | None:
     """Fetch a single record where the field is not blank."""
     record = table.first(
@@ -463,6 +510,7 @@ def list_type(base_type: str, language: str) -> str:
             raise ValueError("Unsupported language")
 
 
+@timer.timed("render_disambiguated_type")
 def render_disambiguated_type(field: Field, is_list: bool, language: str) -> str:
     """Render a disambiguated type (with known is_list) to the target language."""
     generic_type = field._generic_type
