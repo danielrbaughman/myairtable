@@ -24,8 +24,7 @@ from src.helpers import (
     sanitize_property_name,
     sanitize_reserved_names,
 )
-from src.meta_types import BaseMetadata, FieldType
-from src.type_mapper import GenericType
+from src.meta_types import BaseMetadata, FieldType, GenericType
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"

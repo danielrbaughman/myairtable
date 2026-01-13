@@ -1,8 +1,60 @@
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any, Literal, Optional, TypedDict
 
 from typer import Typer
 
 cli = Typer()
+
+
+# =============================================================================
+# GENERIC TYPE SYSTEM
+# =============================================================================
+
+
+class GenericType(Enum):
+    """Language-independent type representation for Airtable field types."""
+
+    # Primitive types
+    STRING = auto()
+    INTEGER = auto()
+    FLOAT = auto()
+    BOOLEAN = auto()
+
+    # Date/Time types
+    DATETIME = auto()
+    DURATION = auto()
+
+    # Airtable-specific types
+    RECORD_ID = auto()
+    ATTACHMENT = auto()
+    COLLABORATOR = auto()
+    BUTTON = auto()
+
+    # Container types
+    LIST_OF_RECORD_IDS = auto()
+    LIST_OF_ATTACHMENTS = auto()
+
+    # Select types (require options_name metadata)
+    SINGLE_SELECT = auto()
+    MULTIPLE_SELECT = auto()
+
+    # Fallback
+    ANY = auto()
+
+
+@dataclass
+class ResolvedType:
+    """A resolved type with optional metadata for select fields and list wrapping."""
+
+    generic_type: GenericType
+    options_name: str | None = None  # For select fields
+    is_list: bool = False  # For analyzed list values
+
+
+# =============================================================================
+# AIRTABLE METADATA TYPES
+# =============================================================================
 
 
 class OptionMetadata(TypedDict):

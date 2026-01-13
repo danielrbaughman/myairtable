@@ -9,7 +9,7 @@ from src import timer
 from src.csv import generate_csv
 from src.helpers import create_folder, reset_folder
 from src.markdown import generate_markdown
-from src.meta import Base, generate_meta, get_base_meta_data
+from src.meta import Base, Field, generate_meta, get_base_meta_data
 from src.python import generate_python
 from src.type_mapper import calculate_types
 from src.typescript import generate_typescript
@@ -153,16 +153,17 @@ def invalid():
 
 def check_invalid(base: Base) -> None:
     print("Checking for invalid fields")
-    invalid_found = False
+    invalid_fields: list[Field] = []
     for table in base.tables:
         for field in table.fields:
             if not field.is_valid():
-                print(f"[dim] - Table '{table.name}', Field '{field.name}' ({field.id})[/]")
-                invalid_found = True
-    if not invalid_found:
+                invalid_fields.append(field)
+    if not invalid_fields:
         print("[green] - No invalid fields found.[/]")
     else:
         print("[yellow] - Invalid fields detected.[/]")
+        for field in invalid_fields:
+            print(f"[dim]    - Table '{field.table.name}', Field '{field.name}' ({field.id})[/]")
     print("")
 
 

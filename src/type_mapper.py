@@ -6,8 +6,6 @@ including disambiguation of calculated field types via Airtable API.
 """
 
 import os
-from dataclasses import dataclass
-from enum import Enum, auto
 from typing import Any
 
 import pyairtable
@@ -15,53 +13,7 @@ from rich import print
 from rich.progress import track
 
 from .meta import Base, Field
-from .meta_types import FieldType
-
-
-# =============================================================================
-# region GENERIC TYPES
-# =============================================================================
-class GenericType(Enum):
-    """Language-independent type representation for Airtable field types."""
-
-    # Primitive types
-    STRING = auto()
-    INTEGER = auto()
-    FLOAT = auto()
-    BOOLEAN = auto()
-
-    # Date/Time types
-    DATETIME = auto()
-    DURATION = auto()
-
-    # Airtable-specific types
-    RECORD_ID = auto()
-    ATTACHMENT = auto()
-    COLLABORATOR = auto()
-    BUTTON = auto()
-
-    # Container types
-    LIST_OF_RECORD_IDS = auto()
-    LIST_OF_ATTACHMENTS = auto()
-
-    # Select types (require options_name metadata)
-    SINGLE_SELECT = auto()
-    MULTIPLE_SELECT = auto()
-
-    # Fallback
-    ANY = auto()
-
-
-@dataclass
-class ResolvedType:
-    """A resolved type with optional metadata for select fields and list wrapping."""
-
-    generic_type: GenericType
-    options_name: str | None = None  # For select fields
-    is_list: bool = False  # For analyzed list values
-
-
-# endregion
+from .meta_types import FieldType, GenericType, ResolvedType
 
 # =============================================================================
 # region MAPS
@@ -194,12 +146,12 @@ def calculate_types(base: Base) -> None:
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
-    print("[dim] - Determined types[/]")
+    print("[dim] - Mapped unambiguous types[/]")
 
     # Second pass: disambiguate fields that need it (handles both languages)
     if fields_to_disambiguate:
-        disambiguate_fields_batch(fields_to_disambiguate)
-        print("[dim] - Disambiguated calculated field types[/]")
+        disambiguate_fields(fields_to_disambiguate)
+        print("[dim] - Mapped ambiguous field types[/]")
 
     print("")
 
@@ -356,7 +308,7 @@ def calculate_typescript_type(field: Field) -> str:
 # =============================================================================
 
 
-def disambiguate_fields_batch(fields: list[Field]) -> None:
+def disambiguate_fields(fields: list[Field]) -> None:
     """Disambiguate multiple fields efficiently by batching API calls per table."""
     api_key = os.getenv("AIRTABLE_API_KEY")
     if not api_key:
@@ -371,16 +323,28 @@ def disambiguate_fields_batch(fields: list[Field]) -> None:
         fields_by_table[table_id].append(field)
 
     # Process each table
+    failures: list[Field] = []
     for table_id, table_fields in track(fields_by_table.items(), description="Disambiguating calculated field types...", transient=True):
-        disambiguate_table_fields(api_key, table_fields)
+        failures.extend(disambiguate_fields_per_table(api_key, table_fields))
+
+    if failures:
+        print(f"[yellow] - Failed to disambiguate {len(failures)} fields. No records have values for these fields.[/]")
+        for field in failures:
+            print(f"[dim]    - Table '{field.table.name}' Field '{field.name}' (ID: {field.id})[/]")
 
 
-def disambiguate_table_fields(api_key: str, fields: list[Field]) -> None:
-    """Disambiguate all fields from a single table with minimal API calls."""
+def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Field]:
+    """Disambiguate all fields from a single table with minimal API calls.
+
+    Uses a graduated approach:
+    1. Batch fetch without formula
+    2. Multi-field AND formula queries
+    3. Multi-field OR formula query
+    4. Per-field fallback for any remaining fields
+    """
     if not fields:
-        return
+        return []
 
-    # All fields are from the same table
     sample_field = fields[0]
     base_id = sample_field.base.id
     table_id = sample_field.table.id
@@ -388,26 +352,139 @@ def disambiguate_table_fields(api_key: str, fields: list[Field]) -> None:
 
     try:
         table = pyairtable.Table(api_key, base_id, table_id)
+        remaining = list(fields)
 
-        # Fetch multiple records to increase chance of finding non-blank values
         records = table.all(fields=field_ids, max_records=20, use_field_ids=True)
+        remaining = process_records_and_get_remaining(remaining, records)
+        if not remaining:
+            return []
 
-        if not records:
-            return
+        remaining = disambiguate_with_and_formula(table, remaining)
+        if not remaining:
+            return []
 
-        # For each field, find the first non-blank value across all records
-        for field in fields:
-            value = find_non_blank_value(records, field.id)
-            if value is not None:
-                # Only determine if it's a list - preserve the original generic type
-                is_list = isinstance(value, list)
+        remaining = disambiguate_with_or_formula(table, remaining)
+        if not remaining:
+            return []
 
-                # Render disambiguated types using the original generic type
-                field._python_type = render_disambiguated_type(field._generic_type, is_list, "python")
-                field._typescript_type = render_disambiguated_type(field._generic_type, is_list, "typescript")
+        # Phase 4: per-field fallback for any still remaining
+        failures: list[Field] = []
+        for field in remaining:
+            if failure := disambiguate_single_field(table, field):
+                failures.append(failure)
+
+        return failures
 
     except Exception:
-        print(f"[red] - Error disambiguating fields for table {table_id}.[/]")
+        print(f"[red] - API Error disambiguating fields for table {table_id}.[/]")
+        return fields  # Return all as failures
+
+
+def process_records_and_get_remaining(fields: list[Field], records: list[dict]) -> list[Field]:
+    """Process records and return fields that still need disambiguation."""
+    remaining = []
+    for field in fields:
+        value = find_non_blank_value(records, field.id)
+        if value is not None:
+            apply_disambiguated_type(field, isinstance(value, list))
+        else:
+            remaining.append(field)
+    return remaining
+
+
+def disambiguate_with_and_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
+    """Try multi-field formulas, progressively reducing the set size."""
+    if len(fields) <= 1:
+        return fields  # Skip to per-field fallback
+
+    remaining = list(fields)
+    deferred: list[Field] = []  # Fields to try with smaller batches
+
+    while len(remaining) > 1:
+        field_ids = [f.id for f in remaining]
+
+        records = table.all(
+            formula=all_not_blank([f.id for f in remaining]),
+            fields=field_ids,
+            max_records=10,
+            use_field_ids=True,
+        )
+
+        if not records:
+            # No records match all fields - split the set
+            half = len(remaining) // 2
+            deferred.extend(remaining[half:])
+            remaining = remaining[:half]
+            continue
+
+        # Process found values
+        still_remaining = []
+        for field in remaining:
+            value = find_non_blank_value(records, field.id)
+            if value is not None:
+                apply_disambiguated_type(field, isinstance(value, list))
+            else:
+                still_remaining.append(field)
+
+        remaining = still_remaining
+
+    # Return remaining + deferred for Phase 3
+    return remaining + deferred
+
+
+def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
+    """Try OR formula to find records where ANY field is non-blank."""
+    if len(fields) <= 1:
+        return fields  # Skip to per-field fallback
+
+    field_ids = [f.id for f in fields]
+
+    # Fetch more records since OR is less restrictive
+    records = table.all(
+        formula=any_not_blank([f.id for f in fields]),
+        fields=field_ids,
+        max_records=50,
+        use_field_ids=True,
+    )
+
+    if not records:
+        return fields
+
+    return process_records_and_get_remaining(fields, records)
+
+
+def all_not_blank(field_ids: list[str]) -> str:
+    """Build AND(NOT({f1}=BLANK()), NOT({f2}=BLANK()), ...) formula."""
+    conditions = [f"NOT({{{fid}}}=BLANK())" for fid in field_ids]
+    if len(conditions) == 1:
+        return conditions[0]
+    return f"AND({', '.join(conditions)})"
+
+
+def any_not_blank(field_ids: list[str]) -> str:
+    """Build OR(NOT({f1}=BLANK()), NOT({f2}=BLANK()), ...) formula."""
+    conditions = [f"NOT({{{fid}}}=BLANK())" for fid in field_ids]
+    if len(conditions) == 1:
+        return conditions[0]
+    return f"OR({', '.join(conditions)})"
+
+
+def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | None:
+    """Fetch a single record where the field is not blank."""
+    formula = f"NOT({{{field.id}}}=BLANK())"
+    record = table.first(formula=formula, fields=[field.id], use_field_ids=True)
+    if record:
+        value = record.get("fields", {}).get(field.id)
+        if value is not None:
+            apply_disambiguated_type(field, isinstance(value, list))
+            return None
+    return field  # Still could not disambiguate
+
+
+def apply_disambiguated_type(field: Field, is_list: bool) -> None:
+    """Apply disambiguated types to a field."""
+    field._python_type = render_disambiguated_type(field._generic_type, is_list, "python")
+    field._typescript_type = render_disambiguated_type(field._generic_type, is_list, "typescript")
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:
