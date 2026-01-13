@@ -328,7 +328,7 @@ def map_typescript_type(field: Field) -> str:
     resolved: ResolvedType = map_type(field)
     ts_type: str = render_type(field, "typescript", resolved=resolved)
 
-    field._typescript_type_csv = ts_type
+    field._typescript_type = ts_type
     return ts_type
 
 
@@ -435,8 +435,8 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
 
         return failures
 
-    except Exception:
-        print(f"[red] - API Error disambiguating fields for table {table_id}.[/]")
+    except Exception as e:
+        print(f"[red] - API Error disambiguating fields for table {table_id}.[/]", e)
         return fields  # Return all as failures
 
 
