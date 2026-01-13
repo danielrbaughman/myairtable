@@ -9,13 +9,19 @@ interface Options<T> {
 	pageSize?: number;
 	fields?: T[];
 	useFieldIds?: boolean;
+	maxRecords?: number;
 }
 interface QueryOptions<V, T> extends Options<T> {
 	view?: V;
 	formula?: string;
 }
 
-export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V extends string, W extends string> {
+export class AirtableTable<
+	T extends FieldSet,
+	U extends AirtableModel<T, unknown>,
+	V extends string,
+	W extends string,
+> {
 	public _table: Table<T>;
 	private recordCtor: (record: ATRecord<T>) => U;
 	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
@@ -73,6 +79,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
+			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
 
 			const records = await this._table.select(selectOptions).all();
@@ -86,6 +93,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
 		if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 		if (queryOptions.fields) selectOptions.fields = queryOptions.fields as string[];
+		if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
 
 		const records = await this._table.select(selectOptions).all();
 		return records.map((record) => this.recordCtor(record));

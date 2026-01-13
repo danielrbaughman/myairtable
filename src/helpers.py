@@ -181,6 +181,7 @@ class Paths:
     TABLES = "tables"
     FORMULAS = "formulas"
     DOCS = "docs"
+    ZOD = "zod"
 
 
 def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:

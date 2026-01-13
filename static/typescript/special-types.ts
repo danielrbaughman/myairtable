@@ -13,6 +13,8 @@ export function validateRecordIds(idOrIds: string | string[]): void {
 export const StringSchema = z.string("Value must be a string");
 export const NumberSchema = z.number("Value must be a number");
 export const BooleanSchema = z.boolean("Value must be a boolean");
+export const SpecialNumberSchema = z.object({ specialValue: z.string() });
+export const ErrorValueSchema = z.object({ error: z.string() });
 
 export interface ExtendedAirtableOptions extends AirtableOptions {
 	baseId?: string;

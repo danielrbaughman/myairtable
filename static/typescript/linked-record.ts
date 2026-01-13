@@ -5,7 +5,7 @@ import { RecordId, recordIdSchema } from "./special-types";
 /**
  * A reference to a linked Airtable record, providing methods to get and set the linked record.
  */
-export class LinkedRecord<M extends AirtableModel<FieldSet>> {
+export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
 	public id?: RecordId;
 	private record?: M;
@@ -50,7 +50,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet>> {
 /**
  * A reference to linked Airtable records, providing methods to get and set the linked records.
  */
-export class LinkedRecords<M extends AirtableModel<FieldSet>> {
+export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
 	public ids?: RecordId[];
 	private records?: M[];

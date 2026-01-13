@@ -97,6 +97,7 @@ def ts(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
 ):
     """Generate types and models in TypeScript"""
     folder_path = reset_folder(Path(folder))
@@ -108,7 +109,7 @@ def ts(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("TypeScript generation"):
-        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers)
+        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, zod=zod)
 
 
 @app.command()
