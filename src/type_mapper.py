@@ -1,7 +1,8 @@
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import pyairtable
 from rich import print
@@ -123,8 +124,8 @@ def map_types(base: Base) -> None:
             resolved = map_type(field)
 
             # Render both types from the same generic type
-            py_type = render_python_type(resolved, field)
-            ts_type = render_typescript_type(resolved, field)
+            py_type = render_type(field, "python", resolved=resolved)
+            ts_type = render_type(field, "typescript", resolved=resolved)
 
             field._python_type = py_type
             field._typescript_type = ts_type
@@ -135,8 +136,8 @@ def map_types(base: Base) -> None:
                 if csv_python_type and python_type_matches_generic(csv_python_type, field._generic_type):
                     # CSV has valid disambiguated type - use it directly
                     is_list = csv_python_type.startswith("list[")
-                    field._python_type = render_disambiguated_type(field, is_list, "python")
-                    field._typescript_type = render_disambiguated_type(field, is_list, "typescript")
+                    field._python_type = render_type(field, "python", is_list=is_list)
+                    field._typescript_type = render_type(field, "typescript", is_list=is_list)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -232,40 +233,73 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-@timer.timed("render_python_type")
-def render_python_type(resolved: ResolvedType, field: Field) -> str:
-    """Render a ResolvedType to Python syntax."""
+Language = Literal["python", "typescript"]
 
-    if resolved.generic_type == GenericType.SINGLE_SELECT:
-        base_type = resolved.options_name or "Any"
-    elif resolved.generic_type == GenericType.MULTIPLE_SELECT:
-        base_type = f"list[{resolved.options_name}]" if resolved.options_name else "Any"
+
+@dataclass(frozen=True)
+class LanguageConfig:
+    """Language-specific type configuration."""
+
+    type_map: dict[GenericType, str]
+    unknown: str
+    list_fmt: str
+    union_fmt: str
+
+
+LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
+    "python": LanguageConfig(
+        type_map=GENERIC_TO_PYTHON,
+        unknown="Any",
+        list_fmt="list[{0}]",
+        union_fmt="list[{0} | None] | {0}",
+    ),
+    "typescript": LanguageConfig(
+        type_map=GENERIC_TO_TYPESCRIPT,
+        unknown="any",
+        list_fmt="{0}[]",
+        union_fmt="{0} | {0}[]",
+    ),
+}
+
+
+def is_already_list(base_type: str, language: Language) -> bool:
+    match language:
+        case "python":
+            return "list" in base_type
+        case "typescript":
+            return base_type.endswith("[]")
+        case _:
+            return False
+
+
+@timer.timed("render_type")
+def render_type(field: Field, language: Language, resolved: ResolvedType | None = None, is_list: bool | None = None) -> str:
+    config: LanguageConfig = LANGUAGE_CONFIGS[language]
+
+    # Get the generic type
+    generic_type = resolved.generic_type if resolved else field._generic_type
+    if generic_type is None:
+        return config.unknown
+
+    # Compute base type
+    if generic_type == GenericType.SINGLE_SELECT:
+        options_name = resolved.options_name if resolved else field.options_name()
+        base_type = options_name or config.unknown
+    elif generic_type == GenericType.MULTIPLE_SELECT:
+        options_name = resolved.options_name if resolved else field.options_name()
+        if options_name:
+            return config.list_fmt.format(options_name)  # Always a list
+        return config.unknown
     else:
-        base_type = GENERIC_TO_PYTHON.get(resolved.generic_type, "Any")
+        base_type = config.type_map.get(generic_type, config.unknown)
 
-    # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
-    if "list" not in base_type:
-        if field.involves_lookup() or field.involves_rollup():
-            return f"list[{base_type} | None] | {base_type}"
-
-    return base_type
-
-
-@timer.timed("render_typescript_type")
-def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
-    """Render a ResolvedType to TypeScript syntax."""
-
-    if resolved.generic_type == GenericType.SINGLE_SELECT:
-        base_type = resolved.options_name or "any"
-    elif resolved.generic_type == GenericType.MULTIPLE_SELECT:
-        base_type = f"{resolved.options_name}[]" if resolved.options_name else "any"
-    else:
-        base_type = GENERIC_TO_TYPESCRIPT.get(resolved.generic_type, "any")
-
-    # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
-    if not base_type.endswith("[]"):
-        if field.involves_lookup() or field.involves_rollup():
-            return f"{base_type} | {base_type}[]"
+    if is_list is None:
+        # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
+        if not is_already_list(base_type, language):
+            if field.involves_lookup() or field.involves_rollup():
+                return config.union_fmt.format(base_type)
+    elif is_list:
+        return config.list_fmt.format(base_type)
 
     return base_type
 
@@ -278,7 +312,7 @@ def map_python_type(field: Field) -> str:
         return field._python_type_cache
 
     resolved: ResolvedType = map_type(field)
-    py_type: str = render_python_type(resolved, field)
+    py_type: str = render_type(field, "python", resolved=resolved)
 
     field._python_type_cache = py_type
     return py_type
@@ -292,7 +326,7 @@ def map_typescript_type(field: Field) -> str:
         return field._typescript_type_cache
 
     resolved: ResolvedType = map_type(field)
-    ts_type: str = render_typescript_type(resolved, field)
+    ts_type: str = render_type(field, "typescript", resolved=resolved)
 
     field._typescript_type_cache = ts_type
     return ts_type
@@ -471,8 +505,8 @@ def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | 
 
 def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     """Apply disambiguated types to a field."""
-    field._python_type = render_disambiguated_type(field, is_list, "python")
-    field._typescript_type = render_disambiguated_type(field, is_list, "typescript")
+    field._python_type = render_type(field, "python", is_list=is_list)
+    field._typescript_type = render_type(field, "typescript", is_list=is_list)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:
@@ -486,60 +520,3 @@ def find_non_blank_value(records: list[dict], field_id: str) -> Any:
             else:
                 return value
     return None
-
-
-def unknown_type(language: str) -> str:
-    """Return the unknown type representation for the target language."""
-    match language:
-        case "python":
-            return "Any"
-        case "typescript":
-            return "any"
-        case _:
-            raise ValueError("Unsupported language")
-
-
-def list_type(base_type: str, language: str) -> str:
-    """Render a list type wrapper around a base type for the target language."""
-    match language:
-        case "python":
-            return f"list[{base_type}]"
-        case "typescript":
-            return f"{base_type}[]"
-        case _:
-            raise ValueError("Unsupported language")
-
-
-@timer.timed("render_disambiguated_type")
-def render_disambiguated_type(field: Field, is_list: bool, language: str) -> str:
-    """Render a disambiguated type (with known is_list) to the target language."""
-    generic_type = field._generic_type
-
-    if generic_type is None:
-        return unknown_type(language)
-
-    if generic_type == GenericType.SINGLE_SELECT:
-        options_name: str = field.options_name()
-        base_type: str = options_name or unknown_type(language)
-    elif generic_type == GenericType.MULTIPLE_SELECT:
-        options_name: str = field.options_name()
-        if options_name:
-            return list_type(options_name, language)
-        else:
-            return unknown_type(language)
-    else:
-        match language:
-            case "python":
-                renderer: dict[GenericType, str] = GENERIC_TO_PYTHON
-                fallback: str = unknown_type(language)
-            case "typescript":
-                renderer: dict[GenericType, str] = GENERIC_TO_TYPESCRIPT
-                fallback: str = unknown_type(language)
-            case _:
-                return unknown_type(language)
-        base_type = renderer.get(generic_type, fallback)
-
-    if is_list:
-        return list_type(base_type, language)
-
-    return base_type
