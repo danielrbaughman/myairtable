@@ -4,12 +4,12 @@ from pathlib import Path
 from rich import print
 from rich.progress import track
 
-from src.mermaid import mermaid_base, mermaid_formula
-
 from . import timer
 from .helpers import Paths, sanitize_for_markdown
+from .mermaid import mermaid_base, mermaid_formula
 from .mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
 from .meta import Base
+from .verbose import verbose
 from .write_to_file import WriteToFile
 
 
@@ -106,7 +106,8 @@ def generate_markdown(
 
     with timer.timer("Markdown: write_tables"):
         write_tables(base, output_folder)
-        print("[dim] - Markdown tables generated.[/]")
+        if verbose:
+            print("[dim] - Markdown tables generated.[/]")
 
     svg_tasks: list[tuple[str, str]] = []
     with timer.timer("Markdown: write_fields"):
@@ -120,19 +121,22 @@ def generate_markdown(
             flatten_formulas=flatten_formulas,
             mermaid_formulas=mermaid_formulas,
         )
-        print("[dim] - Markdown fields generated.[/]")
+        if verbose:
+            print("[dim] - Markdown fields generated.[/]")
 
     with timer.timer("Markdown: write_svgs"):
         write_svgs(svg_tasks=svg_tasks, svg_enabled=svg_enabled, diagrams_dir=diagrams_dir, svg_cache_dir=svg_cache_dir)
-        if svg_enabled:
+        if svg_enabled and verbose:
             print("[dim] - Function SVGs generated.[/]")
 
     with timer.timer("Markdown: write_index"):
         write_index(base, output_folder)
-        print("[dim] - Markdown index generated.[/]")
+        if verbose:
+            print("[dim] - Markdown index generated.[/]")
 
-    print("[green] - Markdown code generation complete.[/]")
-    print("")
+    if verbose:
+        print("[green] - Markdown code generation complete.[/]")
+        print("")
 
 
 def write_tables(base: Base, output_folder: Path) -> None:

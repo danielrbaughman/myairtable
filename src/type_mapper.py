@@ -14,6 +14,7 @@ from rich.progress import track
 
 from .meta import Base, Field
 from .meta_types import FieldType, GenericType, ResolvedType
+from .verbose import verbose
 
 # =============================================================================
 # region MAPS
@@ -146,14 +147,18 @@ def calculate_types(base: Base) -> None:
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
-    print("[dim] - Mapped unambiguous types[/]")
+
+    if verbose:
+        print("[dim] - Mapped unambiguous types[/]")
 
     # Second pass: disambiguate fields that need it (handles both languages)
     if fields_to_disambiguate:
         disambiguate_fields(fields_to_disambiguate)
-        print("[dim] - Mapped ambiguous field types[/]")
+        if verbose:
+            print("[dim] - Mapped ambiguous field types[/]")
 
-    print("")
+    if verbose:
+        print("")
 
 
 # endregion
@@ -328,9 +333,10 @@ def disambiguate_fields(fields: list[Field]) -> None:
         failures.extend(disambiguate_fields_per_table(api_key, table_fields))
 
     if failures:
-        print(f"[yellow] - Failed to disambiguate {len(failures)} fields. No records have values for these fields.[/]")
-        for field in failures:
-            print(f"[dim]    - Table '{field.table.name}' Field '{field.name}' (ID: {field.id})[/]")
+        print(f"[yellow] - Failed to disambiguate {len(failures)} fields. No records have values for these fields. Use `--verbose` for details.[/]")
+        if verbose:
+            for field in failures:
+                print(f"[dim]    - Table '{field.table.name}' Field '{field.name}' (ID: {field.id})[/]")
 
 
 def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Field]:

@@ -11,20 +11,21 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from src import timer
-from src.formula_condenser import condense_formula
-from src.formula_flattener import flatten_formula
-from src.formula_formatter import format_formula
-from src.formula_highlighter import highlight_formula
-from src.formula_sanitizer import sanitize_formula
-from src.helpers import (
+from . import timer
+from .formula_condenser import condense_formula
+from .formula_flattener import flatten_formula
+from .formula_formatter import format_formula
+from .formula_highlighter import highlight_formula
+from .formula_sanitizer import sanitize_formula
+from .helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
     sanitize_leading_trailing_characters,
     sanitize_property_name,
     sanitize_reserved_names,
 )
-from src.meta_types import BaseMetadata, FieldType, GenericType
+from .meta_types import BaseMetadata, FieldType, GenericType
+from .verbose import verbose
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
@@ -120,8 +121,9 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
     p = folder / "meta.json"
     with open(p, "w") as f:
         f.write(json.dumps(metadata, indent=4))
-    print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
-    print("")
+    if verbose:
+        print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
+        print("")
 
 
 class Named(BaseModel):

@@ -11,6 +11,7 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, Table
+from .verbose import verbose
 from .write_to_file import WriteToFile
 
 
@@ -98,39 +99,46 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
     reset_folder(output_folder / Paths.STATIC)
 
     copy_static_files(output_folder, "python")
-    print("[dim] - Python static files copied.[/]")
+    if verbose:
+        print("[dim] - Python static files copied.[/]")
 
     with timer.timer("Python: write_types"):
         write_types(base, output_folder)
-        print("[dim] - Python types generated.[/]")
-
+        if verbose:
+            print("[dim] - Python types generated.[/]")
     with timer.timer("Python: write_dicts"):
         write_dicts(base, output_folder)
-        print("[dim] - Python dicts generated.[/]")
+        if verbose:
+            print("[dim] - Python dicts generated.[/]")
 
     with timer.timer("Python: write_models"):
         write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
-        print("[dim] - Python models generated.[/]")
+        if verbose:
+            print("[dim] - Python models generated.[/]")
 
     if formulas:
         with timer.timer("Python: write_formula_helpers"):
             write_formula_helpers(base, output_folder)
-            print("[dim] - Python formula helpers generated.[/]")
+            if verbose:
+                print("[dim] - Python formula helpers generated.[/]")
 
     if wrappers:
         with timer.timer("Python: write_tables"):
             write_tables(base, output_folder)
-            print("[dim] - Python tables generated.[/]")
+            if verbose:
+                print("[dim] - Python tables generated.[/]")
 
         with timer.timer("Python: write_main_class"):
             write_main_class(base, output_folder)
-            print("[dim] - Python main class generated.[/]")
+            if verbose:
+                print("[dim] - Python main class generated.[/]")
 
     with timer.timer("Python: write_init"):
         write_init(output_folder, formulas, wrappers)
 
-    print("[green] - Python code generation complete.[/]")
-    print("")
+    if verbose:
+        print("[green] - Python code generation complete.[/]")
+        print("")
 
 
 def write_module_init(base: Base, output_folder: Path, subdir: str, extra_imports: list[str] | None = None) -> None:

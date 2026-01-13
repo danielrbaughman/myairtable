@@ -11,6 +11,7 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, Table
+from .verbose import verbose
 from .write_to_file import WriteToFile
 
 
@@ -94,35 +95,42 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
 
     with timer.timer("TypeScript: copy_static_files"):
         copy_static_files(output_folder, "typescript")
-        print("[dim] - TypeScript static files copied.[/]")
+        if verbose:
+            print("[dim] - TypeScript static files copied.[/]")
 
     with timer.timer("TypeScript: write_types"):
         write_types(base, output_folder)
-        print("[dim] - TypeScript types generated.[/]")
+        if verbose:
+            print("[dim] - TypeScript types generated.[/]")
 
     if formulas:
         with timer.timer("TypeScript: write_formula_helpers"):
             write_formula_helpers(base, output_folder)
-            print("[dim] - TypeScript formula helpers generated.[/]")
+            if verbose:
+                print("[dim] - TypeScript formula helpers generated.[/]")
 
     if wrappers:
         with timer.timer("TypeScript: write_models"):
             write_models(base, output_folder, formulas=formulas)
-            print("[dim] - TypeScript models generated.[/]")
+            if verbose:
+                print("[dim] - TypeScript models generated.[/]")
 
         with timer.timer("TypeScript: write_tables"):
             write_tables(base, output_folder)
-            print("[dim] - TypeScript tables generated.[/]")
+            if verbose:
+                print("[dim] - TypeScript tables generated.[/]")
 
         with timer.timer("TypeScript: write_main_class"):
             write_main_class(base, output_folder)
-            print("[dim] - TypeScript main class generated.[/]")
+            if verbose:
+                print("[dim] - TypeScript main class generated.[/]")
 
     with timer.timer("TypeScript: write_index"):
         write_index(output_folder, formulas=formulas, wrappers=wrappers)
 
-    print("[green] - TypeScript code generation complete.[/]")
-    print("")
+    if verbose:
+        print("[green] - TypeScript code generation complete.[/]")
+        print("")
 
 
 def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:
