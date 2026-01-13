@@ -337,8 +337,8 @@ class Field(Named):
     table: "Table"
     base: "Base"
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
-    _python_type_cache: str | None = PrivateAttr(default=None)
-    _typescript_type_cache: str | None = PrivateAttr(default=None)
+    _python_type_csv: str | None = PrivateAttr(default=None)
+    _typescript_type_csv: str | None = PrivateAttr(default=None)
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
     _generic_type: GenericType | None = PrivateAttr(default=None)
     _python_type: str | None = PrivateAttr(default=None)
@@ -488,25 +488,25 @@ class Field(Named):
 
     def csv_python_type(self) -> str:
         """Get the saved Python type from the CSV"""
-        if self._python_type_cache is None:
+        if self._python_type_csv is None:
             if hasattr(self, "base") and self.base and self.base._csv_cache:
                 text = self.base._csv_cache.get_field_value(self.id, PYTHON_TYPE)
                 if text:
-                    self._python_type_cache = text
+                    self._python_type_csv = text
                     return text
-            self._python_type_cache = ""
-        return self._python_type_cache
+            self._python_type_csv = ""
+        return self._python_type_csv
 
     def csv_typescript_type(self) -> str:
         """Get the saved TypeScript type from the CSV"""
-        if self._typescript_type_cache is None:
+        if self._typescript_type_csv is None:
             if hasattr(self, "base") and self.base and self.base._csv_cache:
                 text = self.base._csv_cache.get_field_value(self.id, TYPESCRIPT_TYPE)
                 if text:
-                    self._typescript_type_cache = text
+                    self._typescript_type_csv = text
                     return text
-            self._typescript_type_cache = ""
-        return self._typescript_type_cache
+            self._typescript_type_csv = ""
+        return self._typescript_type_csv
 
     def python_type(self) -> str:
         """Returns the Python type for this field."""

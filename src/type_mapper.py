@@ -308,13 +308,13 @@ def render_type(field: Field, language: Language, resolved: ResolvedType | None 
 def map_python_type(field: Field) -> str:
     """Calculate the raw Python type for a field (without disambiguation)."""
 
-    if field._python_type_cache is not None:
-        return field._python_type_cache
+    if field._python_type_csv is not None:
+        return field._python_type_csv
 
     resolved: ResolvedType = map_type(field)
     py_type: str = render_type(field, "python", resolved=resolved)
 
-    field._python_type_cache = py_type
+    field._python_type = py_type
     return py_type
 
 
@@ -322,13 +322,13 @@ def map_python_type(field: Field) -> str:
 def map_typescript_type(field: Field) -> str:
     """Calculate the raw TypeScript type for a field (without disambiguation)."""
 
-    if field._typescript_type_cache is not None:
-        return field._typescript_type_cache
+    if field._typescript_type_csv is not None:
+        return field._typescript_type_csv
 
     resolved: ResolvedType = map_type(field)
     ts_type: str = render_type(field, "typescript", resolved=resolved)
 
-    field._typescript_type_cache = ts_type
+    field._typescript_type_csv = ts_type
     return ts_type
 
 
