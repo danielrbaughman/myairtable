@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 import { Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
-import { CreateRecordData } from "./special-types";
+import { CreateRecordData, recordIdSchema } from "./special-types";
 
 export class AirtableModel<T extends FieldSet> {
 	[key: string]: unknown;
@@ -10,7 +10,7 @@ export class AirtableModel<T extends FieldSet> {
 	public id: string;
 
 	constructor(id: string) {
-		this.id = id;
+		this.id = id ? recordIdSchema.parse(id) : "";
 	}
 
 	protected writableFields(useFieldIds: boolean = false): Partial<T> {

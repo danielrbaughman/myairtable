@@ -25,6 +25,7 @@
 	"dependencies": {
 		"airtable": "^0.12.2",
 		"dotenv": "^17.2.3",
-		"typescript": "^5.9.3"
+		"typescript": "^5.9.3",
+		"zod": "^4.3.5"
 	}
 }

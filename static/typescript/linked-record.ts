@@ -1,6 +1,6 @@
 import { FieldSet } from "airtable";
 import { AirtableModel } from "./airtable-model";
-import { RecordId } from "./special-types";
+import { RecordId, recordIdSchema } from "./special-types";
 
 /**
  * A reference to a linked Airtable record, providing methods to get and set the linked record.
@@ -14,7 +14,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet>> {
 
 	// eslint-disable-next-line no-unused-vars
 	constructor(recordId?: RecordId, modelCtor?: (id: RecordId) => M) {
-		this.id = recordId;
+		this.id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
 	}
 
@@ -59,7 +59,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet>> {
 
 	// eslint-disable-next-line no-unused-vars
 	constructor(recordIds?: RecordId[], modelCtor?: (id: RecordId) => M) {
-		this.ids = recordIds;
+		this.ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
 	}
 

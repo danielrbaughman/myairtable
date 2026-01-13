@@ -1,40 +1,64 @@
 import { AirtableOptions, FieldSet } from "airtable";
+import * as z from "zod";
+
+export const baseIdSchema = z.string().regex(/\bapp[a-zA-Z0-9]{14}\b/, "Invalid Airtable Record ID");
+export const recordIdSchema = z.string().regex(/\brec[a-zA-Z0-9]{14}\b/, "Invalid Airtable Record ID");
+export function validateRecordIds(idOrIds: string | string[]): void {
+	if (Array.isArray(idOrIds)) {
+		idOrIds.forEach((id) => recordIdSchema.parse(id));
+	} else {
+		recordIdSchema.parse(idOrIds);
+	}
+}
+export const StringSchema = z.string("Value must be a string");
+export const NumberSchema = z.number("Value must be a number");
+export const BooleanSchema = z.boolean("Value must be a boolean");
 
 export interface ExtendedAirtableOptions extends AirtableOptions {
 	baseId?: string;
 }
 
-export interface AirtableThumbnail {
-	url?: string;
-	width?: number;
-	height?: number;
-}
+export const AirtableThumbnailSchema = z.object({
+	url: z.url().optional(),
+	width: z.number().optional(),
+	height: z.number().optional(),
+});
 
-export interface AirtableThumbnails {
-	small?: AirtableThumbnail;
-	large?: AirtableThumbnail;
-	full?: AirtableThumbnail;
-}
+export type AirtableThumbnail = z.infer<typeof AirtableThumbnailSchema>;
 
-export interface AirtableAttachment {
-	id?: string;
-	url?: string;
-	filename?: string;
-	size?: number;
-	type?: string;
-	thumbnails?: AirtableThumbnails;
-}
+export const AirtableThumbnailsSchema = z.object({
+	small: AirtableThumbnailSchema.optional(),
+	large: AirtableThumbnailSchema.optional(),
+	full: AirtableThumbnailSchema.optional(),
+});
 
-export interface AirtableCollaborator {
-	id?: string;
-	email?: string;
-	name?: string;
-}
+export type AirtableThumbnails = z.infer<typeof AirtableThumbnailsSchema>;
 
-export interface AirtableButton {
-	label?: string;
-	url?: string;
-}
+export const AirtableAttachmentSchema = z.object({
+	id: z.string().optional(),
+	url: z.url().optional(),
+	filename: z.string().optional(),
+	size: z.number().optional(),
+	type: z.string().optional(),
+	thumbnails: AirtableThumbnailsSchema.optional(),
+});
+
+export type AirtableAttachment = z.infer<typeof AirtableAttachmentSchema>;
+
+export const AirtableCollaboratorSchema = z.object({
+	id: z.string().optional(),
+	email: z.string().email().optional(),
+	name: z.string().optional(),
+});
+
+export type AirtableCollaborator = z.infer<typeof AirtableCollaboratorSchema>;
+
+export const AirtableButtonSchema = z.object({
+	label: z.string().optional(),
+	url: z.url().optional(),
+});
+
+export type AirtableButton = z.infer<typeof AirtableButtonSchema>;
 
 export type RecordId = string;
 
