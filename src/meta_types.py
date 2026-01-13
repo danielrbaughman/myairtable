@@ -40,7 +40,7 @@ class GenericType(Enum):
     MULTIPLE_SELECT = auto()
 
     # Fallback
-    ANY = auto()
+    UNKNOWN = auto()
 
 
 @dataclass

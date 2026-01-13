@@ -11,7 +11,7 @@ from src.helpers import create_folder, reset_folder
 from src.markdown import generate_markdown
 from src.meta import Base, Field, generate_meta, get_base_meta_data
 from src.python import generate_python
-from src.type_mapper import calculate_types
+from src.type_mapper import map_types
 from src.typescript import generate_typescript
 from src.verbose import verbose
 
@@ -47,7 +47,7 @@ def csv(
     folder_path = reset_folder(Path(folder))
     base = Base(csv_folder=folder_path)
     with timer.timer("Type calculation"):
-        calculate_types(base)
+        map_types(base)
     with timer.timer("CSV generation"):
         generate_csv(base=base, folder=folder_path, fresh=fresh)
 
@@ -71,7 +71,7 @@ def py(
 
     base = Base(csv_folder=csv_folder_path)
     with timer.timer("Type calculation"):
-        calculate_types(base)
+        map_types(base)
 
     if fresh:
         with timer.timer("CSV generation"):
@@ -103,7 +103,7 @@ def ts(
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base(csv_folder=csv_folder_path)
     with timer.timer("Type calculation"):
-        calculate_types(base)
+        map_types(base)
     if fresh:
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
@@ -135,7 +135,7 @@ def md(
     base = Base()
 
     with timer.timer("Type calculation"):
-        calculate_types(base)
+        map_types(base)
 
     with timer.timer("Markdown generation"):
         generate_markdown(
@@ -239,7 +239,7 @@ def all(
             generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
 
     with timer.timer("Type calculation"):
-        calculate_types(base)
+        map_types(base)
 
     if csv_folder_path:
         with timer.timer("CSV generation"):

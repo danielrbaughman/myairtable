@@ -512,17 +512,17 @@ class Field(Named):
         """Returns the Python type for this field."""
         if self._python_type:
             return self._python_type
-        from src.type_mapper import calculate_python_type
+        from src.type_mapper import map_python_type
 
-        return calculate_python_type(self)
+        return map_python_type(self)
 
     def typescript_type(self) -> str:
         """Returns the TypeScript type for this field."""
         if self._typescript_type:
             return self._typescript_type
-        from src.type_mapper import calculate_typescript_type
+        from src.type_mapper import map_typescript_type
 
-        return calculate_typescript_type(self)
+        return map_typescript_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""

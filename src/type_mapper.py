@@ -1,10 +1,3 @@
-"""
-Unified type mapping module for Python and TypeScript code generation.
-
-This module is the single source of truth for all type mapping logic,
-including disambiguation of calculated field types via Airtable API.
-"""
-
 import os
 from typing import Any
 
@@ -20,9 +13,8 @@ from .verbose import verbose
 # region MAPS
 # =============================================================================
 
-# Canonical mapping from Airtable types to GenericType (single source of truth)
 AIRTABLE_TO_GENERIC: dict[str, GenericType] = {
-    # Text types -> STRING
+    # Text
     "singleLineText": GenericType.STRING,
     "multilineText": GenericType.STRING,
     "url": GenericType.STRING,
@@ -37,15 +29,15 @@ AIRTABLE_TO_GENERIC: dict[str, GenericType] = {
     "dateTime": GenericType.DATETIME,
     "createdTime": GenericType.DATETIME,
     "lastModifiedTime": GenericType.DATETIME,
-    # Integer types
+    # Integer
     "count": GenericType.INTEGER,
     "autoNumber": GenericType.INTEGER,
-    # Float types
+    # Float
     "percent": GenericType.FLOAT,
     "currency": GenericType.FLOAT,
-    # Duration (special: timedelta in Python, number in TS)
+    # Duration
     "duration": GenericType.DURATION,
-    # Airtable complex types
+    # Airtable special types
     "multipleRecordLinks": GenericType.LIST_OF_RECORD_IDS,
     "multipleAttachments": GenericType.LIST_OF_ATTACHMENTS,
     "singleCollaborator": GenericType.COLLABORATOR,
@@ -54,24 +46,22 @@ AIRTABLE_TO_GENERIC: dict[str, GenericType] = {
     "button": GenericType.BUTTON,
 }
 
-# Python type renderer
 GENERIC_TO_PYTHON: dict[GenericType, str] = {
     GenericType.STRING: "str",
     GenericType.INTEGER: "int",
     GenericType.FLOAT: "float",
     GenericType.BOOLEAN: "bool",
-    GenericType.DATETIME: "datetime",
-    GenericType.DURATION: "timedelta",
-    GenericType.RECORD_ID: "RecordId",
+    GenericType.DATETIME: "datetime",  # pyAirtable converts to datetime.datetime
+    GenericType.DURATION: "timedelta",  # pyAirtable converts to datetime.timedelta
+    GenericType.RECORD_ID: "RecordId",  # custom type alias for str
     GenericType.ATTACHMENT: "AirtableAttachment",
     GenericType.COLLABORATOR: "AirtableCollaborator",
     GenericType.BUTTON: "AirtableButton",
     GenericType.LIST_OF_RECORD_IDS: "list[RecordId]",
     GenericType.LIST_OF_ATTACHMENTS: "list[AirtableAttachment]",
-    GenericType.ANY: "Any",
+    GenericType.UNKNOWN: "Any",
 }
 
-# TypeScript type renderer
 GENERIC_TO_TYPESCRIPT: dict[GenericType, str] = {
     GenericType.STRING: "string",
     GenericType.INTEGER: "number",
@@ -79,13 +69,13 @@ GENERIC_TO_TYPESCRIPT: dict[GenericType, str] = {
     GenericType.BOOLEAN: "boolean",
     GenericType.DATETIME: "string",  # ISO date strings
     GenericType.DURATION: "number",  # Milliseconds
-    GenericType.RECORD_ID: "RecordId",
+    GenericType.RECORD_ID: "RecordId",  # custom type alias for string
     GenericType.ATTACHMENT: "Attachment",
     GenericType.COLLABORATOR: "Collaborator",
     GenericType.BUTTON: "string",
     GenericType.LIST_OF_RECORD_IDS: "RecordId[]",
     GenericType.LIST_OF_ATTACHMENTS: "Attachment[]",
-    GenericType.ANY: "any",
+    GenericType.UNKNOWN: "any",
 }
 
 # endregion
@@ -113,7 +103,7 @@ def python_type_matches_generic(saved: str, generic_type: GenericType | None) ->
 # =============================================================================
 
 
-def calculate_types(base: Base) -> None:
+def map_types(base: Base) -> None:
     """Calculate and store Python and TypeScript types for all fields. Idempotent."""
     print("Determining field types")
 
@@ -127,7 +117,7 @@ def calculate_types(base: Base) -> None:
     for table in base.tables:
         for field in table.fields:
             # Calculate generic type once
-            resolved = calculate_generic_type(field)
+            resolved = map_type(field)
 
             # Render both types from the same generic type
             py_type = render_python_type(resolved, field)
@@ -142,8 +132,8 @@ def calculate_types(base: Base) -> None:
                 if csv_python_type and python_type_matches_generic(csv_python_type, field._generic_type):
                     # CSV has valid disambiguated type - use it directly
                     is_list = csv_python_type.startswith("list[")
-                    field._python_type = render_disambiguated_type(field._generic_type, is_list, "python")
-                    field._typescript_type = render_disambiguated_type(field._generic_type, is_list, "typescript")
+                    field._python_type = render_disambiguated_type(field, is_list, "python")
+                    field._typescript_type = render_disambiguated_type(field, is_list, "typescript")
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -168,9 +158,9 @@ def calculate_types(base: Base) -> None:
 # =============================================================================
 
 
-def calculate_generic_type(field: Field) -> ResolvedType:
-    """Calculate the generic type for a field (language-independent). Caches result on field._generic_type."""
-    # Use cached generic type if available
+def map_type(field: Field) -> ResolvedType:
+    """Calculate the generic type for a field."""
+
     if field._generic_type is not None:
         # Reconstruct ResolvedType from cached GenericType
         if field._generic_type in (GenericType.SINGLE_SELECT, GenericType.MULTIPLE_SELECT):
@@ -184,13 +174,11 @@ def calculate_generic_type(field: Field) -> ResolvedType:
     if field.is_calculated():
         airtable_type = field.result_type()
 
-    # Simple type lookup
     if airtable_type in AIRTABLE_TO_GENERIC:
         resolved = ResolvedType(generic_type=AIRTABLE_TO_GENERIC[airtable_type])
         field._generic_type = resolved.generic_type
         return resolved
 
-    # Handle number field (int vs float based on precision)
     if airtable_type == "number":
         if field.options and field.options.precision is not None and field.options.precision == 0:
             resolved = ResolvedType(generic_type=GenericType.INTEGER)
@@ -199,13 +187,12 @@ def calculate_generic_type(field: Field) -> ResolvedType:
         field._generic_type = resolved.generic_type
         return resolved
 
-    # Handle select fields (shared logic for single and multiple)
     if airtable_type == "singleSelect":
         options_name = get_select_options_name(field)
         if options_name:
             resolved = ResolvedType(generic_type=GenericType.SINGLE_SELECT, options_name=options_name)
         else:
-            resolved = ResolvedType(generic_type=GenericType.ANY)
+            resolved = ResolvedType(generic_type=GenericType.UNKNOWN)
         field._generic_type = resolved.generic_type
         return resolved
 
@@ -214,11 +201,11 @@ def calculate_generic_type(field: Field) -> ResolvedType:
         if options_name:
             resolved = ResolvedType(generic_type=GenericType.MULTIPLE_SELECT, options_name=options_name)
         else:
-            resolved = ResolvedType(generic_type=GenericType.ANY)
+            resolved = ResolvedType(generic_type=GenericType.UNKNOWN)
         field._generic_type = resolved.generic_type
         return resolved
 
-    resolved = ResolvedType(generic_type=GenericType.ANY)
+    resolved = ResolvedType(generic_type=GenericType.UNKNOWN)
     field._generic_type = resolved.generic_type
     return resolved
 
@@ -242,7 +229,7 @@ def get_select_options_name(field: Field) -> str | None:
 
 def render_python_type(resolved: ResolvedType, field: Field) -> str:
     """Render a ResolvedType to Python syntax."""
-    # Handle select types with their options_name
+
     if resolved.generic_type == GenericType.SINGLE_SELECT:
         base_type = resolved.options_name or "Any"
     elif resolved.generic_type == GenericType.MULTIPLE_SELECT:
@@ -250,7 +237,7 @@ def render_python_type(resolved: ResolvedType, field: Field) -> str:
     else:
         base_type = GENERIC_TO_PYTHON.get(resolved.generic_type, "Any")
 
-    # Apply lookup/rollup wrapper if needed (only for non-list types)
+    # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
     if "list" not in base_type:
         if field.involves_lookup() or field.involves_rollup():
             return f"list[{base_type} | None] | {base_type}"
@@ -260,7 +247,7 @@ def render_python_type(resolved: ResolvedType, field: Field) -> str:
 
 def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
     """Render a ResolvedType to TypeScript syntax."""
-    # Handle select types with their options_name
+
     if resolved.generic_type == GenericType.SINGLE_SELECT:
         base_type = resolved.options_name or "any"
     elif resolved.generic_type == GenericType.MULTIPLE_SELECT:
@@ -268,7 +255,7 @@ def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
     else:
         base_type = GENERIC_TO_TYPESCRIPT.get(resolved.generic_type, "any")
 
-    # Apply lookup/rollup wrapper if needed (only for non-array types)
+    # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
     if not base_type.endswith("[]"):
         if field.involves_lookup() or field.involves_rollup():
             return f"{base_type} | {base_type}[]"
@@ -276,31 +263,27 @@ def render_typescript_type(resolved: ResolvedType, field: Field) -> str:
     return base_type
 
 
-def calculate_python_type(field: Field) -> str:
+def map_python_type(field: Field) -> str:
     """Calculate the raw Python type for a field (without disambiguation)."""
-    # Return cached result if available
+
     if field._python_type_cache is not None:
         return field._python_type_cache
 
-    resolved = calculate_generic_type(field)
-    py_type = render_python_type(resolved, field)
+    resolved: ResolvedType = map_type(field)
+    py_type: str = render_python_type(resolved, field)
 
     field._python_type_cache = py_type
     return py_type
 
 
-def calculate_typescript_type(field: Field) -> str:
+def map_typescript_type(field: Field) -> str:
     """Calculate the raw TypeScript type for a field (without disambiguation)."""
-    # Return cached result if available
+
     if field._typescript_type_cache is not None:
         return field._typescript_type_cache
 
-    resolved = calculate_generic_type(field)
-    ts_type = render_typescript_type(resolved, field)
-
-    # Handle invalid fields
-    if not field.is_valid() and ts_type == "any":
-        pass  # Already "any", no change needed
+    resolved: ResolvedType = map_type(field)
+    ts_type: str = render_typescript_type(resolved, field)
 
     field._typescript_type_cache = ts_type
     return ts_type
@@ -315,6 +298,7 @@ def calculate_typescript_type(field: Field) -> str:
 
 def disambiguate_fields(fields: list[Field]) -> None:
     """Disambiguate multiple fields efficiently by batching API calls per table."""
+
     api_key = os.getenv("AIRTABLE_API_KEY")
     if not api_key:
         return
@@ -340,32 +324,27 @@ def disambiguate_fields(fields: list[Field]) -> None:
 
 
 def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Field]:
-    """Disambiguate all fields from a single table with minimal API calls.
+    """Disambiguate all fields from a single table with minimal API calls."""
 
-    Uses a graduated approach:
-    1. Batch fetch without formula
-    2. Iterative OR formula queries until no progress
-    3. Per-field fallback for any remaining fields
-    """
     if not fields:
         return []
 
-    sample_field = fields[0]
-    base_id = sample_field.base.id
-    table_id = sample_field.table.id
-    field_ids = [f.id for f in fields]
+    sample_field: Field = fields[0]
+    base_id: str = sample_field.base.id
+    table_id: str = sample_field.table.id
+    field_ids: list[str] = [f.id for f in fields]
 
     try:
         table = pyairtable.Table(api_key, base_id, table_id)
         remaining = list(fields)
 
-        # Phase 1: batch fetch without formula
+        # Phase 1: shotgun fetch
         records = table.all(fields=field_ids, max_records=20, use_field_ids=True)
         remaining = process_records_and_get_remaining(remaining, records)
         if not remaining:
             return []
 
-        # Phase 2: iterative OR formula queries
+        # Phase 2: narrow it down
         remaining = disambiguate_with_or_formula(table, remaining)
         if not remaining:
             return []
@@ -385,7 +364,7 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
 
 def process_records_and_get_remaining(fields: list[Field], records: list[dict]) -> list[Field]:
     """Process records and return fields that still need disambiguation."""
-    remaining = []
+    remaining: list[Field] = []
     for field in fields:
         value = find_non_blank_value(records, field.id)
         if value is not None:
@@ -404,12 +383,10 @@ def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -
         formula = any_not_blank(field_ids)
 
         records = table.all(formula=formula, fields=field_ids, max_records=50, use_field_ids=True)
-
         if not records:
             break  # No records found, go to per-field fallback
 
-        new_remaining = process_records_and_get_remaining(remaining, records)
-
+        new_remaining: list[Field] = process_records_and_get_remaining(remaining, records)
         if len(new_remaining) == len(remaining):
             break  # No progress made, go to per-field fallback
 
@@ -418,9 +395,14 @@ def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -
     return remaining
 
 
+def not_blank(field_id: str) -> str:
+    """Build NOT({field_id}=BLANK()) formula."""
+    return f"NOT({{{field_id}}}=BLANK())"
+
+
 def any_not_blank(field_ids: list[str]) -> str:
     """Build OR(NOT({f1}=BLANK()), NOT({f2}=BLANK()), ...) formula."""
-    conditions = [f"NOT({{{fid}}}=BLANK())" for fid in field_ids]
+    conditions = [not_blank(fid) for fid in field_ids]
     if len(conditions) == 1:
         return conditions[0]
     return f"OR({', '.join(conditions)})"
@@ -428,11 +410,13 @@ def any_not_blank(field_ids: list[str]) -> str:
 
 def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | None:
     """Fetch a single record where the field is not blank."""
-    formula = f"NOT({{{field.id}}}=BLANK())"
-    record = table.first(formula=formula, fields=[field.id], use_field_ids=True)
+    record = table.first(
+        formula=not_blank(field.id),
+        fields=[field.id],
+        use_field_ids=True,
+    )
     if record:
-        value = record.get("fields", {}).get(field.id)
-        if value is not None:
+        if value := record.get("fields", {}).get(field.id):
             apply_disambiguated_type(field, isinstance(value, list))
             return None
     return field  # Still could not disambiguate
@@ -440,8 +424,8 @@ def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | 
 
 def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     """Apply disambiguated types to a field."""
-    field._python_type = render_disambiguated_type(field._generic_type, is_list, "python")
-    field._typescript_type = render_disambiguated_type(field._generic_type, is_list, "typescript")
+    field._python_type = render_disambiguated_type(field, is_list, "python")
+    field._typescript_type = render_disambiguated_type(field, is_list, "typescript")
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:
@@ -449,7 +433,6 @@ def find_non_blank_value(records: list[dict], field_id: str) -> Any:
     for record in records:
         value = record.get("fields", {}).get(field_id)
         if value is not None:
-            # For lists, ensure it's not empty and not all None
             if isinstance(value, list):
                 if value and any(v is not None for v in value):
                     return value
@@ -458,27 +441,57 @@ def find_non_blank_value(records: list[dict], field_id: str) -> Any:
     return None
 
 
-def render_disambiguated_type(generic_type: GenericType | None, is_list: bool, language: str) -> str:
-    """Render a disambiguated type (with known is_list) to the target language."""
-    if generic_type is None:
-        return "Any" if language == "python" else "any"
-
+def unknown_type(language: str) -> str:
+    """Return the unknown type representation for the target language."""
     match language:
         case "python":
-            renderer = GENERIC_TO_PYTHON
-            fallback = "Any"
+            return "Any"
         case "typescript":
-            renderer = GENERIC_TO_TYPESCRIPT
-            fallback = "any"
+            return "any"
         case _:
-            return "Any" if language == "python" else "any"
+            raise ValueError("Unsupported language")
 
-    base_type = renderer.get(generic_type, fallback)
+
+def list_type(base_type: str, language: str) -> str:
+    """Render a list type wrapper around a base type for the target language."""
+    match language:
+        case "python":
+            return f"list[{base_type}]"
+        case "typescript":
+            return f"{base_type}[]"
+        case _:
+            raise ValueError("Unsupported language")
+
+
+def render_disambiguated_type(field: Field, is_list: bool, language: str) -> str:
+    """Render a disambiguated type (with known is_list) to the target language."""
+    generic_type = field._generic_type
+
+    if generic_type is None:
+        return unknown_type(language)
+
+    if generic_type == GenericType.SINGLE_SELECT:
+        options_name: str = field.options_name()
+        base_type: str = options_name or unknown_type(language)
+    elif generic_type == GenericType.MULTIPLE_SELECT:
+        options_name: str = field.options_name()
+        if options_name:
+            return list_type(options_name, language)
+        else:
+            return unknown_type(language)
+    else:
+        match language:
+            case "python":
+                renderer: dict[GenericType, str] = GENERIC_TO_PYTHON
+                fallback: str = unknown_type(language)
+            case "typescript":
+                renderer: dict[GenericType, str] = GENERIC_TO_TYPESCRIPT
+                fallback: str = unknown_type(language)
+            case _:
+                return unknown_type(language)
+        base_type = renderer.get(generic_type, fallback)
 
     if is_list:
-        if language == "python":
-            return f"list[{base_type}]"
-        else:
-            return f"{base_type}[]"
+        return list_type(base_type, language)
 
     return base_type

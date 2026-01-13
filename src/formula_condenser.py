@@ -1,5 +1,3 @@
-"""Formula condensing utilities for Airtable formulas."""
-
 from functools import lru_cache
 
 from .formula_tokenizer import TokenType, tokenize_formula

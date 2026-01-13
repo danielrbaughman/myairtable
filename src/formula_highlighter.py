@@ -1,21 +1,3 @@
-"""
-Airtable Formula Syntax Highlighter
-
-Provides syntax highlighting for Airtable formulas by generating HTML
-with inline styles. Compatible with Markdown/Obsidian.
-
-Color Scheme:
-    - Functions (IF, SUM, etc.): Blue (#0066CC)
-    - Field References {Name}: Green (#22863A)
-    - Operators +, -, =: Red (#D73A49)
-    - Parentheses (): Purple/Light Blue (alternating by depth)
-    - Commas: Pink (#DB2777)
-
-Usage:
-    >>> from formula_highlighter import highlight_formula
-    >>> html = highlight_formula("SUM({Amount}, 100)")
-"""
-
 import html
 from functools import lru_cache
 from typing import Sequence

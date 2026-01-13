@@ -1,15 +1,3 @@
-"""
-Airtable Formula Tokenizer
-
-Tokenizes Airtable formulas into structured tokens for parsing,
-syntax highlighting, or other analysis.
-
-Usage:
-    >>> from formula_tokenizer import FormulaTokenizer, TokenType
-    >>> tokenizer = FormulaTokenizer("SUM({Amount}, 100)")
-    >>> tokens = tokenizer.tokenize()
-"""
-
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import lru_cache

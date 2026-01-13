@@ -1,9 +1,3 @@
-"""Formula formatting utilities for Airtable formulas.
-
-This module provides functions to format Airtable formula strings with
-proper indentation and newlines for better readability in markdown code blocks.
-"""
-
 import re
 from functools import lru_cache
 from typing import Sequence
