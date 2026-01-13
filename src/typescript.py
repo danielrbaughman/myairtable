@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from . import timer
 from .helpers import (
     Paths,
     copy_static_files,
@@ -9,7 +10,8 @@ from .helpers import (
     reset_folder,
     sanitize_string,
 )
-from .meta import Base, Field, FieldType, Table
+from .meta import Base, Field, Table
+from .verbose import verbose
 from .write_to_file import WriteToFile
 
 
@@ -91,23 +93,44 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
-    copy_static_files(output_folder, "typescript")
-    print("[dim] - TypeScript static files copied.[/]")
-    write_types(base, output_folder)
-    print("[dim] - TypeScript types generated.[/]")
+    with timer.timer("TypeScript: copy_static_files"):
+        copy_static_files(output_folder, "typescript")
+        if verbose:
+            print("[dim] - TypeScript static files copied.[/]")
+
+    with timer.timer("TypeScript: write_types"):
+        write_types(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript types generated.[/]")
+
     if formulas:
-        write_formula_helpers(base, output_folder)
-        print("[dim] - TypeScript formula helpers generated.[/]")
+        with timer.timer("TypeScript: write_formula_helpers"):
+            write_formula_helpers(base, output_folder)
+            if verbose:
+                print("[dim] - TypeScript formula helpers generated.[/]")
+
     if wrappers:
-        write_models(base, output_folder, formulas=formulas)
-        print("[dim] - TypeScript models generated.[/]")
-        write_tables(base, output_folder)
-        print("[dim] - TypeScript tables generated.[/]")
-        write_main_class(base, output_folder)
-        print("[dim] - TypeScript main class generated.[/]")
-    write_index(output_folder, formulas=formulas, wrappers=wrappers)
-    print("[green] - TypeScript code generation complete.[/]")
-    print("")
+        with timer.timer("TypeScript: write_models"):
+            write_models(base, output_folder, formulas=formulas)
+            if verbose:
+                print("[dim] - TypeScript models generated.[/]")
+
+        with timer.timer("TypeScript: write_tables"):
+            write_tables(base, output_folder)
+            if verbose:
+                print("[dim] - TypeScript tables generated.[/]")
+
+        with timer.timer("TypeScript: write_main_class"):
+            write_main_class(base, output_folder)
+            if verbose:
+                print("[dim] - TypeScript main class generated.[/]")
+
+    with timer.timer("TypeScript: write_index"):
+        write_index(output_folder, formulas=formulas, wrappers=wrappers)
+
+    if verbose:
+        print("[green] - TypeScript code generation complete.[/]")
+        print("")
 
 
 def write_barrel_export(base: Base, directory: Path, extra_exports: list[str] | None = None) -> None:
@@ -209,13 +232,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(field.id, typescript_type(field), optional=True)
+                write.property_row(field.id, field.typescript_type(), optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(sanitize_string(field.name), typescript_type(field), is_name_string=True, optional=True)
+                write.property_row(sanitize_string(field.name), field.typescript_type(), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
             write.line_empty()
@@ -345,7 +368,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
@@ -365,13 +388,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_indented("id?: string,", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("} = {}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
@@ -411,7 +434,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             for field in table.fields:
                 field_name = field.name_camel()
                 if not field.is_computed():
-                    field_type = typescript_type(field)
+                    field_type = field.typescript_type()
                     if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
                             write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.id;', 2)
@@ -432,7 +455,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
@@ -457,7 +480,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             )
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
                         write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)
@@ -613,85 +636,6 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
         if wrappers:
             write.line('export * from "./static/airtable-model";')
         write.line("")
-
-
-# endregion
-
-# region TYPE MAPPING
-# Simple Airtable type → TypeScript type mappings
-SIMPLE_TS_TYPES: dict[str, str] = {
-    "singleLineText": "string",
-    "multilineText": "string",
-    "url": "string",
-    "richText": "string",
-    "email": "string",
-    "phoneNumber": "string",
-    "barcode": "string",
-    "checkbox": "boolean",
-    "date": "string",
-    "dateTime": "string",
-    "createdTime": "string",
-    "lastModifiedTime": "string",
-    "count": "number",
-    "autoNumber": "number",
-    "percent": "number",
-    "currency": "number",
-    "number": "number",
-    "duration": "number",
-    "multipleRecordLinks": "RecordId[]",
-    "multipleAttachments": "Attachment[]",
-    "singleCollaborator": "Collaborator",
-    "lastModifiedBy": "Collaborator",
-    "createdBy": "Collaborator",
-    "button": "string",
-}
-
-
-def typescript_type(field: Field) -> str:
-    """Returns the appropriate TypeScript type for a given Airtable field. Cached after first call."""
-    # Return cached result if available
-    if field._typescript_type_cache is not None:
-        return field._typescript_type_cache
-
-    airtable_type: FieldType = field.type
-    ts_type: str = "any"
-
-    # With calculated fields, we want to know the type of the result
-    if field.is_calculated():
-        airtable_type = field.result_type()
-
-    # Handle simple type mappings via lookup
-    if airtable_type in SIMPLE_TS_TYPES:
-        ts_type = SIMPLE_TS_TYPES[airtable_type]
-
-    # Handle complex types with special logic
-    elif airtable_type == "singleSelect":
-        referenced_field = field.field_in_linked_table()
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            ts_type = field.options_name()
-        elif referenced_field and referenced_field.type == "singleSelect" and referenced_field.id in select_fields_ids:
-            ts_type = referenced_field.options_name()
-        else:
-            ts_type = "any"
-    elif airtable_type == "multipleSelects":
-        select_fields_ids = field.base.select_fields_ids()
-        if field.id in select_fields_ids:
-            ts_type = f"{field.options_name()}[]"
-        else:
-            ts_type = "any"
-    elif not field.is_valid():
-        ts_type = "any"
-
-    # TODO: In the case of some calculated fields, sometimes the result is just too unpredictable.
-    # Although the type prediction is basically right, I haven't figured out how to predict if
-    # it's a list or not, and sometimes the result is a list with a single null value.
-    if not ts_type.endswith("[]"):
-        if field.involves_lookup() or field.involves_rollup():
-            ts_type = f"{ts_type} | {ts_type}[]"
-
-    field._typescript_type_cache = ts_type
-    return ts_type
 
 
 # endregion

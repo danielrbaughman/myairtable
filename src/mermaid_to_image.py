@@ -1,5 +1,3 @@
-"""Mermaid to SVG conversion using mermaid-cli (local Playwright/Chromium)."""
-
 import asyncio
 import base64
 import hashlib

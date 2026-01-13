@@ -1,5 +1,3 @@
-"""Lightweight timing utilities for performance benchmarking."""
-
 import time
 from contextlib import contextmanager
 from functools import wraps

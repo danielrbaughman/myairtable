@@ -11,23 +11,26 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from src import timer
-from src.formula_condenser import condense_formula
-from src.formula_flattener import flatten_formula
-from src.formula_formatter import format_formula
-from src.formula_highlighter import highlight_formula
-from src.formula_sanitizer import sanitize_formula
-from src.helpers import (
+from . import timer
+from .formula_condenser import condense_formula
+from .formula_flattener import flatten_formula
+from .formula_formatter import format_formula
+from .formula_highlighter import highlight_formula
+from .formula_sanitizer import sanitize_formula
+from .helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
     sanitize_leading_trailing_characters,
     sanitize_property_name,
     sanitize_reserved_names,
 )
-from src.meta_types import BaseMetadata, FieldType
+from .meta_types import BaseMetadata, FieldType, GenericType
+from .verbose import verbose
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
+PYTHON_TYPE = "Python Type"
+TYPESCRIPT_TYPE = "TypeScript Type"
 
 # Retry configuration
 _MAX_RETRIES = 5
@@ -118,8 +121,9 @@ def generate_meta(metadata: BaseMetadata, folder: Path):
     p = folder / "meta.json"
     with open(p, "w") as f:
         f.write(json.dumps(metadata, indent=4))
-    print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
-    print("")
+    if verbose:
+        print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
+        print("")
 
 
 class Named(BaseModel):
@@ -333,10 +337,12 @@ class Field(Named):
     table: "Table"
     base: "Base"
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
-    _python_type_cache: str | None = PrivateAttr(default=None)
-    _typescript_type_cache: str | None = PrivateAttr(default=None)
-    # Formula caching for performance
+    _python_type_csv: str | None = PrivateAttr(default=None)
+    _typescript_type_csv: str | None = PrivateAttr(default=None)
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _generic_type: GenericType | None = PrivateAttr(default=None)
+    _python_type: str | None = PrivateAttr(default=None)
+    _typescript_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -479,6 +485,44 @@ class Field(Named):
                 if self.options.result.type:
                     return self.options.result.type
         return self.type
+
+    def csv_python_type(self) -> str:
+        """Get the saved Python type from the CSV"""
+        if self._python_type_csv is None:
+            if hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self.base._csv_cache.get_field_value(self.id, PYTHON_TYPE)
+                if text:
+                    self._python_type_csv = text
+                    return text
+            self._python_type_csv = ""
+        return self._python_type_csv
+
+    def csv_typescript_type(self) -> str:
+        """Get the saved TypeScript type from the CSV"""
+        if self._typescript_type_csv is None:
+            if hasattr(self, "base") and self.base and self.base._csv_cache:
+                text = self.base._csv_cache.get_field_value(self.id, TYPESCRIPT_TYPE)
+                if text:
+                    self._typescript_type_csv = text
+                    return text
+            self._typescript_type_csv = ""
+        return self._typescript_type_csv
+
+    def python_type(self) -> str:
+        """Returns the Python type for this field."""
+        if self._python_type:
+            return self._python_type
+        from src.type_mapper import map_python_type
+
+        return map_python_type(self)
+
+    def typescript_type(self) -> str:
+        """Returns the TypeScript type for this field."""
+        if self._typescript_type:
+            return self._typescript_type
+        from src.type_mapper import map_typescript_type
+
+        return map_typescript_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""
@@ -819,7 +863,7 @@ class Base(BaseModel):
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
     _select_fields_cache: list["Field"] | None = None
-    _select_field_ids_cache: list[str] | None = None
+    _select_field_ids_cache: set[str] | None = None
 
     def __init__(self, csv_folder: Path | None = None):
         meta = get_base_meta_data()
@@ -950,10 +994,10 @@ class Base(BaseModel):
             self._select_fields_cache = [field for field in self.fields() if field.select_options()]
         return self._select_fields_cache
 
-    def select_fields_ids(self) -> list[str]:
-        """Get IDs of all fields with select options. Cached after first call."""
+    def select_fields_ids(self) -> set[str]:
+        """Get IDs of all fields with select options. Cached after first call. Returns set for O(1) membership testing."""
         if self._select_field_ids_cache is None:
-            self._select_field_ids_cache = [field.id for field in self.select_fields()]
+            self._select_field_ids_cache = {field.id for field in self.select_fields()}
         return self._select_field_ids_cache
 
     def select_field_by_id(self, field_id: str) -> Field | None:

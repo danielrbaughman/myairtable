@@ -289,6 +289,7 @@ dependencies = [
     { name = "pyperclip" },
     { name = "pytest" },
     { name = "typer" },
+    { name = "typer-verbose" },
 ]
 
 [package.dev-dependencies]
@@ -308,6 +309,7 @@ requires-dist = [
     { name = "pyperclip", specifier = ">=1.11.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "typer", specifier = ">=0.16.1" },
+    { name = "typer-verbose", specifier = ">=0.1.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -688,7 +690,7 @@ wheels = [
 
 [[package]]
 name = "typer"
-version = "0.16.1"
+version = "0.21.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -696,9 +698,21 @@ dependencies = [
     { name = "shellingham" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/43/78/d90f616bf5f88f8710ad067c1f8705bf7618059836ca084e5bb2a0855d75/typer-0.16.1.tar.gz", hash = "sha256:d358c65a464a7a90f338e3bb7ff0c74ac081449e53884b12ba658cbd72990614", size = 102836, upload-time = "2025-08-18T19:18:22.898Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/76/06dbe78f39b2203d2a47d5facc5df5102d0561e2807396471b5f7c5a30a1/typer-0.16.1-py3-none-any.whl", hash = "sha256:90ee01cb02d9b8395ae21ee3368421faf21fa138cb2a541ed369c08cec5237c9", size = 46397, upload-time = "2025-08-18T19:18:21.663Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
+]
+
+[[package]]
+name = "typer-verbose"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/9e/451d4b2c99e20244c2b3374de41148c34f4bd72bcd66908b829d60ed2ae1/typer_verbose-0.1.2.tar.gz", hash = "sha256:08a3e8e9059f5ea6a62f9df423d67b2bbffd310aae53ba7e31e758b49771301e", size = 2693, upload-time = "2025-12-29T23:25:38.7Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/9b/37d728b4dcd682da1c63cc55c5c5dc2082041bd8779677c7913fb153b1ae/typer_verbose-0.1.2-py3-none-any.whl", hash = "sha256:347b95c7f8b5b3edd7c28d4f644b97d0ae3218ae2204675ef83028132d412b2f", size = 3750, upload-time = "2025-12-29T23:25:37.636Z" },
 ]
 
 [[package]]

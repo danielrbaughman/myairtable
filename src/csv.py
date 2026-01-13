@@ -4,10 +4,9 @@ from pathlib import Path
 from pydantic.alias_generators import to_snake
 from rich import print
 
-from src.helpers import sanitize_string
-from src.meta import MODEL_NAME, PROPERTY_NAME, Base
-from src.python import python_type
-from src.typescript import typescript_type
+from .helpers import sanitize_string
+from .meta import MODEL_NAME, PROPERTY_NAME, Base
+from .verbose import verbose
 
 # Column definitions for CSV exports
 TABLE_COLUMNS = [
@@ -47,7 +46,8 @@ def generate_csv(base: Base, folder: Path, fresh: bool):
                     MODEL_NAME: to_snake(table.name_model(use_custom=use_custom)),
                 }
             )
-    print(f"[dim] - Table CSV exported to '{tables_csv_path}'[/]")
+    if verbose:
+        print(f"[dim] - Table CSV exported to '{tables_csv_path}'[/]")
 
     # Generate fields CSV
     fields_output_path = Path(folder) / "fields.csv"
@@ -66,10 +66,11 @@ def generate_csv(base: Base, folder: Path, fresh: bool):
                         "Field Name": sanitize_string(field.name),
                         PROPERTY_NAME: field.name_snake(use_custom=use_custom),
                         "Airtable Type": field.type,
-                        "Python Type": python_type(field),
-                        "TypeScript Type": typescript_type(field),
+                        "Python Type": field.python_type(),
+                        "TypeScript Type": field.typescript_type(),
                     }
                 )
-    print(f"[dim] - Fields CSV exported to '{fields_output_path}'[/]")
-    print("[green] - CSV generation complete.[/]")
-    print("")
+    if verbose:
+        print(f"[dim] - Fields CSV exported to '{fields_output_path}'[/]")
+        print("[green] - CSV generation complete.[/]")
+        print("")

@@ -1,16 +1,15 @@
-import time
 from datetime import datetime
 from pathlib import Path
 
 from rich import print
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-
-from src.mermaid import mermaid_base, mermaid_formula
+from rich.progress import track
 
 from . import timer
 from .helpers import Paths, sanitize_for_markdown
+from .mermaid import mermaid_base, mermaid_formula
 from .mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
 from .meta import Base
+from .verbose import verbose
 from .write_to_file import WriteToFile
 
 
@@ -87,7 +86,6 @@ def generate_markdown(
     flatten_formulas: bool = True,
     mermaid_formulas: bool = True,
 ) -> None:
-    start = time.time()
     print("Generating Markdown code")
 
     # Pre-create all folders once before generation
@@ -108,7 +106,8 @@ def generate_markdown(
 
     with timer.timer("Markdown: write_tables"):
         write_tables(base, output_folder)
-        print("[dim] - Markdown tables generated.[/]")
+        if verbose:
+            print("[dim] - Markdown tables generated.[/]")
 
     svg_tasks: list[tuple[str, str]] = []
     with timer.timer("Markdown: write_fields"):
@@ -122,21 +121,22 @@ def generate_markdown(
             flatten_formulas=flatten_formulas,
             mermaid_formulas=mermaid_formulas,
         )
-        print("[dim] - Markdown fields generated.[/]")
+        if verbose:
+            print("[dim] - Markdown fields generated.[/]")
 
     with timer.timer("Markdown: write_svgs"):
         write_svgs(svg_tasks=svg_tasks, svg_enabled=svg_enabled, diagrams_dir=diagrams_dir, svg_cache_dir=svg_cache_dir)
-        if svg_enabled:
+        if svg_enabled and verbose:
             print("[dim] - Function SVGs generated.[/]")
 
     with timer.timer("Markdown: write_index"):
         write_index(base, output_folder)
-        print("[dim] - Markdown index generated.[/]")
+        if verbose:
+            print("[dim] - Markdown index generated.[/]")
 
-    print("[green] - Markdown code generation complete.[/]")
-    print("")
-    elapsed = time.time() - start
-    print(f"[dim]  » Elapsed time: {elapsed:.2f}s[/]")
+    if verbose:
+        print("[green] - Markdown code generation complete.[/]")
+        print("")
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
@@ -309,15 +309,12 @@ def write_svgs(
     svg_cache_dir: Path | None = None,
 ) -> None:
     if svg_enabled and diagrams_dir and svg_cache_dir and svg_tasks:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), transient=True) as progress:
-            progress_task = progress.add_task("Generating formula SVGs...", total=len(svg_tasks))
-            for field_id, mermaid_code in svg_tasks:
-                with timer.timer("Markdown: write_field: formula: diagram: svg generation"):
-                    svg_content = mermaid_to_svg(mermaid_code, svg_cache_dir, field_id)
-                    if svg_content:
-                        svg_path = diagrams_dir / f"{field_id}.svg"
-                        svg_path.write_text(svg_content)
-                progress.advance(progress_task)
+        for field_id, mermaid_code in track(svg_tasks, description="Generating formula SVGs..."):
+            with timer.timer("Markdown: write_field: formula: diagram: svg generation"):
+                svg_content = mermaid_to_svg(mermaid_code, svg_cache_dir, field_id)
+                if svg_content:
+                    svg_path = diagrams_dir / f"{field_id}.svg"
+                    svg_path.write_text(svg_content)
 
 
 def write_index(base: Base, output_folder: Path) -> None:

@@ -1,14 +1,3 @@
-"""Formula flattener - recursively expands nested formula field references.
-
-This module provides functionality to flatten Airtable formulas by recursively
-expanding references to formula fields into their underlying formula definitions.
-
-Example:
-    formula_map = {"fldB": "{fldC} + 1", "fldC": "10"}
-    flatten_formula("{fldB} * 2", "fldA", formula_map)
-    # Returns: "((10) + 1) * 2"
-"""
-
 import re
 from functools import lru_cache
 

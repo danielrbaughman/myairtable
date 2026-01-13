@@ -1,5 +1,3 @@
-"""Formula sanitizer - replaces field IDs with field names for readability."""
-
 import re
 from functools import lru_cache
 
