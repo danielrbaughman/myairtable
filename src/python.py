@@ -11,11 +11,6 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, Table
-from .type_mapper import (
-    calculate_all_python_types,
-    pyairtable_orm_type,
-    python_type,
-)
 from .write_to_file import WriteToFile
 
 
@@ -105,37 +100,35 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
     copy_static_files(output_folder, "python")
     print("[dim] - Python static files copied.[/]")
 
-    with timer.timer("Python: calculate_all_python_types"):
-        calculate_all_python_types(base)
-    print("[dim] - Python types calculated.[/]")
-
     with timer.timer("Python: write_types"):
         write_types(base, output_folder)
-    print("[dim] - Python types generated.[/]")
+        print("[dim] - Python types generated.[/]")
 
     with timer.timer("Python: write_dicts"):
         write_dicts(base, output_folder)
-    print("[dim] - Python dicts generated.[/]")
+        print("[dim] - Python dicts generated.[/]")
 
     with timer.timer("Python: write_models"):
         write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
-    print("[dim] - Python models generated.[/]")
+        print("[dim] - Python models generated.[/]")
 
     if formulas:
         with timer.timer("Python: write_formula_helpers"):
             write_formula_helpers(base, output_folder)
-        print("[dim] - Python formula helpers generated.[/]")
+            print("[dim] - Python formula helpers generated.[/]")
 
     if wrappers:
         with timer.timer("Python: write_tables"):
             write_tables(base, output_folder)
-        print("[dim] - Python tables generated.[/]")
+            print("[dim] - Python tables generated.[/]")
 
         with timer.timer("Python: write_main_class"):
             write_main_class(base, output_folder)
-        print("[dim] - Python main class generated.[/]")
+            print("[dim] - Python main class generated.[/]")
 
-    write_init(output_folder, formulas, wrappers)
+    with timer.timer("Python: write_init"):
+        write_init(output_folder, formulas, wrappers)
+
     print("[green] - Python code generation complete.[/]")
     print("")
 
@@ -180,7 +173,7 @@ def write_types(base: Base, output_folder: Path) -> None:
             for field in table.fields:
                 name_sanitized = sanitize_string(field.name)
                 name_snake = field.name_snake()
-                py_type = python_type(field)
+                py_type = field.python_type()
 
                 # Store all field attributes for later use
                 field_data.append(
@@ -722,3 +715,76 @@ def main_doc_string() -> str:
 
 
 # endregion
+
+SIMPLE_ORM_TYPES: dict[str, str] = {
+    "singleLineText": "SingleLineTextField",
+    "multilineText": "MultilineTextField",
+    "url": "UrlField",
+    "richText": "RichTextField",
+    "email": "EmailField",
+    "phoneNumber": "PhoneNumberField",
+    "barcode": "BarcodeField",
+    "lastModifiedBy": "LastModifiedByField",
+    "createdBy": "CreatedByField",
+    "checkbox": "CheckboxField",
+    "date": "DateField",
+    "dateTime": "DatetimeField",
+    "createdTime": "CreatedTimeField",
+    "lastModifiedTime": "LastModifiedTimeField",
+    "count": "CountField",
+    "autoNumber": "AutoNumberField",
+    "percent": "PercentField",
+    "duration": "DurationField",
+    "currency": "CurrencyField",
+    "number": "NumberField",
+    "multipleAttachments": "AttachmentsField",
+    "singleCollaborator": "CollaboratorField",
+    "button": "ButtonField",
+}
+
+
+def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
+    """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
+    airtable_type = field.type
+    original_id = field.id
+    is_read_only: bool = field.is_computed()
+
+    # With formula/rollup fields, we want to know the type of the result
+    if field.type in ["formula", "rollup"]:
+        airtable_type = field.result_type()
+
+    params = f'field_name="{original_id}"' + (", readonly=True" if is_read_only else "")
+
+    # Handle simple type mappings via lookup
+    if airtable_type in SIMPLE_ORM_TYPES:
+        orm_class = SIMPLE_ORM_TYPES[airtable_type]
+        return f"{orm_class} = {orm_class}({params})"
+
+    # Handle complex types with special logic
+    match airtable_type:
+        case "singleSelect":
+            if field.id in field.base.select_fields_ids():
+                return f"{field.options_name()} = SelectField({params})"
+            return f"SelectField = SelectField({params})"
+        case "multipleSelects":
+            if field.id in field.base.select_fields_ids():
+                return f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
+            return f"MultipleSelectField = MultipleSelectField({params})"
+        case "lookup" | "multipleLookupValues":
+            return f"LookupField = LookupField[{field.python_type()}]({params})"
+        case "multipleRecordLinks":
+            if field.options and field.options.linked_table_id:
+                table_id: str = field.options.linked_table_id
+                for table in base.tables:
+                    if table.id == table_id:
+                        linked_orm_class = table.name_model()
+                        break
+                prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
+                if field.options.prefers_single_record_link:
+                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
+                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
+            print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
+        case _:
+            pass
+
+    return "Any"

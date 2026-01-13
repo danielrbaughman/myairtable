@@ -11,6 +11,7 @@ from src.helpers import create_folder, reset_folder
 from src.markdown import generate_markdown
 from src.meta import Base, generate_meta, get_base_meta_data
 from src.python import generate_python
+from src.type_mapper import calculate_types
 from src.typescript import generate_typescript
 
 app = Typer()
@@ -42,7 +43,10 @@ def csv(
     """Export Airtable metadata to CSV format."""
     folder_path = reset_folder(Path(folder))
     base = Base(csv_folder=folder_path)
-    generate_csv(base=base, folder=folder_path, fresh=fresh)
+    with timer.timer("Type calculation"):
+        calculate_types(base)
+    with timer.timer("CSV generation"):
+        generate_csv(base=base, folder=folder_path, fresh=fresh)
 
 
 @app.command()
@@ -62,6 +66,8 @@ def py(
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
 
     base = Base(csv_folder=csv_folder_path)
+    with timer.timer("Type calculation"):
+        calculate_types(base)
 
     if fresh:
         with timer.timer("CSV generation"):
@@ -91,9 +97,13 @@ def ts(
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base(csv_folder=csv_folder_path)
+    with timer.timer("Type calculation"):
+        calculate_types(base)
     if fresh:
-        generate_csv(base=base, folder=csv_folder_path, fresh=True)
-    generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers)
+        with timer.timer("CSV generation"):
+            generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    with timer.timer("TypeScript generation"):
+        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers)
 
 
 @app.command()
@@ -117,6 +127,9 @@ def md(
     folder_path = reset_folder(Path(folder), preserve=preserve)
 
     base = Base()
+
+    with timer.timer("Type calculation"):
+        calculate_types(base)
 
     with timer.timer("Markdown generation"):
         generate_markdown(
@@ -212,9 +225,14 @@ def all(
         with timer.timer("Meta generation"):
             meta_folder_path = create_folder(meta_folder)
             generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
+
+    with timer.timer("Type calculation"):
+        calculate_types(base)
+
     if csv_folder_path:
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
+
     if py_folder:
         with timer.timer("Python generation"):
             py_folder_path = reset_folder(py_folder)
@@ -225,10 +243,12 @@ def all(
                 wrappers=wrappers,
                 package_prefix=py_package_prefix,
             )
+
     if ts_folder:
         with timer.timer("TypeScript generation"):
             ts_folder_path = reset_folder(ts_folder)
             generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers)
+
     if md_folder:
         with timer.timer("Markdown generation"):
             preserve = None if reset_svg_cache else [".svg_cache"]
@@ -241,6 +261,7 @@ def all(
                 flatten_formulas=flatten_formulas,
                 mermaid_formulas=mermaid_formulas,
             )
+
     check_invalid(base)
     print("[green]Generation complete.[/]")
 

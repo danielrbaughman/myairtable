@@ -6,7 +6,6 @@ from rich import print
 
 from src.helpers import sanitize_string
 from src.meta import MODEL_NAME, PROPERTY_NAME, Base
-from src.type_mapper import python_type, typescript_type
 
 # Column definitions for CSV exports
 TABLE_COLUMNS = [
@@ -65,8 +64,8 @@ def generate_csv(base: Base, folder: Path, fresh: bool):
                         "Field Name": sanitize_string(field.name),
                         PROPERTY_NAME: field.name_snake(use_custom=use_custom),
                         "Airtable Type": field.type,
-                        "Python Type": python_type(field),
-                        "TypeScript Type": typescript_type(field),
+                        "Python Type": field.python_type(),
+                        "TypeScript Type": field.typescript_type(),
                     }
                 )
     print(f"[dim] - Fields CSV exported to '{fields_output_path}'[/]")

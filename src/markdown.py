@@ -1,4 +1,3 @@
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -87,7 +86,6 @@ def generate_markdown(
     flatten_formulas: bool = True,
     mermaid_formulas: bool = True,
 ) -> None:
-    start = time.time()
     print("Generating Markdown code")
 
     # Pre-create all folders once before generation
@@ -135,8 +133,6 @@ def generate_markdown(
 
     print("[green] - Markdown code generation complete.[/]")
     print("")
-    elapsed = time.time() - start
-    print(f"[dim]  » Elapsed time: {elapsed:.2f}s[/]")
 
 
 def write_tables(base: Base, output_folder: Path) -> None:

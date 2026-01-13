@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from . import timer
 from .helpers import (
     Paths,
     copy_static_files,
@@ -10,10 +11,6 @@ from .helpers import (
     sanitize_string,
 )
 from .meta import Base, Field, Table
-from .type_mapper import (
-    calculate_all_typescript_types,
-    typescript_type,
-)
 from .write_to_file import WriteToFile
 
 
@@ -95,23 +92,35 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
-    copy_static_files(output_folder, "typescript")
-    print("[dim] - TypeScript static files copied.[/]")
-    calculate_all_typescript_types(base)
-    print("[dim] - TypeScript types calculated.[/]")
-    write_types(base, output_folder)
-    print("[dim] - TypeScript types generated.[/]")
+    with timer.timer("TypeScript: copy_static_files"):
+        copy_static_files(output_folder, "typescript")
+        print("[dim] - TypeScript static files copied.[/]")
+
+    with timer.timer("TypeScript: write_types"):
+        write_types(base, output_folder)
+        print("[dim] - TypeScript types generated.[/]")
+
     if formulas:
-        write_formula_helpers(base, output_folder)
-        print("[dim] - TypeScript formula helpers generated.[/]")
+        with timer.timer("TypeScript: write_formula_helpers"):
+            write_formula_helpers(base, output_folder)
+            print("[dim] - TypeScript formula helpers generated.[/]")
+
     if wrappers:
-        write_models(base, output_folder, formulas=formulas)
-        print("[dim] - TypeScript models generated.[/]")
-        write_tables(base, output_folder)
-        print("[dim] - TypeScript tables generated.[/]")
-        write_main_class(base, output_folder)
-        print("[dim] - TypeScript main class generated.[/]")
-    write_index(output_folder, formulas=formulas, wrappers=wrappers)
+        with timer.timer("TypeScript: write_models"):
+            write_models(base, output_folder, formulas=formulas)
+            print("[dim] - TypeScript models generated.[/]")
+
+        with timer.timer("TypeScript: write_tables"):
+            write_tables(base, output_folder)
+            print("[dim] - TypeScript tables generated.[/]")
+
+        with timer.timer("TypeScript: write_main_class"):
+            write_main_class(base, output_folder)
+            print("[dim] - TypeScript main class generated.[/]")
+
+    with timer.timer("TypeScript: write_index"):
+        write_index(output_folder, formulas=formulas, wrappers=wrappers)
+
     print("[green] - TypeScript code generation complete.[/]")
     print("")
 
@@ -215,13 +224,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(field.id, typescript_type(field), optional=True)
+                write.property_row(field.id, field.typescript_type(), optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(sanitize_string(field.name), typescript_type(field), is_name_string=True, optional=True)
+                write.property_row(sanitize_string(field.name), field.typescript_type(), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
             write.line_empty()
@@ -351,7 +360,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
@@ -371,13 +380,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_indented("id?: string,", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 write.line_indented(f"{field_name}?: {field_type},", 2)
             write.line_indented("} = {}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
@@ -417,7 +426,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             for field in table.fields:
                 field_name = field.name_camel()
                 if not field.is_computed():
-                    field_type = typescript_type(field)
+                    field_type = field.typescript_type()
                     if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
                             write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.id;', 2)
@@ -438,7 +447,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
@@ -463,7 +472,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             )
             for field in table.fields:
                 field_name = field.name_camel()
-                field_type = typescript_type(field)
+                field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
                         write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)

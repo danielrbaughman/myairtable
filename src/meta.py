@@ -25,6 +25,7 @@ from src.helpers import (
     sanitize_reserved_names,
 )
 from src.meta_types import BaseMetadata, FieldType
+from src.type_mapper import GenericType
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
@@ -337,8 +338,8 @@ class Field(Named):
     _select_options_cache: list[str] | None = PrivateAttr(default=None)
     _python_type_cache: str | None = PrivateAttr(default=None)
     _typescript_type_cache: str | None = PrivateAttr(default=None)
-    # Formula caching for performance
     _formula_cache: dict[tuple[bool, bool, bool, bool, bool], str] = PrivateAttr(default_factory=dict)
+    _generic_type: GenericType | None = PrivateAttr(default=None)
     _python_type: str | None = PrivateAttr(default=None)
     _typescript_type: str | None = PrivateAttr(default=None)
 
@@ -484,7 +485,7 @@ class Field(Named):
                     return self.options.result.type
         return self.type
 
-    def saved_python_type(self) -> str:
+    def csv_python_type(self) -> str:
         """Get the saved Python type from the CSV"""
         if self._python_type_cache is None:
             if hasattr(self, "base") and self.base and self.base._csv_cache:
@@ -495,7 +496,7 @@ class Field(Named):
             self._python_type_cache = ""
         return self._python_type_cache
 
-    def saved_typescript_type(self) -> str:
+    def csv_typescript_type(self) -> str:
         """Get the saved TypeScript type from the CSV"""
         if self._typescript_type_cache is None:
             if hasattr(self, "base") and self.base and self.base._csv_cache:
@@ -505,6 +506,22 @@ class Field(Named):
                     return text
             self._typescript_type_cache = ""
         return self._typescript_type_cache
+
+    def python_type(self) -> str:
+        """Returns the Python type for this field."""
+        if self._python_type:
+            return self._python_type
+        from src.type_mapper import calculate_python_type
+
+        return calculate_python_type(self)
+
+    def typescript_type(self) -> str:
+        """Returns the TypeScript type for this field."""
+        if self._typescript_type:
+            return self._typescript_type
+        from src.type_mapper import calculate_typescript_type
+
+        return calculate_typescript_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""
