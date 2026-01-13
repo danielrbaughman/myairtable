@@ -338,9 +338,8 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
 
     Uses a graduated approach:
     1. Batch fetch without formula
-    2. Multi-field AND formula queries
-    3. Multi-field OR formula query
-    4. Per-field fallback for any remaining fields
+    2. Iterative OR formula queries until no progress
+    3. Per-field fallback for any remaining fields
     """
     if not fields:
         return []
@@ -354,20 +353,18 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
         table = pyairtable.Table(api_key, base_id, table_id)
         remaining = list(fields)
 
+        # Phase 1: batch fetch without formula
         records = table.all(fields=field_ids, max_records=20, use_field_ids=True)
         remaining = process_records_and_get_remaining(remaining, records)
         if not remaining:
             return []
 
-        remaining = disambiguate_with_and_formula(table, remaining)
-        if not remaining:
-            return []
-
+        # Phase 2: iterative OR formula queries
         remaining = disambiguate_with_or_formula(table, remaining)
         if not remaining:
             return []
 
-        # Phase 4: per-field fallback for any still remaining
+        # Phase 3: per-field fallback for any still remaining
         failures: list[Field] = []
         for field in remaining:
             if failure := disambiguate_single_field(table, field):
@@ -392,73 +389,27 @@ def process_records_and_get_remaining(fields: list[Field], records: list[dict]) 
     return remaining
 
 
-def disambiguate_with_and_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
-    """Try multi-field formulas, progressively reducing the set size."""
-    if len(fields) <= 1:
-        return fields  # Skip to per-field fallback
-
+def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
+    """Iteratively fetch records where ANY field is non-blank until no progress."""
     remaining = list(fields)
-    deferred: list[Field] = []  # Fields to try with smaller batches
 
     while len(remaining) > 1:
         field_ids = [f.id for f in remaining]
+        formula = any_not_blank(field_ids)
 
-        records = table.all(
-            formula=all_not_blank([f.id for f in remaining]),
-            fields=field_ids,
-            max_records=10,
-            use_field_ids=True,
-        )
+        records = table.all(formula=formula, fields=field_ids, max_records=50, use_field_ids=True)
 
         if not records:
-            # No records match all fields - split the set
-            half = len(remaining) // 2
-            deferred.extend(remaining[half:])
-            remaining = remaining[:half]
-            continue
+            break  # No records found, go to per-field fallback
 
-        # Process found values
-        still_remaining = []
-        for field in remaining:
-            value = find_non_blank_value(records, field.id)
-            if value is not None:
-                apply_disambiguated_type(field, isinstance(value, list))
-            else:
-                still_remaining.append(field)
+        new_remaining = process_records_and_get_remaining(remaining, records)
 
-        remaining = still_remaining
+        if len(new_remaining) == len(remaining):
+            break  # No progress made, go to per-field fallback
 
-    # Return remaining + deferred for Phase 3
-    return remaining + deferred
+        remaining = new_remaining
 
-
-def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
-    """Try OR formula to find records where ANY field is non-blank."""
-    if len(fields) <= 1:
-        return fields  # Skip to per-field fallback
-
-    field_ids = [f.id for f in fields]
-
-    # Fetch more records since OR is less restrictive
-    records = table.all(
-        formula=any_not_blank([f.id for f in fields]),
-        fields=field_ids,
-        max_records=50,
-        use_field_ids=True,
-    )
-
-    if not records:
-        return fields
-
-    return process_records_and_get_remaining(fields, records)
-
-
-def all_not_blank(field_ids: list[str]) -> str:
-    """Build AND(NOT({f1}=BLANK()), NOT({f2}=BLANK()), ...) formula."""
-    conditions = [f"NOT({{{fid}}}=BLANK())" for fid in field_ids]
-    if len(conditions) == 1:
-        return conditions[0]
-    return f"AND({', '.join(conditions)})"
+    return remaining
 
 
 def any_not_blank(field_ids: list[str]) -> str:
