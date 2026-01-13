@@ -863,7 +863,7 @@ class Base(BaseModel):
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
     _select_fields_cache: list["Field"] | None = None
-    _select_field_ids_cache: list[str] | None = None
+    _select_field_ids_cache: set[str] | None = None
 
     def __init__(self, csv_folder: Path | None = None):
         meta = get_base_meta_data()
@@ -994,10 +994,10 @@ class Base(BaseModel):
             self._select_fields_cache = [field for field in self.fields() if field.select_options()]
         return self._select_fields_cache
 
-    def select_fields_ids(self) -> list[str]:
-        """Get IDs of all fields with select options. Cached after first call."""
+    def select_fields_ids(self) -> set[str]:
+        """Get IDs of all fields with select options. Cached after first call. Returns set for O(1) membership testing."""
         if self._select_field_ids_cache is None:
-            self._select_field_ids_cache = [field.id for field in self.select_fields()]
+            self._select_field_ids_cache = {field.id for field in self.select_fields()}
         return self._select_field_ids_cache
 
     def select_field_by_id(self, field_id: str) -> Field | None:
