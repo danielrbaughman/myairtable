@@ -42,5 +42,8 @@ include = ["src/meta.py", "src/csv.py"]
 unresolved-import = "ignore" # ty lacks type stubs for csv module
 unresolved-attribute = "ignore" # ty lacks type stubs for csv module
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [dependency-groups]
 dev = ["ruff>=0.12.10", "ty>=0.0.1a19"]

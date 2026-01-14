@@ -119,7 +119,7 @@ class Field {
 	}
 
 	get field() {
-		return `${this.nameOrId}`;
+		return `{${this.nameOrId}}`;
 	}
 }
 // endregion
@@ -177,10 +177,11 @@ class TextField extends Field {
 		return `${left}=${right}`;
 	}
 
-	/** {field}!="value\" */
+	/** {field}!="value" */
 	notEquals(value) {
 		StringSchema.parse(value);
-		return `${this.field}!="${value}"`;
+		const escapedValue = value.replace(/"/g, '\\"');
+		return `${this.field}!="${escapedValue}"`;
 	}
 
 	_find(value, comparison, caseSensitive = false, trim = true) {

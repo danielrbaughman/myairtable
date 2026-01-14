@@ -124,7 +124,7 @@ export class Field {
 	}
 
 	get field(): string {
-		return `${this.nameOrId}`;
+		return `{${this.nameOrId}}`;
 	}
 }
 // endregion
@@ -182,10 +182,11 @@ export class TextField extends Field {
 		return `${left}=${right}`;
 	}
 
-	/** {field}!="value\" */
+	/** {field}!="value" */
 	notEquals(value: string): string {
 		StringSchema.parse(value);
-		return `${this.field}!="${value}"`;
+		const escapedValue = value.replace(/"/g, '\\"');
+		return `${this.field}!="${escapedValue}"`;
 	}
 
 	private _find(value: string, comparison: string, caseSensitive: boolean = false, trim: boolean = true): string {

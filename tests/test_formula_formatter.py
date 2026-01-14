@@ -1,14 +1,8 @@
 """Tests for the format_formula function in formula_formatter.py."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from formula_formatter import (
+from src.formula_formatter import (
     _count_nesting_depth,
     _find_matching_paren,
     _format_complex,

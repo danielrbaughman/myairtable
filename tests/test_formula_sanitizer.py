@@ -1,14 +1,10 @@
 """Tests for the sanitize_formula function in formula_sanitizer.py."""
 
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from formula_sanitizer import FIELD_REF_PATTERN, _sanitize_cached, sanitize_formula
+from src.formula_sanitizer import FIELD_REF_PATTERN, _sanitize_cached, sanitize_formula
 
 
 class TestSanitizeBasic:
