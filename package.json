@@ -8,8 +8,9 @@
 	"scripts": {
 		"build": "npx tsc",
 		"start": "node -r dotenv/config dist/playground.js",
-		"playground": "yarn install && yarn build && yarn start",
-		"playground-js": "node -r dotenv/config playground.js",
+		"py": "uv run playground.py",
+		"ts": "yarn install && yarn build && yarn start",
+		"js": "node -r dotenv/config playground.js",
 		"reinstall": "rm -rf node_modules && yarn install",
 		"format": "oxfmt",
 		"lint": "oxlint"

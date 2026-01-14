@@ -4,7 +4,7 @@ const { Command } = require("commander");
 
 const program = new Command();
 program.action(async () => {
-	console.log("hello world js");
+	console.log("Hello World (JavaScript)");
 });
 
 program.parse(process.argv);
