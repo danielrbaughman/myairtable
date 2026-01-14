@@ -1,3 +1,4 @@
+import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -158,6 +159,7 @@ def md(
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
     setup_benchmark(benchmark)
+    start = datetime.datetime.now()
 
     preserve = None if reset_svg_cache else [".svg_cache"]
     folder_path = reset_folder(Path(folder), preserve=preserve)
@@ -178,6 +180,8 @@ def md(
         )
 
     timer.summary()
+    end = datetime.datetime.now()
+    print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
 
 
 @app.command()

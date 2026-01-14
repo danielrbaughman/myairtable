@@ -2,12 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 from rich import print
-from rich.progress import track
 
 from ..meta import Base
 from ..utils import timer
 from ..utils.helpers import Paths, sanitize_for_markdown
-from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
+from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, render_svgs_parallel
 from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
 from .mermaid import mermaid_base, mermaid_formula
@@ -309,12 +308,14 @@ def write_svgs(
     svg_cache_dir: Path | None = None,
 ) -> None:
     if svg_enabled and diagrams_dir and svg_cache_dir and svg_tasks:
-        for field_id, mermaid_code in track(svg_tasks, description="Generating formula SVGs..."):
-            with timer.timer("Markdown: write_field: formula: diagram: svg generation"):
-                svg_content = mermaid_to_svg(mermaid_code, svg_cache_dir, field_id)
-                if svg_content:
-                    svg_path = diagrams_dir / f"{field_id}.svg"
-                    svg_path.write_text(svg_content)
+        # Render all SVGs in parallel
+        results = render_svgs_parallel(svg_tasks, svg_cache_dir)
+
+        # Write results to disk
+        for field_id, svg_content in results:
+            if svg_content:
+                svg_path = diagrams_dir / f"{field_id}.svg"
+                svg_path.write_text(svg_content)
 
 
 def write_index(base: Base, output_folder: Path) -> None:
