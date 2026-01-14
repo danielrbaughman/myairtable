@@ -104,7 +104,14 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 		this.updateRecord();
 		// @ts-ignore
 		this.record.fields = this.writableFields();
-		this.record = await this.record.save();
+		try {
+			this.record = await this.record.save();
+		} catch (error) {
+			// I am aware of how stupid this looks,
+			// but without it, errors from Airtable's API don't surface properly;
+			// you get a generic "UnhandledPromiseRejectionWarning" instead.
+			throw new Error(String(error));
+		}
 		this.updateModel(this.record);
 	}
 
@@ -114,7 +121,14 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	public async fetch(): Promise<void> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
-		this.record = await this.record.fetch();
+		try {
+			this.record = await this.record.fetch();
+		} catch (error) {
+			// I am aware of how stupid this looks,
+			// but without it, errors from Airtable's API don't surface properly;
+			// you get a generic "UnhandledPromiseRejectionWarning" instead.
+			throw new Error(String(error));
+		}
 		this.updateModel(this.record);
 	}
 
@@ -124,7 +138,14 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	public async delete(): Promise<void> {
 		if (!this.record)
 			throw new Error("Cannot destroy record: _record is undefined. Please use fromRecord to initialize the instance.");
-		await this.record.destroy();
+		try {
+			await this.record.destroy();
+		} catch (error) {
+			// I am aware of how stupid this looks,
+			// but without it, errors from Airtable's API don't surface properly;
+			// you get a generic "UnhandledPromiseRejectionWarning" instead.
+			throw new Error(String(error));
+		}
 		this.record = undefined;
 		this.id = "";
 	}
