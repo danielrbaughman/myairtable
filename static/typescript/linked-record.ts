@@ -1,11 +1,11 @@
 import { FieldSet } from "airtable";
 import { AirtableModel } from "./airtable-model";
-import { RecordId } from "./special-types";
+import { RecordId, recordIdSchema } from "./special-types";
 
 /**
  * A reference to a linked Airtable record, providing methods to get and set the linked record.
  */
-export class LinkedRecord<M extends AirtableModel<FieldSet>> {
+export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
 	public id?: RecordId;
 	private record?: M;
@@ -14,7 +14,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet>> {
 
 	// eslint-disable-next-line no-unused-vars
 	constructor(recordId?: RecordId, modelCtor?: (id: RecordId) => M) {
-		this.id = recordId;
+		this.id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
 	}
 
@@ -50,7 +50,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet>> {
 /**
  * A reference to linked Airtable records, providing methods to get and set the linked records.
  */
-export class LinkedRecords<M extends AirtableModel<FieldSet>> {
+export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
 	public ids?: RecordId[];
 	private records?: M[];
@@ -59,7 +59,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet>> {
 
 	// eslint-disable-next-line no-unused-vars
 	constructor(recordIds?: RecordId[], modelCtor?: (id: RecordId) => M) {
-		this.ids = recordIds;
+		this.ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
 	}
 

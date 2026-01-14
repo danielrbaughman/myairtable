@@ -1,3 +1,5 @@
+import { BooleanSchema, NumberSchema, StringSchema, validateRecordIds } from "./special-types";
+
 /* eslint-disable no-unused-vars */
 type Comparison = "=" | "!=" | ">" | "<" | ">=" | "<=";
 
@@ -99,10 +101,12 @@ function SUBSTITUTE(value: string | Field, oldText: string, newText: string): st
 export class ID {
 	/** RECORD_ID()='id' */
 	equals(id: string): string {
+		validateRecordIds(id);
 		return `${RECORD_ID}='${id}'`;
 	}
 
 	inList(ids: string[]): string {
+		validateRecordIds(ids);
 		if (ids.length === 0) {
 			return FALSE;
 		} else if (ids.length === 1) {
@@ -148,6 +152,7 @@ export class TextField extends Field {
 	 * @param trim - Whether to trim whitespace from both values before comparison. Defaults to `false`.
 	 */
 	equals(value: string, caseSensitive: boolean = true, trim: boolean = false): string {
+		StringSchema.parse(value);
 		const escapedValue = value.replace(/"/g, '\\"');
 
 		if (caseSensitive) {
@@ -172,6 +177,7 @@ export class TextField extends Field {
 	}
 
 	phoneEquals(value: string): string {
+		StringSchema.parse(value);
 		function normalize(s: string): string {
 			let f = TRIM(s);
 			f = SUBSTITUTE(f, " ", "");
@@ -190,10 +196,12 @@ export class TextField extends Field {
 
 	/** {field}!="value\" */
 	notEquals(value: string): string {
+		StringSchema.parse(value);
 		return `${this.field}!="${value}"`;
 	}
 
 	private _find(value: string, comparison: string, caseSensitive: boolean = false, trim: boolean = true): string {
+		StringSchema.parse(value);
 		if (caseSensitive) {
 			if (trim) {
 				const left = TRIM(value);
@@ -278,6 +286,7 @@ export class TextField extends Field {
 	}
 
 	private _endsWith(value: string, comparison: string, caseSensitive: boolean = false, trim: boolean = true): string {
+		StringSchema.parse(value);
 		if (caseSensitive) {
 			if (trim) {
 				const f = TRIM(this);
@@ -334,6 +343,7 @@ export class TextField extends Field {
 	 * @param pattern - The regex pattern to match
 	 */
 	regexMatch(pattern: string): string {
+		StringSchema.parse(pattern);
 		return REGEX(this, pattern);
 	}
 }
@@ -383,6 +393,7 @@ export class MultiSelectField<T extends string> extends SingleSelectField<T> {
 /** Number comparison formulas */
 export class NumberField extends Field {
 	private _compare(comparison: Comparison, value: number): string {
+		NumberSchema.parse(value);
 		return `${this.field}${comparison}${value}`;
 	}
 
@@ -432,6 +443,7 @@ export class NumberField extends Field {
 export class BooleanField extends Field {
 	/** {field}=TRUE()|FALSE() */
 	equals(value: boolean): string {
+		BooleanSchema.parse(value);
 		return `${this.field}=${value ? TRUE : FALSE}`;
 	}
 

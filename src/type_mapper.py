@@ -75,10 +75,26 @@ GENERIC_TO_TYPESCRIPT: dict[GenericType, str] = {
     GenericType.RECORD_ID: "RecordId",  # custom type alias for string
     GenericType.ATTACHMENT: "Attachment",
     GenericType.COLLABORATOR: "Collaborator",
-    GenericType.BUTTON: "string",
+    GenericType.BUTTON: "AirtableButton",
     GenericType.LIST_OF_RECORD_IDS: "RecordId[]",
     GenericType.LIST_OF_ATTACHMENTS: "Attachment[]",
     GenericType.UNKNOWN: "any",
+}
+
+GENERIC_TO_ZOD: dict[GenericType, str] = {
+    GenericType.STRING: "z.string()",
+    GenericType.INTEGER: "z.number()",  # No .int() - JS doesn't distinguish, and computed fields can produce floats
+    GenericType.FLOAT: "z.number()",
+    GenericType.BOOLEAN: "z.boolean()",
+    GenericType.DATETIME: "z.string()",  # ISO date strings
+    GenericType.DURATION: "z.number()",  # Milliseconds
+    GenericType.RECORD_ID: "recordIdSchema",
+    GenericType.ATTACHMENT: "AirtableAttachmentSchema",
+    GenericType.COLLABORATOR: "AirtableCollaboratorSchema",
+    GenericType.BUTTON: "AirtableButtonSchema",
+    GenericType.LIST_OF_RECORD_IDS: "z.array(recordIdSchema)",
+    GenericType.LIST_OF_ATTACHMENTS: "z.array(AirtableAttachmentSchema)",
+    GenericType.UNKNOWN: "z.any()",
 }
 
 # endregion
@@ -233,7 +249,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-Language = Literal["python", "typescript"]
+Language = Literal["python", "typescript", "zod"]
 
 
 @dataclass(frozen=True)
@@ -244,6 +260,8 @@ class LanguageConfig:
     unknown: str
     list_fmt: str
     union_fmt: str
+    enum_fmt: str = "{0}"
+    computed_union_fmt: str = ""  # For computed fields where array items can be errors
 
 
 LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
@@ -259,6 +277,14 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         list_fmt="{0}[]",
         union_fmt="{0} | {0}[]",
     ),
+    "zod": LanguageConfig(
+        type_map=GENERIC_TO_ZOD,
+        unknown="z.any()",
+        list_fmt="z.array({0})",
+        union_fmt="z.union([{0}, z.array({0}.nullable())])",
+        enum_fmt="z.enum({0}s)",
+        computed_union_fmt="z.union([{0}, SpecialNumberSchema, ErrorValueSchema, z.array(z.union([{0}, SpecialNumberSchema, ErrorValueSchema]).nullable())])",
+    ),
 }
 
 
@@ -268,12 +294,20 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return "list" in base_type
         case "typescript":
             return base_type.endswith("[]")
+        case "zod":
+            return base_type.startswith("z.array(")
         case _:
             return False
 
 
 @timer.timed("render_type")
-def render_type(field: Field, language: Language, resolved: ResolvedType | None = None, is_list: bool | None = None) -> str:
+def render_type(
+    field: Field,
+    language: Language,
+    resolved: ResolvedType | None = None,
+    is_list: bool | None = None,
+    is_computed: bool = False,
+) -> str:
     config: LanguageConfig = LANGUAGE_CONFIGS[language]
 
     # Get the generic type
@@ -284,11 +318,15 @@ def render_type(field: Field, language: Language, resolved: ResolvedType | None 
     # Compute base type
     if generic_type == GenericType.SINGLE_SELECT:
         options_name = resolved.options_name if resolved else field.options_name()
-        base_type = options_name or config.unknown
+        if options_name:
+            base_type = config.enum_fmt.format(options_name)
+        else:
+            base_type = config.unknown
     elif generic_type == GenericType.MULTIPLE_SELECT:
         options_name = resolved.options_name if resolved else field.options_name()
         if options_name:
-            return config.list_fmt.format(options_name)  # Always a list
+            enum_type = config.enum_fmt.format(options_name)
+            return config.list_fmt.format(enum_type)  # Always a list
         return config.unknown
     else:
         base_type = config.type_map.get(generic_type, config.unknown)
@@ -297,6 +335,9 @@ def render_type(field: Field, language: Language, resolved: ResolvedType | None 
         # Apply lookup/rollup wrapper. It's impossible to tell based on Airtable's metadata is it's a list or not.
         if not is_already_list(base_type, language):
             if field.involves_lookup() or field.involves_rollup():
+                # Use computed_union_fmt for computed fields (array items can be errors)
+                if is_computed and config.computed_union_fmt:
+                    return config.computed_union_fmt.format(base_type)
                 return config.union_fmt.format(base_type)
     elif is_list:
         return config.list_fmt.format(base_type)
@@ -330,6 +371,35 @@ def map_typescript_type(field: Field) -> str:
 
     field._typescript_type = ts_type
     return ts_type
+
+
+@timer.timed("map_zod_type")
+def map_zod_type(field: Field) -> str:
+    """Calculate the Zod schema for a field."""
+
+    if field._zod_type is not None:
+        return field._zod_type
+
+    resolved: ResolvedType = map_type(field)
+    is_computed = field.is_computed()
+    zod_type: str = render_type(field, "zod", resolved=resolved, is_computed=is_computed)
+
+    # Add error/special value handling for computed/formula fields
+    # Skip if field involves lookup/rollup - already handled by computed_union_fmt in render_type
+    if is_computed and not (field.involves_lookup() or field.involves_rollup()):
+        generic_type = resolved.generic_type if resolved else field._generic_type
+        # Number types can have special values (NaN, Infinity) and errors
+        if generic_type in (GenericType.INTEGER, GenericType.FLOAT, GenericType.DURATION):
+            zod_type = f"z.union([{zod_type}, SpecialNumberSchema, ErrorValueSchema])"
+        else:
+            # All other formula fields can have errors
+            zod_type = f"z.union([{zod_type}, ErrorValueSchema])"
+
+    # All Airtable fields are optional (can be blank/missing)
+    zod_type = f"{zod_type}.optional()"
+
+    field._zod_type = zod_type
+    return zod_type
 
 
 # endregion

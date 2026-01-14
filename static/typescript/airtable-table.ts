@@ -3,18 +3,25 @@ import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "
 import { AirtableModel } from "./airtable-model";
 import { QueryParams } from "airtable/lib/query_params";
 import { ID } from "./formula";
+import { baseIdSchema, validateRecordIds } from "./special-types";
 
 interface Options<T> {
 	pageSize?: number;
 	fields?: T[];
 	useFieldIds?: boolean;
+	maxRecords?: number;
 }
 interface QueryOptions<V, T> extends Options<T> {
 	view?: V;
 	formula?: string;
 }
 
-export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V extends string, W extends string> {
+export class AirtableTable<
+	T extends FieldSet,
+	U extends AirtableModel<T, unknown>,
+	V extends string,
+	W extends string,
+> {
 	public _table: Table<T>;
 	private recordCtor: (record: ATRecord<T>) => U;
 	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
@@ -26,7 +33,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		recordCtor: (record: ATRecord<T>) => U,
 		options: AirtableOptions = {},
 	) {
-		this._table = new Airtable(options).base(baseId).table(tableNameOrId);
+		this._table = new Airtable(options).base(baseIdSchema.parse(baseId)).table(tableNameOrId);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}
@@ -47,6 +54,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	): Promise<U | U[]> {
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
+			validateRecordIds(recordIdOrIdsOrOptions);
 			const selectOptions: QueryParams<T> = {
 				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
 			};
@@ -61,6 +69,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 
 		// Multiple records by IDs
 		if (Array.isArray(recordIdOrIdsOrOptions)) {
+			validateRecordIds(recordIdOrIdsOrOptions);
 			if (recordIdOrIdsOrOptions.length === 0) {
 				return [];
 			}
@@ -70,6 +79,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
+			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
 
 			const records = await this._table.select(selectOptions).all();
@@ -83,6 +93,7 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 		if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
 		if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 		if (queryOptions.fields) selectOptions.fields = queryOptions.fields as string[];
+		if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
 
 		const records = await this._table.select(selectOptions).all();
 		return records.map((record) => this.recordCtor(record));
@@ -171,12 +182,14 @@ export class AirtableTable<T extends FieldSet, U extends AirtableModel<T>, V ext
 	public async delete(recordIds: string[]): Promise<void>;
 	public async delete(recordIdOrIds: string | string[]): Promise<void> {
 		if (Array.isArray(recordIdOrIds)) {
+			validateRecordIds(recordIdOrIds);
 			// Delete in batches of 10 (Airtable API limit)
 			for (let i = 0; i < recordIdOrIds.length; i += 10) {
 				const batch = recordIdOrIds.slice(i, i + 10);
 				await this._table.destroy(batch);
 			}
 		} else {
+			validateRecordIds(recordIdOrIds);
 			await this._table.destroy([recordIdOrIds]);
 		}
 	}

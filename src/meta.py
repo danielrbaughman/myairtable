@@ -343,6 +343,7 @@ class Field(Named):
     _generic_type: GenericType | None = PrivateAttr(default=None)
     _python_type: str | None = PrivateAttr(default=None)
     _typescript_type: str | None = PrivateAttr(default=None)
+    _zod_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -523,6 +524,14 @@ class Field(Named):
         from src.type_mapper import map_typescript_type
 
         return map_typescript_type(self)
+
+    def zod_type(self) -> str:
+        """Returns the Zod schema for this field."""
+        if self._zod_type:
+            return self._zod_type
+        from src.type_mapper import map_zod_type
+
+        return map_zod_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""

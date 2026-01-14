@@ -85,7 +85,7 @@ class WriteToTypeScriptFile(WriteToFile):
 
 
 # region MAIN
-def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True) -> None:
+def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, zod: bool = True) -> None:
     print("Generating TypeScript code")
     for table in base.tables:
         table.detect_duplicate_property_names()
@@ -109,9 +109,15 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
             if verbose:
                 print("[dim] - TypeScript formula helpers generated.[/]")
 
+    if zod:
+        with timer.timer("TypeScript: write_zod_schemas"):
+            write_zod_schemas(base, output_folder)
+            if verbose:
+                print("[dim] - TypeScript Zod schemas generated.[/]")
+
     if wrappers:
         with timer.timer("TypeScript: write_models"):
-            write_models(base, output_folder, formulas=formulas)
+            write_models(base, output_folder, formulas=formulas, zod=zod)
             if verbose:
                 print("[dim] - TypeScript models generated.[/]")
 
@@ -241,7 +247,6 @@ def write_types(base: Base, output_folder: Path) -> None:
                 write.property_row(sanitize_string(field.name), field.typescript_type(), is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
-            write.line_empty()
 
             views = table.views
             view_names: list[str] = [sanitize_string(view.name) for view in views]
@@ -315,9 +320,50 @@ def write_types(base: Base, output_folder: Path) -> None:
 
 # endregion
 
+# region ZOD
+
+
+def write_zod_schemas(base: Base, output_folder: Path) -> None:
+    zod_dir = create_dynamic_subdir(output_folder, Paths.ZOD)
+
+    for table in base.tables:
+        with WriteToTypeScriptFile(path=zod_dir / f"{table.name_camel()}.ts") as write:
+            write.line('import * as z from "zod";')
+            write.line(
+                'import { recordIdSchema, AirtableAttachmentSchema, AirtableCollaboratorSchema, AirtableButtonSchema, SpecialNumberSchema, ErrorValueSchema } from "../../static/special-types";'
+            )
+
+            # Import select option constants from types
+            select_fields = table.select_fields()
+            if len(select_fields) > 0:
+                write.line("import {")
+                for field in select_fields:
+                    write.line_indented(f"{field.options_name()}s,")
+                write.line(f'}} from "../types/{table.name_camel()}";')
+            write.line_empty()
+
+            table_name = table.name_pascal()
+            write.region(table.name_upper())
+            write.line(f"export const {table_name}Schema = z.object({{")
+            for field in table.fields:
+                field_type = field.zod_type()
+                write.line_indented(f"{field.name_camel()}: {field_type},")
+            write.line("});")
+            write.line_empty()
+
+            # Inferred type from schema
+            write.line(f"export type I{table_name} = z.infer<typeof {table_name}Schema>;")
+            write.line_empty()
+            write.endregion()
+
+    write_barrel_export(base, zod_dir)
+
+
+# endregion
+
 
 # region MODELS
-def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bool = True) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     # Write individual table model files
@@ -330,7 +376,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.region("IMPORTS")
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel } from "../../static/airtable-model";')
-            write.line('import { RecordId } from "../../static/special-types";')
+            write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
             write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
             write.line('import { getOptions, getBaseId } from "../../static/helpers";')
 
@@ -355,6 +401,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
+            if zod:
+                write.line(f"import {{ {table_name}Schema, I{table_name} }} from '../zod/{table_name_camel}';")
             write.endregion()
             write.line_empty()
 
@@ -362,7 +410,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.region(table.name_upper())
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
-            write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet> {{")
+            if zod:
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}> {{")
+                write.line_indented(f"protected static schema = {table_name}Schema;")
+            else:
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
             write.line_empty()
@@ -451,6 +503,25 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
             write.line_indented("}", 1)
             write.line_empty()
 
+            if zod:
+                write.line_indented(f"public toJson(): I{table_name} {{")
+            else:
+                write.line_indented("public toJson(): { [key: string]: unknown } {")
+            write.line_indented("return {", 2)
+            for field in table.fields:
+                field_name = field.name_camel()
+                field_type = field.typescript_type()
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                    if field_type == "RecordId":
+                        write.line_indented(f"{field_name}: this.{field_name}?.id,", 3)
+                    else:
+                        write.line_indented(f"{field_name}: this.{field_name}?.ids,", 3)
+                else:
+                    write.line_indented(f"{field_name}: this.{field_name},", 3)
+            write.line_indented("};", 2)
+            write.line_indented("}", 1)
+            write.line_empty()
+
             write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
@@ -470,6 +541,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True) -> None
                         )
                 else:
                     write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field.name)}");', 2)
+            write.line_indented("this.validate();", 2)
             write.line_indented("}", 1)
             write.line_empty()
 

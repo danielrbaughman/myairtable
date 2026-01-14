@@ -1,17 +1,38 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 import { Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
-import { CreateRecordData } from "./special-types";
+import * as z from "zod";
+import { CreateRecordData, recordIdSchema } from "./special-types";
 
-export class AirtableModel<T extends FieldSet> {
+export abstract class AirtableModel<T extends FieldSet, U> {
 	[key: string]: unknown;
+
+	/** Zod schema for validation - must be defined by subclasses */
+	protected static schema: z.ZodTypeAny;
 
 	protected record?: ATRecord<T>;
 	public id: string;
 
 	constructor(id: string) {
-		this.id = id;
+		this.id = id ? recordIdSchema.parse(id) : id;
 	}
+
+	/**
+	 * Validates the current model state against its Zod schema.
+	 * No-op if schema is not defined (when generated with --no-zod).
+	 * @throws {z.ZodError} if validation fails
+	 */
+	public validate(): void {
+		const schema = (this.constructor as typeof AirtableModel).schema;
+		if (!schema) return; // No-op when schema not defined
+		schema.parse(this.toJson());
+	}
+
+	/**
+	 * Converts the model to a plain object.
+	 * Must be implemented by subclasses to return all field values.
+	 */
+	public abstract toJson(): U;
 
 	protected writableFields(useFieldIds: boolean = false): Partial<T> {
 		return {};
@@ -75,9 +96,11 @@ export class AirtableModel<T extends FieldSet> {
 
 	/**
 	 * Saves the current Airtable record to the server.
+	 * @throws {z.ZodError} if validation fails before save
 	 */
 	public async save(): Promise<void> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
+		this.validate();
 		this.updateRecord();
 		// @ts-ignore
 		this.record.fields = this.writableFields();
