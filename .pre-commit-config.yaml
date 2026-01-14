@@ -1,36 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff-check
-        name: PY Linter
-        entry: uv run ruff check
-        language: system
-        types: [python]
-        pass_filenames: false
-
-      - id: ty-check
-        name: PY Type Check
-        entry: uv run ty check
-        language: system
-        types: [python]
-        pass_filenames: false
-
-      - id: ruff-format
-        name: PY Formatter
-        entry: uv run ruff format
-        language: system
-        types: [python]
-        pass_filenames: true
-
-      - id: eslint
-        name: TS Linter
-        entry: yarn lint
-        language: system
-        pass_filenames: true
-
-      - id: prettier
-        name: TS Format
-        entry: yarn format
+      - id: checks
+        name: Checks
+        entry: ./checks.sh
         language: system
         pass_filenames: false
         always_run: true
