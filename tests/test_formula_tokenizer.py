@@ -6,7 +6,7 @@ sys.path.insert(0, "src")
 
 import pytest
 
-from formula_tokenizer import TokenType, tokenize_formula
+from src.formulas.formula_tokenizer import TokenType, tokenize_formula
 
 
 class TestTokenizePureFunction:
@@ -62,7 +62,7 @@ class TestTokenizeEquivalence:
     )
     def test_equivalence_with_class(self, formula):
         """Pure function must produce identical tokens to class."""
-        from formula_tokenizer import FormulaTokenizer
+        from src.formulas.formula_tokenizer import FormulaTokenizer
 
         class_result = FormulaTokenizer(formula).tokenize()
         pure_result = tokenize_formula(formula)

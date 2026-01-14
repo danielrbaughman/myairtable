@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.formula_flattener import FIELD_REF_PATTERN, flatten_formula
+from src.formulas.formula_flattener import FIELD_REF_PATTERN, flatten_formula
 
 
 class TestFlattenBasic:

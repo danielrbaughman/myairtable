@@ -2,17 +2,17 @@ from pathlib import Path
 
 from rich import print
 
-from . import timer
-from .helpers import (
+from ..meta import Base, Field, Table
+from ..utils import timer
+from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
     reset_folder,
     sanitize_string,
 )
-from .meta import Base, Field, Table
-from .verbose import verbose
-from .write_to_file import WriteToFile
+from ..utils.verbose import verbose
+from ..utils.write_to_file import WriteToFile
 
 
 class WriteToJavaScriptFile(WriteToFile):

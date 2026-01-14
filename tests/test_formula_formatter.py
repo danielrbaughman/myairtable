@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.formula_formatter import (
+from src.formulas.formula_formatter import (
     _count_nesting_depth,
     _find_matching_paren,
     _format_complex,

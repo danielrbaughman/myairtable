@@ -11,21 +11,21 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.alias_generators import to_camel, to_pascal
 from rich import print
 
-from . import timer
-from .formula_condenser import condense_formula
-from .formula_flattener import flatten_formula
-from .formula_formatter import format_formula
-from .formula_highlighter import highlight_formula
-from .formula_sanitizer import sanitize_formula
-from .helpers import (
+from .formulas.formula_condenser import condense_formula
+from .formulas.formula_flattener import flatten_formula
+from .formulas.formula_formatter import format_formula
+from .formulas.formula_highlighter import highlight_formula
+from .formulas.formula_sanitizer import sanitize_formula
+from .meta_types import BaseMetadata, FieldType, GenericType
+from .utils import timer
+from .utils.helpers import (
     remove_extra_spaces,
     sanitize_for_markdown,
     sanitize_leading_trailing_characters,
     sanitize_property_name,
     sanitize_reserved_names,
 )
-from .meta_types import BaseMetadata, FieldType, GenericType
-from .verbose import verbose
+from .utils.verbose import verbose
 
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
@@ -513,7 +513,7 @@ class Field(Named):
         """Returns the Python type for this field."""
         if self._python_type:
             return self._python_type
-        from src.type_mapper import map_python_type
+        from src.utils.type_mapper import map_python_type
 
         return map_python_type(self)
 
@@ -521,7 +521,7 @@ class Field(Named):
         """Returns the TypeScript type for this field."""
         if self._typescript_type:
             return self._typescript_type
-        from src.type_mapper import map_typescript_type
+        from src.utils.type_mapper import map_typescript_type
 
         return map_typescript_type(self)
 
@@ -529,7 +529,7 @@ class Field(Named):
         """Returns the Zod schema for this field."""
         if self._zod_type:
             return self._zod_type
-        from src.type_mapper import map_zod_type
+        from src.utils.type_mapper import map_zod_type
 
         return map_zod_type(self)
 

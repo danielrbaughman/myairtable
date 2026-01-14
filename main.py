@@ -5,16 +5,16 @@ import pyperclip
 from rich import print
 from typer import Argument, Option, Typer
 
-from src import timer
-from src.csv import generate_csv
-from src.helpers import create_folder, reset_folder
-from src.javascript import generate_javascript
-from src.markdown import generate_markdown
+from src.generators.csv import generate_csv
+from src.generators.javascript import generate_javascript
+from src.generators.markdown import generate_markdown
+from src.generators.python import generate_python
+from src.generators.typescript import generate_typescript
 from src.meta import Base, Field, generate_meta, get_base_meta_data
-from src.python import generate_python
-from src.type_mapper import map_types
-from src.typescript import generate_typescript
-from src.verbose import verbose
+from src.utils import timer
+from src.utils.helpers import create_folder, reset_folder
+from src.utils.type_mapper import map_types
+from src.utils.verbose import verbose
 
 app = Typer()
 

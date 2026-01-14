@@ -4,13 +4,13 @@ from pathlib import Path
 from rich import print
 from rich.progress import track
 
-from . import timer
-from .helpers import Paths, sanitize_for_markdown
+from ..meta import Base
+from ..utils import timer
+from ..utils.helpers import Paths, sanitize_for_markdown
+from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
+from ..utils.verbose import verbose
+from ..utils.write_to_file import WriteToFile
 from .mermaid import mermaid_base, mermaid_formula
-from .mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg
-from .meta import Base
-from .verbose import verbose
-from .write_to_file import WriteToFile
 
 
 class WriteToMarkdownFile(WriteToFile):

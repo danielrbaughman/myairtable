@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from src.formula_highlighter import (
+from src.formulas.formula_highlighter import (
     _html_escape,
     _tokens_to_html,
     highlight_formula,
 )
-from src.formula_tokenizer import (
+from src.formulas.formula_tokenizer import (
     AIRTABLE_FUNCTIONS,
     Token,
     TokenType,
