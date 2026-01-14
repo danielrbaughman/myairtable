@@ -16,6 +16,15 @@ export default defineConfig([
 		},
 	},
 	{
+		files: ["static/javascript/**/*.js", "playground.js"],
+		languageOptions: { globals: globals.node },
+		rules: {
+			"@typescript-eslint/no-require-imports": "off",
+			"no-unused-vars": "off",
+			"@typescript-eslint/no-unused-vars": "off",
+		},
+	},
+	{
 		ignores: ["dist/**", "node_modules/**", "src/**", "output/**", ".venv/**", "playground.ts"],
 	},
 ]);

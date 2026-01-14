@@ -49,7 +49,7 @@ export type AirtableAttachment = z.infer<typeof AirtableAttachmentSchema>;
 
 export const AirtableCollaboratorSchema = z.object({
 	id: z.string().optional(),
-	email: z.string().email().optional(),
+	email: z.email().optional(),
 	name: z.string().optional(),
 });
 

@@ -9,6 +9,7 @@
 		"build": "npx tsc",
 		"start": "node -r dotenv/config dist/playground.js",
 		"playground": "yarn install && yarn build && yarn start",
+		"playground-js": "node -r dotenv/config playground.js",
 		"reinstall": "rm -rf node_modules && yarn install",
 		"format": "prettier --write \"**/*.{ts,js,md,yaml,yml,json}\" --ignore-path .prettierignore",
 		"lint": "eslint ."

@@ -1,29 +1,26 @@
-import { BooleanSchema, NumberSchema, StringSchema, validateRecordIds } from "./special-types";
-
-/* eslint-disable no-unused-vars */
-type Comparison = "=" | "!=" | ">" | "<" | ">=" | "<=";
+const { BooleanSchema, NumberSchema, StringSchema, validateRecordIds } = require("./special-types");
 
 // region LOGIC
 /** AND(arg1, arg2, ...) */
-export function AND(...args: string[]): string {
+function AND(...args) {
 	const nonEmptyArgs = args.filter((arg) => arg !== "");
 	return `AND(${nonEmptyArgs.join(",")})`;
 }
 
 /** OR(arg1, arg2, ...) */
-export function OR(...args: string[]): string {
+function OR(...args) {
 	const nonEmptyArgs = args.filter((arg) => arg !== "");
 	return `OR(${nonEmptyArgs.join(",")})`;
 }
 
 /** XOR(arg1, arg2, ...) */
-export function XOR(...args: string[]): string {
+function XOR(...args) {
 	const nonEmptyArgs = args.filter((arg) => arg !== "");
 	return `XOR(${nonEmptyArgs.join(",")})`;
 }
 
 /** NOT(arg) */
-export function NOT(...args: string[]): string {
+function NOT(...args) {
 	const nonEmptyArgs = args.filter((arg) => arg !== "");
 	return `NOT(${nonEmptyArgs.join(",")})`;
 }
@@ -37,12 +34,12 @@ const RECORD_ID = "RECORD_ID()";
 const NOW = "NOW()";
 
 /** Check if a value is already a formula expression (contains function call syntax) */
-function isFormula(value: string): boolean {
-	return /^[A-Z_]+\(/.test(value);
+function isFormula(value) {
+	return typeof value === "string" && /^[A-Z_]+\(/.test(value);
 }
 
 /** Wrap a value for use in a formula - quotes strings, passes through formulas and fields */
-function wrapValue(value: string | Field): string {
+function wrapValue(value) {
 	if (value instanceof Field) {
 		return value.field;
 	} else if (isFormula(value)) {
@@ -52,22 +49,22 @@ function wrapValue(value: string | Field): string {
 	}
 }
 
-function LOWER(value: string | Field): string {
+function LOWER(value) {
 	return `LOWER(${wrapValue(value)})`;
 }
-function FIND(left: string | Field, right: string): string {
+function FIND(left, right) {
 	return `FIND(${wrapValue(left)}, ${wrapValue(right)})`;
 }
-function TRIM(value: string | Field): string {
+function TRIM(value) {
 	return `TRIM(${wrapValue(value)})`;
 }
-function LEN(value: string | Field): string {
+function LEN(value) {
 	return `LEN(${wrapValue(value)})`;
 }
-function REGEX(value: string | Field, pattern: string): string {
+function REGEX(value, pattern) {
 	return `REGEX(${wrapValue(value)}, "${pattern}")`;
 }
-function DATETIME_PARSE(value: string | Field): string {
+function DATETIME_PARSE(value) {
 	if (value instanceof Field) {
 		return `DATETIME_PARSE(${value.field})`;
 	} else if (isFormula(value)) {
@@ -76,24 +73,24 @@ function DATETIME_PARSE(value: string | Field): string {
 		return `DATETIME_PARSE('${value}')`;
 	}
 }
-function DATETIME_DIFF(left: string | Field, right: string | Field, unit: string): string {
+function DATETIME_DIFF(left, right, unit) {
 	const leftVal = left instanceof Field ? left.field : isFormula(left) ? left : `'${left}'`;
 	const rightVal = right instanceof Field ? right.field : isFormula(right) ? right : `'${right}'`;
 	return `DATETIME_DIFF(${leftVal}, ${rightVal}, '${unit}')`;
 }
-function SUBSTITUTE(value: string | Field, oldText: string, newText: string): string {
+function SUBSTITUTE(value, oldText, newText) {
 	return `SUBSTITUTE(${wrapValue(value)}, "${oldText}", "${newText}")`;
 }
 
 /** Record ID formulas */
-export class ID {
+class ID {
 	/** RECORD_ID()='id' */
-	equals(id: string): string {
+	equals(id) {
 		validateRecordIds(id);
 		return `${RECORD_ID}='${id}'`;
 	}
 
-	inList(ids: string[]): string {
+	inList(ids) {
 		validateRecordIds(ids);
 		if (ids.length === 0) {
 			return FALSE;
@@ -106,24 +103,22 @@ export class ID {
 }
 
 /** Base class for all Airtable field types */
-export class Field {
-	protected readonly nameOrId: string;
-
-	constructor(name: string) {
+class Field {
+	constructor(name) {
 		this.nameOrId = name.replace(/[{}]/g, "").replace(/[\n\t\r]/g, "");
 	}
 
 	/** {field}=BLANK() */
-	empty(): string {
+	empty() {
 		return `${this.field}=${BLANK}`;
 	}
 
 	/** {field} */
-	notEmpty(): string {
+	notEmpty() {
 		return this.field;
 	}
 
-	get field(): string {
+	get field() {
 		return `${this.nameOrId}`;
 	}
 }
@@ -131,7 +126,7 @@ export class Field {
 
 // region TEXT
 /** String comparison formulas */
-export class TextField extends Field {
+class TextField extends Field {
 	/**
 	 * Generates a formula string to compare the field value for equality with the specified value.
 	 *
@@ -139,7 +134,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether the comparison should be case-sensitive. Defaults to `true`.
 	 * @param trim - Whether to trim whitespace from both values before comparison. Defaults to `false`.
 	 */
-	equals(value: string, caseSensitive: boolean = true, trim: boolean = false): string {
+	equals(value, caseSensitive = true, trim = false) {
 		StringSchema.parse(value);
 		const escapedValue = value.replace(/"/g, '\\"');
 
@@ -164,9 +159,9 @@ export class TextField extends Field {
 		}
 	}
 
-	phoneEquals(value: string): string {
+	phoneEquals(value) {
 		StringSchema.parse(value);
-		function normalize(s: string): string {
+		function normalize(s) {
 			let f = TRIM(s);
 			f = SUBSTITUTE(f, " ", "");
 			f = SUBSTITUTE(f, "-", "");
@@ -183,12 +178,12 @@ export class TextField extends Field {
 	}
 
 	/** {field}!="value\" */
-	notEquals(value: string): string {
+	notEquals(value) {
 		StringSchema.parse(value);
 		return `${this.field}!="${value}"`;
 	}
 
-	private _find(value: string, comparison: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	_find(value, comparison, caseSensitive = false, trim = true) {
 		StringSchema.parse(value);
 		if (caseSensitive) {
 			if (trim) {
@@ -217,7 +212,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether search is case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
-	contains(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	contains(value, caseSensitive = false, trim = true) {
 		return this._find(value, ">0", caseSensitive, trim);
 	}
 
@@ -228,7 +223,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether the search should be case sensitive. Defaults to false
 	 * @param trim - Whether to trim whitespace from values before comparison. Defaults to true
 	 */
-	containsAny(values: string[], caseSensitive: boolean = false, trim: boolean = true): string {
+	containsAny(values, caseSensitive = false, trim = true) {
 		return OR(...values.map((value) => this.contains(value, caseSensitive, trim)));
 	}
 
@@ -239,7 +234,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether the search should be case sensitive. Defaults to false
 	 * @param trim - Whether to trim whitespace from values before comparison. Defaults to true
 	 */
-	containsAll(values: string[], caseSensitive: boolean = false, trim: boolean = true): string {
+	containsAll(values, caseSensitive = false, trim = true) {
 		return AND(...values.map((value) => this.contains(value, caseSensitive, trim)));
 	}
 
@@ -249,7 +244,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether search is case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
-	notContains(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	notContains(value, caseSensitive = false, trim = true) {
 		return this._find(value, "=0", caseSensitive, trim);
 	}
 
@@ -259,7 +254,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether search is case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
-	startsWith(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	startsWith(value, caseSensitive = false, trim = true) {
 		return this._find(value, "=1", caseSensitive, trim);
 	}
 
@@ -269,11 +264,11 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether the comparison should be case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace from the field value before checking (default: true)
 	 */
-	notStartsWith(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	notStartsWith(value, caseSensitive = false, trim = true) {
 		return this._find(value, "!=1", caseSensitive, trim);
 	}
 
-	private _endsWith(value: string, comparison: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	_endsWith(value, comparison, caseSensitive = false, trim = true) {
 		StringSchema.parse(value);
 		if (caseSensitive) {
 			if (trim) {
@@ -312,7 +307,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether search is case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
-	endsWith(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	endsWith(value, caseSensitive = false, trim = true) {
 		return this._endsWith(value, "=", caseSensitive, trim);
 	}
 
@@ -322,7 +317,7 @@ export class TextField extends Field {
 	 * @param caseSensitive - Whether search is case-sensitive (default: false)
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
-	notEndsWith(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
+	notEndsWith(value, caseSensitive = false, trim = true) {
 		return this._endsWith(value, "!=", caseSensitive, trim);
 	}
 
@@ -330,93 +325,93 @@ export class TextField extends Field {
 	 * Tests field against a regular expression pattern
 	 * @param pattern - The regex pattern to match
 	 */
-	regexMatch(pattern: string): string {
+	regexMatch(pattern) {
 		StringSchema.parse(pattern);
 		return REGEX(this, pattern);
 	}
 }
 
 /** Select comparison formulas */
-export class SingleSelectField<T extends string> extends TextField {
+class SingleSelectField extends TextField {
 	/** {field}= "value" */
-	override equals(value: T, caseSensitive: boolean = true, trim: boolean = false): string {
+	equals(value, caseSensitive = true, trim = false) {
 		return super.equals(value, caseSensitive, trim);
 	}
 
 	/** {field}!="value" */
-	override notEquals(value: T): string {
+	notEquals(value) {
 		return super.notEquals(value);
 	}
 }
 
 /** Multi-Select comparison formulas */
-export class MultiSelectField<T extends string> extends SingleSelectField<T> {
+class MultiSelectField extends SingleSelectField {
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsOption(value: T, caseSensitive: boolean = true, trim: boolean = false): string {
+	containsOption(value, caseSensitive = true, trim = false) {
 		return this.contains(value, caseSensitive, trim);
 	}
 
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsAllOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
+	containsAllOptions(values, caseSensitive = true, trim = false) {
 		return this.containsAll(values, caseSensitive, trim);
 	}
 
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsAnyOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
+	containsAnyOptions(values, caseSensitive = true, trim = false) {
 		return this.containsAny(values, caseSensitive, trim);
 	}
 
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	notContainsOption(value: T, caseSensitive: boolean = true, trim: boolean = false): string {
+	notContainsOption(value, caseSensitive = true, trim = false) {
 		return this.notContains(value, caseSensitive, trim);
 	}
 
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	notContainsOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
+	notContainsOptions(values, caseSensitive = true, trim = false) {
 		return AND(...values.map((value) => this.notContains(value, caseSensitive, trim)));
 	}
 }
 
 // region NUMBER
 /** Number comparison formulas */
-export class NumberField extends Field {
-	private _compare(comparison: Comparison, value: number): string {
+class NumberField extends Field {
+	_compare(comparison, value) {
 		NumberSchema.parse(value);
 		return `${this.field}${comparison}${value}`;
 	}
 
 	/** {field}=value */
-	equals(value: number): string {
+	equals(value) {
 		return this._compare("=", value);
 	}
 
 	/** {field}!=value */
-	notEquals(value: number): string {
+	notEquals(value) {
 		return this._compare("!=", value);
 	}
 
 	/** {field}>value */
-	greaterThan(value: number): string {
+	greaterThan(value) {
 		return this._compare(">", value);
 	}
 
 	/** {field}<value */
-	lessThan(value: number): string {
+	lessThan(value) {
 		return this._compare("<", value);
 	}
 
 	/** {field}>=value */
-	greaterThanOrEquals(value: number): string {
+	greaterThanOrEquals(value) {
 		return this._compare(">=", value);
 	}
 
 	/** {field}<=value */
-	lessThanOrEquals(value: number): string {
+	lessThanOrEquals(value) {
 		return this._compare("<=", value);
 	}
 
 	/** AND({field}>=min_value, {field}<=max_value) */
-	between(minValue: number, maxValue: number, inclusive: boolean = true): string {
+	between(minValue, maxValue, inclusive = true) {
 		if (inclusive) {
 			return AND(this.greaterThanOrEquals(minValue), this.lessThanOrEquals(maxValue));
 		} else {
@@ -428,20 +423,20 @@ export class NumberField extends Field {
 
 // region BOOLEAN
 /** Boolean comparison formulas */
-export class BooleanField extends Field {
+class BooleanField extends Field {
 	/** {field}=TRUE()|FALSE() */
-	equals(value: boolean): string {
+	equals(value) {
 		BooleanSchema.parse(value);
 		return `${this.field}=${value ? TRUE : FALSE}`;
 	}
 
 	/** {field}=TRUE() */
-	true(): string {
+	true() {
 		return this.equals(true);
 	}
 
 	/** {field}=FALSE() */
-	false(): string {
+	false() {
 		return this.equals(false);
 	}
 }
@@ -449,26 +444,26 @@ export class BooleanField extends Field {
 
 // region ATTACHMENTS
 /** Attachment comparison formulas */
-export class AttachmentsField extends Field {
+class AttachmentsField extends Field {
 	/** LEN({field})>0 */
-	override notEmpty(): string {
+	notEmpty() {
 		return LEN(this) + ">0";
 	}
 
 	/** LEN({field})=0 */
-	override empty(): string {
+	empty() {
 		return LEN(this) + "=0";
 	}
 
 	/** LEN({field})=count */
-	count(count: number): string {
+	count(count) {
 		return LEN(this) + `=${count}`;
 	}
 }
 // endregion
 
 // region DATE
-function parseDate(date: Date | string): Date {
+function parseDate(date) {
 	if (date instanceof Date) {
 		return date;
 	}
@@ -479,81 +474,75 @@ function parseDate(date: Date | string): Date {
 	return parsed;
 }
 
-type DateUnit = "milliseconds" | "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "quarters" | "years";
-
 class DateComparison extends Field {
-	constructor(
-		name: string,
-		private compare: Comparison,
-	) {
+	constructor(name, compare) {
 		super(name);
+		this.compare = compare;
 	}
 
-	_date(date: Date | string): string {
+	_date(date) {
 		const isoString = parseDate(date).toISOString();
 		return `${DATETIME_PARSE(isoString)}${this.compare}${DATETIME_PARSE(this)}`;
 	}
 
-	private _ago(unit: DateUnit, value: number): string {
+	_ago(unit, value) {
 		return DATETIME_DIFF(NOW, this, unit) + this.compare + value;
 	}
 
 	/** Compare to time ago in milliseconds */
-	millisecondsAgo(milliseconds: number): string {
+	millisecondsAgo(milliseconds) {
 		return this._ago("milliseconds", milliseconds);
 	}
 
 	/** Compare to time ago in seconds */
-	secondsAgo(seconds: number): string {
+	secondsAgo(seconds) {
 		return this._ago("seconds", seconds);
 	}
 
 	/** Compare to time ago in minutes */
-	minutesAgo(minutes: number): string {
+	minutesAgo(minutes) {
 		return this._ago("minutes", minutes);
 	}
 
 	/** Compare to time ago in hours */
-	hoursAgo(hours: number): string {
+	hoursAgo(hours) {
 		return this._ago("hours", hours);
 	}
 
 	/** Compare to time ago in days */
-	daysAgo(days: number): string {
+	daysAgo(days) {
 		return this._ago("days", days);
 	}
 
 	/** Compare to time ago in weeks */
-	weeksAgo(weeks: number): string {
+	weeksAgo(weeks) {
 		return this._ago("weeks", weeks);
 	}
 
 	/** Compare to time ago in months */
-	monthsAgo(months: number): string {
+	monthsAgo(months) {
 		return this._ago("months", months);
 	}
 
 	/** Compare to time ago in quarters */
-	quartersAgo(quarters: number): string {
+	quartersAgo(quarters) {
 		return this._ago("quarters", quarters);
 	}
 
 	/** Compare to time ago in years */
-	yearsAgo(years: number): string {
+	yearsAgo(years) {
 		return this._ago("years", years);
 	}
 }
 
 /** DateTime comparison formulas */
-export class DateField extends Field {
+class DateField extends Field {
 	/**
 	 * Checks if the object's date matches the specified date.
 	 *
 	 * @param date - The date to compare against. Can be a `Date` object or a date string. If omitted, returns a `DateComparison` instance.
 	 */
-	on(): DateComparison;
-	on(date: Date | string): string;
-	on(date?: Date | string): DateComparison | string {
+	on(date) {
 		const dateComparison = new DateComparison(this.nameOrId, "=");
 		if (date === undefined) {
 			return dateComparison;
@@ -567,9 +556,7 @@ export class DateField extends Field {
 	 *
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
-	onOrAfter(): DateComparison;
-	onOrAfter(date: Date | string): string;
-	onOrAfter(date?: Date | string): DateComparison | string {
+	onOrAfter(date) {
 		const dateComparison = new DateComparison(this.nameOrId, ">=");
 		if (date === undefined) {
 			return dateComparison;
@@ -583,9 +570,7 @@ export class DateField extends Field {
 	 *
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
-	onOrBefore(): DateComparison;
-	onOrBefore(date: Date | string): string;
-	onOrBefore(date?: Date | string): DateComparison | string {
+	onOrBefore(date) {
 		const dateComparison = new DateComparison(this.nameOrId, "<=");
 		if (date === undefined) {
 			return dateComparison;
@@ -599,9 +584,7 @@ export class DateField extends Field {
 	 *
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
-	after(): DateComparison;
-	after(date: Date | string): string;
-	after(date?: Date | string): DateComparison | string {
+	after(date) {
 		const dateComparison = new DateComparison(this.nameOrId, "<");
 		if (date === undefined) {
 			return dateComparison;
@@ -617,9 +600,7 @@ export class DateField extends Field {
 	 *
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
-	before(): DateComparison;
-	before(date: Date | string): string;
-	before(date?: Date | string): DateComparison | string {
+	before(date) {
 		const dateComparison = new DateComparison(this.nameOrId, ">");
 		if (date === undefined) {
 			return dateComparison;
@@ -633,9 +614,7 @@ export class DateField extends Field {
 	 *
 	 * @param date - The date to compare against, as a `Date` object or a string. If omitted, returns a generic "not equal" comparison.
 	 */
-	notOn(): DateComparison;
-	notOn(date: Date | string): string;
-	notOn(date?: Date | string): DateComparison | string {
+	notOn(date) {
 		const dateComparison = new DateComparison(this.nameOrId, "!=");
 		if (date === undefined) {
 			return dateComparison;
@@ -651,14 +630,30 @@ export class DateField extends Field {
 	 * @param endDate - The end date of the range. Can be a Date object or string.
 	 * @param inclusive - Whether to include the start and end dates in the range. Defaults to true.
 	 */
-	between(startDate: Date | string, endDate: Date | string, inclusive: boolean = true): string {
+	between(startDate, endDate, inclusive = true) {
 		const startParsed = parseDate(startDate);
 		const endParsed = parseDate(endDate);
 		if (inclusive) {
-			return AND(this.onOrAfter(startParsed) as string, this.onOrBefore(endParsed) as string);
+			return AND(this.onOrAfter(startParsed), this.onOrBefore(endParsed));
 		} else {
-			return AND(this.after(startParsed) as string, this.before(endParsed) as string);
+			return AND(this.after(startParsed), this.before(endParsed));
 		}
 	}
 }
 // endregion
+
+module.exports = {
+	AND,
+	OR,
+	XOR,
+	NOT,
+	ID,
+	Field,
+	TextField,
+	SingleSelectField,
+	MultiSelectField,
+	NumberField,
+	BooleanField,
+	AttachmentsField,
+	DateField,
+};
