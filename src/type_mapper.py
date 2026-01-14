@@ -283,7 +283,7 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         list_fmt="z.array({0})",
         union_fmt="z.union([{0}, z.array({0}.nullable())])",
         enum_fmt="z.enum({0}s)",
-        computed_union_fmt="z.union([{0}, z.array(z.union([{0}, SpecialNumberSchema, ErrorValueSchema]).nullable())])",
+        computed_union_fmt="z.union([{0}, SpecialNumberSchema, ErrorValueSchema, z.array(z.union([{0}, SpecialNumberSchema, ErrorValueSchema]).nullable())])",
     ),
 }
 
@@ -385,7 +385,8 @@ def map_zod_type(field: Field) -> str:
     zod_type: str = render_type(field, "zod", resolved=resolved, is_computed=is_computed)
 
     # Add error/special value handling for computed/formula fields
-    if is_computed:
+    # Skip if field involves lookup/rollup - already handled by computed_union_fmt in render_type
+    if is_computed and not (field.involves_lookup() or field.involves_rollup()):
         generic_type = resolved.generic_type if resolved else field._generic_type
         # Number types can have special values (NaN, Infinity) and errors
         if generic_type in (GenericType.INTEGER, GenericType.FLOAT, GenericType.DURATION):

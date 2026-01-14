@@ -1,7 +1,7 @@
 import { AirtableOptions, FieldSet } from "airtable";
 import * as z from "zod";
 
-export const baseIdSchema = z.string().regex(/\bapp[a-zA-Z0-9]{14}\b/, "Invalid Airtable Record ID");
+export const baseIdSchema = z.string().regex(/\bapp[a-zA-Z0-9]{14}\b/, "Invalid Airtable Base ID");
 export const recordIdSchema = z.string().regex(/\brec[a-zA-Z0-9]{14}\b/, "Invalid Airtable Record ID");
 export function validateRecordIds(idOrIds: string | string[]): void {
 	if (Array.isArray(idOrIds)) {

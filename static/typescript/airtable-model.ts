@@ -14,7 +14,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	public id: string;
 
 	constructor(id: string) {
-		this.id = id ? recordIdSchema.parse(id) : "";
+		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
 	/**
@@ -30,11 +30,9 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 
 	/**
 	 * Converts the model to a plain object.
-	 * Must be overridden by subclasses to return all field values.
+	 * Must be implemented by subclasses to return all field values.
 	 */
-	public toJson(): U {
-		return {} as U;
-	}
+	public abstract toJson(): U;
 
 	protected writableFields(useFieldIds: boolean = false): Partial<T> {
 		return {};
