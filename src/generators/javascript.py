@@ -74,10 +74,9 @@ class WriteToJavaScriptFile(WriteToFile):
 
     def select_options_require(self, table: Table, from_path: str) -> list[str]:
         """Require select field option arrays if the table has any select fields. Returns list of imported names."""
-        select_fields = table.select_fields()
-        names = []
-        if len(select_fields) > 0:
-            for field in select_fields:
+        names: list[str] = []
+        if len(table.select_fields()) > 0:
+            for field in table.select_fields():
                 names.append(f"{field.options_name()}s")
             self.require_statement(names, from_path)
         return names
@@ -159,13 +158,10 @@ def write_types(base: Base, output_folder: Path) -> None:
     types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
 
     for table in base.tables:
-        table_name = table.name_pascal()
-        table_name_camel = table.name_camel()
-
         # Track all exports for this file
         exports: list[str] = []
 
-        with WriteToJavaScriptFile(path=types_dir / f"{table_name_camel}.js") as write:
+        with WriteToJavaScriptFile(path=types_dir / f"{table.name_camel()}.js") as write:
             # Field Options
             write.region("FIELD OPTIONS")
             for field in table.fields:
@@ -184,28 +180,28 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.region(table.name_upper())
 
             # Field arrays
-            write.const_array(f"{table_name}Fields", field_names, f"Field names for `{table.name}`")
-            exports.append(f"{table_name}Fields")
+            write.const_array(f"{table.name_pascal()}Fields", field_names, f"Field names for `{table.name}`")
+            exports.append(f"{table.name_pascal()}Fields")
 
-            write.const_array(f"{table_name}FieldIds", field_ids, f"Field IDs for `{table.name}`")
-            exports.append(f"{table_name}FieldIds")
+            write.const_array(f"{table.name_pascal()}FieldIds", field_ids, f"Field IDs for `{table.name}`")
+            exports.append(f"{table.name_pascal()}FieldIds")
 
-            write.const_array(f"{table_name}FieldProperties", property_names, f"Property names for `{table.name}`")
-            exports.append(f"{table_name}FieldProperties")
+            write.const_array(f"{table.name_pascal()}FieldProperties", property_names, f"Property names for `{table.name}`")
+            exports.append(f"{table.name_pascal()}FieldProperties")
 
             write.const_array(
-                f"{table_name}CalculatedFields",
+                f"{table.name_pascal()}CalculatedFields",
                 [sanitize_string(field.name) for field in table.fields if field.is_computed()],
                 f"Calculated fields for `{table.name}`",
             )
-            exports.append(f"{table_name}CalculatedFields")
+            exports.append(f"{table.name_pascal()}CalculatedFields")
 
             write.const_array(
-                f"{table_name}CalculatedFieldIds",
+                f"{table.name_pascal()}CalculatedFieldIds",
                 [field.id for field in table.fields if field.is_computed()],
                 f"Calculated field IDs for `{table.name}`",
             )
-            exports.append(f"{table_name}CalculatedFieldIds")
+            exports.append(f"{table.name_pascal()}CalculatedFieldIds")
 
             # Field mapping dictionaries
             field_mappings = [
@@ -232,7 +228,7 @@ def write_types(base: Base, output_folder: Path) -> None:
                         raise ValueError(f"Unknown field attribute: {attr}")
 
             for suffix, get_1, get_2 in field_mappings:
-                mapping_name = f"{table_name}{suffix}"
+                mapping_name = f"{table.name_pascal()}{suffix}"
                 write.const_object(
                     mapping_name,
                     [(_get(field, get_1), _get(field, get_2)) for field in table.fields],
@@ -241,29 +237,28 @@ def write_types(base: Base, output_folder: Path) -> None:
                 exports.append(mapping_name)
 
             # Views
-            views = table.views
-            view_names: list[str] = [sanitize_string(view.name) for view in views]
-            view_ids: list[str] = [view.id for view in views]
+            view_names: list[str] = [sanitize_string(view.name) for view in table.views]
+            view_ids: list[str] = [view.id for view in table.views]
 
-            write.const_array(f"{table_name}Views", view_names, f"View names for `{table.name}`")
-            exports.append(f"{table_name}Views")
+            write.const_array(f"{table.name_pascal()}Views", view_names, f"View names for `{table.name}`")
+            exports.append(f"{table.name_pascal()}Views")
 
-            write.const_array(f"{table_name}ViewIds", view_ids, f"View IDs for `{table.name}`")
-            exports.append(f"{table_name}ViewIds")
+            write.const_array(f"{table.name_pascal()}ViewIds", view_ids, f"View IDs for `{table.name}`")
+            exports.append(f"{table.name_pascal()}ViewIds")
 
             write.const_object(
-                f"{table_name}ViewNameIdMapping",
+                f"{table.name_pascal()}ViewNameIdMapping",
                 [(sanitize_string(view.name), view.id) for view in table.views],
                 is_value_string=True,
             )
-            exports.append(f"{table_name}ViewNameIdMapping")
+            exports.append(f"{table.name_pascal()}ViewNameIdMapping")
 
             write.const_object(
-                f"{table_name}ViewIdNameMapping",
+                f"{table.name_pascal()}ViewIdNameMapping",
                 [(view.id, sanitize_string(view.name)) for view in table.views],
                 is_value_string=True,
             )
-            exports.append(f"{table_name}ViewIdNameMapping")
+            exports.append(f"{table.name_pascal()}ViewIdNameMapping")
 
             write.endregion()
 
@@ -275,9 +270,7 @@ def write_types(base: Base, output_folder: Path) -> None:
         # Require field name ID mappings from individual table files
         write.region("REQUIRES")
         for table in base.tables:
-            table_name = table.name_pascal()
-            table_name_camel = table.name_camel()
-            write.require_statement([f"{table_name}FieldNameIdMapping"], f"./{table_name_camel}")
+            write.require_statement([f"{table.name_pascal()}FieldNameIdMapping"], f"./{table.name_camel()}")
         write.endregion()
         write.line_empty()
 
@@ -345,23 +338,20 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             )
 
             # Require select option constants from types
-            select_fields = table.select_fields()
-            if len(select_fields) > 0:
-                names = [f"{field.options_name()}s" for field in select_fields]
+            if len(table.select_fields()) > 0:
+                names = [f"{field.options_name()}s" for field in table.select_fields()]
                 write.require_statement(names, f"../types/{table.name_camel()}")
             write.line_empty()
 
-            table_name = table.name_pascal()
             write.region(table.name_upper())
-            write.line(f"const {table_name}Schema = z.object({{")
+            write.line(f"const {table.name_pascal()}Schema = z.object({{")
             for field in table.fields:
-                field_type = field.zod_type()
-                write.line_indented(f"{field.name_camel()}: {field_type},")
+                write.line_indented(f"{field.name_camel()}: {field.zod_type()},")
             write.line("});")
             write.line_empty()
             write.endregion()
 
-            write.module_exports([f"{table_name}Schema"])
+            write.module_exports([f"{table.name_pascal()}Schema"])
 
     write_barrel_export(base, zod_dir)
 
@@ -375,10 +365,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
     # Write individual table model files
     for table in base.tables:
-        table_name = table.name_pascal()
-        table_name_camel = table.name_camel()
-        model_name = table.name_model()
-        with WriteToJavaScriptFile(path=models_dir / f"{table_name_camel}.js") as write:
+        with WriteToJavaScriptFile(path=models_dir / f"{table.name_camel()}.js") as write:
             # Requires
             write.region("REQUIRES")
             write.require_statement(["AirtableModel"], "../../static/airtable-model")
@@ -389,17 +376,17 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             select_fields = table.select_fields()
             if len(select_fields) > 0:
                 names = [f"{field.options_name()}s" for field in select_fields]
-                write.require_statement(names, f"../types/{table_name_camel}")
+                write.require_statement(names, f"../types/{table.name_camel()}")
 
             if formulas:
-                write.require_statement([f"{table_name}Formulas"], f"../formulas/{table_name_camel}")
+                write.require_statement([f"{table.name_pascal()}Formulas"], f"../formulas/{table.name_camel()}")
 
             # Note: Other models are loaded lazily to avoid circular dependencies
 
             # Require table class for this table
-            write.require_statement([f"{table_name}Table"], f"../tables/{table_name_camel}")
+            write.require_statement([f"{table.name_pascal()}Table"], f"../tables/{table.name_camel()}")
             if zod:
-                write.require_statement([f"{table_name}Schema"], f"../zod/{table_name_camel}")
+                write.require_statement([f"{table.name_pascal()}Schema"], f"../zod/{table.name_camel()}")
             write.endregion()
             write.line_empty()
 
@@ -407,19 +394,17 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.region(table.name_upper())
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
-            write.line(f"class {model_name} extends AirtableModel {{")
+            write.line(f"class {table.name_model()} extends AirtableModel {{")
             if zod:
-                write.line_indented(f"static schema = {table_name}Schema;")
+                write.line_indented(f"static schema = {table.name_pascal()}Schema;")
             if formulas:
-                write.line_indented(f"static f = {table_name}Formulas;")
+                write.line_indented(f"static f = {table.name_pascal()}Formulas;")
             write.line_empty()
 
             # Field properties with JSDoc
             for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()  # Use for documentation
                 write.docstring(f"`{field.name}` ({field.id})")
-                write.line_indented(f"{field_name};")
+                write.line_indented(f"{field.name_camel()};")
             write.line_empty()
 
             # Constructor
@@ -431,28 +416,26 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("} = {}) {")
             write.line_indented("super(id ?? '');", 2)
             for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     # Get linked table's file name for lazy require
                     linked_table_id = field.options.linked_table_id if field.options else None
                     linked_table = base.table_by_id(linked_table_id) if linked_table_id else None
                     linked_file = linked_table.name_camel() if linked_table else ""
-                    if field_type == "RecordId":
+                    if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecord({field_name}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this.{field.name_camel()} = new LinkedRecord({field.name_camel()}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
                             2,
                         )
-                    elif field_type == "RecordId[]":
+                    elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecords({field_name}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this.{field.name_camel()} = new LinkedRecords({field.name_camel()}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
                             2,
                         )
                 else:
-                    write.line_indented(f"this.{field_name} = {field_name};", 2)
+                    write.line_indented(f"this.{field.name_camel()} = {field.name_camel()};", 2)
             write.line_indented(
-                f"this.record = new (require('airtable').Record)(new {table_name}Table(getBaseId(), getOptions())._table, this.id, {{}});",
+                f"this.record = new (require('airtable').Record)(new {table.name_pascal()}Table(getBaseId(), getOptions())._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
@@ -461,7 +444,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             # fromRecord static method
             write.line_indented("static fromRecord(record) {")
-            write.line_indented(f"const instance = new {model_name}(", 2)
+            write.line_indented(f"const instance = new {table.name_model()}(", 2)
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
             write.line_indented("instance.updateModel(record);", 2)
@@ -471,7 +454,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             # fromId static method
             write.line_indented("static fromId(id) {")
-            write.line_indented(f"return new {model_name}({{ id }});", 2)
+            write.line_indented(f"return new {table.name_model()}({{ id }});", 2)
             write.line_indented("}")
             write.line_empty()
 
@@ -479,21 +462,23 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("writableFields(useFieldIds = false) {")
             write.line_indented("const fields = {};", 2)
             for field in table.fields:
-                field_name = field.name_camel()
                 if not field.is_computed():
-                    field_type = field.typescript_type()
-                    if field_type == "RecordId" or field_type == "RecordId[]":
-                        if field_type == "RecordId":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.id;', 2)
-                        elif field_type == "RecordId[]":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.ids;', 2)
-                    elif field_type == "Attachment[]":
+                    if field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]":
+                        if field.typescript_type() == "RecordId":
+                            write.line_indented(
+                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()}?.id;', 2
+                            )
+                        elif field.typescript_type() == "RecordId[]":
+                            write.line_indented(
+                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()}?.ids;', 2
+                            )
+                    elif field.typescript_type() == "Attachment[]":
                         write.line_indented(
-                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("{field_name}");',
+                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("{field.name_camel()}");',
                             2,
                         )
                     else:
-                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name};', 2)
+                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()};', 2)
             write.line_indented("return fields;", 2)
             write.line_indented("}")
             write.line_empty()
@@ -502,15 +487,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("toJson() {")
             write.line_indented("return {", 2)
             for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    if field_type == "RecordId":
-                        write.line_indented(f"{field_name}: this.{field_name}?.id,", 3)
+                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
+                    if field.typescript_type() == "RecordId":
+                        write.line_indented(f"{field.name_camel()}: this.{field.name_camel()}?.id,", 3)
                     else:
-                        write.line_indented(f"{field_name}: this.{field_name}?.ids,", 3)
+                        write.line_indented(f"{field.name_camel()}: this.{field.name_camel()}?.ids,", 3)
                 else:
-                    write.line_indented(f"{field_name}: this.{field_name},", 3)
+                    write.line_indented(f"{field.name_camel()}: this.{field.name_camel()},", 3)
             write.line_indented("};", 2)
             write.line_indented("}")
             write.line_empty()
@@ -519,26 +502,24 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("updateModel(record) {")
             write.line_indented("this.record = record;", 2)
             for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     # Get linked table's file name for lazy require
                     linked_table_id = field.options.linked_table_id if field.options else None
                     linked_table = base.table_by_id(linked_table_id) if linked_table_id else None
                     linked_file = linked_table.name_camel() if linked_table else ""
-                    if field_type == "RecordId":
+                    if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecord(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this.{field.name_camel()} = new LinkedRecord(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
                             2,
                         )
-                    elif field_type == "RecordId[]":
+                    elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecords(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this.{field.name_camel()} = new LinkedRecords(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
                             2,
                         )
                 else:
-                    write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field.name)}");', 2)
+                    write.line_indented(f'this.{field.name_camel()} = record.get("{sanitize_string(field.name)}");', 2)
             write.line_indented("this.validate();", 2)
             write.line_indented("}")
             write.line_empty()
@@ -550,22 +531,20 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
             )
             for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    if field_type == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)
-                    elif field_type == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.ids);', 2)
+                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
+                    if field.typescript_type() == "RecordId":
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()}?.id);', 2)
+                    elif field.typescript_type() == "RecordId[]":
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name});', 2)
+                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()});', 2)
             write.line_indented("}")
             write.line_empty()
 
             write.line("}")
             write.endregion()
 
-            write.module_exports([model_name])
+            write.module_exports([table.name_model()])
 
     # Write barrel export index.js
     write_barrel_export(base, models_dir)
@@ -579,29 +558,26 @@ def write_tables(base: Base, output_folder: Path) -> None:
     tables_dir = create_dynamic_subdir(output_folder, Paths.TABLES)
 
     for table in base.tables:
-        table_name = table.name_pascal()
-        table_name_camel = table.name_camel()
-        model_name = table.name_model()
-        with WriteToJavaScriptFile(path=tables_dir / f"{table_name_camel}.js") as write:
+        with WriteToJavaScriptFile(path=tables_dir / f"{table.name_camel()}.js") as write:
             # Requires
             write.region("REQUIRES")
             write.require_statement(["AirtableTable"], "../../static/airtable-table")
-            write.require_statement([f"{table_name}ViewNameIdMapping"], f"../types/{table_name_camel}")
+            write.require_statement([f"{table.name_pascal()}ViewNameIdMapping"], f"../types/{table.name_camel()}")
             # Note: Model is loaded lazily to avoid circular dependencies
             write.endregion()
             write.line_empty()
 
-            write.line(f"class {table_name}Table extends AirtableTable {{")
+            write.line(f"class {table.name_pascal()}Table extends AirtableTable {{")
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, (record) => require("../models/{table_name_camel}").{model_name}.fromRecord(record), options);',
+                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record), options);',
                 2,
             )
             write.line_indented("}")
             write.line("}")
             write.line_empty()
 
-            write.module_exports([f"{table_name}Table"])
+            write.module_exports([f"{table.name_pascal()}Table"])
 
     # Write barrel export index.js
     write_barrel_export(base, tables_dir)
@@ -615,19 +591,17 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
-        table_name = table.name_pascal()
-        table_name_camel = table.name_camel()
-        with WriteToJavaScriptFile(path=formulas_dir / f"{table_name_camel}.js") as write:
+        with WriteToJavaScriptFile(path=formulas_dir / f"{table.name_camel()}.js") as write:
             # Requires
             write.require_statement(
                 ["ID", "AttachmentsField", "BooleanField", "DateField", "NumberField", "TextField", "SingleSelectField", "MultiSelectField"],
                 "../../static/formula",
             )
-            write.select_options_require(table, f"../types/{table_name_camel}")
+            write.select_options_require(table, f"../types/{table.name_camel()}")
             write.line_empty()
 
             # Properties as object (instead of TypeScript namespace)
-            write.line(f"const {table_name}Formulas = {{")
+            write.line(f"const {table.name_pascal()}Formulas = {{")
             write.line_indented("id: new ID(),")
             for field in table.fields:
                 property_name = field.name_camel()
@@ -636,7 +610,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line("};")
             write.line_empty()
 
-            write.module_exports([f"{table_name}Formulas"])
+            write.module_exports([f"{table.name_pascal()}Formulas"])
 
     # Write barrel export index.js
     write_barrel_export(base, formulas_dir)
@@ -667,9 +641,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("requestTimeout: options.requestTimeout,", 3)
         write.line_indented("};", 2)
         for table in base.tables:
-            table_name_camel = table.name_camel()
-            table_name_pascal = table.name_pascal()
-            write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(_baseId, _options);", 2)
+            write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(_baseId, _options);", 2)
         write.line_indented("}")
         write.line("}")
         write.line_empty()
