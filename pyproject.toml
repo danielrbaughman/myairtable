@@ -5,16 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dateparser>=1.2.2",
-    "dotenv>=0.9.9",
-    "httpx>=0.28.1",
-    "mermaid-cli>=0.1.2",
-    "pyairtable>=3.2.0",
-    "pydantic>=2.11.7",
-    "pyperclip>=1.11.0",
-    "pytest>=9.0.2",
-    "typer>=0.16.1",
-    "typer-verbose>=0.1.2",
+	"dateparser>=1.2.2",
+	"dotenv>=0.9.9",
+	"httpx>=0.28.1",
+	"mermaid-cli>=0.1.2",
+	"pyairtable>=3.2.0",
+	"pydantic>=2.11.7",
+	"pyperclip>=1.11.0",
+	"pytest>=9.0.2",
+	"typer>=0.16.1",
+	"typer-verbose>=0.1.2",
 ]
 
 [tool.ruff]
@@ -39,11 +39,11 @@ unresolved-import = "ignore"
 [[tool.ty.overrides]]
 include = ["src/meta.py", "src/csv.py"]
 [tool.ty.overrides.rules]
-unresolved-import = "ignore"  # ty lacks type stubs for csv module
-unresolved-attribute = "ignore"  # ty lacks type stubs for csv module
+unresolved-import = "ignore" # ty lacks type stubs for csv module
+unresolved-attribute = "ignore" # ty lacks type stubs for csv module
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [dependency-groups]
-dev = [
-    "ruff>=0.12.10",
-    "ty>=0.0.1a19",
-]
+dev = ["ruff>=0.12.10", "ty>=0.0.1a19"]

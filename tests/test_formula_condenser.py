@@ -1,15 +1,11 @@
 """Tests for the condense_formula function in formula_condenser.py."""
 
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from formula_condenser import condense_formula
-from formula_formatter import format_formula
+from src.formulas.formula_condenser import condense_formula
+from src.formulas.formula_formatter import format_formula
 
 
 class TestCondenseBasic:

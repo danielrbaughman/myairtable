@@ -4,9 +4,9 @@ from pathlib import Path
 from pydantic.alias_generators import to_snake
 from rich import print
 
-from .helpers import sanitize_string
-from .meta import MODEL_NAME, PROPERTY_NAME, Base
-from .verbose import verbose
+from ..meta import MODEL_NAME, PROPERTY_NAME, Base
+from ..utils.helpers import sanitize_string
+from ..utils.verbose import verbose
 
 # Column definitions for CSV exports
 TABLE_COLUMNS = [

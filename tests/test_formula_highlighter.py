@@ -1,20 +1,16 @@
 """Tests for the formula_highlighter module."""
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from formula_highlighter import (
+from src.formulas.formula_highlighter import (
     _html_escape,
     _tokens_to_html,
     highlight_formula,
 )
-from formula_tokenizer import (
+from src.formulas.formula_tokenizer import (
     AIRTABLE_FUNCTIONS,
     Token,
     TokenType,

@@ -1,19 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable no-unused-vars */
-import { Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
-import * as z from "zod";
-import { CreateRecordData, recordIdSchema } from "./special-types";
+const { recordIdSchema } = require("./special-types");
 
-export abstract class AirtableModel<T extends FieldSet, U> {
-	[key: string]: unknown;
-
+class AirtableModel {
 	/** Zod schema for validation - must be defined by subclasses */
-	protected static schema: z.ZodTypeAny;
+	static schema;
 
-	protected record?: ATRecord<T>;
-	public id: string;
+	record;
+	id;
 
-	constructor(id: string) {
+	constructor(id) {
 		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
@@ -22,8 +16,8 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	 * No-op if schema is not defined (when generated with --no-zod).
 	 * @throws {z.ZodError} if validation fails
 	 */
-	public validate(): void {
-		const schema = (this.constructor as typeof AirtableModel).schema;
+	validate() {
+		const schema = this.constructor.schema;
 		if (!schema) return; // No-op when schema not defined
 		schema.parse(this.toJson());
 	}
@@ -32,20 +26,22 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	 * Converts the model to a plain object.
 	 * Must be implemented by subclasses to return all field values.
 	 */
-	public abstract toJson(): U;
+	toJson() {
+		throw new Error("toJson must be implemented by subclass");
+	}
 
-	protected writableFields(useFieldIds: boolean = false): Partial<T> {
+	writableFields(useFieldIds = false) {
 		return {};
 		// To be overridden by subclasses
 	}
 
 	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
-	protected sanitizeAttachment(fieldName: string): Attachment[] {
-		const attachments = this[fieldName] as Attachment[] | undefined;
-		const writableAttachments: Attachment[] = [];
+	sanitizeAttachment(fieldName) {
+		const attachments = this[fieldName];
+		const writableAttachments = [];
 		if (attachments && Array.isArray(attachments)) {
 			for (const attachment of attachments) {
-				const writableAttachment: Attachment = {
+				const writableAttachment = {
 					id: attachment.id,
 					url: attachment.url,
 					filename: attachment.filename,
@@ -59,35 +55,35 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 		return writableAttachments;
 	}
 
-	protected updateModel(record: ATRecord<T>): void {
+	updateModel(record) {
 		this.record = record;
 		// To be overridden by subclasses
 	}
 
-	protected updateRecord(): void {
+	updateRecord() {
 		// To be overridden by subclasses
 	}
 
-	public toRecord(): ATRecord<T> {
+	toRecord() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
 		return this.record;
 	}
 
-	public toRecordData(): RecordData<T> {
+	toRecordData() {
 		return {
 			id: this.id,
 			fields: this.toRecord().fields,
 		};
 	}
 
-	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<T>> {
+	toCreateRecordData(useFieldIds = true) {
 		return {
 			fields: this.writableFields(useFieldIds),
 		};
 	}
 
-	public toUpdateRecordData(useFieldIds: boolean = false): RecordData<Partial<T>> {
+	toUpdateRecordData(useFieldIds = false) {
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
@@ -98,11 +94,10 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	 * Saves the current Airtable record to the server.
 	 * @throws {z.ZodError} if validation fails before save
 	 */
-	public async save(): Promise<void> {
+	async save() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
 		this.updateRecord();
-		// @ts-ignore
 		this.record.fields = this.writableFields();
 		try {
 			this.record = await this.record.save();
@@ -110,7 +105,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
 			// you get a generic "UnhandledPromiseRejectionWarning" instead.
-			throw new Error(String(error));
+			throw new Error(error);
 		}
 		this.updateModel(this.record);
 	}
@@ -118,7 +113,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	/**
 	 * Fetches the latest data for the current Airtable record from the server, overwriting any unsaved local changes.
 	 */
-	public async fetch(): Promise<void> {
+	async fetch() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
 		try {
@@ -127,7 +122,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
 			// you get a generic "UnhandledPromiseRejectionWarning" instead.
-			throw new Error(String(error));
+			throw new Error(error);
 		}
 		this.updateModel(this.record);
 	}
@@ -135,7 +130,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	/**
 	 * Deletes the current Airtable record to the server.
 	 */
-	public async delete(): Promise<void> {
+	async delete() {
 		if (!this.record)
 			throw new Error("Cannot destroy record: _record is undefined. Please use fromRecord to initialize the instance.");
 		try {
@@ -144,9 +139,11 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
 			// you get a generic "UnhandledPromiseRejectionWarning" instead.
-			throw new Error(String(error));
+			throw new Error(error);
 		}
 		this.record = undefined;
 		this.id = "";
 	}
 }
+
+module.exports = { AirtableModel };

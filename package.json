@@ -1,31 +1,38 @@
 {
 	"name": "myairtable",
 	"version": "0.1.0",
-	"main": "index.js",
-	"repository": "https://github.com/danielrbaughman/myairtable.git",
-	"author": "Daniel Baughman <danielrbaughman@icloud.com>",
 	"license": "MIT",
+	"author": "Daniel Baughman <danielrbaughman@icloud.com>",
+	"repository": "https://github.com/danielrbaughman/myairtable.git",
+	"main": "index.js",
 	"scripts": {
 		"build": "npx tsc",
 		"start": "node -r dotenv/config dist/playground.js",
-		"playground": "yarn install && yarn build && yarn start",
+		"py": "uv run playground.py",
+		"ts": "yarn install && yarn build && yarn start",
+		"js": "node -r dotenv/config playground.js",
 		"reinstall": "rm -rf node_modules && yarn install",
-		"format": "prettier --write \"**/*.{ts,js,md,yaml,yml,json}\" --ignore-path .prettierignore",
-		"lint": "eslint ."
-	},
-	"devDependencies": {
-		"@eslint/js": "^9.38.0",
-		"@types/node": "^24.9.1",
-		"commander": "^14.0.2",
-		"eslint": "^9.38.0",
-		"globals": "^16.4.0",
-		"jiti": "^2.6.1",
-		"typescript-eslint": "^8.46.2"
+		"format": "oxfmt",
+		"lint": "oxlint",
+		"test:py": "uv run pytest",
+		"test:ts": "vitest run",
+		"test": "yarn test:py && yarn test:ts"
 	},
 	"dependencies": {
 		"airtable": "^0.12.2",
 		"dotenv": "^17.2.3",
 		"typescript": "^5.9.3",
 		"zod": "^4.3.5"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.38.0",
+		"@types/node": "^24.9.1",
+		"commander": "^14.0.2",
+		"globals": "^16.4.0",
+		"oxfmt": "^0.24.0",
+		"oxlint": "^1.39.0",
+		"oxlint-tsgolint": "^0.11.0",
+		"typescript-eslint": "^8.46.2",
+		"vitest": "^4.0.17"
 	}
 }

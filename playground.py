@@ -6,7 +6,7 @@ app = Typer()
 @app.command()
 def main():
     """Playground"""
-    pass
+    print("Hello World (Python)!")
 
 
 if __name__ == "__main__":

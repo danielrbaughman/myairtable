@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Literal
 
-from .meta import Base, Field
-from .write_to_file import WriteToFile
+from ..meta import Base, Field
+from ..utils.write_to_file import WriteToFile
 
 
 class WriteToMermaidFile(WriteToFile):

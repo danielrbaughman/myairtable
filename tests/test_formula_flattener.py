@@ -1,13 +1,8 @@
 """Tests for the flatten_formula function in formula_flattener.py."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from formula_flattener import FIELD_REF_PATTERN, flatten_formula
+from src.formulas.formula_flattener import FIELD_REF_PATTERN, flatten_formula
 
 
 class TestFlattenBasic:

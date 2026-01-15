@@ -1,76 +1,47 @@
-/* eslint-disable no-unused-vars */
-import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "airtable";
-import { AirtableModel } from "./airtable-model";
-import { QueryParams } from "airtable/lib/query_params";
-import { ID } from "./formula";
-import { baseIdSchema, validateRecordIds } from "./special-types";
+const Airtable = require("airtable");
+const { ID } = require("./formula");
+const { baseIdSchema, validateRecordIds } = require("./special-types");
 
-interface Options<T> {
-	pageSize?: number;
-	fields?: T[];
-	useFieldIds?: boolean;
-	maxRecords?: number;
-}
-interface QueryOptions<V, T> extends Options<T> {
-	view?: V;
-	formula?: string;
-}
+class AirtableTable {
+	_table;
+	recordCtor;
+	viewNameToIdMap = {};
 
-export class AirtableTable<
-	T extends FieldSet,
-	U extends AirtableModel<T, unknown>,
-	V extends string,
-	W extends string,
-> {
-	public _table: Table<T>;
-	private recordCtor: (record: ATRecord<T>) => U;
-	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
-
-	constructor(
-		baseId: string,
-		tableNameOrId: string,
-		viewNameToIdMap: Record<V, string>,
-		recordCtor: (record: ATRecord<T>) => U,
-		options: AirtableOptions = {},
-	) {
+	constructor(baseId, tableNameOrId, viewNameToIdMap, recordCtor, options = {}) {
 		this._table = new Airtable(options).base(baseIdSchema.parse(baseId)).table(tableNameOrId);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}
 
-	public getViewId(viewName: V): string {
+	getViewId(viewName) {
 		return this.viewNameToIdMap[viewName] || viewName;
 	}
 
-	/** Get a single record by ID */
-	public async get(recordId: string, options?: Options<W>): Promise<U>;
-	/** Get multiple records by IDs */
-	public async get(recordIds: string[], options?: Options<W>): Promise<U[]>;
-	/** Get multiple records with query options */
-	public async get(options?: QueryOptions<V, W>): Promise<U[]>;
-	public async get(
-		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<V, W>,
-		options?: Options<W>,
-	): Promise<U | U[]> {
+	/**
+	 * Get record(s) by ID, IDs, or query options.
+	 * @param {string|string[]|object} recordIdOrIdsOrOptions - Single ID, array of IDs, or query options
+	 * @param {object} options - Additional options when fetching by ID
+	 */
+	async get(recordIdOrIdsOrOptions, options) {
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
 			validateRecordIds(recordIdOrIdsOrOptions);
-			const selectOptions: QueryParams<T> = {
+			const selectOptions = {
 				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
-			if (options?.fields) selectOptions.fields = options.fields as string[];
+			if (options?.fields) selectOptions.fields = options.fields;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
 
 			try {
 				const records = await this._table.select(selectOptions).all();
 				const mappedRecords = records.map((record) => this.recordCtor(record));
-				return mappedRecords.length === 0 ? ({} as U) : mappedRecords[0];
+				return mappedRecords.length === 0 ? {} : mappedRecords[0];
 			} catch (error) {
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
 				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				throw new Error(error);
 			}
 		}
 
@@ -81,11 +52,11 @@ export class AirtableTable<
 				return [];
 			}
 
-			const selectOptions: QueryParams<T> = {
+			const selectOptions = {
 				filterByFormula: new ID().inList(recordIdOrIdsOrOptions),
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
-			if (options?.fields) selectOptions.fields = options.fields as string[];
+			if (options?.fields) selectOptions.fields = options.fields;
 			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
 
@@ -96,17 +67,17 @@ export class AirtableTable<
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
 				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				throw new Error(error);
 			}
 		}
 
 		// Query with options (first parameter is options object)
 		const queryOptions = recordIdOrIdsOrOptions || {};
-		const selectOptions: QueryParams<T> = {};
+		const selectOptions = {};
 		if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
 		if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
 		if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
-		if (queryOptions.fields) selectOptions.fields = queryOptions.fields as string[];
+		if (queryOptions.fields) selectOptions.fields = queryOptions.fields;
 		if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
 
 		try {
@@ -116,18 +87,18 @@ export class AirtableTable<
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
 			// you get a generic "UnhandledPromiseRejectionWarning" instead.
-			throw new Error(String(error));
+			throw new Error(error);
 		}
 	}
 
-	/** Create a single record */
-	public async create(record: U): Promise<U>;
-	/** Create multiple records */
-	public async create(records: U[]): Promise<U[]>;
-	public async create(recordOrRecords: U | U[]): Promise<U | U[]> {
+	/**
+	 * Create record(s).
+	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 */
+	async create(recordOrRecords) {
 		if (Array.isArray(recordOrRecords)) {
 			const records = recordOrRecords.map((record) => record.toCreateRecordData());
-			const createdRecords: ATRecord<T>[] = [];
+			const createdRecords = [];
 			// Create in batches of 10 (Airtable API limit)
 			for (let i = 0; i < records.length; i += 10) {
 				const batch = records.slice(i, i + 10);
@@ -138,7 +109,7 @@ export class AirtableTable<
 					// I am aware of how stupid this looks,
 					// but without it, errors from Airtable's API don't surface properly;
 					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
+					throw new Error(error);
 				}
 			}
 			return createdRecords.map((record) => this.recordCtor(record));
@@ -151,19 +122,19 @@ export class AirtableTable<
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
 				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				throw new Error(error);
 			}
 		}
 	}
 
-	/** Update a single record */
-	public async update(record: U): Promise<U>;
-	/** Update multiple records */
-	public async update(records: U[]): Promise<U[]>;
-	public async update(recordOrRecords: U | U[]): Promise<U | U[]> {
+	/**
+	 * Update record(s).
+	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 */
+	async update(recordOrRecords) {
 		if (Array.isArray(recordOrRecords)) {
 			const records = recordOrRecords.map((record) => record.toUpdateRecordData());
-			const updatedRecords: ATRecord<T>[] = [];
+			const updatedRecords = [];
 			// Update in batches of 10 (Airtable API limit)
 			for (let i = 0; i < records.length; i += 10) {
 				const batch = records.slice(i, i + 10);
@@ -174,7 +145,7 @@ export class AirtableTable<
 					// I am aware of how stupid this looks,
 					// but without it, errors from Airtable's API don't surface properly;
 					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
+					throw new Error(error);
 				}
 			}
 			return updatedRecords.map((record) => this.recordCtor(record));
@@ -187,17 +158,17 @@ export class AirtableTable<
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
 				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				throw new Error(error);
 			}
 		}
 	}
 
-	/** Upsert a single record */
-	public async upsert(record: U): Promise<U>;
-	/** Upsert multiple records */
-	public async upsert(records: U[]): Promise<U[]>;
-	public async upsert(recordOrRecords: U | U[]): Promise<U | U[]> {
-		const records: U[] = Array.isArray(recordOrRecords) ? recordOrRecords : [recordOrRecords];
+	/**
+	 * Upsert record(s) - creates if doesn't exist, updates if exists.
+	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 */
+	async upsert(recordOrRecords) {
+		const records = Array.isArray(recordOrRecords) ? recordOrRecords : [recordOrRecords];
 
 		// Batch fetch all records to check which exist
 		const recordIds = records.map((r) => r.id).filter((id) => !!id);
@@ -205,8 +176,8 @@ export class AirtableTable<
 		const existingIds = new Set(existingRecords.map((r) => r.id));
 
 		// Separate into updates and creates
-		const toUpdate: U[] = [];
-		const toCreate: U[] = [];
+		const toUpdate = [];
+		const toCreate = [];
 		for (const record of records) {
 			if (record.id && existingIds.has(record.id)) {
 				toUpdate.push(record);
@@ -225,11 +196,11 @@ export class AirtableTable<
 		return Array.isArray(recordOrRecords) ? upsertedRecords : upsertedRecords[0];
 	}
 
-	/** Delete a single record */
-	public async delete(recordId: string): Promise<void>;
-	/** Delete multiple records */
-	public async delete(recordIds: string[]): Promise<void>;
-	public async delete(recordIdOrIds: string | string[]): Promise<void> {
+	/**
+	 * Delete record(s) by ID.
+	 * @param {string|string[]} recordIdOrIds - Single ID or array of IDs
+	 */
+	async delete(recordIdOrIds) {
 		if (Array.isArray(recordIdOrIds)) {
 			validateRecordIds(recordIdOrIds);
 			// Delete in batches of 10 (Airtable API limit)
@@ -241,7 +212,7 @@ export class AirtableTable<
 					// I am aware of how stupid this looks,
 					// but without it, errors from Airtable's API don't surface properly;
 					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
+					throw new Error(error);
 				}
 			}
 		} else {
@@ -252,8 +223,10 @@ export class AirtableTable<
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
 				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				throw new Error(error);
 			}
 		}
 	}
 }
+
+module.exports = { AirtableTable };
