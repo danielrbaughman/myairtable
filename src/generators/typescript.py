@@ -421,15 +421,32 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 field_name = field.name_camel()
                 field_type = field.typescript_type()
-                write.docstring(f"`{field.name}` ({field.id})")
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
-                        write.line_indented(f"public {field_name}: LinkedRecord<{linked_record_type}>;", 1)
+                        write.line_indented(f"private _{field_name}!: LinkedRecord<{linked_record_type}>;", 1)
+                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.line_indented(f"public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._{field_name}; }}", 1)
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            1,
+                        )
                     elif field_type == "RecordId[]":
-                        write.line_indented(f"public {field_name}: LinkedRecords<{linked_record_type}>;", 1)
+                        write.line_indented(f"private _{field_name}!: LinkedRecords<{linked_record_type}>;", 1)
+                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.line_indented(f"public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._{field_name}; }}", 1)
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            1,
+                        )
                 else:
-                    write.line_indented(f"public {field_name}?: {field_type};", 1)
+                    write.line_indented(f"private _{field_name}?: {field_type};", 1)
+                    write.docstring(f"`{field.name}` ({field.id})")
+                    write.line_indented(f"public get {field_name}(): {field_type} | undefined {{ return this._{field_name}; }}", 1)
+                    write.line_indented(
+                        f"public set {field_name}(value: {field_type} | undefined) {{ this._{field_name} = value; this.markDirty('{field_name}'); }}",
+                        1,
+                    )
             write.line_empty()
             write.line_indented("constructor({")
             write.line_indented("id,", 2)
@@ -451,14 +468,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
-                            f"this.{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
+                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            2,
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(
-                            f"this.{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId);", 2
+                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            2,
                         )
                 else:
-                    write.line_indented(f"this.{field_name} = {field_name};", 2)
+                    write.line_indented(f"this._{field_name} = {field_name};", 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getBaseId(), getOptions())._table, this.id, {{}});",
                 2,
@@ -472,6 +491,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
             write.line_indented("instance.updateModel(record);", 2)
+            write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -487,18 +507,20 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 field_name = field.name_camel()
                 if not field.is_computed():
                     field_type = field.typescript_type()
+                    write.line_indented(f"if (this._isNew || this.isDirty('{field_name}')) {{", 2)
                     if field_type == "RecordId" or field_type == "RecordId[]":
                         if field_type == "RecordId":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.id;', 2)
+                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name}?.id;', 3)
                         elif field_type == "RecordId[]":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name}?.ids;', 2)
+                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name}?.ids;', 3)
                     elif field_type == "Attachment[]":
                         write.line_indented(
-                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("{field_name}");',
-                            2,
+                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("_{field_name}");',
+                            3,
                         )
                     else:
-                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field_name};', 2)
+                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name};', 3)
+                    write.line_indented("}", 2)
             write.line_indented("return fields;", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -513,11 +535,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
-                        write.line_indented(f"{field_name}: this.{field_name}?.id,", 3)
+                        write.line_indented(f"{field_name}: this._{field_name}?.id,", 3)
                     else:
-                        write.line_indented(f"{field_name}: this.{field_name}?.ids,", 3)
+                        write.line_indented(f"{field_name}: this._{field_name}?.ids,", 3)
                 else:
-                    write.line_indented(f"{field_name}: this.{field_name},", 3)
+                    write.line_indented(f"{field_name}: this._{field_name},", 3)
             write.line_indented("};", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -531,16 +553,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecord<{linked_record_type}>(record.get("{sanitize_string(field.name)}"), {linked_record_type}.fromId);',
+                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>(record.get(\"{sanitize_string(field.name)}\"), {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
                             2,
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(
-                            f'this.{field_name} = new LinkedRecords<{linked_record_type}>(record.get("{sanitize_string(field.name)}"), {linked_record_type}.fromId);',
+                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>(record.get(\"{sanitize_string(field.name)}\"), {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
                             2,
                         )
                 else:
-                    write.line_indented(f'this.{field_name} = record.get("{sanitize_string(field.name)}");', 2)
+                    write.line_indented(f'this._{field_name} = record.get("{sanitize_string(field.name)}");', 2)
             write.line_indented("this.validate();", 2)
             write.line_indented("}", 1)
             write.line_empty()
@@ -555,11 +577,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.id);', 2)
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.id);', 2)
                     elif field_type == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name}?.ids);', 2)
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field_name});', 2)
+                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 

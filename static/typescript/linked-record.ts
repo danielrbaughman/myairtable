@@ -7,15 +7,26 @@ import { RecordId, recordIdSchema } from "./special-types";
  */
 export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
-	public id?: RecordId;
+	private _id?: RecordId;
 	private record?: M;
 	// eslint-disable-next-line no-unused-vars
 	private modelCtor?: (id: RecordId) => M;
+	// eslint-disable-next-line no-unused-vars
+	private onDirty?: () => void;
 
 	// eslint-disable-next-line no-unused-vars
-	constructor(recordId?: RecordId, modelCtor?: (id: RecordId) => M) {
-		this.id = recordIdSchema.optional().parse(recordId);
+	constructor(recordId?: RecordId, modelCtor?: (id: RecordId) => M, onDirty?: () => void) {
+		this._id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
+		this.onDirty = onDirty;
+	}
+
+	public get id(): RecordId | undefined {
+		return this._id;
+	}
+	public set id(value: RecordId | undefined) {
+		this._id = value;
+		this.onDirty?.();
 	}
 
 	/**
@@ -39,11 +50,12 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	public set(value: M): void {
 		if (!value) {
 			this.record = undefined;
-			this.id = undefined;
+			this._id = undefined;
 		} else {
 			this.record = value;
-			this.id = value.id;
+			this._id = value.id;
 		}
+		this.onDirty?.();
 	}
 }
 
@@ -52,15 +64,26 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
  */
 export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
-	public ids?: RecordId[];
+	private _ids?: RecordId[];
 	private records?: M[];
 	// eslint-disable-next-line no-unused-vars
 	private modelCtor?: (id: RecordId) => M;
+	// eslint-disable-next-line no-unused-vars
+	private onDirty?: () => void;
 
 	// eslint-disable-next-line no-unused-vars
-	constructor(recordIds?: RecordId[], modelCtor?: (id: RecordId) => M) {
-		this.ids = recordIds?.map((id) => recordIdSchema.parse(id));
+	constructor(recordIds?: RecordId[], modelCtor?: (id: RecordId) => M, onDirty?: () => void) {
+		this._ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
+		this.onDirty = onDirty;
+	}
+
+	public get ids(): RecordId[] | undefined {
+		return this._ids;
+	}
+	public set ids(value: RecordId[] | undefined) {
+		this._ids = value;
+		this.onDirty?.();
 	}
 
 	/**
@@ -84,10 +107,11 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	public set(values: M[]): void {
 		if (!values || values.length === 0) {
 			this.records = undefined;
-			this.ids = undefined;
+			this._ids = undefined;
 		} else {
 			this.records = values;
-			this.ids = values.map((value) => value.id);
+			this._ids = values.map((value) => value.id);
 		}
+		this.onDirty?.();
 	}
 }

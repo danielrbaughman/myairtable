@@ -7,8 +7,38 @@ class AirtableModel {
 	record;
 	id;
 
+	// Change tracking
+	_dirtyFields = new Set();
+	_isNew = true;
+
 	constructor(id) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	/** Marks a field as dirty (modified) */
+	markDirty(fieldName) {
+		this._dirtyFields.add(fieldName);
+	}
+
+	/** Checks if a field has been modified */
+	isDirty(fieldName) {
+		return this._dirtyFields.has(fieldName);
+	}
+
+	/** Returns true if any fields have been modified */
+	hasChanges() {
+		return this._dirtyFields.size > 0;
+	}
+
+	/** Returns an array of field names that have been modified */
+	getChangedFields() {
+		return Array.from(this._dirtyFields);
+	}
+
+	/** Clears all dirty flags and marks the model as not new */
+	clearDirtyFlags() {
+		this._dirtyFields.clear();
+		this._isNew = false;
 	}
 
 	/**
@@ -97,10 +127,12 @@ class AirtableModel {
 	async save() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
-		this.updateRecord();
-		this.record.fields = this.writableFields();
+
+		const updateData = this.toUpdateRecordData(true);
+
 		try {
-			this.record = await this.record.save();
+			const updatedRecords = await this.record._table.update([updateData]);
+			this.record = updatedRecords[0];
 		} catch (error) {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
@@ -108,6 +140,7 @@ class AirtableModel {
 			throw new Error(error);
 		}
 		this.updateModel(this.record);
+		this.clearDirtyFlags();
 	}
 
 	/**
@@ -125,6 +158,7 @@ class AirtableModel {
 			throw new Error(error);
 		}
 		this.updateModel(this.record);
+		this.clearDirtyFlags();
 	}
 
 	/**

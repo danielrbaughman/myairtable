@@ -375,8 +375,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # Require select options from types
             select_fields = table.select_fields()
             if len(select_fields) > 0:
-                names = [f"{field.options_name()}s" for field in select_fields]
-                write.require_statement(names, f"../types/{table.name_camel()}")
+                type_imports = [f"{field.options_name()}s" for field in select_fields]
+                write.require_statement(type_imports, f"../types/{table.name_camel()}")
 
             if formulas:
                 write.require_statement([f"{table.name_pascal()}Formulas"], f"../formulas/{table.name_camel()}")
@@ -403,8 +403,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             # Field properties with JSDoc
             for field in table.fields:
+                write.line_indented(f"_{field.name_camel()};")
                 write.docstring(f"`{field.name}` ({field.id})")
-                write.line_indented(f"{field.name_camel()};")
+                write.line_indented(f"get {field.name_camel()}() {{ return this._{field.name_camel()}; }}")
+                write.line_indented(
+                    f"set {field.name_camel()}(value) {{ this._{field.name_camel()} = value; this.markDirty('{field.name_camel()}'); }}"
+                )
             write.line_empty()
 
             # Constructor
@@ -424,16 +428,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this.{field.name_camel()} = new LinkedRecord({field.name_camel()}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f"this._{field.name_camel()} = new LinkedRecord({field.name_camel()}, (id) => require(\"./{linked_file}\").{linked_record_type}.fromId(id), () => this.markDirty('{field.name_camel()}'));",
                             2,
                         )
                     elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this.{field.name_camel()} = new LinkedRecords({field.name_camel()}, (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f"this._{field.name_camel()} = new LinkedRecords({field.name_camel()}, (id) => require(\"./{linked_file}\").{linked_record_type}.fromId(id), () => this.markDirty('{field.name_camel()}'));",
                             2,
                         )
                 else:
-                    write.line_indented(f"this.{field.name_camel()} = {field.name_camel()};", 2)
+                    write.line_indented(f"this._{field.name_camel()} = {field.name_camel()};", 2)
             write.line_indented(
                 f"this.record = new (require('airtable').Record)(new {table.name_pascal()}Table(getBaseId(), getOptions())._table, this.id, {{}});",
                 2,
@@ -448,6 +452,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("{ id: record.id },", 3)
             write.line_indented(");", 2)
             write.line_indented("instance.updateModel(record);", 2)
+            write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
             write.line_indented("}")
             write.line_empty()
@@ -463,22 +468,24 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("const fields = {};", 2)
             for field in table.fields:
                 if not field.is_computed():
+                    write.line_indented(f"if (this._isNew || this.isDirty('{field.name_camel()}')) {{", 2)
                     if field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]":
                         if field.typescript_type() == "RecordId":
                             write.line_indented(
-                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()}?.id;', 2
+                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()}?.id;', 3
                             )
                         elif field.typescript_type() == "RecordId[]":
                             write.line_indented(
-                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()}?.ids;', 2
+                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()}?.ids;', 3
                             )
                     elif field.typescript_type() == "Attachment[]":
                         write.line_indented(
-                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("{field.name_camel()}");',
-                            2,
+                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("_{field.name_camel()}");',
+                            3,
                         )
                     else:
-                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.{field.name_camel()};', 2)
+                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()};', 3)
+                    write.line_indented("}", 2)
             write.line_indented("return fields;", 2)
             write.line_indented("}")
             write.line_empty()
@@ -489,11 +496,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     if field.typescript_type() == "RecordId":
-                        write.line_indented(f"{field.name_camel()}: this.{field.name_camel()}?.id,", 3)
+                        write.line_indented(f"{field.name_camel()}: this._{field.name_camel()}?.id,", 3)
                     else:
-                        write.line_indented(f"{field.name_camel()}: this.{field.name_camel()}?.ids,", 3)
+                        write.line_indented(f"{field.name_camel()}: this._{field.name_camel()}?.ids,", 3)
                 else:
-                    write.line_indented(f"{field.name_camel()}: this.{field.name_camel()},", 3)
+                    write.line_indented(f"{field.name_camel()}: this._{field.name_camel()},", 3)
             write.line_indented("};", 2)
             write.line_indented("}")
             write.line_empty()
@@ -510,16 +517,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this.{field.name_camel()} = new LinkedRecord(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field_name}\'));',
                             2,
                         )
                     elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this.{field.name_camel()} = new LinkedRecords(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id));',
+                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field_name}\'));',
                             2,
                         )
                 else:
-                    write.line_indented(f'this.{field.name_camel()} = record.get("{sanitize_string(field.name)}");', 2)
+                    write.line_indented(f'this._{field.name_camel()} = record.get("{sanitize_string(field.name)}");', 2)
             write.line_indented("this.validate();", 2)
             write.line_indented("}")
             write.line_empty()
@@ -533,11 +540,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     if field.typescript_type() == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()}?.id);', 2)
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.id);', 2)
                     elif field.typescript_type() == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()}?.ids);', 2)
+                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this.{field.name_camel()});', 2)
+                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()});', 2)
             write.line_indented("}")
             write.line_empty()
 

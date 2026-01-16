@@ -13,8 +13,38 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	protected record?: ATRecord<T>;
 	public id: string;
 
+	// Change tracking
+	protected _dirtyFields: Set<string> = new Set();
+	protected _isNew: boolean = true;
+
 	constructor(id: string) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	/** Marks a field as dirty (modified) */
+	protected markDirty(fieldName: string): void {
+		this._dirtyFields.add(fieldName);
+	}
+
+	/** Checks if a field has been modified */
+	protected isDirty(fieldName: string): boolean {
+		return this._dirtyFields.has(fieldName);
+	}
+
+	/** Returns true if any fields have been modified */
+	public hasChanges(): boolean {
+		return this._dirtyFields.size > 0;
+	}
+
+	/** Returns an array of field names that have been modified */
+	public getChangedFields(): string[] {
+		return Array.from(this._dirtyFields);
+	}
+
+	/** Clears all dirty flags and marks the model as not new */
+	protected clearDirtyFlags(): void {
+		this._dirtyFields.clear();
+		this._isNew = false;
 	}
 
 	/**
@@ -101,11 +131,12 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	public async save(): Promise<void> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
-		this.updateRecord();
-		// @ts-ignore
-		this.record.fields = this.writableFields();
+
+		const updateData = this.toUpdateRecordData(true);
+
 		try {
-			this.record = await this.record.save();
+			const updatedRecords = await this.record._table.update([updateData]);
+			this.record = updatedRecords[0] as ATRecord<T>;
 		} catch (error) {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
@@ -113,6 +144,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 			throw new Error(String(error));
 		}
 		this.updateModel(this.record);
+		this.clearDirtyFlags();
 	}
 
 	/**
@@ -130,6 +162,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 			throw new Error(String(error));
 		}
 		this.updateModel(this.record);
+		this.clearDirtyFlags();
 	}
 
 	/**

@@ -5,13 +5,23 @@ const { recordIdSchema } = require("./special-types");
  */
 class LinkedRecord {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
-	id;
+	_id;
 	record;
 	modelCtor;
+	onDirty;
 
-	constructor(recordId, modelCtor) {
-		this.id = recordIdSchema.optional().parse(recordId);
+	constructor(recordId, modelCtor, onDirty) {
+		this._id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
+		this.onDirty = onDirty;
+	}
+
+	get id() {
+		return this._id;
+	}
+	set id(value) {
+		this._id = value;
+		this.onDirty?.();
 	}
 
 	/**
@@ -21,7 +31,7 @@ class LinkedRecord {
 	 */
 	async get(fetch = false) {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor(this.id);
+			this.record = this.modelCtor(this._id);
 			await this.record.fetch();
 		}
 		return this.record;
@@ -35,11 +45,12 @@ class LinkedRecord {
 	set(value) {
 		if (!value) {
 			this.record = undefined;
-			this.id = undefined;
+			this._id = undefined;
 		} else {
 			this.record = value;
-			this.id = value.id;
+			this._id = value.id;
 		}
+		this.onDirty?.();
 	}
 }
 
@@ -48,13 +59,23 @@ class LinkedRecord {
  */
 class LinkedRecords {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
-	ids;
+	_ids;
 	records;
 	modelCtor;
+	onDirty;
 
-	constructor(recordIds, modelCtor) {
-		this.ids = recordIds?.map((id) => recordIdSchema.parse(id));
+	constructor(recordIds, modelCtor, onDirty) {
+		this._ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
+		this.onDirty = onDirty;
+	}
+
+	get ids() {
+		return this._ids;
+	}
+	set ids(value) {
+		this._ids = value;
+		this.onDirty?.();
 	}
 
 	/**
@@ -64,7 +85,7 @@ class LinkedRecords {
 	 */
 	async get(fetch = false) {
 		if (this.records === undefined || fetch) {
-			this.records = this.ids?.map((id) => this.modelCtor(id)) ?? [];
+			this.records = this._ids?.map((id) => this.modelCtor(id)) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;
@@ -78,11 +99,12 @@ class LinkedRecords {
 	set(values) {
 		if (!values || values.length === 0) {
 			this.records = undefined;
-			this.ids = undefined;
+			this._ids = undefined;
 		} else {
 			this.records = values;
-			this.ids = values.map((value) => value.id);
+			this._ids = values.map((value) => value.id);
 		}
+		this.onDirty?.();
 	}
 }
 
