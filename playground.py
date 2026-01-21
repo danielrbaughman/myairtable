@@ -1,16 +1,5 @@
-from typer import Typer
+from dotenv import load_dotenv
 
-app = Typer()
+load_dotenv()
 
-
-@app.command()
-def main():
-    """Playground"""
-    print("Hello World (Python)!")
-
-
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    app()
+print("Hello World (Python)!")
