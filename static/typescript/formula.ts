@@ -251,7 +251,7 @@ export class TextField extends Field {
 	 * @param trim - Whether to trim whitespace (default: true)
 	 */
 	notContains(value: string, caseSensitive: boolean = false, trim: boolean = true): string {
-		return this._find(value, "=0", caseSensitive, trim);
+		return NOT(this.contains(value, caseSensitive, trim));
 	}
 
 	/**

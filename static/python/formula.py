@@ -169,7 +169,7 @@ class TextField(Field):
         Returns:
             str: An Airtable formula string that evaluates to True if the field does not contain the value.
         """
-        return self._find(value, "=0", case_sensitive=case_sensitive, trim=trim)
+        return NOT(self.contains(value, case_sensitive=case_sensitive, trim=trim))
 
     def starts_with(self, value: str, case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """

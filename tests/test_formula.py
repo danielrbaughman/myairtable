@@ -272,7 +272,7 @@ class TestTextField:
         result = field.not_contains("keyword")
         result_str = str(result)
         assert "FIND(" in result_str
-        assert "=0" in result_str
+        assert "NOT" in result_str
 
     # starts_with tests
     def test_starts_with_basic(self):
@@ -413,7 +413,7 @@ class TestMultiSelectField:
         result = field.not_contains_option("Option1")
         result_str = str(result)
         assert "FIND(" in result_str
-        assert "=0" in result_str
+        assert "NOT" in result_str
 
     def test_not_contains_options_multiple(self):
         """not_contains_options produces AND of negations."""

@@ -321,7 +321,7 @@ describe("TextField", () => {
 		it("returns FIND = 0", () => {
 			const field = new TextField("Description");
 			const result = field.notContains("keyword");
-			expect(result).toContain("=0");
+			expect(result).toContain("NOT");
 		});
 	});
 
@@ -444,7 +444,7 @@ describe("MultiSelectField", () => {
 		it("uses notContains", () => {
 			const field = new MultiSelectField<string>("Tags");
 			const result = field.notContainsOption("Option1");
-			expect(result).toContain("=0");
+			expect(result).toContain("NOT");
 		});
 	});
 
