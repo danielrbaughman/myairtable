@@ -553,16 +553,18 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
-                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>(record.get(\"{sanitize_string(field.name)}\"), {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            f'this._{field_name} = new LinkedRecord<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'));',
                             2,
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(
-                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>(record.get(\"{sanitize_string(field.name)}\"), {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            f'this._{field_name} = new LinkedRecords<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'));',
                             2,
                         )
                 else:
-                    write.line_indented(f'this._{field_name} = record.get("{sanitize_string(field.name)}");', 2)
+                    write.line_indented(
+                        f'this._{field_name} = (record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type};', 2
+                    )
             write.line_indented("this.validate();", 2)
             write.line_indented("}", 1)
             write.line_empty()

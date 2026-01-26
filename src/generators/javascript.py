@@ -517,16 +517,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field_name}\'));',
+                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field.name_camel()}\'));',
                             2,
                         )
                     elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field_name}\'));',
+                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field.name_camel()}\'));',
                             2,
                         )
                 else:
-                    write.line_indented(f'this._{field.name_camel()} = record.get("{sanitize_string(field.name)}");', 2)
+                    write.line_indented(f'this._{field.name_camel()} = record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}");', 2)
             write.line_indented("this.validate();", 2)
             write.line_indented("}")
             write.line_empty()
