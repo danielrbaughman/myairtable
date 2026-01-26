@@ -60,7 +60,7 @@ class AirtableModel {
 		throw new Error("toJson must be implemented by subclass");
 	}
 
-	writableFields(useFieldIds = false) {
+	writableFields(useFieldIds = true) {
 		return {};
 		// To be overridden by subclasses
 	}
@@ -113,7 +113,7 @@ class AirtableModel {
 		};
 	}
 
-	toUpdateRecordData(useFieldIds = false) {
+	toUpdateRecordData(useFieldIds = true) {
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),

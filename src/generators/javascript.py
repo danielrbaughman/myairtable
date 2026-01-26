@@ -464,7 +464,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_empty()
 
             # writableFields method
-            write.line_indented("writableFields(useFieldIds = false) {")
+            write.line_indented("writableFields(useFieldIds = true) {")
             write.line_indented("const fields = {};", 2)
             for field in table.fields:
                 if not field.is_computed():

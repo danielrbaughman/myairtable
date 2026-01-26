@@ -501,7 +501,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"protected writableFields(useFieldIds: boolean = false): Partial<{table_name}FieldSet> {{")
+            write.line_indented(f"protected writableFields(useFieldIds: boolean = true): Partial<{table_name}FieldSet> {{")
             write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
             for field in table.fields:
                 field_name = field.name_camel()

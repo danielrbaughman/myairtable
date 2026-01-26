@@ -60,7 +60,7 @@ export class AirtableTable<
 			};
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
-			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
+			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? true;
 
 			try {
 				const records = await this._table.select(selectOptions).all();
@@ -87,7 +87,7 @@ export class AirtableTable<
 			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) selectOptions.fields = options.fields as string[];
 			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
-			selectOptions.returnFieldsByFieldId = options?.useFieldIds || false;
+			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? true;
 
 			try {
 				const records = await this._table.select(selectOptions).all();
@@ -108,6 +108,7 @@ export class AirtableTable<
 		if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 		if (queryOptions.fields) selectOptions.fields = queryOptions.fields as string[];
 		if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
+		selectOptions.returnFieldsByFieldId = queryOptions.useFieldIds ?? true;
 
 		try {
 			const records = await this._table.select(selectOptions).all();

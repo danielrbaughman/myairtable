@@ -64,7 +64,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	 */
 	public abstract toJson(): U;
 
-	protected writableFields(useFieldIds: boolean = false): Partial<T> {
+	protected writableFields(useFieldIds: boolean = true): Partial<T> {
 		return {};
 		// To be overridden by subclasses
 	}
@@ -117,7 +117,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 		};
 	}
 
-	public toUpdateRecordData(useFieldIds: boolean = false): RecordData<Partial<T>> {
+	public toUpdateRecordData(useFieldIds: boolean = true): RecordData<Partial<T>> {
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
@@ -132,7 +132,7 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
 
-		const updateData = this.toUpdateRecordData(true);
+		const updateData = this.toUpdateRecordData();
 
 		try {
 			const updatedRecords = await this.record._table.update([updateData]);
