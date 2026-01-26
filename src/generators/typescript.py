@@ -468,36 +468,37 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
-                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
                             2,
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(
-                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'));",
+                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
                             2,
                         )
                 else:
                     write.line_indented(f"this._{field_name} = {field_name};", 2)
             write.line_indented(
-                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(getBaseId(), getOptions())._table, this.id, {{}});",
+                f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(this.getInstanceBaseId(), this.getInstanceOptions())._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>): {model_name} {{")
-            write.line_indented(f"const instance = new {model_name}(", 2)
-            write.line_indented("{ id: record.id },", 3)
-            write.line_indented(");", 2)
+            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>, table?: {table_name}Table): {model_name} {{")
+            write.line_indented(f"const instance = new {model_name}({{ id: record.id }});", 2)
+            write.line_indented("if (table) instance.setConfig(table.baseId, table.options);", 2)
             write.line_indented("instance.updateModel(record);", 2)
             write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"public static fromId(id: RecordId): {model_name} {{")
-            write.line_indented(f"return new {model_name}({{ id }});", 2)
+            write.line_indented(f"public static fromId(id: RecordId, baseId?: string, options?: AirtableOptions): {model_name} {{")
+            write.line_indented(f"const instance = new {model_name}({{ id }});", 2)
+            write.line_indented("if (baseId && options) instance.setConfig(baseId, options);", 2)
+            write.line_indented("return instance;", 2)
             write.line_indented("}", 1)
             write.line_empty()
 
@@ -553,12 +554,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(
-                            f'this._{field_name} = new LinkedRecord<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'));',
+                            f'this._{field_name} = new LinkedRecord<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'), this.__configBaseId, this.__configOptions);',
                             2,
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(
-                            f'this._{field_name} = new LinkedRecords<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'));',
+                            f'this._{field_name} = new LinkedRecords<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'), this.__configBaseId, this.__configOptions);',
                             2,
                         )
                 else:
@@ -625,7 +626,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             )
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {model_name}.fromRecord, options);',
+                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, (record) => {model_name}.fromRecord(record, this), options);',
                 2,
             )
             write.line_indented("}")
@@ -678,7 +679,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.ts") as write:
         # Imports
         write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
-        write.line('import { getApiKey, getBaseId } from "../static/helpers";')
+        write.line('import { getApiKey, getBaseId, setAirtableConfig } from "../static/helpers";')
         write.line("import {")
         for table in base.tables:
             table_name_pascal = table.name_pascal()
@@ -702,6 +703,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("  noRetryIfRateLimited: options?.noRetryIfRateLimited ?? false,", 3)
         write.line_indented("  requestTimeout: options?.requestTimeout,", 3)
         write.line_indented("};", 2)
+        write.line_indented("setAirtableConfig(_baseId, _options);", 2)
         for table in base.tables:
             table_name_camel = table.name_camel()
             table_name_pascal = table.name_pascal()

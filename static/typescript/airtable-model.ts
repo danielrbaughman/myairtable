@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
-import { Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
+import { AirtableOptions, Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
 import * as z from "zod";
 import { CreateRecordData, recordIdSchema } from "./special-types";
+import { getBaseId, getOptions } from "./helpers";
 
 export abstract class AirtableModel<T extends FieldSet, U> {
 	[key: string]: unknown;
@@ -17,8 +18,29 @@ export abstract class AirtableModel<T extends FieldSet, U> {
 	protected _dirtyFields: Set<string> = new Set();
 	protected _isNew: boolean = true;
 
+	// Per-instance config (using __ prefix to avoid conflicts with field names)
+	protected __configBaseId?: string;
+	protected __configOptions?: AirtableOptions;
+
 	constructor(id: string) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	/** Sets the config for this model instance (called by factory methods) */
+	protected setConfig(baseId: string, options: AirtableOptions): void {
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
+	}
+
+	/** Gets the options for this instance, falling back to registry/env vars */
+	protected getInstanceOptions(): AirtableOptions {
+		if (this.__configOptions) return this.__configOptions;
+		return getOptions(this.__configBaseId);
+	}
+
+	/** Gets the baseId for this instance, falling back to registry/env vars */
+	protected getInstanceBaseId(): string {
+		return this.__configBaseId ?? getBaseId();
 	}
 
 	/** Marks a field as dirty (modified) */

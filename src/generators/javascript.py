@@ -428,18 +428,18 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f"this._{field.name_camel()} = new LinkedRecord({field.name_camel()}, (id) => require(\"./{linked_file}\").{linked_record_type}.fromId(id), () => this.markDirty('{field.name_camel()}'));",
+                            f"this._{field.name_camel()} = new LinkedRecord({field.name_camel()}, (id, baseId, options) => require(\"./{linked_file}\").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty('{field.name_camel()}'), this.__configBaseId, this.__configOptions);",
                             2,
                         )
                     elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f"this._{field.name_camel()} = new LinkedRecords({field.name_camel()}, (id) => require(\"./{linked_file}\").{linked_record_type}.fromId(id), () => this.markDirty('{field.name_camel()}'));",
+                            f"this._{field.name_camel()} = new LinkedRecords({field.name_camel()}, (id, baseId, options) => require(\"./{linked_file}\").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty('{field.name_camel()}'), this.__configBaseId, this.__configOptions);",
                             2,
                         )
                 else:
                     write.line_indented(f"this._{field.name_camel()} = {field.name_camel()};", 2)
             write.line_indented(
-                f"this.record = new (require('airtable').Record)(new {table.name_pascal()}Table(getBaseId(), getOptions())._table, this.id, {{}});",
+                f"this.record = new (require('airtable').Record)(new {table.name_pascal()}Table(this.getInstanceBaseId(), this.getInstanceOptions())._table, this.id, {{}});",
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
@@ -447,10 +447,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_empty()
 
             # fromRecord static method
-            write.line_indented("static fromRecord(record) {")
-            write.line_indented(f"const instance = new {table.name_model()}(", 2)
-            write.line_indented("{ id: record.id },", 3)
-            write.line_indented(");", 2)
+            write.line_indented("static fromRecord(record, table) {")
+            write.line_indented(f"const instance = new {table.name_model()}({{ id: record.id }});", 2)
+            write.line_indented("if (table) instance.setConfig(table.baseId, table.options);", 2)
             write.line_indented("instance.updateModel(record);", 2)
             write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
@@ -458,8 +457,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_empty()
 
             # fromId static method
-            write.line_indented("static fromId(id) {")
-            write.line_indented(f"return new {table.name_model()}({{ id }});", 2)
+            write.line_indented("static fromId(id, baseId, options) {")
+            write.line_indented(f"const instance = new {table.name_model()}({{ id }});", 2)
+            write.line_indented("if (baseId && options) instance.setConfig(baseId, options);", 2)
+            write.line_indented("return instance;", 2)
             write.line_indented("}")
             write.line_empty()
 
@@ -517,12 +518,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     if field.typescript_type() == "RecordId":
                         write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field.name_camel()}\'));',
+                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty(\'{field.name_camel()}\'), this.__configBaseId, this.__configOptions);',
                             2,
                         )
                     elif field.typescript_type() == "RecordId[]":
                         write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id) => require("./{linked_file}").{linked_record_type}.fromId(id), () => this.markDirty(\'{field.name_camel()}\'));',
+                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty(\'{field.name_camel()}\'), this.__configBaseId, this.__configOptions);',
                             2,
                         )
                 else:
@@ -577,7 +578,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line(f"class {table.name_pascal()}Table extends AirtableTable {{")
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record), options);',
+                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, this), options);',
                 2,
             )
             write.line_indented("}")
@@ -630,7 +631,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToJavaScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.js") as write:
         # Requires
-        write.require_statement(["getApiKey", "getBaseId"], "../static/helpers")
+        write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig"], "../static/helpers")
         table_classes = [f"{table.name_pascal()}Table" for table in base.tables]
         write.require_statement(table_classes, "./tables")
         write.line_empty()
@@ -647,6 +648,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("noRetryIfRateLimited: options.noRetryIfRateLimited ?? false,", 3)
         write.line_indented("requestTimeout: options.requestTimeout,", 3)
         write.line_indented("};", 2)
+        write.line_indented("setAirtableConfig(_baseId, _options);", 2)
         for table in base.tables:
             write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(_baseId, _options);", 2)
         write.line_indented("}")

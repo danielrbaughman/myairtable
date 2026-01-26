@@ -4,11 +4,15 @@ const { baseIdSchema, validateRecordIds } = require("./special-types");
 
 class AirtableTable {
 	_table;
+	baseId;
+	options;
 	recordCtor;
 	viewNameToIdMap = {};
 
 	constructor(baseId, tableNameOrId, viewNameToIdMap, recordCtor, options = {}) {
-		this._table = new Airtable(options).base(baseIdSchema.parse(baseId)).table(tableNameOrId);
+		this.baseId = baseIdSchema.parse(baseId);
+		this.options = options;
+		this._table = new Airtable(options).base(this.baseId).table(tableNameOrId);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}

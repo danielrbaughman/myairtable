@@ -9,11 +9,15 @@ class LinkedRecord {
 	record;
 	modelCtor;
 	onDirty;
+	__configBaseId;
+	__configOptions;
 
-	constructor(recordId, modelCtor, onDirty) {
+	constructor(recordId, modelCtor, onDirty, baseId, options) {
 		this._id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
 		this.onDirty = onDirty;
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
 	}
 
 	get id() {
@@ -31,7 +35,7 @@ class LinkedRecord {
 	 */
 	async get(fetch = false) {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor(this._id);
+			this.record = this.modelCtor(this._id, this.__configBaseId, this.__configOptions);
 			await this.record.fetch();
 		}
 		return this.record;
@@ -63,11 +67,15 @@ class LinkedRecords {
 	records;
 	modelCtor;
 	onDirty;
+	__configBaseId;
+	__configOptions;
 
-	constructor(recordIds, modelCtor, onDirty) {
+	constructor(recordIds, modelCtor, onDirty, baseId, options) {
 		this._ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
 		this.onDirty = onDirty;
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
 	}
 
 	get ids() {
@@ -85,7 +93,7 @@ class LinkedRecords {
 	 */
 	async get(fetch = false) {
 		if (this.records === undefined || fetch) {
-			this.records = this._ids?.map((id) => this.modelCtor(id)) ?? [];
+			this.records = this._ids?.map((id) => this.modelCtor(id, this.__configBaseId, this.__configOptions)) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;

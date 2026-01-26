@@ -1,4 +1,5 @@
 const { recordIdSchema } = require("./special-types");
+const { getBaseId, getOptions } = require("./helpers");
 
 class AirtableModel {
 	/** Zod schema for validation - must be defined by subclasses */
@@ -11,8 +12,29 @@ class AirtableModel {
 	_dirtyFields = new Set();
 	_isNew = true;
 
+	// Per-instance config (using __ prefix to avoid conflicts with field names)
+	__configBaseId;
+	__configOptions;
+
 	constructor(id) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	/** Sets the config for this model instance (called by factory methods) */
+	setConfig(baseId, options) {
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
+	}
+
+	/** Gets the options for this instance, falling back to registry/env vars */
+	getInstanceOptions() {
+		if (this.__configOptions) return this.__configOptions;
+		return getOptions(this.__configBaseId);
+	}
+
+	/** Gets the baseId for this instance, falling back to registry/env vars */
+	getInstanceBaseId() {
+		return this.__configBaseId ?? getBaseId();
 	}
 
 	/** Marks a field as dirty (modified) */

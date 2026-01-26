@@ -23,6 +23,8 @@ export class AirtableTable<
 	W extends string,
 > {
 	public _table: Table<T>;
+	public readonly baseId: string;
+	public readonly options: AirtableOptions;
 	private recordCtor: (record: ATRecord<T>) => U;
 	private viewNameToIdMap: Record<V, string> = {} as Record<V, string>;
 
@@ -33,7 +35,9 @@ export class AirtableTable<
 		recordCtor: (record: ATRecord<T>) => U,
 		options: AirtableOptions = {},
 	) {
-		this._table = new Airtable(options).base(baseIdSchema.parse(baseId)).table(tableNameOrId);
+		this.baseId = baseIdSchema.parse(baseId);
+		this.options = options;
+		this._table = new Airtable(options).base(this.baseId).table(tableNameOrId);
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 	}

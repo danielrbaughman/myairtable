@@ -1,4 +1,4 @@
-import { FieldSet } from "airtable";
+import { AirtableOptions, FieldSet } from "airtable";
 import { AirtableModel } from "./airtable-model";
 import { RecordId, recordIdSchema } from "./special-types";
 
@@ -10,15 +10,25 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	private _id?: RecordId;
 	private record?: M;
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId) => M;
+	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
+	private __configBaseId?: string;
+	private __configOptions?: AirtableOptions;
 
 	// eslint-disable-next-line no-unused-vars
-	constructor(recordId?: RecordId, modelCtor?: (id: RecordId) => M, onDirty?: () => void) {
+	constructor(
+		recordId?: RecordId,
+		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M,
+		onDirty?: () => void,
+		baseId?: string,
+		options?: AirtableOptions,
+	) {
 		this._id = recordIdSchema.optional().parse(recordId);
 		this.modelCtor = modelCtor;
 		this.onDirty = onDirty;
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
 	}
 
 	public get id(): RecordId | undefined {
@@ -36,7 +46,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown>> {
 	 */
 	public async get(fetch: boolean = false): Promise<M | undefined> {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor!(this.id!);
+			this.record = this.modelCtor!(this.id!, this.__configBaseId, this.__configOptions);
 			await this.record.fetch();
 		}
 		return this.record;
@@ -67,15 +77,25 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	private _ids?: RecordId[];
 	private records?: M[];
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId) => M;
+	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
+	private __configBaseId?: string;
+	private __configOptions?: AirtableOptions;
 
 	// eslint-disable-next-line no-unused-vars
-	constructor(recordIds?: RecordId[], modelCtor?: (id: RecordId) => M, onDirty?: () => void) {
+	constructor(
+		recordIds?: RecordId[],
+		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M,
+		onDirty?: () => void,
+		baseId?: string,
+		options?: AirtableOptions,
+	) {
 		this._ids = recordIds?.map((id) => recordIdSchema.parse(id));
 		this.modelCtor = modelCtor;
 		this.onDirty = onDirty;
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
 	}
 
 	public get ids(): RecordId[] | undefined {
@@ -93,7 +113,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown>> {
 	 */
 	public async get(fetch: boolean = false): Promise<M[]> {
 		if (this.records === undefined || fetch) {
-			this.records = this.ids?.map((id) => this.modelCtor!(id)) ?? [];
+			this.records = this.ids?.map((id) => this.modelCtor!(id, this.__configBaseId, this.__configOptions)) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;

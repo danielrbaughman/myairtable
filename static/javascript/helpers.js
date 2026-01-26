@@ -1,4 +1,28 @@
-function getApiKey() {
+// Config registry keyed by baseId
+const _configRegistry = new Map();
+let _defaultBaseId = undefined;
+
+function setAirtableConfig(baseId, options) {
+	_configRegistry.set(baseId, options);
+	_defaultBaseId = baseId; // Last registered becomes default
+}
+
+function getConfigForBase(baseId) {
+	return _configRegistry.get(baseId);
+}
+
+function getApiKey(baseId) {
+	// If baseId provided, look up in registry
+	if (baseId) {
+		const config = _configRegistry.get(baseId);
+		if (config?.apiKey) return config.apiKey;
+	}
+	// Fall back to default baseId's config
+	if (_defaultBaseId) {
+		const config = _configRegistry.get(_defaultBaseId);
+		if (config?.apiKey) return config.apiKey;
+	}
+	// Fall back to env var
 	const apiKey = process.env.AIRTABLE_API_KEY;
 	if (!apiKey) {
 		throw new Error("Airtable API key is not set");
@@ -7,6 +31,7 @@ function getApiKey() {
 }
 
 function getBaseId() {
+	if (_defaultBaseId) return _defaultBaseId;
 	const baseId = process.env.AIRTABLE_BASE_ID;
 	if (!baseId) {
 		throw new Error("Airtable Base ID is not set");
@@ -59,14 +84,19 @@ function getCustomHeaders() {
 	}
 }
 
-function getOptions() {
+function getOptions(baseId) {
+	const config = baseId
+		? _configRegistry.get(baseId)
+		: _defaultBaseId
+			? _configRegistry.get(_defaultBaseId)
+			: undefined;
 	return {
-		apiKey: getApiKey(),
-		apiVersion: getApiVersion(),
-		endpointUrl: getEndpointUrl(),
-		requestTimeout: getRequestTimeout(),
-		noRetryIfRateLimited: getNoRetryIfRateLimited(),
-		customHeaders: getCustomHeaders(),
+		apiKey: getApiKey(baseId),
+		apiVersion: config?.apiVersion ?? getApiVersion(),
+		endpointUrl: config?.endpointUrl ?? getEndpointUrl(),
+		requestTimeout: config?.requestTimeout ?? getRequestTimeout(),
+		noRetryIfRateLimited: config?.noRetryIfRateLimited ?? getNoRetryIfRateLimited(),
+		customHeaders: config?.customHeaders ?? getCustomHeaders(),
 	};
 }
 
@@ -77,6 +107,8 @@ function validateKey(name, names) {
 }
 
 module.exports = {
+	setAirtableConfig,
+	getConfigForBase,
 	getApiKey,
 	getBaseId,
 	getEndpointUrl,
