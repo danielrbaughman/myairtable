@@ -586,7 +586,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_empty()
         write.line("from .types import TableName")
         write.line("from ..static.airtable_table import TableType")
-        write.line("from ..static.helpers import get_api_key, get_base_id")
+        write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config")
         write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
         write.endregion()
         write.line_empty()
@@ -610,6 +610,8 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("api_key: str = api_key or get_api_key()", 2)
         write.line_indented("if not api_key:", 2)
         write.line_indented('raise ValueError("API key must be provided.")', 3)
+        write.line_indented("# Register config so ORM models can look it up", 2)
+        write.line_indented("set_airtable_config(self._base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
         for table in base.tables:
