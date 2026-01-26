@@ -27,6 +27,45 @@ from .utils.helpers import (
 )
 from .utils.verbose import verbose
 
+
+class AirtableCredentials:
+    """Holds Airtable API credentials - CLI params override env vars."""
+
+    _instance: "AirtableCredentials | None" = None
+
+    def __init__(self):
+        self._api_key: str | None = None
+        self._base_id: str | None = None
+
+    @classmethod
+    def get_instance(cls) -> "AirtableCredentials":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def set_credentials(self, api_key: str | None = None, base_id: str | None = None):
+        if api_key:
+            self._api_key = api_key
+        if base_id:
+            self._base_id = base_id
+
+    def get_api_key(self) -> str:
+        if self._api_key:
+            return self._api_key
+        api_key = os.getenv("AIRTABLE_API_KEY")
+        if not api_key:
+            raise Exception("AIRTABLE_API_KEY not found. Provide --api-key or set environment variable.")
+        return api_key
+
+    def get_base_id(self) -> str:
+        if self._base_id:
+            return self._base_id
+        base_id = os.getenv("AIRTABLE_BASE_ID")
+        if not base_id:
+            raise Exception("AIRTABLE_BASE_ID not found. Provide --base-id or set environment variable.")
+        return base_id
+
+
 PROPERTY_NAME = "Property Name (snake_case)"
 MODEL_NAME = "Model Name (snake_case)"
 PYTHON_TYPE = "Python Type"
@@ -87,11 +126,9 @@ def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
 
 
 def get_base_meta_data() -> BaseMetadata:
-    api_key = os.getenv("AIRTABLE_API_KEY")
-    if not api_key:
-        raise Exception("AIRTABLE_API_KEY not found in environment")
-
-    base_id = get_base_id()
+    creds = AirtableCredentials.get_instance()
+    api_key = creds.get_api_key()
+    base_id = creds.get_base_id()
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
 
     with timer.timer("API: fetch metadata"):
@@ -107,11 +144,9 @@ def get_base_meta_data() -> BaseMetadata:
 
 
 def get_base_id() -> str:
-    """Get the Airtable Base ID from environment variable."""
-    base_id = os.getenv("AIRTABLE_BASE_ID")
-    if not base_id:
-        raise Exception("AIRTABLE_BASE_ID not found in environment")
-    return base_id
+    """Get the Airtable Base ID from CLI param or environment variable."""
+    creds = AirtableCredentials.get_instance()
+    return creds.get_base_id()
 
 
 def generate_meta(metadata: BaseMetadata, folder: Path):

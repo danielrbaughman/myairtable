@@ -1,4 +1,3 @@
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -7,7 +6,7 @@ from typing import Any, Literal
 import pyairtable
 from rich import print
 
-from ..meta import Base, Field
+from ..meta import AirtableCredentials, Base, Field
 from ..meta_types import FieldType, GenericType, ResolvedType
 from . import timer
 from .verbose import verbose
@@ -413,8 +412,9 @@ def map_zod_type(field: Field) -> str:
 def disambiguate_fields(fields: list[Field]) -> None:
     """Disambiguate multiple fields efficiently by batching API calls per table."""
 
-    api_key = os.getenv("AIRTABLE_API_KEY")
-    if not api_key:
+    try:
+        api_key = AirtableCredentials.get_instance().get_api_key()
+    except Exception:
         return
 
     # Group fields by table

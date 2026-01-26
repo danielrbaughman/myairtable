@@ -11,13 +11,23 @@ from src.generators.javascript import generate_javascript
 from src.generators.markdown import generate_markdown
 from src.generators.python import generate_python
 from src.generators.typescript import generate_typescript
-from src.meta import Base, Field, generate_meta, get_base_meta_data
+from src.meta import AirtableCredentials, Base, Field, generate_meta, get_base_meta_data
 from src.utils import timer
 from src.utils.helpers import create_folder, reset_folder
 from src.utils.type_mapper import map_types
 from src.utils.verbose import verbose
 
 app = Typer()
+
+
+@app.callback()
+def main_callback(
+    base_id: Annotated[str | None, Option("--base-id", help="Airtable Base ID (overrides AIRTABLE_BASE_ID env var)")] = None,
+    api_key: Annotated[str | None, Option("--api-key", help="Airtable API Key (overrides AIRTABLE_API_KEY env var)")] = None,
+):
+    """myAirtable CLI - Generate code and documentation from Airtable metadata."""
+    creds = AirtableCredentials.get_instance()
+    creds.set_credentials(api_key=api_key, base_id=base_id)
 
 
 def setup_benchmark(benchmark: bool):
