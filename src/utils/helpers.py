@@ -5,6 +5,7 @@ from pathlib import Path
 # Compile regex patterns once at module level for performance
 _MULTI_SPACE_PATTERN = re.compile(r" {2,}")
 _CHARS_TO_SPACE_PATTERN = re.compile(r"[()[\]{}<>'`|\\.:,]")
+_MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_\[\]#|<>!{}()+\-.])")
 
 # Multi-character replacements (order matters for some)
 _MULTI_CHAR_REPLACEMENTS: list[tuple[str, str]] = [
@@ -193,4 +194,4 @@ def create_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
 
 def sanitize_for_markdown(text: str) -> str:
     """Sanitizes text for use in Markdown by escaping special characters."""
-    return text.replace("#", "\\#").replace("|", "\\|")
+    return _MARKDOWN_SPECIAL_CHARS.sub(r"\\\1", text)

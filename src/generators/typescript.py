@@ -40,8 +40,14 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f'"{item}",')
         self.line("]")
 
-    def docstring(self, text: str, indent: int = 1):
-        self.line_indented(f"/** {text} */", indent=indent)
+    def docstring(self, text: str | list[str], indent: int = 1):
+        if isinstance(text, list):
+            self.line_indented("/**", indent=indent)
+            for line in text:
+                self.line_indented(f" * {line}", indent=indent)
+            self.line_indented(" */", indent=indent)
+        else:
+            self.line_indented(f"/** {text} */", indent=indent)
 
     def types(self, name: str, list: list[str], docstring: str = ""):
         literal_name = f"{name}"
@@ -435,11 +441,23 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 field_name = field.name_camel()
                 field_type = field.typescript_type()
+                docstring: str | list[str]
+                if field.formula(sanitized=True, condense=True):
+                    docstring: list[str] = [
+                        f"`{field.name}` ({field.id})",
+                        "",
+                        "```",
+                        *[line for line in field.formula(sanitized=True, format=True).splitlines()],
+                        "```",
+                    ]
+                else:
+                    docstring: str = f"`{field.name}` ({field.id})"
+
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(f"private _{field_name}!: LinkedRecord<{linked_record_type}>;", 1)
-                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.docstring(docstring)
                         write.line_indented(f"public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
                             f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
@@ -447,7 +465,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(f"private _{field_name}!: LinkedRecords<{linked_record_type}>;", 1)
-                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.docstring(docstring)
                         write.line_indented(f"public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
                             f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
@@ -455,7 +473,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                         )
                 else:
                     write.line_indented(f"private _{field_name}?: {field_type};", 1)
-                    write.docstring(f"`{field.name}` ({field.id})")
+                    write.docstring(docstring)
                     write.line_indented(f"public get {field_name}(): {field_type} | undefined {{ return this._{field_name}; }}", 1)
                     write.line_indented(
                         f"public set {field_name}(value: {field_type} | undefined) {{ this._{field_name} = value; this.markDirty('{field_name}'); }}",
@@ -738,10 +756,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line('import { TableName, TableNamePropertyMapping } from "./types";')
         write.line_empty()
 
+        write.docstring("Airtable base wrapper")
         write.line("export class Airtable {")
         for table in base.tables:
             table_name_camel = table.name_camel()
             table_name_pascal = table.name_pascal()
+            write.docstring(f"`{table.name}` ({table.id})", 1)
             write.line_indented(f"public {table_name_camel}: {table_name_pascal}Table;")
         write.line_empty()
         write.line_indented("constructor(options?: ExtendedAirtableOptions) {")

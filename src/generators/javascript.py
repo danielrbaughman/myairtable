@@ -49,8 +49,14 @@ class WriteToJavaScriptFile(WriteToFile):
         self.line("};")
         self.line_empty()
 
-    def docstring(self, text: str, indent: int = 1):
-        self.line_indented(f"/** {text} */", indent=indent)
+    def docstring(self, text: str | list[str], indent: int = 1):
+        if isinstance(text, list):
+            self.line_indented("/**", indent=indent)
+            for line in text:
+                self.line_indented(f" * {line}", indent=indent)
+            self.line_indented(" */", indent=indent)
+        else:
+            self.line_indented(f"/** {text} */", indent=indent)
 
     def require_statement(self, names: list[str], path: str):
         """Generate: const { X, Y } = require("path");"""
@@ -424,7 +430,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # Field properties with JSDoc
             for field in table.fields:
                 write.line_indented(f"_{field.name_camel()};")
-                write.docstring(f"`{field.name}` ({field.id})")
+                docstring: str | list[str]
+                if field.formula(sanitized=True, condense=True):
+                    docstring: list[str] = [
+                        f"`{field.name}` ({field.id})",
+                        "",
+                        "```",
+                        *[line for line in field.formula(sanitized=True, format=True).splitlines()],
+                        "```",
+                    ]
+                else:
+                    docstring: str = f"`{field.name}` ({field.id})"
+
+                write.docstring(docstring)
                 write.line_indented(f"get {field.name_camel()}() {{ return this._{field.name_camel()}; }}")
                 write.line_indented(
                     f"set {field.name_camel()}(value) {{ this._{field.name_camel()} = value; this.markDirty('{field.name_camel()}'); }}"
@@ -657,7 +675,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.require_statement(["TableNamePropertyMapping"], "./types")
         write.line_empty()
 
+        write.docstring("Airtable base wrapper", 0)
         write.line("class Airtable {")
+        for table in base.tables:
+            write.docstring(f"`{table.name}` ({table.id})", 1)
+            write.line_indented(f"{table.name_camel()};")
+        write.line_empty()
         # Constructor
         write.line_indented("constructor(options = {}) {")
         write.line_indented("const _baseId = options.baseId || getBaseId();", 2)

@@ -30,15 +30,31 @@ class WriteToPythonFile(WriteToFile):
         self.line_empty()
 
     def property_docstring(self, field: Field, table: Table):
+        base_info = f"{sanitize_string(field.name)} `{field.id}`"
+
+        # Build tags
+        tags = []
         if field.id == table.primary_field_id:
-            if field.is_computed():
-                self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Primary Key` - `Read-Only Field`"""')
-            else:
-                self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Primary Key`"""')
-        elif field.is_computed():
-            self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}` - `Read-Only Field`"""')
+            tags.append("`Primary Key`")
+        if field.is_computed():
+            tags.append("`Read-Only Field`")
+
+        if tags:
+            base_info += " - " + " - ".join(tags)
+
+        # Check for formula and output multi-line if present
+        formula = field.formula(sanitized=True, condense=True)
+        if formula:
+            self.line_indented('"""')
+            self.line_indented(base_info)
+            self.line_indented("")
+            self.line_indented("```")
+            for line in field.formula(sanitized=True, format=True).splitlines():
+                self.line_indented(line)
+            self.line_indented("```")
+            self.line_indented('"""')
         else:
-            self.line_indented(f'"""{sanitize_string(field.name)} `{field.id}`"""')
+            self.line_indented(f'"""{base_info}"""')
 
     def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str", value_is_string: bool = True):
         self.line(f"{name}: dict[{first_type}, {second_type}] = {{")
@@ -617,6 +633,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             write.line_indented("@property")
             write.line_indented(f"def {table.name_snake()}(self) -> {table.name_pascal()}Table:")
+            write.line_indented(f'"""`{table.name}` ({table.id})"""', 2)
             write.line_indented(f"if '{table.name}' not in self._tables:", 2)
             write.line_indented(
                 f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self._base_id, "{table.name}"))', 3
