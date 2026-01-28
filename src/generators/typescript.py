@@ -131,6 +131,11 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
             if verbose:
                 print("[dim] - TypeScript main class generated.[/]")
 
+    with timer.timer("TypeScript: write_field_mappings"):
+        write_field_mappings(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript field mappings generated.[/]")
+
     with timer.timer("TypeScript: write_index"):
         write_index(output_folder, formulas=formulas, wrappers=wrappers)
 
@@ -715,6 +720,88 @@ def write_main_class(base: Base, output_folder: Path) -> None:
 # endregion
 
 
+# region FIELD MAPPINGS
+def write_field_mappings(base: Base, output_folder: Path) -> None:
+    """Generate unified field mappings for all tables."""
+    with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "field-mappings.ts") as write:
+        # Imports
+        write.region("IMPORTS")
+        write.line("import {")
+        for table in base.tables:
+            table_name = table.name_pascal()
+            write.line_indented(f"{table_name}FieldNamePropertyMapping,")
+            write.line_indented(f"{table_name}FieldPropertyNameMapping,")
+        write.line('} from "./types";')
+        write.line("import {")
+        for table in base.tables:
+            model_name = table.name_model()
+            write.line_indented(f"{model_name},")
+        write.line('} from "./models";')
+        write.endregion()
+        write.line_empty()
+
+        # Model union type
+        write.region("MODEL TYPES")
+        model_names = [table.name_model() for table in base.tables]
+        write.line(f"export type ModelUnion = {' | '.join(model_names)};")
+        write.line_empty()
+        write.endregion()
+
+        # FIELD_MAPPINGS object
+        write.region("FIELD MAPPINGS")
+        write.line("export const FIELD_MAPPINGS = {")
+        for table in base.tables:
+            table_name = table.name_pascal()
+            write.line_indented(f'"{table.name}": {{')
+            write.line_indented(f"fieldToProperty: {table_name}FieldNamePropertyMapping,", indent=2)
+            write.line_indented(f"propertyToField: {table_name}FieldPropertyNameMapping,", indent=2)
+            write.line_indented("},")
+        write.line("} as const;")
+        write.line_empty()
+
+        # TableName type
+        write.line("export type FieldMappingTableName = keyof typeof FIELD_MAPPINGS;")
+        write.line_empty()
+        write.endregion()
+
+        # Helper functions
+        write.region("HELPER FUNCTIONS")
+        write.line("""export function mapFieldsToProperties<T>(
+  tableName: FieldMappingTableName,
+  fields: Record<string, unknown>
+): Partial<T> {
+  const mapping = FIELD_MAPPINGS[tableName]?.fieldToProperty;
+  if (!mapping) return fields as Partial<T>;
+
+  const result: Record<string, unknown> = {};
+  for (const [fieldName, value] of Object.entries(fields)) {
+    const propertyName = mapping[fieldName as keyof typeof mapping];
+    result[propertyName ?? fieldName] = value;
+  }
+  return result as Partial<T>;
+}
+
+export function mapPropertiesToFields(
+  tableName: FieldMappingTableName,
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  const mapping = FIELD_MAPPINGS[tableName]?.propertyToField;
+  if (!mapping) return properties;
+
+  const result: Record<string, unknown> = {};
+  for (const [propName, value] of Object.entries(properties)) {
+    const fieldName = mapping[propName as keyof typeof mapping];
+    result[fieldName ?? propName] = value;
+  }
+  return result;
+}""")
+        write.line_empty()
+        write.endregion()
+
+
+# endregion
+
+
 # region INDEX
 def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = True) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "index.ts") as write:
@@ -725,6 +812,7 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
         write.line('export * from "./types";')
         if formulas:
             write.line('export * from "./formulas";')
+        write.line('export * from "./field-mappings";')
         write.line("")
 
     with WriteToTypeScriptFile(path=output_folder / "index.ts") as write:
