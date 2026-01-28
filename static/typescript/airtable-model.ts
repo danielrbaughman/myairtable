@@ -71,15 +71,16 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	public toRecord(useFieldIds: boolean = true): ATRecord<FS> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
+		const r = { ...this.record } as ATRecord<FS>;
 		if (!useFieldIds) {
-			this.record.fields = Object.fromEntries(
-				Object.entries(this.record.fields).map(([key, value]) => {
+			r.fields = Object.fromEntries(
+				Object.entries(r.fields).map(([key, value]) => {
 					const name = this.idToNameMap[key] || key;
 					return [name, value];
 				}),
 			) as FS;
 		}
-		return this.record;
+		return r;
 	}
 
 	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FS>> {

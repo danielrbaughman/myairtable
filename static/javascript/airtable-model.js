@@ -136,15 +136,16 @@ class AirtableModel {
 	toRecord(useFieldIds = true) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
+		const r = { ...this.record };
 		if (!useFieldIds) {
-			this.record.fields = Object.fromEntries(
-				Object.entries(this.record.fields).map(([key, value]) => {
+			r.fields = Object.fromEntries(
+				Object.entries(r.fields).map(([key, value]) => {
 					const name = this.idToNameMap[key] || key;
 					return [name, value];
 				}),
 			);
 		}
-		return this.record;
+		return r;
 	}
 
 	toRecordData() {
