@@ -49,8 +49,14 @@ class WriteToJavaScriptFile(WriteToFile):
         self.line("};")
         self.line_empty()
 
-    def docstring(self, text: str, indent: int = 1):
-        self.line_indented(f"/** {text} */", indent=indent)
+    def docstring(self, text: str | list[str], indent: int = 1):
+        if isinstance(text, list):
+            self.line_indented("/**", indent=indent)
+            for line in text:
+                self.line_indented(f" * {line}", indent=indent)
+            self.line_indented(" */", indent=indent)
+        else:
+            self.line_indented(f"/** {text} */", indent=indent)
 
     def require_statement(self, names: list[str], path: str):
         """Generate: const { X, Y } = require("path");"""
@@ -306,6 +312,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             is_value_string=False,
         )
         exports.append("TableIdToFieldNameIdMapping")
+
+        write.const_object(
+            "TableNamePropertyMapping",
+            [(table.name, table.name_camel()) for table in base.tables],
+            is_value_string=True,
+        )
+        exports.append("TableNamePropertyMapping")
         write.endregion()
 
         write.module_exports(exports)
@@ -372,6 +385,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.require_statement(["LinkedRecord", "LinkedRecords"], "../../static/linked-record")
             write.require_statement(["getOptions", "getBaseId"], "../../static/helpers")
 
+            # Require field mappings from types
+            write.require_statement(
+                [
+                    f"{table.name_pascal()}FieldNameIdMapping",
+                    f"{table.name_pascal()}FieldIdNameMapping",
+                    f"{table.name_pascal()}FieldNamePropertyMapping",
+                ],
+                f"../types/{table.name_camel()}",
+            )
+
             # Require select options from types
             select_fields = table.select_fields()
             if len(select_fields) > 0:
@@ -399,12 +422,27 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line_indented(f"static schema = {table.name_pascal()}Schema;")
             if formulas:
                 write.line_indented(f"static f = {table.name_pascal()}Formulas;")
+            write.line_indented(f"nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
+            write.line_indented(f"idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
+            write.line_indented(f"nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
             write.line_empty()
 
             # Field properties with JSDoc
             for field in table.fields:
                 write.line_indented(f"_{field.name_camel()};")
-                write.docstring(f"`{field.name}` ({field.id})")
+                docstring: str | list[str]
+                if field.formula(sanitized=True, condense=True):
+                    docstring: list[str] = [
+                        f"`{field.name}` ({field.id})",
+                        "",
+                        "```",
+                        *[line for line in field.formula(sanitized=True, format=True).splitlines()],
+                        "```",
+                    ]
+                else:
+                    docstring: str = f"`{field.name}` ({field.id})"
+
+                write.docstring(docstring)
                 write.line_indented(f"get {field.name_camel()}() {{ return this._{field.name_camel()}; }}")
                 write.line_indented(
                     f"set {field.name_camel()}(value) {{ this._{field.name_camel()} = value; this.markDirty('{field.name_camel()}'); }}"
@@ -541,11 +579,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     if field.typescript_type() == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.id);', 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.id);', 2)
                     elif field.typescript_type() == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.ids);', 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()});', 2)
+                    write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()});', 2)
             write.line_indented("}")
             write.line_empty()
 
@@ -634,9 +672,15 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig"], "../static/helpers")
         table_classes = [f"{table.name_pascal()}Table" for table in base.tables]
         write.require_statement(table_classes, "./tables")
+        write.require_statement(["TableNamePropertyMapping"], "./types")
         write.line_empty()
 
+        write.docstring("Airtable base wrapper", 0)
         write.line("class Airtable {")
+        for table in base.tables:
+            write.docstring(f"`{table.name}` ({table.id})", 1)
+            write.line_indented(f"{table.name_camel()};")
+        write.line_empty()
         # Constructor
         write.line_indented("constructor(options = {}) {")
         write.line_indented("const _baseId = options.baseId || getBaseId();", 2)
@@ -651,6 +695,11 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("setAirtableConfig(_baseId, _options);", 2)
         for table in base.tables:
             write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(_baseId, _options);", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.docstring("Get a table by its Airtable name.", 1)
+        write.line_indented("table(tableName) {")
+        write.line_indented("return this[TableNamePropertyMapping[tableName]];", 2)
         write.line_indented("}")
         write.line("}")
         write.line_empty()

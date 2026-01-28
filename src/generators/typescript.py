@@ -40,8 +40,14 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f'"{item}",')
         self.line("]")
 
-    def docstring(self, text: str, indent: int = 1):
-        self.line_indented(f"/** {text} */", indent=indent)
+    def docstring(self, text: str | list[str], indent: int = 1):
+        if isinstance(text, list):
+            self.line_indented("/**", indent=indent)
+            for line in text:
+                self.line_indented(f" * {line}", indent=indent)
+            self.line_indented(" */", indent=indent)
+        else:
+            self.line_indented(f"/** {text} */", indent=indent)
 
     def types(self, name: str, list: list[str], docstring: str = ""):
         literal_name = f"{name}"
@@ -290,6 +296,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
         write.region("TABLES")
         write.types("TableName", table_names)
+        write.types("TablePropertyName", [table.name_camel() for table in base.tables])
         write.types("TableId", table_ids)
         write.dict_class(
             "TableNameIdMapping",
@@ -305,7 +312,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             second_type="TableName",
             is_value_string=True,
         )
-
+        write.dict_class(
+            "TableNamePropertyMapping",
+            [(table.name, table.name_camel()) for table in base.tables],
+            first_type="TableName",
+            second_type="string",
+            is_value_string=True,
+        )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
             [(table.id, f"{table.name_pascal()}FieldNameIdMapping") for table in base.tables],
@@ -383,6 +396,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # Import types for this table
             write.line("import {")
             write.line_indented(f"{table_name}FieldSet,")
+            write.line_indented(f"{table_name}Field,")
+            write.line_indented(f"{table_name}FieldNameIdMapping,")
+            write.line_indented(f"{table_name}FieldIdNameMapping,")
+            write.line_indented(f"{table_name}FieldNamePropertyMapping,")
             for field in table.fields:
                 options = field.select_options()
                 if len(options) > 0:
@@ -411,21 +428,36 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             if zod:
-                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}> {{")
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}, {table_name}Field> {{")
                 write.line_indented(f"protected static schema = {table_name}Schema;")
             else:
-                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown> {{")
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown, {table_name}Field> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
+            write.line_indented(f"protected nameToIdMap = {table_name}FieldNameIdMapping;", 1)
+            write.line_indented(f"protected idToNameMap = {table_name}FieldIdNameMapping;", 1)
+            write.line_indented(f"protected nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
                 field_type = field.typescript_type()
+                docstring: str | list[str]
+                if field.formula(sanitized=True, condense=True):
+                    docstring: list[str] = [
+                        f"`{field.name}` ({field.id})",
+                        "",
+                        "```",
+                        *[line for line in field.formula(sanitized=True, format=True).splitlines()],
+                        "```",
+                    ]
+                else:
+                    docstring: str = f"`{field.name}` ({field.id})"
+
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
                         write.line_indented(f"private _{field_name}!: LinkedRecord<{linked_record_type}>;", 1)
-                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.docstring(docstring)
                         write.line_indented(f"public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
                             f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
@@ -433,7 +465,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                         )
                     elif field_type == "RecordId[]":
                         write.line_indented(f"private _{field_name}!: LinkedRecords<{linked_record_type}>;", 1)
-                        write.docstring(f"`{field.name}` ({field.id})")
+                        write.docstring(docstring)
                         write.line_indented(f"public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
                             f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
@@ -441,7 +473,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                         )
                 else:
                     write.line_indented(f"private _{field_name}?: {field_type};", 1)
-                    write.docstring(f"`{field.name}` ({field.id})")
+                    write.docstring(docstring)
                     write.line_indented(f"public get {field_name}(): {field_type} | undefined {{ return this._{field_name}; }}", 1)
                     write.line_indented(
                         f"public set {field_name}(value: {field_type} | undefined) {{ this._{field_name} = value; this.markDirty('{field_name}'); }}",
@@ -580,19 +612,34 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.id);', 2)
+                        write.line_indented("//@ts-ignore", 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.id);', 2)
                     elif field_type == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.ids);', 2)
+                        write.line_indented("//@ts-ignore", 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name});', 2)
+                    write.line_indented("//@ts-ignore", 2)
+                    write.line_indented(f'this.record.set("{field.id}", this._{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
             write.line("}")
             write.endregion()
 
+    with WriteToTypeScriptFile(path=models_dir / "_models.ts") as write:
+        write.line("import {")
+        for table in base.tables:
+            model_name = table.name_model()
+            write.line_indented(f"{model_name},")
+        write.line('} from ".";')
+        write.line_empty()
+
+        model_names = [table.name_model() for table in base.tables]
+        write.line(f"export type ModelUnion = {' | '.join(model_names)};")
+        write.line_empty()
+
     # Write barrel export index.ts
-    write_barrel_export(base, models_dir)
+    write_barrel_export(base, models_dir, extra_exports=["export * from './_models';"])
 
 
 # endregion
@@ -632,8 +679,28 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("}")
             write.line("}")
 
+    with WriteToTypeScriptFile(path=tables_dir / "_tables.ts") as write:
+        write.line("import {")
+        for table in base.tables:
+            table_name = table.name_pascal() + "Table"
+            write.line_indented(f"{table_name},")
+        write.line('} from ".";')
+        write.line_empty()
+
+        table_names = [table.name_pascal() + "Table" for table in base.tables]
+        write.line(f"export type TableUnion = {' | '.join(table_names)};")
+        write.line_empty()
+
+        # Add TableNameToTableType mapping interface for type-safe dynamic table lookup
+        write.line("export interface TableNameToTableType {")
+        for table in base.tables:
+            table_name_pascal = table.name_pascal()
+            write.line_indented(f'"{table.name}": {table_name_pascal}Table;')
+        write.line("}")
+        write.line_empty()
+
     # Write barrel export index.ts
-    write_barrel_export(base, tables_dir)
+    write_barrel_export(base, tables_dir, extra_exports=["export * from './_tables';"])
 
 
 # endregion
@@ -684,13 +751,17 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             table_name_pascal = table.name_pascal()
             write.line_indented(f"{table_name_pascal}Table,")
+        write.line_indented("TableNameToTableType,")
         write.line('} from "./tables";')
+        write.line('import { TableName, TableNamePropertyMapping } from "./types";')
         write.line_empty()
 
+        write.docstring("Airtable base wrapper")
         write.line("export class Airtable {")
         for table in base.tables:
             table_name_camel = table.name_camel()
             table_name_pascal = table.name_pascal()
+            write.docstring(f"`{table.name}` ({table.id})", 1)
             write.line_indented(f"public {table_name_camel}: {table_name_pascal}Table;")
         write.line_empty()
         write.line_indented("constructor(options?: ExtendedAirtableOptions) {")
@@ -708,6 +779,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
             table_name_camel = table.name_camel()
             table_name_pascal = table.name_pascal()
             write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(_baseId, _options);", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.line_empty()
+        write.docstring("Get a table by its Airtable name.", 1)
+        write.line_indented("public table<T extends TableName>(tableName: T): TableNameToTableType[T] {")
+        write.line_indented("return this[TableNamePropertyMapping[tableName] as keyof this] as TableNameToTableType[T];", 2)
         write.line_indented("}")
         write.line("}")
 

@@ -18,7 +18,7 @@ interface QueryOptions<V, T> extends Options<T> {
 
 export class AirtableTable<
 	T extends FieldSet,
-	U extends AirtableModel<T, unknown>,
+	U extends AirtableModel<T, unknown, keyof T>,
 	V extends string,
 	W extends string,
 > {
