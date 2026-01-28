@@ -290,6 +290,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
         write.region("TABLES")
         write.types("TableName", table_names)
+        write.types("TablePropertyName", [table.name_camel() for table in base.tables])
         write.types("TableId", table_ids)
         write.dict_class(
             "TableNameIdMapping",
@@ -305,7 +306,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             second_type="TableName",
             is_value_string=True,
         )
-
+        write.dict_class(
+            "TableNamePropertyMapping",
+            [(table.name, table.name_camel()) for table in base.tables],
+            first_type="TableName",
+            second_type="string",
+            is_value_string=True,
+        )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
             [(table.id, f"{table.name_pascal()}FieldNameIdMapping") for table in base.tables],
@@ -654,8 +661,28 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("}")
             write.line("}")
 
+    with WriteToTypeScriptFile(path=tables_dir / "_tables.ts") as write:
+        write.line("import {")
+        for table in base.tables:
+            table_name = table.name_pascal() + "Table"
+            write.line_indented(f"{table_name},")
+        write.line('} from ".";')
+        write.line_empty()
+
+        table_names = [table.name_pascal() + "Table" for table in base.tables]
+        write.line(f"export type TableUnion = {' | '.join(table_names)};")
+        write.line_empty()
+
+        # Add TableNameToTableType mapping interface for type-safe dynamic table lookup
+        write.line("export interface TableNameToTableType {")
+        for table in base.tables:
+            table_name_pascal = table.name_pascal()
+            write.line_indented(f'"{table.name}": {table_name_pascal}Table;')
+        write.line("}")
+        write.line_empty()
+
     # Write barrel export index.ts
-    write_barrel_export(base, tables_dir)
+    write_barrel_export(base, tables_dir, extra_exports=["export * from './_tables';"])
 
 
 # endregion
@@ -706,7 +733,9 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             table_name_pascal = table.name_pascal()
             write.line_indented(f"{table_name_pascal}Table,")
+        write.line_indented("TableNameToTableType,")
         write.line('} from "./tables";')
+        write.line('import { TableName, TableNamePropertyMapping } from "./types";')
         write.line_empty()
 
         write.line("export class Airtable {")
@@ -730,6 +759,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
             table_name_camel = table.name_camel()
             table_name_pascal = table.name_pascal()
             write.line_indented(f"this.{table_name_camel} = new {table_name_pascal}Table(_baseId, _options);", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.line_empty()
+        write.docstring("Get a table by its Airtable name.", 1)
+        write.line_indented("public table<T extends TableName>(tableName: T): TableNameToTableType[T] {")
+        write.line_indented("return this[TableNamePropertyMapping[tableName] as keyof this] as TableNameToTableType[T];", 2)
         write.line_indented("}")
         write.line("}")
 

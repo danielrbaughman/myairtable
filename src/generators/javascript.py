@@ -306,6 +306,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             is_value_string=False,
         )
         exports.append("TableIdToFieldNameIdMapping")
+
+        write.const_object(
+            "TableNamePropertyMapping",
+            [(table.name, table.name_camel()) for table in base.tables],
+            is_value_string=True,
+        )
+        exports.append("TableNamePropertyMapping")
         write.endregion()
 
         write.module_exports(exports)
@@ -647,6 +654,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig"], "../static/helpers")
         table_classes = [f"{table.name_pascal()}Table" for table in base.tables]
         write.require_statement(table_classes, "./tables")
+        write.require_statement(["TableNamePropertyMapping"], "./types")
         write.line_empty()
 
         write.line("class Airtable {")
@@ -664,6 +672,11 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("setAirtableConfig(_baseId, _options);", 2)
         for table in base.tables:
             write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(_baseId, _options);", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.docstring("Get a table by its Airtable name.", 1)
+        write.line_indented("table(tableName) {")
+        write.line_indented("return this[TableNamePropertyMapping[tableName]];", 2)
         write.line_indented("}")
         write.line("}")
         write.line_empty()
