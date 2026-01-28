@@ -3,6 +3,8 @@ import { Airtable } from "./output";
 
 async function main() {
 	console.log("Hello World (TypeScript)");
+
+	const airtable = new Airtable();
 }
 
 main().catch((err) => {

@@ -5,6 +5,10 @@ class AirtableModel {
 	/** Zod schema for validation - must be defined by subclasses */
 	static schema;
 
+	nameToIdMap = {};
+	idToNameMap = {};
+	nameToPropertyMap = {};
+
 	record;
 	id;
 
@@ -18,6 +22,19 @@ class AirtableModel {
 
 	constructor(id) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	/** Get a field value by field name */
+	get(key) {
+		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
+		const id = this.nameToIdMap[key] || key;
+		return this.record.get(id);
+	}
+
+	/** Set a field value by field name */
+	set(key, value) {
+		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
+		this[this.nameToPropertyMap[key] || key] = value;
 	}
 
 	/** Sets the config for this model instance (called by factory methods) */
@@ -116,9 +133,17 @@ class AirtableModel {
 		// To be overridden by subclasses
 	}
 
-	toRecord() {
+	toRecord(useFieldIds = true) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
+		if (!useFieldIds) {
+			this.record.fields = Object.fromEntries(
+				Object.entries(this.record.fields).map(([key, value]) => {
+					const name = this.idToNameMap[key] || key;
+					return [name, value];
+				}),
+			);
+		}
 		return this.record;
 	}
 

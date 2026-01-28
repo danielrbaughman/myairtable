@@ -383,6 +383,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # Import types for this table
             write.line("import {")
             write.line_indented(f"{table_name}FieldSet,")
+            write.line_indented(f"{table_name}Field,")
+            write.line_indented(f"{table_name}FieldNameIdMapping,")
+            write.line_indented(f"{table_name}FieldIdNameMapping,")
+            write.line_indented(f"{table_name}FieldNamePropertyMapping,")
             for field in table.fields:
                 options = field.select_options()
                 if len(options) > 0:
@@ -411,12 +415,15 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             if zod:
-                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}> {{")
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}, {table_name}Field> {{")
                 write.line_indented(f"protected static schema = {table_name}Schema;")
             else:
-                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown> {{")
+                write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown, {table_name}Field> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
+            write.line_indented(f"protected nameToIdMap = {table_name}FieldNameIdMapping;", 1)
+            write.line_indented(f"protected idToNameMap = {table_name}FieldIdNameMapping;", 1)
+            write.line_indented(f"protected nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
             write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
@@ -580,19 +587,34 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 field_type = field.typescript_type()
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     if field_type == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.id);', 2)
+                        write.line_indented("//@ts-ignore", 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.id);', 2)
                     elif field_type == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name}?.ids);', 2)
+                        write.line_indented("//@ts-ignore", 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field_name});', 2)
+                    write.line_indented("//@ts-ignore", 2)
+                    write.line_indented(f'this.record.set("{field.id}", this._{field_name});', 2)
             write.line_indented("}", 1)
             write.line_empty()
 
             write.line("}")
             write.endregion()
 
+    with WriteToTypeScriptFile(path=models_dir / "_models.ts") as write:
+        write.line("import {")
+        for table in base.tables:
+            model_name = table.name_model()
+            write.line_indented(f"{model_name},")
+        write.line('} from ".";')
+        write.line_empty()
+
+        model_names = [table.name_model() for table in base.tables]
+        write.line(f"export type ModelUnion = {' | '.join(model_names)};")
+        write.line_empty()
+
     # Write barrel export index.ts
-    write_barrel_export(base, models_dir)
+    write_barrel_export(base, models_dir, extra_exports=["export * from './_models';"])
 
 
 # endregion

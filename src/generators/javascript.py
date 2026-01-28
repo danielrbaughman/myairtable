@@ -372,6 +372,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.require_statement(["LinkedRecord", "LinkedRecords"], "../../static/linked-record")
             write.require_statement(["getOptions", "getBaseId"], "../../static/helpers")
 
+            # Require field mappings from types
+            write.require_statement(
+                [
+                    f"{table.name_pascal()}FieldNameIdMapping",
+                    f"{table.name_pascal()}FieldIdNameMapping",
+                    f"{table.name_pascal()}FieldNamePropertyMapping",
+                ],
+                f"../types/{table.name_camel()}",
+            )
+
             # Require select options from types
             select_fields = table.select_fields()
             if len(select_fields) > 0:
@@ -399,6 +409,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line_indented(f"static schema = {table.name_pascal()}Schema;")
             if formulas:
                 write.line_indented(f"static f = {table.name_pascal()}Formulas;")
+            write.line_indented(f"nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
+            write.line_indented(f"idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
+            write.line_indented(f"nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
             write.line_empty()
 
             # Field properties with JSDoc
@@ -541,11 +554,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             for field in table.fields:
                 if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
                     if field.typescript_type() == "RecordId":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.id);', 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.id);', 2)
                     elif field.typescript_type() == "RecordId[]":
-                        write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()}?.ids);', 2)
+                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.ids);', 2)
                 else:
-                    write.line_indented(f'this.record.set("{sanitize_string(field.name)}", this._{field.name_camel()});', 2)
+                    write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()});', 2)
             write.line_indented("}")
             write.line_empty()
 
