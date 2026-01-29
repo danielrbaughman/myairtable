@@ -207,6 +207,16 @@ def write_types(base: Base, output_folder: Path) -> None:
                 [field.id for field in table.fields if field.is_computed()],
             )
             write.line_empty()
+            write.docstring(f"Writable fields for `{table.name}`")
+            write.str_list(
+                f"{table_name}WritableFields",
+                [sanitize_string(field.name) for field in table.fields if not field.is_computed()],
+            )
+            write.docstring(f"Writable fields for `{table.name}`")
+            write.str_list(
+                f"{table_name}WritableFieldIds",
+                [field.id for field in table.fields if not field.is_computed()],
+            )
 
             # Configuration for field mapping dict classes: (suffix, key_attr, value_attr, key_type_suffix, value_type_suffix)
             field_mappings = [
@@ -530,7 +540,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>, table?: {table_name}Table): {model_name} {{")
             write.line_indented(f"const instance = new {model_name}({{ id: record.id }});", 2)
-            write.line_indented("if (table) instance.setConfig(table.baseId, table.options);", 2)
+            write.line_indented("if (table) instance.setConfig(table.baseId, table._options);", 2)
             write.line_indented("instance.updateModel(record);", 2)
             write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
@@ -672,6 +682,9 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f"{table_name}Field,")
             write.line_indented(f"{table_name}View,")
             write.line_indented(f"{table_name}ViewNameIdMapping,")
+            write.line_indented(f"{table_name}FieldNameIdMapping,")
+            write.line_indented(f"{table_name}FieldIdNameMapping,")
+            write.line_indented(f"{table_name}WritableFieldIds,")
             write.line(f'}} from "../types/{table_name_camel}";')
             write.line(f"import {{ {model_name} }} from '../models/{table_name_camel}';")
             write.line('import { AirtableOptions } from "airtable";')
@@ -693,7 +706,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, (record) => {model_name}.fromRecord(record, this), options);',
+                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, this), options);',
                 2,
             )
             write.line_indented("}")

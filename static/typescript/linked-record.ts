@@ -5,12 +5,12 @@ import { RecordId, recordIdSchema } from "./special-types";
 /**
  * A reference to a linked Airtable record, providing methods to get and set the linked record.
  */
-export class LinkedRecord<M extends AirtableModel<FieldSet, unknown, keyof FieldSet>> {
+export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof FieldSet>> {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
 	private _id?: RecordId;
-	private record?: M;
+	private record?: Mdl;
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M;
+	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
@@ -19,7 +19,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown, keyof Field
 	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordId?: RecordId,
-		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M,
+		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl,
 		onDirty?: () => void,
 		baseId?: string,
 		options?: AirtableOptions,
@@ -44,7 +44,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown, keyof Field
 	 *
 	 * @param fetch - If `true`, forces a fetch of the record data even if it is already loaded. Defaults to `false`.
 	 */
-	public async get(fetch: boolean = false): Promise<M | undefined> {
+	public async get(fetch: boolean = false): Promise<Mdl | undefined> {
 		if (this.record === undefined || fetch) {
 			this.record = this.modelCtor!(this.id!, this.__configBaseId, this.__configOptions);
 			await this.record.fetch();
@@ -57,7 +57,7 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown, keyof Field
 	 *
 	 * @param value - The new record to link. If `undefined` or falsy, clears the current record and ID.
 	 */
-	public set(value: M): void {
+	public set(value: Mdl): void {
 		if (!value) {
 			this.record = undefined;
 			this._id = undefined;
@@ -72,12 +72,12 @@ export class LinkedRecord<M extends AirtableModel<FieldSet, unknown, keyof Field
 /**
  * A reference to linked Airtable records, providing methods to get and set the linked records.
  */
-export class LinkedRecords<M extends AirtableModel<FieldSet, unknown, keyof FieldSet>> {
+export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof FieldSet>> {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
 	private _ids?: RecordId[];
-	private records?: M[];
+	private records?: Mdl[];
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M;
+	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
@@ -86,7 +86,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown, keyof Fiel
 	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordIds?: RecordId[],
-		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => M,
+		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl,
 		onDirty?: () => void,
 		baseId?: string,
 		options?: AirtableOptions,
@@ -111,7 +111,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown, keyof Fiel
 	 *
 	 * @param fetch - If `true`, forces a fresh fetch of the records even if they are already loaded. Defaults to `false`.
 	 */
-	public async get(fetch: boolean = false): Promise<M[]> {
+	public async get(fetch: boolean = false): Promise<Mdl[]> {
 		if (this.records === undefined || fetch) {
 			this.records = this.ids?.map((id) => this.modelCtor!(id, this.__configBaseId, this.__configOptions)) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
@@ -124,7 +124,7 @@ export class LinkedRecords<M extends AirtableModel<FieldSet, unknown, keyof Fiel
 	 *
 	 * @param values - The new records to link. If `undefined` or falsy, clears the current records and IDs.
 	 */
-	public set(values: M[]): void {
+	public set(values: Mdl[]): void {
 		if (!values || values.length === 0) {
 			this.records = undefined;
 			this._ids = undefined;
