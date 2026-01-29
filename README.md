@@ -1,11 +1,20 @@
 # myAirtable
 
-A code generator for [pyAirtable](https://pyairtable.readthedocs.io/en/stable/) (Python) and [airtable.js](https://github.com/Airtable/airtable.js) (TypeScript), focused on developer experience.
+An Airtable code generator, focused on developer experience.
 
-> **Warning**  
-> myAirtable is under active development.
+Languages supported:
 
-## Python (pyAirtable)
+- Python (via [pyAirtable](https://pyairtable.readthedocs.io/en/stable/))
+- TypeScript (via [airtable.js](https://github.com/Airtable/airtable.js))
+- JavaScript (via [airtable.js](https://github.com/Airtable/airtable.js))
+  > [!WARNING]
+  > myAirtable is under active development.
+
+## Features
+
+The following examples are in Python, but all features are suppported in every language. See notes in each section for language-specific differences.
+
+### ORM Models
 
 myAirtable generates strongly-typed RecordDicts and ORM classes, intended for use with the pyAirtable library.
 
@@ -25,6 +34,11 @@ class ContactsModel(Model):
 name = contact.name
 ```
 
+> [!NOTE]
+> For JavaScript & TypeScript, the ORM models are custom to myAirtable, rather than drawn from Airtable.js, though they use Airtable.js under-the-hood, and contain methods for conversion to/from Airtable.js's "Record" class.
+
+### Formula Builders
+
 myAirtable also generates formula builders, for use when filtering by formula. pyAirtable already includes decent formula builders, but their options are currently limited to simple operations (e.g. =, >, <, etc), without any type-specific operations. myAirtable's formula builders include additional operations (e.g. "string contains", "date is N days ago", etc). You can access the myAirtable formula helpers from the `.f` property on each ORM class. myAirtable's formula builders are fully compatible with pyAirtable's formula builders.
 
 ```python
@@ -40,6 +54,11 @@ formula: str = AND(
 
 Airtable().contacts.get(formula=formula)
 ```
+
+> [!NOTE]
+> For JavaScript & TypeScript, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same.
+
+### Table/CRUD Wrappers
 
 Finally, myAirtable generates custom lightweight wrapper classes, which expose pyAirtable's CRUD methods with strongly-typed kwargs, and provide easy access to the tables through a simple interface.
 
@@ -66,72 +85,21 @@ contact["fields"]["name"] = "Joe"
 at.contacts.dict.update(contact)
 ```
 
-## TypeScript (airtable.js)
-
-myAirtable generates strongly-typed interfaces and ORM classes, intended for use with the airtable.js library.
-
-```typescript
-// Fully-typed FieldSet, which can be used with airtable.js's `Record` class
-interface ContactFieldSet extends FieldSet {
-    "Name"?: string,
-    "Age"?: number,
-}
-interface ContactRecord extends Record<ContactFieldSet>
-
-const name = contact.get("Name");
-
-// Instance of a custom wrapper around airtable.js's `Record` class
-export class ContactModel extends AirtableModel<ContactFieldSet> {
-  public name?: string;
-  public age?: number;
-}
-
-const name = contact.name;
-```
-
-myAirtable also generates formula builders, for use when filtering by formula. You can access the myAirtable formula helpers from the `.f` property on each ORM class.
-
-```typescript
-import { Airtable, AND, OR, ContactsModel } from "./myairtable/output"
-
-const formula: string = AND(
-  AND(ContactsModel.f.firstName.contains("Bob"), ContactsModel.f.lastName == "Smith"),
-  ContactsModel.f.birthday.after().yearsAgo(30),
-  ContactsModel.f.birthday.before("2019-04-01"),
-  OR(ContactsModel.f.age.lessThan(10), ContactsModel.f.age.equals(12), ContactsModel.f.age.greaterThan(15),
-  "{fld1234567890}='you can also put raw strings here'",
-);
-
-const contacts = await new Airtable().contacts.get({ formula: formula });
-```
-
-Finally, myAirtable generates custom lightweight wrapper classes, which expose airtable.js's CRUD methods with strongly-typed arguments and options, and provide easy access to the tables through a simple interface.
-
-```typescript
-import { Airtable, ContactsModel } from "./myairtable/output";
-
-const at = new Airtable();
-
-// CRUD operations for airtabe.js ORMs
-const contact: ContactsModel = await at.contacts.get("rec1234567890");
-contact.name = "Bob";
-contact.save(); // airtable.js's ORM models have handy functions like .save(), which are exposed in myAirtable's custom ORM wrappers
-await at.contacts.update(contact); // or you can use myAirtable's wrapper if you prefer that syntax
-
-// table.get() method has type arguments for most of airtable.js's options, which are otherwise less clear. View and Fields options are typed.
-const contacts: ContactsModel[] = await at.contacts.get({
-	view: "Family & Friends",
-	fields: ["Name", "Age"],
-});
-for (const contact of contacts) {
-	contact.age = contact.age + 1;
-	contact.save();
-}
-```
-
-## Name-locking and custom names
+### Name-locking and custom names
 
 myAirtable optionally generates CSV files containing the names/ids of the tables and fields, including the "property name" or "model name" (for the ORM models) that they will be given in myAirtable's output. These CSV files, if present in the destination folder, will be used as the source of truth for table, model, and field names in the generated code. They can thus be used to prevent class/property names from changing unexpectedly when someone else changes a field name in Airtable, or for customizing the class/property names as they appear in code, if you prefer a different name for a given table/field. They can also be handy for resolving duplicate property name issues if that happens.
+
+### Documentation via Markdown
+
+myAirtable also includes support for generating documentation for your Airtable base, written in Markdown, intended for use in Obsidian. This documentation includes:
+
+- Files for every table & field, with metadata for each.
+- Tags for each field type for easy sorting/filtering
+- Obsidian links between related tables/fields, whether by link, lookup, rollup, or formula. This make the graph look pretty neat :)
+- For formula fields, the formulas are presented in a variety of ways, most notably:
+  - A "flattened" version of the formula. If the formulas references anoher formula (etc), the whole thing is shown.
+  - A formatted and syntax-colored version of the formula, for easy readability.
+  - A [Mermaid](https://mermaid.ai) representation of the formula.
 
 ## Getting Started
 
@@ -149,11 +117,3 @@ AIRTABLE_BASE_ID=app1234567890
 ```
 
 5. Run `uv run main.py --help` to see all commands
-
-## Notable Options
-
-`uv run main.py py` or `uv run main.py ts`
-
-- `--fresh`: Regenerates the name-locking CSVs from scratch, rather than using the existing ones.
-- `--formulas`: You can choose not to include myAirtable's formula builders in the output.
-- `--wrapper`: You can choose to not include myAirtable's table/base wrapper classes in the output.
