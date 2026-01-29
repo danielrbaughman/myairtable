@@ -425,6 +425,15 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented(f"nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
             write.line_indented(f"idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
             write.line_indented(f"nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f"static tableName = '{table.name}';", 1)
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f"get tableName() {{ return {table.name_model()}.tableName; }}", 1)
+            write.line_empty()
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f"static tableId = '{table.id}';", 1)
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f"get tableId() {{ return {table.name_model()}.tableId; }}", 1)
             write.line_empty()
 
             # Field properties with JSDoc
@@ -614,6 +623,16 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}Table extends AirtableTable {{")
+            write.docstring(f"Table name ({table.name})")
+            write.line_indented(f'public static name: string = "{table.name}";')
+            write.docstring(f"Table name ({table.name})")
+            write.line_indented(f"public get name(): string {{ return {table.name_pascal()}Table.name; }}")
+            write.line_empty()
+            write.docstring(f"Table ID ({table.id})")
+            write.line_indented(f'public static id: string = "{table.id}";')
+            write.docstring(f"Table ID ({table.id})")
+            write.line_indented(f"public get id(): string {{ return {table.name_pascal()}Table.id; }}")
+            write.line_empty()
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
                 f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, this), options);',

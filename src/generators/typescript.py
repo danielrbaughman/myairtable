@@ -438,6 +438,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented(f"protected idToNameMap = {table_name}FieldIdNameMapping;", 1)
             write.line_indented(f"protected nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
             write.line_empty()
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f"public static tableName: string = '{table.name}';", 1)
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f"public get tableName(): string {{ return {model_name}.tableName; }}", 1)
+            write.line_empty()
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f"public static tableId: string = '{table.id}';", 1)
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f"public get tableId(): string {{ return {model_name}.tableId; }}", 1)
+            write.line_empty()
             for field in table.fields:
                 field_name = field.name_camel()
                 field_type = field.typescript_type()
@@ -671,6 +681,16 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line(
                 f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {model_name}, {table_name}View, {table_name}Field> {{"
             )
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f'public static name: string = "{table.name}";')
+            write.docstring(f"Table name ({table.name})", 1)
+            write.line_indented(f"public get name(): string {{ return {table_name}Table.name; }}")
+            write.line_empty()
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f'public static id: string = "{table.id}";')
+            write.docstring(f"Table ID ({table.id})", 1)
+            write.line_indented(f"public get id(): string {{ return {table_name}Table.id; }}")
+            write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
                 f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, (record) => {model_name}.fromRecord(record, this), options);',
