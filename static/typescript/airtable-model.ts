@@ -6,16 +6,18 @@ import { CreateRecordData, recordIdSchema } from "./special-types";
 import { getBaseId, getOptions } from "./helpers";
 
 export abstract class AirtableModel<FS extends FieldSet, I, F> {
+	// Base properties
+	protected record?: ATRecord<FS>;
+	public id?: string | undefined;
 	[key: string]: unknown;
+
+	// Mappings - must be defined by subclasses
 	protected nameToIdMap: Record<string, string> = {};
 	protected idToNameMap: Record<string, string> = {};
 	protected nameToPropertyMap: Record<string, string> = {};
 
 	/** Zod schema for validation - must be defined by subclasses */
 	protected static schema: z.ZodTypeAny;
-
-	protected record?: ATRecord<FS>;
-	public id: string;
 
 	// Change tracking
 	protected _dirtyFields: Set<string> = new Set();
@@ -25,7 +27,7 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	protected __configBaseId?: string;
 	protected __configOptions?: AirtableOptions;
 
-	constructor(id: string) {
+	constructor(id?: string) {
 		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
@@ -91,6 +93,7 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	}
 
 	public toUpdateRecordData(useFieldIds: boolean = true): RecordData<Partial<FS>> {
+		if (!this.id) throw new Error("Cannot create update record data: id is undefined.");
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),

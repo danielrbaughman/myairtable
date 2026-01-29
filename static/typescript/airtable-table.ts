@@ -205,7 +205,7 @@ export class AirtableTable<
 		const records: U[] = Array.isArray(recordOrRecords) ? recordOrRecords : [recordOrRecords];
 
 		// Batch fetch all records to check which exist
-		const recordIds = records.map((r) => r.id).filter((id) => !!id);
+		const recordIds = records.map((r) => r.id || "").filter((id) => !!id);
 		const existingRecords = recordIds.length > 0 ? await this.get(recordIds) : [];
 		const existingIds = new Set(existingRecords.map((r) => r.id));
 
