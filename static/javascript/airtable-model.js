@@ -92,6 +92,7 @@ class AirtableModel {
 	}
 
 	toUpdateRecordData(useFieldIds = true) {
+		if (!this.id) throw new Error("Cannot create update record data: id is undefined.");
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),

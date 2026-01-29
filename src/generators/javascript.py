@@ -209,6 +209,20 @@ def write_types(base: Base, output_folder: Path) -> None:
             )
             exports.append(f"{table.name_pascal()}CalculatedFieldIds")
 
+            write.const_array(
+                f"{table.name_pascal()}WritableFields",
+                [sanitize_string(field.name) for field in table.fields if not field.is_computed()],
+                f"Writable fields for `{table.name}`",
+            )
+            exports.append(f"{table.name_pascal()}WritableFields")
+
+            write.const_array(
+                f"{table.name_pascal()}WritableFieldIds",
+                [field.id for field in table.fields if not field.is_computed()],
+                f"Writable field IDs for `{table.name}`",
+            )
+            exports.append(f"{table.name_pascal()}WritableFieldIds")
+
             # Field mapping dictionaries
             field_mappings = [
                 ("FieldNameIdMapping", "name_sanitized", "id"),
@@ -496,7 +510,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # fromRecord static method
             write.line_indented("static fromRecord(record, table) {")
             write.line_indented(f"const instance = new {table.name_model()}({{ id: record.id }});", 2)
-            write.line_indented("if (table) instance.setConfig(table.baseId, table.options);", 2)
+            write.line_indented("if (table) instance.setConfig(table.baseId, table._options);", 2)
             write.line_indented("instance.updateModel(record);", 2)
             write.line_indented("instance.clearDirtyFlags();", 2)
             write.line_indented("return instance;", 2)
@@ -617,25 +631,33 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # Requires
             write.region("REQUIRES")
             write.require_statement(["AirtableTable"], "../../static/airtable-table")
-            write.require_statement([f"{table.name_pascal()}ViewNameIdMapping"], f"../types/{table.name_camel()}")
+            write.require_statement(
+                [
+                    f"{table.name_pascal()}ViewNameIdMapping",
+                    f"{table.name_pascal()}FieldNameIdMapping",
+                    f"{table.name_pascal()}FieldIdNameMapping",
+                    f"{table.name_pascal()}WritableFieldIds",
+                ],
+                f"../types/{table.name_camel()}",
+            )
             # Note: Model is loaded lazily to avoid circular dependencies
             write.endregion()
             write.line_empty()
 
             write.line(f"class {table.name_pascal()}Table extends AirtableTable {{")
             write.docstring(f"Table name ({table.name})")
-            write.line_indented(f'public static name: string = "{table.name}";')
+            write.line_indented(f'static name = "{table.name}";')
             write.docstring(f"Table name ({table.name})")
-            write.line_indented(f"public get name(): string {{ return {table.name_pascal()}Table.name; }}")
+            write.line_indented(f"get name() {{ return {table.name_pascal()}Table.name; }}")
             write.line_empty()
             write.docstring(f"Table ID ({table.id})")
-            write.line_indented(f'public static id: string = "{table.id}";')
+            write.line_indented(f'static id = "{table.id}";')
             write.docstring(f"Table ID ({table.id})")
-            write.line_indented(f"public get id(): string {{ return {table.name_pascal()}Table.id; }}")
+            write.line_indented(f"get id() {{ return {table.name_pascal()}Table.id; }}")
             write.line_empty()
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, this), options);',
+                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, {table.name_pascal()}FieldNameIdMapping, {table.name_pascal()}FieldIdNameMapping, {table.name_pascal()}WritableFieldIds, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, this), options);',
                 2,
             )
             write.line_indented("}")
