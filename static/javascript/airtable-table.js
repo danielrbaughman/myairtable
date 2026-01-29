@@ -45,7 +45,15 @@ class AirtableTable {
 	/**
 	 * Get record(s) by ID, IDs, or query options.
 	 * @param {string|string[]|object} recordIdOrIdsOrOptions - Single ID, array of IDs, or query options
-	 * @param {object} options - Additional options when fetching by ID
+	 * @param options - Query options
+	 *
+	 * Options:
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
 	 */
 	async get(recordIdOrIdsOrOptions, options) {
 		// Single record by ID

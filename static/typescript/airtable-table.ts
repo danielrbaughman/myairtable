@@ -16,7 +16,7 @@ export interface Options<Fld> {
 	maxRecords?: number;
 	/** What format to return the data in. Default: "model" */
 	returnAs?: "model" | "record" | "interface";
-	/** Return only writable fields from the API. Only applies when returnAs is "record" or "interface". */
+	/** Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly. */
 	onlyWritableFields?: boolean;
 }
 
@@ -87,25 +87,93 @@ export class AirtableTable<
 
 	//#region GET
 
-	/** Get a single record by ID, specifying the return format */
+	/**
+	 * Fetches a single record by ID.
+	 *
+	 * @param recordId - The Airtable record ID.
+	 * @param options - See also {@link Options}:
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get<R extends "model" | "record" | "interface">(
 		recordId: string,
 		options: Options<Fld> & { returnAs: R },
 	): Promise<GetResult<FldSt, Mdl, R>>;
-	/** Get multiple records by IDs, specifying the return format */
+	/**
+	 * Fetches multiple records by their IDs, returning them in the format specified by `options.returnAs`.
+	 *
+	 * @param recordIds - Array of Airtable record IDs.
+	 * @param options - See also {@link Options}:
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get<R extends "model" | "record" | "interface">(
 		recordIds: string[],
 		options: Options<Fld> & { returnAs: R },
 	): Promise<GetResult<FldSt, Mdl, R>[]>;
-	/** Get multiple records with query options, specifying the return format */
+	/**
+	 * Fetches records matching query options, returning them in the format specified by `options.returnAs`.
+	 *
+	 * @param options - See also {@link Options}:
+	 *   - `view` — View name or ID to filter records.
+	 *   - `formula` — Formula string to filter records.
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get<R extends "model" | "record" | "interface">(
 		options: QueryOptions<Vw, Fld> & { returnAs: R },
 	): Promise<GetResult<FldSt, Mdl, R>[]>;
-	/** Get a single record by ID (returns model by default) */
+	/**
+	 * Fetches a single record by ID.
+	 *
+	 * @param recordId - The Airtable record ID.
+	 * @param options - See also {@link Options}:
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get(recordId: string, options?: Options<Fld>): Promise<Mdl>;
-	/** Get multiple records by IDs (returns models by default) */
+	/**
+	 * Fetches multiple records by their IDs, returning them in the format specified by `options.returnAs`.
+	 *
+	 * @param recordIds - Array of Airtable record IDs.
+	 * @param options - See also {@link Options}:
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get(recordIds: string[], options?: Options<Fld>): Promise<Mdl[]>;
-	/** Get multiple records with query options (returns models by default) */
+	/**
+	 * Fetches records matching query options, returning them in the format specified by `options.returnAs`.
+	 *
+	 * @param options - See also {@link Options}:
+	 *   - `view` — View name or ID to filter records.
+	 *   - `formula` — Formula string to filter records.
+	 *   - `fields` — Restrict which fields are returned (by name).
+	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
+	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
+	 *   - `pageSize` — Records per API page (1–100, default 100).
+	 *   - `maxRecords` — Cap the total number of records returned.
+	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
+	 */
 	public async get(options?: QueryOptions<Vw, Fld>): Promise<Mdl[]>;
 	public async get(
 		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<Vw, Fld>,
