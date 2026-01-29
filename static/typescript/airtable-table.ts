@@ -1,17 +1,65 @@
 /* eslint-disable no-unused-vars */
-import { Record as ATRecord, FieldSet, AirtableOptions } from "airtable";
+import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "airtable";
 import { AirtableModel } from "./airtable-model";
-import { ModelTable } from "./model-table";
-import { RecordTable } from "./record-table";
+import { QueryParams } from "airtable/lib/query_params";
+import { ID } from "./formula";
+import { baseIdSchema, validateRecordIds } from "./special-types";
 
+export interface Options<Fld> {
+	/** Number of records to return per page (Airtable API default is 100) */
+	pageSize?: number;
+	/** Specific fields to return */
+	fields?: Fld[];
+	/** Whether to use field IDs instead of names */
+	useFieldIds?: boolean;
+	/** Maximum number of records to return */
+	maxRecords?: number;
+	/** What format to return the data in. Default: "model" */
+	returnAs?: "model" | "record" | "interface";
+	/** Return only writable fields from the API. Only applies when returnAs is "record" or "interface". */
+	onlyWritableFields?: boolean;
+}
+
+export interface QueryOptions<Vw, Fld> extends Options<Fld> {
+	/** View name or ID to filter records */
+	view?: Vw;
+	/** Formula string to filter records */
+	formula?: string;
+}
+
+/** Simplified representation of an Airtable record */
+export interface IRecord<FldSt extends FieldSet> {
+	/** The ID of the record */
+	id: string;
+	/** The fields of the record */
+	fields: FldSt;
+}
+
+/** Conditional return type for `get()` based on the `returnAs` option */
+type GetResult<FldSt extends FieldSet, Mdl, R> = R extends "interface"
+	? IRecord<FldSt>
+	: R extends "record"
+		? ATRecord<FldSt>
+		: Mdl;
+
+/** Unified Airtable table class supporting model, record, and interface return types */
 export class AirtableTable<
 	FldSt extends FieldSet,
 	Mdl extends AirtableModel<FldSt, unknown, keyof FldSt>,
 	Vw extends string,
 	Fld extends string,
-> extends ModelTable<FldSt, Mdl, Vw, Fld> {
-	/** A separate instance for dealing with Airtable.js's `Record<FieldSet>` class */
-	public record: RecordTable<FldSt, Vw, Fld>;
+> {
+	/** Underlying Airtable.js Table instance */
+	public _table: Table<FldSt>;
+	/** Base ID */
+	public readonly baseId: string;
+	public _options: AirtableOptions = {};
+
+	private recordCtor: (record: ATRecord<FldSt>) => Mdl;
+	private viewNameToIdMap: Record<Vw, string>;
+	private fieldNameToIdMap: Record<string, string>;
+	private fieldIdToNameMap: Record<string, string>;
+	private writableFieldIds: string[];
 
 	constructor(
 		baseId: string,
@@ -23,15 +71,515 @@ export class AirtableTable<
 		recordCtor: (record: ATRecord<FldSt>) => Mdl,
 		options: AirtableOptions = {},
 	) {
-		super(baseId, tableNameOrId, viewNameToIdMap, recordCtor, options);
-		this.record = new RecordTable<FldSt, Vw, Fld>(
-			baseId,
-			tableNameOrId,
-			viewNameToIdMap,
-			fieldNameToIdMap,
-			fieldIdToNameMap,
-			writableFieldIds,
-			options,
-		);
+		this.baseId = baseIdSchema.parse(baseId);
+		this._options = options;
+		this._table = new Airtable(options).base(this.baseId).table(tableNameOrId);
+		this.recordCtor = recordCtor;
+		this.viewNameToIdMap = viewNameToIdMap;
+		this.fieldNameToIdMap = fieldNameToIdMap;
+		this.fieldIdToNameMap = fieldIdToNameMap;
+		this.writableFieldIds = writableFieldIds;
 	}
+
+	public getViewId(viewName: Vw): string {
+		return this.viewNameToIdMap[viewName] || viewName;
+	}
+
+	//#region GET
+
+	/** Get a single record by ID, specifying the return format */
+	public async get<R extends "model" | "record" | "interface">(
+		recordId: string,
+		options: Options<Fld> & { returnAs: R },
+	): Promise<GetResult<FldSt, Mdl, R>>;
+	/** Get multiple records by IDs, specifying the return format */
+	public async get<R extends "model" | "record" | "interface">(
+		recordIds: string[],
+		options: Options<Fld> & { returnAs: R },
+	): Promise<GetResult<FldSt, Mdl, R>[]>;
+	/** Get multiple records with query options, specifying the return format */
+	public async get<R extends "model" | "record" | "interface">(
+		options: QueryOptions<Vw, Fld> & { returnAs: R },
+	): Promise<GetResult<FldSt, Mdl, R>[]>;
+	/** Get a single record by ID (returns model by default) */
+	public async get(recordId: string, options?: Options<Fld>): Promise<Mdl>;
+	/** Get multiple records by IDs (returns models by default) */
+	public async get(recordIds: string[], options?: Options<Fld>): Promise<Mdl[]>;
+	/** Get multiple records with query options (returns models by default) */
+	public async get(options?: QueryOptions<Vw, Fld>): Promise<Mdl[]>;
+	public async get(
+		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<Vw, Fld>,
+		options?: Options<Fld>,
+	): Promise<any> {
+		// Single record by ID
+		if (typeof recordIdOrIdsOrOptions === "string") {
+			validateRecordIds(recordIdOrIdsOrOptions);
+			const returnAs = options?.returnAs ?? "model";
+			const selectOptions: QueryParams<FldSt> = {
+				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
+			};
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
+			if (options?.fields) {
+				selectOptions.fields = options.fields as string[];
+			} else if (options?.onlyWritableFields && returnAs !== "model") {
+				selectOptions.fields = this.writableFieldIds;
+			}
+			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
+
+			try {
+				const records = await this._table.select(selectOptions).all();
+				const record = records.length === 0 ? ({} as ATRecord<FldSt>) : records[0];
+				return this.convertGetResult(record, returnAs);
+			} catch (error) {
+				// I am aware of how stupid this looks,
+				// but without it, errors from Airtable's API don't surface properly;
+				// you get a generic "UnhandledPromiseRejectionWarning" instead.
+				throw new Error(String(error));
+			}
+		}
+
+		// Multiple records by IDs
+		else if (Array.isArray(recordIdOrIdsOrOptions)) {
+			validateRecordIds(recordIdOrIdsOrOptions);
+			if (recordIdOrIdsOrOptions.length === 0) {
+				return [];
+			}
+			const returnAs = options?.returnAs ?? "model";
+			const selectOptions: QueryParams<FldSt> = {
+				filterByFormula: new ID().inList(recordIdOrIdsOrOptions),
+			};
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
+			if (options?.fields) {
+				selectOptions.fields = options.fields as string[];
+			} else if (options?.onlyWritableFields && returnAs !== "model") {
+				selectOptions.fields = this.writableFieldIds;
+			}
+			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
+			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
+
+			try {
+				const records = await this._table.select(selectOptions).all();
+				return this.convertGetResults([...records], returnAs);
+			} catch (error) {
+				// I am aware of how stupid this looks,
+				// but without it, errors from Airtable's API don't surface properly;
+				// you get a generic "UnhandledPromiseRejectionWarning" instead.
+				throw new Error(String(error));
+			}
+		}
+
+		// Query with options (first parameter is options object)
+		else {
+			const queryOptions = recordIdOrIdsOrOptions || {};
+			const returnAs = queryOptions.returnAs ?? "model";
+			const selectOptions: QueryParams<FldSt> = {};
+			if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
+			if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
+			if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
+			if (queryOptions.fields) {
+				selectOptions.fields = queryOptions.fields as string[];
+			} else if (queryOptions.onlyWritableFields && returnAs !== "model") {
+				selectOptions.fields = this.writableFieldIds;
+			}
+			if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
+			selectOptions.returnFieldsByFieldId = queryOptions.useFieldIds ?? returnAs === "model";
+
+			try {
+				const records = await this._table.select(selectOptions).all();
+				return this.convertGetResults([...records], returnAs);
+			} catch (error) {
+				// I am aware of how stupid this looks,
+				// but without it, errors from Airtable's API don't surface properly;
+				// you get a generic "UnhandledPromiseRejectionWarning" instead.
+				throw new Error(String(error));
+			}
+		}
+	}
+
+	//#endregion
+
+	//#region CREATE
+
+	/** Create a single record */
+	public async create(record: Mdl): Promise<Mdl>;
+	/** Create multiple records */
+	public async create(records: Mdl[]): Promise<Mdl[]>;
+	/** Create a single record from an Airtable.js Record */
+	public async create(record: ATRecord<FldSt>): Promise<ATRecord<FldSt>>;
+	/** Create multiple records from Airtable.js Records */
+	public async create(records: ATRecord<FldSt>[]): Promise<ATRecord<FldSt>[]>;
+	/** Create a single record from a simple interface */
+	public async create(record: IRecord<FldSt>): Promise<IRecord<FldSt>>;
+	/** Create multiple records from simple interfaces */
+	public async create(records: IRecord<FldSt>[]): Promise<IRecord<FldSt>[]>;
+	public async create(
+		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
+	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		const isArray = Array.isArray(recordOrRecords);
+		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
+		const inputType = this.detectInputType(firstItem);
+
+		if (isArray) {
+			const items = recordOrRecords as any[];
+			const createdRecords: ATRecord<FldSt>[] = [];
+
+			if (inputType === "model") {
+				const payloads = items.map((r: Mdl) => r.toCreateRecordData());
+				for (let i = 0; i < payloads.length; i += 10) {
+					const batch = payloads.slice(i, i + 10);
+					try {
+						const batchCreated = await this._table.create(batch);
+						createdRecords.push(...batchCreated);
+					} catch (error) {
+						// I am aware of how stupid this looks,
+						// but without it, errors from Airtable's API don't surface properly;
+						// you get a generic "UnhandledPromiseRejectionWarning" instead.
+						throw new Error(String(error));
+					}
+				}
+				return createdRecords.map((r) => this.recordCtor(r));
+			} else {
+				const records = this.mapToIds(items);
+				const isUsingFieldNames = this.isUsingFieldNames(records);
+				for (let i = 0; i < records.length; i += 10) {
+					const batch = records.slice(i, i + 10);
+					try {
+						const batchCreated = await this._table.create(batch.map((r) => this.toWritableRecord(r)) as any);
+						createdRecords.push(...batchCreated);
+					} catch (error) {
+						// I am aware of how stupid this looks,
+						// but without it, errors from Airtable's API don't surface properly;
+						// you get a generic "UnhandledPromiseRejectionWarning" instead.
+						throw new Error(String(error));
+					}
+				}
+				if (isUsingFieldNames) this.mapToNames(createdRecords);
+				return inputType === "interface"
+					? createdRecords.map((r) => this.toInterface(r))
+					: (createdRecords as ATRecord<FldSt>[]);
+			}
+		} else {
+			if (inputType === "model") {
+				const payload = (recordOrRecords as Mdl).toCreateRecordData();
+				try {
+					const createdRecords = await this._table.create([payload]);
+					return this.recordCtor(createdRecords[0]);
+				} catch (error) {
+					// I am aware of how stupid this looks,
+					// but without it, errors from Airtable's API don't surface properly;
+					// you get a generic "UnhandledPromiseRejectionWarning" instead.
+					throw new Error(String(error));
+				}
+			} else {
+				const record = this.mapToIds([recordOrRecords as any])[0];
+				const isUsingFieldNames = this.isUsingFieldNames([record]);
+				try {
+					const createdRecords = await this._table.create([this.toWritableRecord(record)] as any);
+					if (isUsingFieldNames) this.mapToNames(createdRecords as ATRecord<FldSt>[]);
+					const created = createdRecords[0] as ATRecord<FldSt>;
+					return inputType === "interface" ? this.toInterface(created) : created;
+				} catch (error) {
+					// I am aware of how stupid this looks,
+					// but without it, errors from Airtable's API don't surface properly;
+					// you get a generic "UnhandledPromiseRejectionWarning" instead.
+					throw new Error(String(error));
+				}
+			}
+		}
+	}
+
+	//#region UPDATE
+
+	/** Update a single record */
+	public async update(record: Mdl): Promise<Mdl>;
+	/** Update multiple records */
+	public async update(records: Mdl[]): Promise<Mdl[]>;
+	/** Update a single record from an Airtable.js Record */
+	public async update(record: ATRecord<FldSt>): Promise<ATRecord<FldSt>>;
+	/** Update multiple records from Airtable.js Records */
+	public async update(records: ATRecord<FldSt>[]): Promise<ATRecord<FldSt>[]>;
+	/** Update a single record from a simple interface */
+	public async update(record: IRecord<FldSt>): Promise<IRecord<FldSt>>;
+	/** Update multiple records from simple interfaces */
+	public async update(records: IRecord<FldSt>[]): Promise<IRecord<FldSt>[]>;
+	public async update(
+		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
+	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		const isArray = Array.isArray(recordOrRecords);
+		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
+		const inputType = this.detectInputType(firstItem);
+
+		if (isArray) {
+			const items = recordOrRecords as any[];
+			const updatedRecords: ATRecord<FldSt>[] = [];
+
+			if (inputType === "model") {
+				const payloads = items.map((r: Mdl) => r.toUpdateRecordData());
+				for (let i = 0; i < payloads.length; i += 10) {
+					const batch = payloads.slice(i, i + 10);
+					try {
+						const batchUpdated = await this._table.update(batch);
+						updatedRecords.push(...batchUpdated);
+					} catch (error) {
+						// I am aware of how stupid this looks,
+						// but without it, errors from Airtable's API don't surface properly;
+						// you get a generic "UnhandledPromiseRejectionWarning" instead.
+						throw new Error(String(error));
+					}
+				}
+				return updatedRecords.map((r) => this.recordCtor(r));
+			} else {
+				const records = this.mapToIds(items);
+				const isUsingFieldNames = this.isUsingFieldNames(records);
+				for (let i = 0; i < records.length; i += 10) {
+					const batch = records.slice(i, i + 10);
+					try {
+						const batchUpdated = await this._table.update(batch.map((r) => this.toWritableRecord(r)) as any);
+						updatedRecords.push(...batchUpdated);
+					} catch (error) {
+						// I am aware of how stupid this looks,
+						// but without it, errors from Airtable's API don't surface properly;
+						// you get a generic "UnhandledPromiseRejectionWarning" instead.
+						throw new Error(String(error));
+					}
+				}
+				if (isUsingFieldNames) this.mapToNames(updatedRecords);
+				return inputType === "interface"
+					? updatedRecords.map((r) => this.toInterface(r))
+					: (updatedRecords as ATRecord<FldSt>[]);
+			}
+		} else {
+			if (inputType === "model") {
+				const payload = (recordOrRecords as Mdl).toUpdateRecordData();
+				try {
+					const updatedRecords = await this._table.update([payload]);
+					return this.recordCtor(updatedRecords[0]);
+				} catch (error) {
+					// I am aware of how stupid this looks,
+					// but without it, errors from Airtable's API don't surface properly;
+					// you get a generic "UnhandledPromiseRejectionWarning" instead.
+					throw new Error(String(error));
+				}
+			} else {
+				const record = this.mapToIds([recordOrRecords as any])[0];
+				const isUsingFieldNames = this.isUsingFieldNames([record]);
+				try {
+					const updatedRecords = await this._table.update([this.toWritableRecord(record)] as any);
+					if (isUsingFieldNames) this.mapToNames(updatedRecords as ATRecord<FldSt>[]);
+					const updated = updatedRecords[0] as ATRecord<FldSt>;
+					return inputType === "interface" ? this.toInterface(updated) : updated;
+				} catch (error) {
+					// I am aware of how stupid this looks,
+					// but without it, errors from Airtable's API don't surface properly;
+					// you get a generic "UnhandledPromiseRejectionWarning" instead.
+					throw new Error(String(error));
+				}
+			}
+		}
+	}
+
+	//#endregion
+
+	//#region UPSERT
+
+	/** Upsert a single record */
+	public async upsert(record: Mdl): Promise<Mdl>;
+	/** Upsert multiple records */
+	public async upsert(records: Mdl[]): Promise<Mdl[]>;
+	/** Upsert a single record from an Airtable.js Record */
+	public async upsert(record: ATRecord<FldSt>): Promise<ATRecord<FldSt>>;
+	/** Upsert multiple records from Airtable.js Records */
+	public async upsert(records: ATRecord<FldSt>[]): Promise<ATRecord<FldSt>[]>;
+	/** Upsert a single record from a simple interface */
+	public async upsert(record: IRecord<FldSt>): Promise<IRecord<FldSt>>;
+	/** Upsert multiple records from simple interfaces */
+	public async upsert(records: IRecord<FldSt>[]): Promise<IRecord<FldSt>[]>;
+	public async upsert(
+		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
+	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		const isArray = Array.isArray(recordOrRecords);
+		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
+		const inputType = this.detectInputType(firstItem);
+		const records = isArray ? (recordOrRecords as any[]) : [recordOrRecords];
+
+		// Batch fetch all records to check which exist
+		const recordIds = records.map((r) => r.id).filter((id: string) => !!id);
+		const existingRecords = recordIds.length > 0 ? await this.get(recordIds) : [];
+		const existingIds = new Set(existingRecords.map((r) => r.id));
+
+		// Separate into updates and creates
+		const toUpdate: any[] = [];
+		const toCreate: any[] = [];
+		for (const record of records) {
+			if (record.id && existingIds.has(record.id)) {
+				toUpdate.push(record);
+			} else {
+				toCreate.push(record);
+			}
+		}
+
+		// Batch update and create
+		const [updatedRecords, createdRecords] = await Promise.all([
+			toUpdate.length > 0 ? this.update(toUpdate as any) : Promise.resolve([]),
+			toCreate.length > 0 ? this.create(toCreate as any) : Promise.resolve([]),
+		]);
+		const upsertedRecords = [
+			...(Array.isArray(updatedRecords) ? updatedRecords : [updatedRecords]),
+			...(Array.isArray(createdRecords) ? createdRecords : [createdRecords]),
+		];
+
+		if (inputType === "interface") {
+			const asInterfaces = upsertedRecords.map((r) =>
+				this.isATRecord(r as any) ? this.toInterface(r as ATRecord<FldSt>) : (r as IRecord<FldSt>),
+			);
+			return isArray ? asInterfaces : asInterfaces[0];
+		}
+		return isArray ? upsertedRecords : upsertedRecords[0];
+	}
+
+	//#endregion
+
+	//#region DELETE
+
+	/** Delete a single record */
+	public async delete(recordId: string): Promise<void>;
+	/** Delete multiple records */
+	public async delete(recordIds: string[]): Promise<void>;
+	public async delete(recordIdOrIds: string | string[]): Promise<void> {
+		if (Array.isArray(recordIdOrIds)) {
+			validateRecordIds(recordIdOrIds);
+			for (let i = 0; i < recordIdOrIds.length; i += 10) {
+				const batch = recordIdOrIds.slice(i, i + 10);
+				try {
+					await this._table.destroy(batch);
+				} catch (error) {
+					// I am aware of how stupid this looks,
+					// but without it, errors from Airtable's API don't surface properly;
+					// you get a generic "UnhandledPromiseRejectionWarning" instead.
+					throw new Error(String(error));
+				}
+			}
+		} else {
+			validateRecordIds(recordIdOrIds);
+			try {
+				await this._table.destroy([recordIdOrIds]);
+			} catch (error) {
+				// I am aware of how stupid this looks,
+				// but without it, errors from Airtable's API don't surface properly;
+				// you get a generic "UnhandledPromiseRejectionWarning" instead.
+				throw new Error(String(error));
+			}
+		}
+	}
+
+	//#endregion
+
+	//#region HELPERS
+
+	/** Convert a single get result based on returnAs */
+	private convertGetResult(
+		record: ATRecord<FldSt>,
+		returnAs: "model" | "record" | "interface",
+	): Mdl | ATRecord<FldSt> | IRecord<FldSt> {
+		switch (returnAs) {
+			case "model":
+				return this.recordCtor(record);
+			case "record":
+				return record;
+			case "interface":
+				return this.toInterface(record);
+		}
+	}
+
+	/** Convert multiple get results based on returnAs */
+	private convertGetResults(
+		records: ATRecord<FldSt>[],
+		returnAs: "model" | "record" | "interface",
+	): Mdl[] | ATRecord<FldSt>[] | IRecord<FldSt>[] {
+		switch (returnAs) {
+			case "model":
+				return records.map((r) => this.recordCtor(r));
+			case "record":
+				return records as ATRecord<FldSt>[];
+			case "interface":
+				return records.map((r) => this.toInterface(r));
+		}
+	}
+
+	/** Detect the input type of a record */
+	private detectInputType(record: unknown): "model" | "record" | "interface" {
+		if (record instanceof AirtableModel) return "model";
+		if (this.isATRecord(record as any)) return "record";
+		return "interface";
+	}
+
+	/** Convert into a form the Airtable API will accept */
+	private toWritableRecord(record: ATRecord<FldSt> | IRecord<FldSt>): IRecord<FldSt> {
+		const writableFields: Partial<FldSt> = {};
+		for (const fieldId of this.writableFieldIds) {
+			if (fieldId in record.fields) {
+				writableFields[fieldId as keyof FldSt] = record.fields[fieldId as keyof FldSt];
+			}
+		}
+		return {
+			id: record.id,
+			fields: writableFields as FldSt,
+		};
+	}
+
+	/** Check if a record is an Airtable.js Record instance (vs a plain IRecord) */
+	private isATRecord(record: ATRecord<FldSt> | IRecord<FldSt>): record is ATRecord<FldSt> {
+		return typeof (record as any).save === "function";
+	}
+
+	/** Convert to a simple interface */
+	private toInterface(record: ATRecord<FldSt>): IRecord<FldSt> {
+		return {
+			id: record.id,
+			fields: record.fields,
+		};
+	}
+
+	private isUsingFieldNames(records: (ATRecord<FldSt> | IRecord<FldSt>)[]): boolean {
+		for (const record of records) {
+			for (const field in record.fields) {
+				if (this.fieldNameToIdMap[field]) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private mapToIds(records: (ATRecord<FldSt> | IRecord<FldSt>)[]): (ATRecord<FldSt> | IRecord<FldSt>)[] {
+		if (this.isUsingFieldNames(records)) {
+			for (const record of records) {
+				for (const field in record.fields) {
+					if (this.fieldNameToIdMap[field]) {
+						const value = record.fields[field];
+						delete record.fields[field];
+						record.fields[this.fieldNameToIdMap[field] as keyof FldSt] = value;
+					}
+				}
+			}
+		}
+		return records;
+	}
+
+	private mapToNames(records: (ATRecord<FldSt> | IRecord<FldSt>)[]): (ATRecord<FldSt> | IRecord<FldSt>)[] {
+		if (!this.isUsingFieldNames(records)) {
+			for (const record of records) {
+				for (const field in record.fields) {
+					if (this.fieldIdToNameMap[field]) {
+						const value = record.fields[field];
+						delete record.fields[field];
+						record.fields[this.fieldIdToNameMap[field] as keyof FldSt] = value;
+					}
+				}
+			}
+		}
+		return records;
+	}
+
+	//#endregion
 }
