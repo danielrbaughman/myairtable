@@ -2,13 +2,14 @@
 
 An Airtable code generator, focused on developer experience.
 
+> [!WARNING]
+> myAirtable is under active development.
+
 Languages supported:
 
 - Python (via [pyAirtable](https://pyairtable.readthedocs.io/en/stable/))
 - TypeScript (via [airtable.js](https://github.com/Airtable/airtable.js))
 - JavaScript (via [airtable.js](https://github.com/Airtable/airtable.js))
-  > [!WARNING]
-  > myAirtable is under active development.
 
 ## Features
 
