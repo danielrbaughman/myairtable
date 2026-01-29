@@ -32,13 +32,14 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	//#region PUBLIC
 	public get(key: F): any | undefined {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		const id = this.nameToIdMap[key as string] || key;
-		return this.record.get(id as keyof FS);
+		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		return this[this.nameToPropertyMap[key as string]];
 	}
 
 	public set(key: F, value: any): void {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		this[this.nameToPropertyMap[key as string] || (key as string)] = value;
+		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		this[this.nameToPropertyMap[key as string]] = value;
 	}
 
 	/** Returns true if any fields have been modified */

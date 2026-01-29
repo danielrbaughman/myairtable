@@ -27,14 +27,15 @@ class AirtableModel {
 	/** Get a field value by field name */
 	get(key) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		const id = this.nameToIdMap[key] || key;
-		return this.record.get(id);
+		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		return this[this.nameToPropertyMap[key]];
 	}
 
 	/** Set a field value by field name */
 	set(key, value) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		this[this.nameToPropertyMap[key] || key] = value;
+		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		this[this.nameToPropertyMap[key]] = value;
 	}
 
 	/** Sets the config for this model instance (called by factory methods) */
