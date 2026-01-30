@@ -87,7 +87,7 @@ airtable.contacts.dict.update(contact)
 ```
 
 > [!NOTE]
-> For JavaScript & TypeScript, the equivalent of `.dict` is `.record`, and deals in Airtable.js' `Record<FieldSet>` class
+> For JavaScript & TypeScript, the equivalents of `.dict` are integrated into the standard CRUD operations. They will return/accept the myAirtable's `AirtableModel` classes, Airtable.js's `Record<FieldSet>` class, or a plain interface containing the json data.
 
 ### Name-locking and custom names
 
