@@ -695,14 +695,14 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 f"export class {table_name}Table extends AirtableTable<{table_name}FieldSet, {model_name}, {table_name}View, {table_name}Field> {{"
             )
             write.docstring(f"Table name ({table.name})", 1)
-            write.line_indented(f'public static name: string = "{table.name}";')
+            write.line_indented(f'public static tableName: string = "{table.name}";')
             write.docstring(f"Table name ({table.name})", 1)
-            write.line_indented(f"public get name(): string {{ return {table_name}Table.name; }}")
+            write.line_indented(f"public get tableName(): string {{ return {table_name}Table.tableName; }}")
             write.line_empty()
             write.docstring(f"Table ID ({table.id})", 1)
-            write.line_indented(f'public static id: string = "{table.id}";')
+            write.line_indented(f'public static tableId: string = "{table.id}";')
             write.docstring(f"Table ID ({table.id})", 1)
-            write.line_indented(f"public get id(): string {{ return {table_name}Table.id; }}")
+            write.line_indented(f"public get tableId(): string {{ return {table_name}Table.tableId; }}")
             write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(

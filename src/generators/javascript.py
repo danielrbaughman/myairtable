@@ -646,14 +646,14 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
             write.line(f"class {table.name_pascal()}Table extends AirtableTable {{")
             write.docstring(f"Table name ({table.name})")
-            write.line_indented(f'static name = "{table.name}";')
+            write.line_indented(f'static tableName = "{table.name}";')
             write.docstring(f"Table name ({table.name})")
-            write.line_indented(f"get name() {{ return {table.name_pascal()}Table.name; }}")
+            write.line_indented(f"get tableName() {{ return {table.name_pascal()}Table.tableName; }}")
             write.line_empty()
             write.docstring(f"Table ID ({table.id})")
-            write.line_indented(f'static id = "{table.id}";')
+            write.line_indented(f'static tableId = "{table.id}";')
             write.docstring(f"Table ID ({table.id})")
-            write.line_indented(f"get id() {{ return {table.name_pascal()}Table.id; }}")
+            write.line_indented(f"get tableId() {{ return {table.name_pascal()}Table.tableId; }}")
             write.line_empty()
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
