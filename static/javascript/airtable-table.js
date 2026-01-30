@@ -151,6 +151,7 @@ class AirtableTable {
 	 */
 	async create(recordOrRecords) {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 
@@ -231,6 +232,7 @@ class AirtableTable {
 	 */
 	async update(recordOrRecords) {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 
@@ -311,6 +313,7 @@ class AirtableTable {
 	 */
 	async upsert(recordOrRecords) {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 		const records = isArray ? recordOrRecords : [recordOrRecords];

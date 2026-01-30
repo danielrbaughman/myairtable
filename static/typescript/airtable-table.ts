@@ -284,6 +284,7 @@ export class AirtableTable<
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 
@@ -356,6 +357,8 @@ export class AirtableTable<
 		}
 	}
 
+	//#endregion
+
 	//#region UPDATE
 
 	/** Update a single record */
@@ -374,6 +377,7 @@ export class AirtableTable<
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 
@@ -466,6 +470,7 @@ export class AirtableTable<
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
 		const isArray = Array.isArray(recordOrRecords);
+		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 		const records = isArray ? (recordOrRecords as any[]) : [recordOrRecords];
