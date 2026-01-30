@@ -67,8 +67,8 @@ class AirtableModel {
 	}
 
 	/** Returns the model as a simple object, equivalent to the original Airtable JSON payload. */
-	toIRecord() {
-		const r = this.toRecord(false);
+	toIRecord(useFieldIds = false) {
+		const r = this.toRecord(useFieldIds);
 		return {
 			id: r.id,
 			fields: r.fields,

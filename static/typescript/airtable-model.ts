@@ -70,8 +70,8 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	public abstract toJson(): MdlInterface;
 
 	/** Returns the model as a simple interface, equivalent to the original Airtable JSON payload. */
-	public toIRecord(): IRecord<FldSt> {
-		const r = this.toRecord(false);
+	public toIRecord(useFieldIds: boolean = false): IRecord<FldSt> {
+		const r = this.toRecord(useFieldIds);
 		return {
 			id: r.id,
 			fields: r.fields,
