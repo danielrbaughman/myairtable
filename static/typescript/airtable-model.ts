@@ -5,17 +5,19 @@ import * as z from "zod";
 import { CreateRecordData, recordIdSchema } from "./special-types";
 import { getBaseId, getOptions } from "./helpers";
 
-export abstract class AirtableModel<FS extends FieldSet, I, F> {
+export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
+	// Base properties
+	protected record?: ATRecord<FldSt>;
+	public id: string;
 	[key: string]: unknown;
+
+	// Mappings - must be defined by subclasses
 	protected nameToIdMap: Record<string, string> = {};
 	protected idToNameMap: Record<string, string> = {};
 	protected nameToPropertyMap: Record<string, string> = {};
 
 	/** Zod schema for validation - must be defined by subclasses */
 	protected static schema: z.ZodTypeAny;
-
-	protected record?: ATRecord<FS>;
-	public id: string;
 
 	// Change tracking
 	protected _dirtyFields: Set<string> = new Set();
@@ -25,18 +27,18 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	protected __configBaseId?: string;
 	protected __configOptions?: AirtableOptions;
 
-	constructor(id: string) {
+	constructor(id: string = "") {
 		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
 	//#region PUBLIC
-	public get(key: F): any | undefined {
+	public get(key: Fld): any | undefined {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
 		return this[this.nameToPropertyMap[key as string]];
 	}
 
-	public set(key: F, value: any): void {
+	public set(key: Fld, value: any): void {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
 		this[this.nameToPropertyMap[key as string]] = value;
@@ -67,30 +69,31 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 	 * Converts the model to a plain object.
 	 * Must be implemented by subclasses to return all field values.
 	 */
-	public abstract toJson(): I;
+	public abstract toJson(): MdlInterface;
 
-	public toRecord(useFieldIds: boolean = true): ATRecord<FS> {
+	public toRecord(useFieldIds: boolean = true): ATRecord<FldSt> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
-		const r = { ...this.record } as ATRecord<FS>;
+		const r = { ...this.record } as ATRecord<FldSt>;
 		if (!useFieldIds) {
 			r.fields = Object.fromEntries(
 				Object.entries(r.fields).map(([key, value]) => {
 					const name = this.idToNameMap[key] || key;
 					return [name, value];
 				}),
-			) as FS;
+			) as FldSt;
 		}
 		return r;
 	}
 
-	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FS>> {
+	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FldSt>> {
 		return {
 			fields: this.writableFields(useFieldIds),
 		};
 	}
 
-	public toUpdateRecordData(useFieldIds: boolean = true): RecordData<Partial<FS>> {
+	public toUpdateRecordData(useFieldIds: boolean = true): RecordData<Partial<FldSt>> {
+		if (!this.id) throw new Error("Cannot create update record data: id is undefined.");
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
@@ -109,7 +112,7 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 
 		try {
 			const updatedRecords = await this.record._table.update([updateData]);
-			this.record = updatedRecords[0] as ATRecord<FS>;
+			this.record = updatedRecords[0] as ATRecord<FldSt>;
 		} catch (error) {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
@@ -193,7 +196,7 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 		this._isNew = false;
 	}
 
-	protected writableFields(useFieldIds: boolean = true): Partial<FS> {
+	protected writableFields(useFieldIds: boolean = true): Partial<FldSt> {
 		return {};
 		// To be overridden by subclasses
 	}
@@ -218,7 +221,7 @@ export abstract class AirtableModel<FS extends FieldSet, I, F> {
 		return writableAttachments;
 	}
 
-	protected updateModel(record: ATRecord<FS>): void {
+	protected updateModel(record: ATRecord<FldSt>): void {
 		this.record = record;
 		// To be overridden by subclasses
 	}

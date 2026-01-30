@@ -66,25 +66,28 @@ Finally, myAirtable generates custom lightweight wrapper classes, which expose p
 ```python
 from myairtable_output import Airtable, ContactsModel, ContactsRecordDict
 
-at = Airtable()
+airtable = Airtable()
 
 # CRUD operations for pyAirtable ORMs
-contact: ContactsModel = at.contacts.get("rec1234567890")
+contact: ContactsModel = airtable.contacts.get("rec1234567890")
 contact.name = "Bob"
 contact.save() # pyAirtable's ORM models have handy functions like .save()
-at.contacts.update(contact) # or you can use myAirtable's wrapper if you prefer that syntax
+airtable.contacts.update(contact) # or you can use myAirtable's wrapper if you prefer that syntax
 
 # table.get() method has kwargs for most of pyAirtable's options, which are otherwise less clear. View and Fields kwargs are typed.
-contacts: list[ContactsModel] = at.contacts.get(view="Family & Friends", fields=["Name", "Age"])
+contacts: list[ContactsModel] = airtable.contacts.get(view="Family & Friends", fields=["Name", "Age"])
 for contact in contacts
 	contact.age = contact.age + 1
   contact.save()
 
 # CRUD operations for pyAirtable RecordDicts
-contact: ContactsRecordDict = at.contacts.dict.get("rec1234567890")
+contact: ContactsRecordDict = airtable.contacts.dict.get("rec1234567890")
 contact["fields"]["name"] = "Joe"
-at.contacts.dict.update(contact)
+airtable.contacts.dict.update(contact)
 ```
+
+> [!NOTE]
+> For JavaScript & TypeScript, the equivalents of `.dict` are integrated into the standard CRUD operations. They will return/accept the myAirtable's `AirtableModel` classes, Airtable.js's `Record<FieldSet>` class, or a plain interface containing the json data.
 
 ### Name-locking and custom names
 

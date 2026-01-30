@@ -2,15 +2,17 @@ const { recordIdSchema } = require("./special-types");
 const { getBaseId, getOptions } = require("./helpers");
 
 class AirtableModel {
-	/** Zod schema for validation - must be defined by subclasses */
-	static schema;
+	// Base properties
+	record;
+	id;
 
+	// Mappings - must be defined by subclasses
 	nameToIdMap = {};
 	idToNameMap = {};
 	nameToPropertyMap = {};
 
-	record;
-	id;
+	/** Zod schema for validation - must be defined by subclasses */
+	static schema;
 
 	// Change tracking
 	_dirtyFields = new Set();
@@ -24,6 +26,7 @@ class AirtableModel {
 		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
+	//#region PUBLIC
 	/** Get a field value by field name */
 	get(key) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
@@ -38,33 +41,6 @@ class AirtableModel {
 		this[this.nameToPropertyMap[key]] = value;
 	}
 
-	/** Sets the config for this model instance (called by factory methods) */
-	setConfig(baseId, options) {
-		this.__configBaseId = baseId;
-		this.__configOptions = options;
-	}
-
-	/** Gets the options for this instance, falling back to registry/env vars */
-	getInstanceOptions() {
-		if (this.__configOptions) return this.__configOptions;
-		return getOptions(this.__configBaseId);
-	}
-
-	/** Gets the baseId for this instance, falling back to registry/env vars */
-	getInstanceBaseId() {
-		return this.__configBaseId ?? getBaseId();
-	}
-
-	/** Marks a field as dirty (modified) */
-	markDirty(fieldName) {
-		this._dirtyFields.add(fieldName);
-	}
-
-	/** Checks if a field has been modified */
-	isDirty(fieldName) {
-		return this._dirtyFields.has(fieldName);
-	}
-
 	/** Returns true if any fields have been modified */
 	hasChanges() {
 		return this._dirtyFields.size > 0;
@@ -73,12 +49,6 @@ class AirtableModel {
 	/** Returns an array of field names that have been modified */
 	getChangedFields() {
 		return Array.from(this._dirtyFields);
-	}
-
-	/** Clears all dirty flags and marks the model as not new */
-	clearDirtyFlags() {
-		this._dirtyFields.clear();
-		this._isNew = false;
 	}
 
 	/**
@@ -100,40 +70,6 @@ class AirtableModel {
 		throw new Error("toJson must be implemented by subclass");
 	}
 
-	writableFields(useFieldIds = true) {
-		return {};
-		// To be overridden by subclasses
-	}
-
-	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
-	sanitizeAttachment(fieldName) {
-		const attachments = this[fieldName];
-		const writableAttachments = [];
-		if (attachments && Array.isArray(attachments)) {
-			for (const attachment of attachments) {
-				const writableAttachment = {
-					id: attachment.id,
-					url: attachment.url,
-					filename: attachment.filename,
-					size: attachment.size,
-					type: attachment.type,
-				};
-				writableAttachments.push(writableAttachment);
-			}
-		}
-
-		return writableAttachments;
-	}
-
-	updateModel(record) {
-		this.record = record;
-		// To be overridden by subclasses
-	}
-
-	updateRecord() {
-		// To be overridden by subclasses
-	}
-
 	toRecord(useFieldIds = true) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
@@ -149,13 +85,6 @@ class AirtableModel {
 		return r;
 	}
 
-	toRecordData() {
-		return {
-			id: this.id,
-			fields: this.toRecord().fields,
-		};
-	}
-
 	toCreateRecordData(useFieldIds = true) {
 		return {
 			fields: this.writableFields(useFieldIds),
@@ -163,6 +92,7 @@ class AirtableModel {
 	}
 
 	toUpdateRecordData(useFieldIds = true) {
+		if (!this.id) throw new Error("Cannot create update record data: id is undefined.");
 		return {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
@@ -227,6 +157,77 @@ class AirtableModel {
 		this.record = undefined;
 		this.id = "";
 	}
+	//#endregion
+
+	//#region PRIVATE
+	/** Sets the config for this model instance (called by factory methods) */
+	setConfig(baseId, options) {
+		this.__configBaseId = baseId;
+		this.__configOptions = options;
+	}
+
+	/** Gets the options for this instance, falling back to registry/env vars */
+	getInstanceOptions() {
+		if (this.__configOptions) return this.__configOptions;
+		return getOptions(this.__configBaseId);
+	}
+
+	/** Gets the baseId for this instance, falling back to registry/env vars */
+	getInstanceBaseId() {
+		return this.__configBaseId ?? getBaseId();
+	}
+
+	/** Marks a field as dirty (modified) */
+	markDirty(fieldName) {
+		this._dirtyFields.add(fieldName);
+	}
+
+	/** Checks if a field has been modified */
+	isDirty(fieldName) {
+		return this._dirtyFields.has(fieldName);
+	}
+
+	/** Clears all dirty flags and marks the model as not new */
+	clearDirtyFlags() {
+		this._dirtyFields.clear();
+		this._isNew = false;
+	}
+
+	writableFields(useFieldIds = true) {
+		return {};
+		// To be overridden by subclasses
+	}
+
+	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
+	sanitizeAttachment(fieldName) {
+		const attachments = this[fieldName];
+		const writableAttachments = [];
+		if (attachments && Array.isArray(attachments)) {
+			for (const attachment of attachments) {
+				const writableAttachment = {
+					id: attachment.id,
+					url: attachment.url,
+					filename: attachment.filename,
+					size: attachment.size,
+					type: attachment.type,
+				};
+				writableAttachments.push(writableAttachment);
+			}
+		}
+
+		return writableAttachments;
+	}
+
+	updateModel(record) {
+		this.record = record;
+		// To be overridden by subclasses
+	}
+
+	updateRecord() {
+		// To be overridden by subclasses
+	}
+
+	//#endregion
 }
 
 module.exports = { AirtableModel };
