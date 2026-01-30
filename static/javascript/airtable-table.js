@@ -476,14 +476,12 @@ class AirtableTable {
 	}
 
 	mapToNames(records) {
-		if (!this.isUsingFieldNames(records)) {
-			for (const record of records) {
-				for (const field in record.fields) {
-					if (this.fieldIdToNameMap[field]) {
-						const value = record.fields[field];
-						delete record.fields[field];
-						record.fields[this.fieldIdToNameMap[field]] = value;
-					}
+		for (const record of records) {
+			for (const field in record.fields) {
+				if (this.fieldIdToNameMap[field]) {
+					const value = record.fields[field];
+					delete record.fields[field];
+					record.fields[this.fieldIdToNameMap[field]] = value;
 				}
 			}
 		}

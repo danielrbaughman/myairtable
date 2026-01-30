@@ -640,14 +640,12 @@ export class AirtableTable<
 	}
 
 	private mapToNames(records: (ATRecord<FldSt> | IRecord<FldSt>)[]): (ATRecord<FldSt> | IRecord<FldSt>)[] {
-		if (!this.isUsingFieldNames(records)) {
-			for (const record of records) {
-				for (const field in record.fields) {
-					if (this.fieldIdToNameMap[field]) {
-						const value = record.fields[field];
-						delete record.fields[field];
-						record.fields[this.fieldIdToNameMap[field] as keyof FldSt] = value;
-					}
+		for (const record of records) {
+			for (const field in record.fields) {
+				if (this.fieldIdToNameMap[field]) {
+					const value = record.fields[field];
+					delete record.fields[field];
+					record.fields[this.fieldIdToNameMap[field] as keyof FldSt] = value;
 				}
 			}
 		}
