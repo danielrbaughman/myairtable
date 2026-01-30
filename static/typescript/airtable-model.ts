@@ -117,11 +117,14 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
 
-		const updateData = this.toUpdateRecordData();
-
 		try {
-			const updatedRecords = await this.record._table.update([updateData]);
-			this.record = updatedRecords[0] as ATRecord<FldSt>;
+			if (this.id) {
+				const updatedRecords = await this.record._table.update([this.toUpdateRecordData(true)]);
+				this.record = updatedRecords[0] as ATRecord<FldSt>;
+			} else {
+				const createdRecords = await this.record._table.create([this.toCreateRecordData(true)]);
+				this.record = createdRecords[0] as ATRecord<FldSt>;
+			}
 		} catch (error) {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;

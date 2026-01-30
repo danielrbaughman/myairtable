@@ -114,11 +114,14 @@ class AirtableModel {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
 
-		const updateData = this.toUpdateRecordData(true);
-
 		try {
-			const updatedRecords = await this.record._table.update([updateData]);
-			this.record = updatedRecords[0];
+			if (this.id) {
+				const updatedRecords = await this.record._table.update([this.toUpdateRecordData(true)]);
+				this.record = updatedRecords[0];
+			} else {
+				const createdRecords = await this.record._table.create([this.toCreateRecordData(true)]);
+				this.record = createdRecords[0];
+			}
 		} catch (error) {
 			// I am aware of how stupid this looks,
 			// but without it, errors from Airtable's API don't surface properly;
