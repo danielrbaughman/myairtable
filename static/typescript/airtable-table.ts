@@ -3,7 +3,7 @@ import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "
 import { AirtableModel } from "./airtable-model";
 import { QueryParams } from "airtable/lib/query_params";
 import { ID } from "./formula";
-import { baseIdSchema, validateRecordIds } from "./special-types";
+import { baseIdSchema, IRecord, validateRecordIds } from "./special-types";
 
 export interface Options<Fld> {
 	/** Number of records to return per page (Airtable API default is 100) */
@@ -25,14 +25,6 @@ export interface QueryOptions<Vw, Fld> extends Options<Fld> {
 	view?: Vw;
 	/** Formula string to filter records */
 	formula?: string;
-}
-
-/** Simplified representation of an Airtable record */
-export interface IRecord<FldSt extends FieldSet> {
-	/** The ID of the record */
-	id: string;
-	/** The fields of the record */
-	fields: FldSt;
 }
 
 /** Conditional return type for `get()` based on the `returnAs` option */

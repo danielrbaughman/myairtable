@@ -27,14 +27,14 @@ class AirtableModel {
 	}
 
 	//#region PUBLIC
-	/** Get a field value by field name */
+	/** Get a value by Airtable field name */
 	get(key) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
 		return this[this.nameToPropertyMap[key]];
 	}
 
-	/** Set a field value by field name */
+	/** Set a value by Airtable field name */
 	set(key, value) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
@@ -53,7 +53,6 @@ class AirtableModel {
 
 	/**
 	 * Validates the current model state against its Zod schema.
-	 * No-op if schema is not defined (when generated with --no-zod).
 	 * @throws {z.ZodError} if validation fails
 	 */
 	validate() {
@@ -62,15 +61,26 @@ class AirtableModel {
 		schema.parse(this.toJson());
 	}
 
-	/**
-	 * Converts the model to a plain object.
-	 * Must be implemented by subclasses to return all field values.
-	 */
+	/** Converts the model to a plain object. */
 	toJson() {
 		throw new Error("toJson must be implemented by subclass");
 	}
 
-	toRecord(useFieldIds = true) {
+	/** Returns the model as a simple object, equivalent to the original Airtable JSON payload. */
+	toIRecord() {
+		const r = this.toRecord(false);
+		return {
+			id: r.id,
+			fields: r.fields,
+		};
+	}
+
+	/**
+	 * Returns the model as Airtable.js's Record class
+	 *
+	 * @param useFieldIds - Default: `false`.
+	 */
+	toRecord(useFieldIds = false) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
 		const r = { ...this.record };
@@ -99,10 +109,7 @@ class AirtableModel {
 		};
 	}
 
-	/**
-	 * Saves the current Airtable record to the server.
-	 * @throws {z.ZodError} if validation fails before save
-	 */
+	/** Saves the current Airtable record to the server. */
 	async save() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
@@ -122,9 +129,7 @@ class AirtableModel {
 		this.clearDirtyFlags();
 	}
 
-	/**
-	 * Fetches the latest data for the current Airtable record from the server, overwriting any unsaved local changes.
-	 */
+	/** Fetches the latest data for the current Airtable record from the server, overwriting any unsaved local changes. */
 	async fetch() {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
@@ -140,9 +145,7 @@ class AirtableModel {
 		this.clearDirtyFlags();
 	}
 
-	/**
-	 * Deletes the current Airtable record to the server.
-	 */
+	/** Deletes the current Airtable record from the server. */
 	async delete() {
 		if (!this.record)
 			throw new Error("Cannot destroy record: _record is undefined. Please use fromRecord to initialize the instance.");

@@ -64,6 +64,15 @@ export type AirtableButton = z.infer<typeof AirtableButtonSchema>;
 
 export type RecordId = string;
 
+/** A variant of `RecordData`, without the ID */
 export interface CreateRecordData<T extends FieldSet> {
 	fields: T;
+}
+
+/** Simplified representation of an Airtable record */
+export interface IRecord<FldSt extends FieldSet> {
+	/** The ID of the record */
+	id: string;
+	/** The fields of the record */
+	fields: FldSt;
 }

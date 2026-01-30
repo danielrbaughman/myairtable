@@ -2,7 +2,7 @@
 /* eslint-disable no-unused-vars */
 import { AirtableOptions, Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
 import * as z from "zod";
-import { CreateRecordData, recordIdSchema } from "./special-types";
+import { CreateRecordData, IRecord, recordIdSchema } from "./special-types";
 import { getBaseId, getOptions } from "./helpers";
 
 export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
@@ -32,12 +32,14 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	//#region PUBLIC
+	/** Get a value by Airtable field name */
 	public get(key: Fld): any | undefined {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
 		return this[this.nameToPropertyMap[key as string]];
 	}
 
+	/** Set a value by Airtable field name */
 	public set(key: Fld, value: any): void {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
@@ -56,7 +58,6 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 
 	/**
 	 * Validates the current model state against its Zod schema.
-	 * No-op if schema is not defined (when generated with --no-zod).
 	 * @throws {z.ZodError} if validation fails
 	 */
 	public validate(): void {
@@ -65,13 +66,24 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		schema.parse(this.toJson());
 	}
 
-	/**
-	 * Converts the model to a plain object.
-	 * Must be implemented by subclasses to return all field values.
-	 */
+	/** Converts the model to a plain object. */
 	public abstract toJson(): MdlInterface;
 
-	public toRecord(useFieldIds: boolean = true): ATRecord<FldSt> {
+	/** Returns the model as a simple interface, equivalent to the original Airtable JSON payload. */
+	public toIRecord(): IRecord<FldSt> {
+		const r = this.toRecord(false);
+		return {
+			id: r.id,
+			fields: r.fields,
+		};
+	}
+
+	/**
+	 * Returns the model as Airtable.js's `Record<FieldSet>` class
+	 *
+	 * @param useFieldIds - Default: `false`.
+	 */
+	public toRecord(useFieldIds: boolean = false): ATRecord<FldSt> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
 		const r = { ...this.record } as ATRecord<FldSt>;
@@ -100,10 +112,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		};
 	}
 
-	/**
-	 * Saves the current Airtable record to the server.
-	 * @throws {z.ZodError} if validation fails before save
-	 */
+	/** Saves the current Airtable record to the server. */
 	public async save(): Promise<void> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.validate();
@@ -123,9 +132,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.clearDirtyFlags();
 	}
 
-	/**
-	 * Fetches the latest data for the current Airtable record from the server, overwriting any unsaved local changes.
-	 */
+	/** Fetches the latest data for the current Airtable record from the server, overwriting any unsaved local changes. */
 	public async fetch(): Promise<void> {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
 		this.updateRecord();
@@ -141,9 +148,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.clearDirtyFlags();
 	}
 
-	/**
-	 * Deletes the current Airtable record to the server.
-	 */
+	/** Deletes the current Airtable record from the server. */
 	public async delete(): Promise<void> {
 		if (!this.record)
 			throw new Error("Cannot destroy record: _record is undefined. Please use fromRecord to initialize the instance.");
