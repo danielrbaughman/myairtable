@@ -1,5 +1,6 @@
 const { recordIdSchema } = require("./special-types");
 const { getBaseId, getOptions } = require("./helpers");
+const { LinkedRecord, LinkedRecords } = require("./linked-record");
 
 class AirtableModel {
 	// Base properties
@@ -14,6 +15,9 @@ class AirtableModel {
 	/** Zod schema for validation - must be defined by subclasses */
 	static schema;
 
+	/** Field descriptors - must be defined by subclasses */
+	static fieldDescriptors = [];
+
 	// Change tracking
 	_dirtyFields = new Set();
 	_isNew = true;
@@ -24,6 +28,10 @@ class AirtableModel {
 
 	constructor(id) {
 		this.id = id ? recordIdSchema.parse(id) : id;
+	}
+
+	getFieldDescriptors() {
+		return this.constructor.fieldDescriptors;
 	}
 
 	//#region PUBLIC
@@ -63,7 +71,18 @@ class AirtableModel {
 
 	/** Converts the model to a plain object. */
 	toJson() {
-		throw new Error("toJson must be implemented by subclass");
+		const result = {};
+		for (const desc of this.getFieldDescriptors()) {
+			const prop = `_${desc.propertyName}`;
+			if (desc.fieldType === "linkedRecord" && !desc.isComputed) {
+				result[desc.propertyName] = this[prop]?.id;
+			} else if (desc.fieldType === "linkedRecords" && !desc.isComputed) {
+				result[desc.propertyName] = this[prop]?.ids;
+			} else {
+				result[desc.propertyName] = this[prop];
+			}
+		}
+		return result;
 	}
 
 	/** Returns the model as a simple object, equivalent to the original Airtable JSON payload. */
@@ -163,6 +182,20 @@ class AirtableModel {
 		this.record = undefined;
 		this.id = "";
 	}
+
+	static fromRecord(record, table) {
+		const instance = new this({ id: record.id });
+		if (table) instance.setConfig(table.baseId, table._options);
+		instance.updateModel(record);
+		instance.clearDirtyFlags();
+		return instance;
+	}
+
+	static fromId(id, baseId, options) {
+		const instance = new this({ id });
+		if (baseId && options) instance.setConfig(baseId, options);
+		return instance;
+	}
 	//#endregion
 
 	//#region PRIVATE
@@ -200,8 +233,28 @@ class AirtableModel {
 	}
 
 	writableFields(useFieldIds = true) {
-		return {};
-		// To be overridden by subclasses
+		const fields = {};
+		for (const desc of this.getFieldDescriptors()) {
+			if (desc.isComputed) continue;
+			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
+			const prop = `_${desc.propertyName}`;
+			const key = useFieldIds ? desc.fieldId : desc.fieldName;
+			switch (desc.fieldType) {
+				case "linkedRecord":
+					fields[key] = this[prop]?.id;
+					break;
+				case "linkedRecords":
+					fields[key] = this[prop]?.ids;
+					break;
+				case "attachment":
+					fields[key] = this.sanitizeAttachment(prop);
+					break;
+				default:
+					fields[key] = this[prop];
+					break;
+			}
+		}
+		return fields;
 	}
 
 	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
@@ -226,11 +279,51 @@ class AirtableModel {
 
 	updateModel(record) {
 		this.record = record;
-		// To be overridden by subclasses
+		for (const desc of this.getFieldDescriptors()) {
+			const prop = `_${desc.propertyName}`;
+			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				if (desc.fieldType === "linkedRecord") {
+					this[prop] = new LinkedRecord(
+						value,
+						desc.linkedModelFromId,
+						() => this.markDirty(desc.propertyName),
+						this.__configBaseId,
+						this.__configOptions,
+					);
+				} else {
+					this[prop] = new LinkedRecords(
+						value,
+						desc.linkedModelFromId,
+						() => this.markDirty(desc.propertyName),
+						this.__configBaseId,
+						this.__configOptions,
+					);
+				}
+			} else {
+				this[prop] = value;
+			}
+		}
+		this.validate();
 	}
 
 	updateRecord() {
-		// To be overridden by subclasses
+		if (!this.record)
+			throw new Error(
+				"Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.",
+			);
+		for (const desc of this.getFieldDescriptors()) {
+			const prop = `_${desc.propertyName}`;
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				if (desc.fieldType === "linkedRecord") {
+					this.record.set(desc.fieldId, this[prop]?.id);
+				} else {
+					this.record.set(desc.fieldId, this[prop]?.ids);
+				}
+			} else {
+				this.record.set(desc.fieldId, this[prop]);
+			}
+		}
 	}
 
 	//#endregion

@@ -450,6 +450,35 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented(f"get tableId() {{ return {table.name_model()}.tableId; }}", 1)
             write.line_empty()
 
+            # Field descriptors
+            write.line_indented("static fieldDescriptors = [", 1)
+            for field in table.fields:
+                field_name = field.name_camel()
+                field_type = field.typescript_type()
+                is_computed = "true" if field.is_computed() else "false"
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                    linked_record_type = field.get_linked_model_name()
+                    linked_table_id = field.options.linked_table_id if field.options else None
+                    linked_table = base.table_by_id(linked_table_id) if linked_table_id else None
+                    linked_file = linked_table.name_camel() if linked_table else ""
+                    field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options) }},',
+                        2,
+                    )
+                elif field_type == "Attachment[]":
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "attachment" }},',
+                        2,
+                    )
+                else:
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "generic" }},',
+                        2,
+                    )
+            write.line_indented("];", 1)
+            write.line_empty()
+
             # Field properties with JSDoc
             for field in table.fields:
                 write.line_indented(f"_{field.name_camel()};")
@@ -504,109 +533,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 2,
             )
             write.line_indented("this.updateRecord();", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # fromRecord static method
-            write.line_indented("static fromRecord(record, table) {")
-            write.line_indented(f"const instance = new {table.name_model()}({{ id: record.id }});", 2)
-            write.line_indented("if (table) instance.setConfig(table.baseId, table._options);", 2)
-            write.line_indented("instance.updateModel(record);", 2)
-            write.line_indented("instance.clearDirtyFlags();", 2)
-            write.line_indented("return instance;", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # fromId static method
-            write.line_indented("static fromId(id, baseId, options) {")
-            write.line_indented(f"const instance = new {table.name_model()}({{ id }});", 2)
-            write.line_indented("if (baseId && options) instance.setConfig(baseId, options);", 2)
-            write.line_indented("return instance;", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # writableFields method
-            write.line_indented("writableFields(useFieldIds = true) {")
-            write.line_indented("const fields = {};", 2)
-            for field in table.fields:
-                if not field.is_computed():
-                    write.line_indented(f"if (this._isNew || this.isDirty('{field.name_camel()}')) {{", 2)
-                    if field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]":
-                        if field.typescript_type() == "RecordId":
-                            write.line_indented(
-                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()}?.id;', 3
-                            )
-                        elif field.typescript_type() == "RecordId[]":
-                            write.line_indented(
-                                f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()}?.ids;', 3
-                            )
-                    elif field.typescript_type() == "Attachment[]":
-                        write.line_indented(
-                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("_{field.name_camel()}");',
-                            3,
-                        )
-                    else:
-                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field.name_camel()};', 3)
-                    write.line_indented("}", 2)
-            write.line_indented("return fields;", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # toJson method
-            write.line_indented("toJson() {")
-            write.line_indented("return {", 2)
-            for field in table.fields:
-                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
-                    if field.typescript_type() == "RecordId":
-                        write.line_indented(f"{field.name_camel()}: this._{field.name_camel()}?.id,", 3)
-                    else:
-                        write.line_indented(f"{field.name_camel()}: this._{field.name_camel()}?.ids,", 3)
-                else:
-                    write.line_indented(f"{field.name_camel()}: this._{field.name_camel()},", 3)
-            write.line_indented("};", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # updateModel method
-            write.line_indented("updateModel(record) {")
-            write.line_indented("this.record = record;", 2)
-            for field in table.fields:
-                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
-                    linked_record_type = field.get_linked_model_name()
-                    # Get linked table's file name for lazy require
-                    linked_table_id = field.options.linked_table_id if field.options else None
-                    linked_table = base.table_by_id(linked_table_id) if linked_table_id else None
-                    linked_file = linked_table.name_camel() if linked_table else ""
-                    if field.typescript_type() == "RecordId":
-                        write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecord(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty(\'{field.name_camel()}\'), this.__configBaseId, this.__configOptions);',
-                            2,
-                        )
-                    elif field.typescript_type() == "RecordId[]":
-                        write.line_indented(
-                            f'this._{field.name_camel()} = new LinkedRecords(record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}"), (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options), () => this.markDirty(\'{field.name_camel()}\'), this.__configBaseId, this.__configOptions);',
-                            2,
-                        )
-                else:
-                    write.line_indented(f'this._{field.name_camel()} = record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}");', 2)
-            write.line_indented("this.validate();", 2)
-            write.line_indented("}")
-            write.line_empty()
-
-            # updateRecord method
-            write.line_indented("updateRecord() {")
-            write.line_indented("if (!this.record) ", 2)
-            write.line_indented(
-                'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
-            )
-            for field in table.fields:
-                if (field.typescript_type() == "RecordId" or field.typescript_type() == "RecordId[]") and not field.is_computed():
-                    if field.typescript_type() == "RecordId":
-                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.id);', 2)
-                    elif field.typescript_type() == "RecordId[]":
-                        write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()}?.ids);', 2)
-                else:
-                    write.line_indented(f'this.record.set("{field.id}", this._{field.name_camel()});', 2)
             write.line_indented("}")
             write.line_empty()
 
