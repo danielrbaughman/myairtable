@@ -204,6 +204,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.id = "";
 	}
 
+	/** Initializes a model instance from an Airtable.js `Record<FieldSet>` */
 	public static fromRecord<T extends AirtableModel<any, any, any>>(
 		this: new (...args: any[]) => T,
 		record: ATRecord<any>,

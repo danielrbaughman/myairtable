@@ -397,12 +397,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
         model_name = table.name_model()
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
-            write.region("IMPORTS")
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel, FieldDescriptor } from "../../static/airtable-model";')
             write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
             write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
-            write.line('import { getOptions, getBaseId } from "../../static/helpers";')
 
             # Import types for this table
             write.line("import {")
@@ -419,24 +417,20 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             if formulas:
                 write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
 
-            write.line("import {")
-            for _table in base.tables:
-                if _table.id == table.id:
-                    continue
-                _model_name = _table.name_model()
-                write.line_indented(f"{_model_name},")
-            write.line('} from "../models";')
+            linked_tables = table.linked_tables()
+            if linked_tables:
+                write.line("import {")
+                for _table in linked_tables:
+                    write.line_indented(f"{_table.name_model()},")
+                write.line('} from "../models";')
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
             if zod:
                 write.line(f"import {{ {table_name}Schema, I{table_name} }} from '../zod/{table_name_camel}';")
-            write.endregion()
             write.line_empty()
 
             # Table Model
-            write.region(table.name_upper())
-
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             if zod:
                 write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}, {table_name}Field> {{")
@@ -579,7 +573,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_empty()
 
             write.line("}")
-            write.endregion()
 
     with WriteToTypeScriptFile(path=models_dir / "_models.ts") as write:
         write.line("import {")
