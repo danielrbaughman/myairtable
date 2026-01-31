@@ -14,7 +14,7 @@ export interface FieldDescriptor {
 	fieldName: string;
 	isComputed: boolean;
 	fieldType: FieldType;
-	linkedModelFromId?: (id: any, baseId?: string, options?: any) => any;
+	linkedModelFromId?: (id: any, config?: AirtableOptions & { baseId: string }) => any;
 }
 
 export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
@@ -204,27 +204,47 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.id = "";
 	}
 
-	/** Initializes a model instance from an Airtable.js `Record<FieldSet>` */
+	/**
+	 * Initializes a model instance from an Airtable.js `Record<FieldSet>`.
+	 * @param record - The Airtable record to initialize from.
+	 * @param config - Optional config object. By default, config values (e.g. BaseID and APIKey)
+	 * are picked up from environment variables. But if you are passing those values directly
+	 * into the main class, you need to pass them here as well if you want to use functions
+	 * like save() or fetch().
+	 */
 	public static fromRecord<T extends AirtableModel<any, any, any>>(
 		this: new (...args: any[]) => T,
 		record: ATRecord<any>,
-		table?: { baseId: string; _options: AirtableOptions },
+		config?: AirtableOptions & { baseId: string },
 	): T {
 		const instance = new this({ id: record.id });
-		if (table) instance.setConfig(table.baseId, table._options);
+		if (config) {
+			const { baseId, ...options } = config;
+			instance.setConfig(baseId, options);
+		}
 		instance.updateModel(record);
 		instance.clearDirtyFlags();
 		return instance;
 	}
 
+	/**
+	 * Creates a model instance from a record ID without fetching data.
+	 * @param id - The Airtable record ID.
+	 * @param config - Optional config object. By default, config values (e.g. BaseID and APIKey)
+	 * are picked up from environment variables. But if you are passing those values directly
+	 * into the main class, you need to pass them here as well if you want to use functions
+	 * like save() or fetch().
+	 */
 	public static fromId<T extends AirtableModel<any, any, any>>(
 		this: new (...args: any[]) => T,
 		id: RecordId,
-		baseId?: string,
-		options?: AirtableOptions,
+		config?: AirtableOptions & { baseId: string },
 	): T {
 		const instance = new this({ id });
-		if (baseId && options) instance.setConfig(baseId, options);
+		if (config) {
+			const { baseId, ...options } = config;
+			instance.setConfig(baseId, options);
+		}
 		return instance;
 	}
 

@@ -35,7 +35,7 @@ class LinkedRecord {
 	 */
 	async get(fetch = false) {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor(this._id, this.__configBaseId, this.__configOptions);
+			this.record = this.modelCtor(this._id, { baseId: this.__configBaseId, ...this.__configOptions });
 			await this.record.fetch();
 		}
 		return this.record;
@@ -93,7 +93,8 @@ class LinkedRecords {
 	 */
 	async get(fetch = false) {
 		if (this.records === undefined || fetch) {
-			this.records = this._ids?.map((id) => this.modelCtor(id, this.__configBaseId, this.__configOptions)) ?? [];
+			this.records =
+				this._ids?.map((id) => this.modelCtor(id, { baseId: this.__configBaseId, ...this.__configOptions })) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;

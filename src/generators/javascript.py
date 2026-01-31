@@ -464,7 +464,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_file = linked_table.name_camel() if linked_table else ""
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, baseId, options) => require("./{linked_file}").{linked_record_type}.fromId(id, baseId, options) }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => require("./{linked_file}").{linked_record_type}.fromId(id, config) }},',
                         2,
                     )
                 elif field_type == "Attachment[]":
@@ -560,7 +560,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, {table.name_pascal()}FieldNameIdMapping, {table.name_pascal()}FieldIdNameMapping, {table.name_pascal()}WritableFieldIds, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, this), options);',
+                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, {table.name_pascal()}FieldNameIdMapping, {table.name_pascal()}FieldIdNameMapping, {table.name_pascal()}WritableFieldIds, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}), options);',
                 2,
             )
             write.line_indented("}")

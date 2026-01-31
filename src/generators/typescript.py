@@ -464,7 +464,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     linked_record_type = field.get_linked_model_name()
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, baseId, options) => {linked_record_type}.fromId(id, baseId, options) }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config) }},',
                         2,
                     )
                 elif field_type == "Attachment[]":
@@ -634,7 +634,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, this), options);',
+                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}), options);',
                 2,
             )
             write.line_indented("}")

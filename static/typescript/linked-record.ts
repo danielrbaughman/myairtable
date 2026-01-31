@@ -10,7 +10,7 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	private _id?: RecordId;
 	private record?: Mdl;
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl;
+	private modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
@@ -19,7 +19,7 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordId?: RecordId,
-		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl,
+		modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl,
 		onDirty?: () => void,
 		baseId?: string,
 		options?: AirtableOptions,
@@ -46,7 +46,7 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	 */
 	public async get(fetch: boolean = false): Promise<Mdl | undefined> {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor!(this.id!, this.__configBaseId, this.__configOptions);
+			this.record = this.modelCtor!(this.id!, { baseId: this.__configBaseId!, ...this.__configOptions! });
 			await this.record.fetch();
 		}
 		return this.record;
@@ -77,7 +77,7 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	private _ids?: RecordId[];
 	private records?: Mdl[];
 	// eslint-disable-next-line no-unused-vars
-	private modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl;
+	private modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl;
 	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
@@ -86,7 +86,7 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordIds?: RecordId[],
-		modelCtor?: (id: RecordId, baseId?: string, options?: AirtableOptions) => Mdl,
+		modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl,
 		onDirty?: () => void,
 		baseId?: string,
 		options?: AirtableOptions,
@@ -113,7 +113,8 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	 */
 	public async get(fetch: boolean = false): Promise<Mdl[]> {
 		if (this.records === undefined || fetch) {
-			this.records = this.ids?.map((id) => this.modelCtor!(id, this.__configBaseId, this.__configOptions)) ?? [];
+			this.records =
+				this.ids?.map((id) => this.modelCtor!(id, { baseId: this.__configBaseId!, ...this.__configOptions! })) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;
