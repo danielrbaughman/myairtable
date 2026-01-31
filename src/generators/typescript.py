@@ -254,13 +254,20 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(field.id, field.typescript_type(), optional=True)
+                ts_type = field.typescript_type()
+                # Airtable API always uses arrays for link fields, even single-link ones
+                if ts_type == "RecordId":
+                    ts_type = "RecordId[]"
+                write.property_row(field.id, ts_type, optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(sanitize_string(field.name), field.typescript_type(), is_name_string=True, optional=True)
+                ts_type = field.typescript_type()
+                if ts_type == "RecordId":
+                    ts_type = "RecordId[]"
+                write.property_row(sanitize_string(field.name), ts_type, is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
 
