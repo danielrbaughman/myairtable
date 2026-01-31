@@ -199,7 +199,12 @@ def map_type(field: Field) -> ResolvedType:
         airtable_type = field.result_type()
 
     if airtable_type in AIRTABLE_TO_GENERIC:
-        resolved = ResolvedType(generic_type=AIRTABLE_TO_GENERIC[airtable_type])
+        generic = AIRTABLE_TO_GENERIC[airtable_type]
+        # Airtable uses multipleRecordLinks for both single and multiple link fields.
+        # The prefersSingleRecordLink option distinguishes them.
+        if generic == GenericType.LIST_OF_RECORD_IDS and field.options and field.options.prefers_single_record_link:
+            generic = GenericType.RECORD_ID
+        resolved = ResolvedType(generic_type=generic)
         field._generic_type = resolved.generic_type
         return resolved
 

@@ -292,9 +292,11 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
-				case "linkedRecord":
-					(fields as any)[key] = (this._fields[desc.propertyName] as any)?.id;
+				case "linkedRecord": {
+					const rid = (this._fields[desc.propertyName] as any)?.id;
+					(fields as any)[key] = rid ? [rid] : undefined;
 					break;
+				}
 				case "linkedRecords":
 					(fields as any)[key] = (this._fields[desc.propertyName] as any)?.ids;
 					break;
@@ -334,8 +336,10 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			const value = (data as any)[desc.propertyName];
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
+					// Airtable API always returns arrays for link fields; unwrap to single ID
+					const singleId = Array.isArray(value) ? value[0] : value;
 					this._fields[desc.propertyName] = new LinkedRecord(
-						value as RecordId,
+						singleId as RecordId,
 						desc.linkedModelFromId!,
 						() => this.markDirty(desc.propertyName),
 						this.__configBaseId,
@@ -362,8 +366,10 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			const value = record.get(desc.fieldId as keyof FldSt) ?? record.get(desc.fieldName as keyof FldSt);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
+					// Airtable API always returns arrays for link fields; unwrap to single ID
+					const singleId = Array.isArray(value) ? value[0] : value;
 					this._fields[desc.propertyName] = new LinkedRecord(
-						value as RecordId,
+						singleId as RecordId,
 						desc.linkedModelFromId!,
 						() => this.markDirty(desc.propertyName),
 						this.__configBaseId,
@@ -393,8 +399,9 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		for (const desc of this.getFieldDescriptors()) {
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
+					const rid = (this._fields[desc.propertyName] as any)?.id;
 					//@ts-ignore
-					this.record.set(desc.fieldId, (this._fields[desc.propertyName] as any)?.id);
+					this.record.set(desc.fieldId, rid ? [rid] : undefined);
 				} else {
 					//@ts-ignore
 					this.record.set(desc.fieldId, (this._fields[desc.propertyName] as any)?.ids);

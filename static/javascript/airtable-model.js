@@ -264,9 +264,11 @@ class AirtableModel {
 			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
-				case "linkedRecord":
-					fields[key] = this._fields[desc.propertyName]?.id;
+				case "linkedRecord": {
+					const rid = this._fields[desc.propertyName]?.id;
+					fields[key] = rid ? [rid] : undefined;
 					break;
+				}
 				case "linkedRecords":
 					fields[key] = this._fields[desc.propertyName]?.ids;
 					break;
@@ -306,8 +308,10 @@ class AirtableModel {
 			const value = data[desc.propertyName];
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
+					// Airtable API always returns arrays for link fields; unwrap to single ID
+					const singleId = Array.isArray(value) ? value[0] : value;
 					this._fields[desc.propertyName] = new LinkedRecord(
-						value,
+						singleId,
 						desc.linkedModelFromId,
 						() => this.markDirty(desc.propertyName),
 						this.__configBaseId,
@@ -334,8 +338,10 @@ class AirtableModel {
 			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
+					// Airtable API always returns arrays for link fields; unwrap to single ID
+					const singleId = Array.isArray(value) ? value[0] : value;
 					this._fields[desc.propertyName] = new LinkedRecord(
-						value,
+						singleId,
 						desc.linkedModelFromId,
 						() => this.markDirty(desc.propertyName),
 						this.__configBaseId,
@@ -365,7 +371,8 @@ class AirtableModel {
 		for (const desc of this.getFieldDescriptors()) {
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
-					this.record.set(desc.fieldId, this._fields[desc.propertyName]?.id);
+					const rid = this._fields[desc.propertyName]?.id;
+					this.record.set(desc.fieldId, rid ? [rid] : undefined);
 				} else {
 					this.record.set(desc.fieldId, this._fields[desc.propertyName]?.ids);
 				}
