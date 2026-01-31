@@ -21,7 +21,7 @@ export interface ExtendedAirtableOptions extends AirtableOptions {
 }
 
 export const AirtableThumbnailSchema = z.object({
-	url: z.url().optional(),
+	url: z.string().optional(),
 	width: z.number().optional(),
 	height: z.number().optional(),
 });
@@ -38,7 +38,7 @@ export type AirtableThumbnails = z.infer<typeof AirtableThumbnailsSchema>;
 
 export const AirtableAttachmentSchema = z.object({
 	id: z.string().optional(),
-	url: z.url().optional(),
+	url: z.string().optional(),
 	filename: z.string().optional(),
 	size: z.number().optional(),
 	type: z.string().optional(),
@@ -57,7 +57,7 @@ export type AirtableCollaborator = z.infer<typeof AirtableCollaboratorSchema>;
 
 export const AirtableButtonSchema = z.object({
 	label: z.string().optional(),
-	url: z.url().optional(),
+	url: z.string().optional(),
 });
 
 export type AirtableButton = z.infer<typeof AirtableButtonSchema>;

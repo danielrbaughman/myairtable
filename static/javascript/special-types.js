@@ -16,7 +16,7 @@ const SpecialNumberSchema = z.object({ specialValue: z.string() });
 const ErrorValueSchema = z.object({ error: z.string() });
 
 const AirtableThumbnailSchema = z.object({
-	url: z.url().optional(),
+	url: z.string().optional(),
 	width: z.number().optional(),
 	height: z.number().optional(),
 });
@@ -29,7 +29,7 @@ const AirtableThumbnailsSchema = z.object({
 
 const AirtableAttachmentSchema = z.object({
 	id: z.string().optional(),
-	url: z.url().optional(),
+	url: z.string().optional(),
 	filename: z.string().optional(),
 	size: z.number().optional(),
 	type: z.string().optional(),
@@ -44,7 +44,7 @@ const AirtableCollaboratorSchema = z.object({
 
 const AirtableButtonSchema = z.object({
 	label: z.string().optional(),
-	url: z.url().optional(),
+	url: z.string().optional(),
 });
 
 module.exports = {
