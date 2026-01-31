@@ -409,6 +409,7 @@ class Field(Named):
             "createdBy",
             "count",
             "button",
+            "autoNumber",
         ]
         return self.type in computed_types
 
