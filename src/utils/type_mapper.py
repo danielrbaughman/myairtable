@@ -42,6 +42,7 @@ AIRTABLE_TO_GENERIC: dict[str, GenericType] = {
     # Airtable special types
     "multipleRecordLinks": GenericType.LIST_OF_RECORD_IDS,
     "multipleAttachments": GenericType.LIST_OF_ATTACHMENTS,
+    "multipleCollaborators": GenericType.LIST_OF_COLLABORATORS,
     "singleCollaborator": GenericType.COLLABORATOR,
     "lastModifiedBy": GenericType.COLLABORATOR,
     "createdBy": GenericType.COLLABORATOR,
@@ -61,6 +62,7 @@ GENERIC_TO_PYTHON: dict[GenericType, str] = {
     GenericType.BUTTON: "AirtableButton",
     GenericType.LIST_OF_RECORD_IDS: "list[RecordId]",
     GenericType.LIST_OF_ATTACHMENTS: "list[AirtableAttachment]",
+    GenericType.LIST_OF_COLLABORATORS: "list[AirtableCollaborator]",
     GenericType.UNKNOWN: "Any",
 }
 
@@ -77,6 +79,7 @@ GENERIC_TO_TYPESCRIPT: dict[GenericType, str] = {
     GenericType.BUTTON: "AirtableButton",
     GenericType.LIST_OF_RECORD_IDS: "RecordId[]",
     GenericType.LIST_OF_ATTACHMENTS: "Attachment[]",
+    GenericType.LIST_OF_COLLABORATORS: "Collaborator[]",
     GenericType.UNKNOWN: "any",
 }
 
@@ -93,6 +96,7 @@ GENERIC_TO_ZOD: dict[GenericType, str] = {
     GenericType.BUTTON: "AirtableButtonSchema",
     GenericType.LIST_OF_RECORD_IDS: "z.array(recordIdSchema)",
     GenericType.LIST_OF_ATTACHMENTS: "z.array(AirtableAttachmentSchema)",
+    GenericType.LIST_OF_COLLABORATORS: "z.array(AirtableCollaboratorSchema)",
     GenericType.UNKNOWN: "z.any()",
 }
 

@@ -34,6 +34,7 @@ class GenericType(Enum):
     # Container types
     LIST_OF_RECORD_IDS = auto()
     LIST_OF_ATTACHMENTS = auto()
+    LIST_OF_COLLABORATORS = auto()
 
     # Select types (require options_name metadata)
     SINGLE_SELECT = auto()
@@ -82,6 +83,7 @@ FieldType = Literal[
     "rollup",
     "lookup",
     "singleCollaborator",
+    "multipleCollaborators",
     "autoNumber",
     "barcode",
     "phoneNumber",
@@ -316,6 +318,10 @@ class ButtonField(NamedFieldMetadata):
     type: Literal["button"]
 
 
+class MultipleCollaboratorsField(NamedFieldMetadata):
+    type: Literal["multipleCollaborators"]
+
+
 type FieldMetadata = (
     SingleLineTextField
     | FormulaField
@@ -341,6 +347,7 @@ type FieldMetadata = (
     | SingleSelectField
     | MultipleAttachmentsField
     | ButtonField
+    | MultipleCollaboratorsField
 )
 
 

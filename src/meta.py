@@ -506,6 +506,8 @@ class Field(Named):
                 return "Rollup"
             case "singleCollaborator":
                 return "Collaborator"
+            case "multipleCollaborators":
+                return "Collaborators"
             case "singleLineText":
                 return "Single Line Text"
             case "singleSelect":
