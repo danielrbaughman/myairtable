@@ -18,6 +18,9 @@ class AirtableModel {
 	/** Field descriptors - must be defined by subclasses */
 	static fieldDescriptors = [];
 
+	// Field storage
+	_fields = {};
+
 	// Change tracking
 	_dirtyFields = new Set();
 	_isNew = true;
@@ -72,14 +75,14 @@ class AirtableModel {
 	/** Converts the model to a plain object. */
 	toJson() {
 		const result = {};
+		result.id = this.id || undefined;
 		for (const desc of this.getFieldDescriptors()) {
-			const prop = `_${desc.propertyName}`;
 			if (desc.fieldType === "linkedRecord" && !desc.isComputed) {
-				result[desc.propertyName] = this[prop]?.id;
+				result[desc.propertyName] = this._fields[desc.propertyName]?.id;
 			} else if (desc.fieldType === "linkedRecords" && !desc.isComputed) {
-				result[desc.propertyName] = this[prop]?.ids;
+				result[desc.propertyName] = this._fields[desc.propertyName]?.ids;
 			} else {
-				result[desc.propertyName] = this[prop];
+				result[desc.propertyName] = this._fields[desc.propertyName];
 			}
 		}
 		return result;
@@ -237,20 +240,19 @@ class AirtableModel {
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
 			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
-			const prop = `_${desc.propertyName}`;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
 				case "linkedRecord":
-					fields[key] = this[prop]?.id;
+					fields[key] = this._fields[desc.propertyName]?.id;
 					break;
 				case "linkedRecords":
-					fields[key] = this[prop]?.ids;
+					fields[key] = this._fields[desc.propertyName]?.ids;
 					break;
 				case "attachment":
-					fields[key] = this.sanitizeAttachment(prop);
+					fields[key] = this.sanitizeAttachment(desc.propertyName);
 					break;
 				default:
-					fields[key] = this[prop];
+					fields[key] = this._fields[desc.propertyName];
 					break;
 			}
 		}
@@ -259,7 +261,7 @@ class AirtableModel {
 
 	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
 	sanitizeAttachment(fieldName) {
-		const attachments = this[fieldName];
+		const attachments = this._fields[fieldName];
 		const writableAttachments = [];
 		if (attachments && Array.isArray(attachments)) {
 			for (const attachment of attachments) {
@@ -277,14 +279,12 @@ class AirtableModel {
 		return writableAttachments;
 	}
 
-	updateModel(record) {
-		this.record = record;
+	initializeFields(data) {
 		for (const desc of this.getFieldDescriptors()) {
-			const prop = `_${desc.propertyName}`;
-			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
+			const value = data[desc.propertyName];
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
-					this[prop] = new LinkedRecord(
+					this._fields[desc.propertyName] = new LinkedRecord(
 						value,
 						desc.linkedModelFromId,
 						() => this.markDirty(desc.propertyName),
@@ -292,7 +292,7 @@ class AirtableModel {
 						this.__configOptions,
 					);
 				} else {
-					this[prop] = new LinkedRecords(
+					this._fields[desc.propertyName] = new LinkedRecords(
 						value,
 						desc.linkedModelFromId,
 						() => this.markDirty(desc.propertyName),
@@ -301,7 +301,35 @@ class AirtableModel {
 					);
 				}
 			} else {
-				this[prop] = value;
+				this._fields[desc.propertyName] = value;
+			}
+		}
+	}
+
+	updateModel(record) {
+		this.record = record;
+		for (const desc of this.getFieldDescriptors()) {
+			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				if (desc.fieldType === "linkedRecord") {
+					this._fields[desc.propertyName] = new LinkedRecord(
+						value,
+						desc.linkedModelFromId,
+						() => this.markDirty(desc.propertyName),
+						this.__configBaseId,
+						this.__configOptions,
+					);
+				} else {
+					this._fields[desc.propertyName] = new LinkedRecords(
+						value,
+						desc.linkedModelFromId,
+						() => this.markDirty(desc.propertyName),
+						this.__configBaseId,
+						this.__configOptions,
+					);
+				}
+			} else {
+				this._fields[desc.propertyName] = value;
 			}
 		}
 		this.validate();
@@ -313,15 +341,14 @@ class AirtableModel {
 				"Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.",
 			);
 		for (const desc of this.getFieldDescriptors()) {
-			const prop = `_${desc.propertyName}`;
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
 				if (desc.fieldType === "linkedRecord") {
-					this.record.set(desc.fieldId, this[prop]?.id);
+					this.record.set(desc.fieldId, this._fields[desc.propertyName]?.id);
 				} else {
-					this.record.set(desc.fieldId, this[prop]?.ids);
+					this.record.set(desc.fieldId, this._fields[desc.propertyName]?.ids);
 				}
 			} else {
-				this.record.set(desc.fieldId, this[prop]);
+				this.record.set(desc.fieldId, this._fields[desc.propertyName]);
 			}
 		}
 	}

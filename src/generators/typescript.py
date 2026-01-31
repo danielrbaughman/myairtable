@@ -368,6 +368,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             table_name = table.name_pascal()
             write.region(table.name_upper())
             write.line(f"export const {table_name}Schema = z.object({{")
+            write.line_indented("id: recordIdSchema.optional(),")
             for field in table.fields:
                 field_type = field.zod_type()
                 write.line_indented(f"{field.name_camel()}: {field_type},")
@@ -503,60 +504,72 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
-                        write.line_indented(f"private _{field_name}!: LinkedRecord<{linked_record_type}>;", 1)
                         write.docstring(docstring)
-                        write.line_indented(f"public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            f'public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecord<{linked_record_type}>; }}',
+                            1,
+                        )
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
                     elif field_type == "RecordId[]":
-                        write.line_indented(f"private _{field_name}!: LinkedRecords<{linked_record_type}>;", 1)
                         write.docstring(docstring)
-                        write.line_indented(f"public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            f'public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecords<{linked_record_type}>; }}',
+                            1,
+                        )
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
                 else:
-                    write.line_indented(f"private _{field_name}?: {field_type};", 1)
                     write.docstring(docstring)
-                    write.line_indented(f"public get {field_name}(): {field_type} | undefined {{ return this._{field_name}; }}", 1)
                     write.line_indented(
-                        f"public set {field_name}(value: {field_type} | undefined) {{ this._{field_name} = value; this.markDirty('{field_name}'); }}",
+                        f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
+                    )
+                    write.line_indented(
+                        f"public set {field_name}(value: {field_type} | undefined) {{ this._fields[\"{field_name}\"] = value; this.markDirty('{field_name}'); }}",
                         1,
                     )
             write.line_empty()
-            write.line_indented("constructor({")
-            write.line_indented("id,", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                write.line_indented(f"{field_name},", 2)
-            write.line_indented("}: {", 1)
-            write.line_indented("id?: string,", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                write.line_indented(f"{field_name}?: {field_type},", 2)
-            write.line_indented("} = {}) {")
-            write.line_indented("super(id ?? '');", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = field.get_linked_model_name()
-                    if field_type == "RecordId":
-                        write.line_indented(
-                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                            2,
-                        )
-                    elif field_type == "RecordId[]":
-                        write.line_indented(
-                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                            2,
-                        )
-                else:
-                    write.line_indented(f"this._{field_name} = {field_name};", 2)
+            if zod:
+                write.line_indented(f"constructor(data: I{table_name} = {{}}) {{")
+            else:
+                write.line_indented("constructor({")
+                write.line_indented("id,", 2)
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    write.line_indented(f"{field_name},", 2)
+                write.line_indented("}: {", 1)
+                write.line_indented("id?: string,", 2)
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    field_type = field.typescript_type()
+                    write.line_indented(f"{field_name}?: {field_type},", 2)
+                write.line_indented("} = {}) {")
+            prefix = "data." if zod else ""
+            write.line_indented(f"super({prefix}id ?? '');", 2)
+            if zod:
+                write.line_indented("this.initializeFields(data);", 2)
+            else:
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    field_type = field.typescript_type()
+                    if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                        linked_record_type = field.get_linked_model_name()
+                        if field_type == "RecordId":
+                            write.line_indented(
+                                f"this._fields[\"{field_name}\"] = new LinkedRecord<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
+                                2,
+                            )
+                        elif field_type == "RecordId[]":
+                            write.line_indented(
+                                f"this._fields[\"{field_name}\"] = new LinkedRecords<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
+                                2,
+                            )
+                    else:
+                        write.line_indented(f'this._fields["{field_name}"] = {prefix}{field_name};', 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(this.getInstanceBaseId(), this.getInstanceOptions())._table, this.id, {{}});",
                 2,
