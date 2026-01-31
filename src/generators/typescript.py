@@ -258,6 +258,9 @@ def write_types(base: Base, output_folder: Path) -> None:
                 # Airtable API always uses arrays for link fields, even single-link ones
                 if ts_type == "RecordId":
                     ts_type = "RecordId[]"
+                # Airtable's Attachment type has all fields required, but the API only needs { url } for writes
+                if ts_type == "Attachment[]":
+                    ts_type = "Partial<Attachment>[]"
                 write.property_row(field.id, ts_type, optional=True)
             write.line("}")
             write.line_empty()
@@ -267,6 +270,8 @@ def write_types(base: Base, output_folder: Path) -> None:
                 ts_type = field.typescript_type()
                 if ts_type == "RecordId":
                     ts_type = "RecordId[]"
+                if ts_type == "Attachment[]":
+                    ts_type = "Partial<Attachment>[]"
                 write.property_row(sanitize_string(field.name), ts_type, is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
