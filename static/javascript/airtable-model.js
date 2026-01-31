@@ -8,9 +8,9 @@ class AirtableModel {
 	id;
 
 	// Mappings - must be defined by subclasses
-	nameToIdMap = {};
-	idToNameMap = {};
-	nameToPropertyMap = {};
+	static nameToIdMap = {};
+	static idToNameMap = {};
+	static nameToPropertyMap = {};
 
 	/** Zod schema for validation - must be defined by subclasses */
 	static schema;
@@ -41,15 +41,15 @@ class AirtableModel {
 	/** Get a value by Airtable field name */
 	get(key) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		return this[this.nameToPropertyMap[key]];
+		if (!this.constructor.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		return this[this.constructor.nameToPropertyMap[key]];
 	}
 
 	/** Set a value by Airtable field name */
 	set(key, value) {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		this[this.nameToPropertyMap[key]] = value;
+		if (!this.constructor.nameToPropertyMap[key]) throw new Error(`Field name "${key}" does not exist on this model.`);
+		this[this.constructor.nameToPropertyMap[key]] = value;
 	}
 
 	/** Returns true if any fields have been modified */
@@ -109,7 +109,7 @@ class AirtableModel {
 		if (!useFieldIds) {
 			r.fields = Object.fromEntries(
 				Object.entries(r.fields).map(([key, value]) => {
-					const name = this.idToNameMap[key] || key;
+					const name = this.constructor.idToNameMap[key] || key;
 					return [name, value];
 				}),
 			);

@@ -437,9 +437,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line_indented(f"static schema = {table.name_pascal()}Schema;")
             if formulas:
                 write.line_indented(f"static f = {table.name_pascal()}Formulas;")
-            write.line_indented(f"nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
-            write.line_indented(f"idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
-            write.line_indented(f"nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
+            write.line_indented(f"static nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
+            write.line_indented(f"static idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
+            write.line_indented(f"static nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
             write.docstring(f"Table name ({table.name})", 1)
             write.line_indented(f"static tableName = '{table.name}';", 1)
             write.docstring(f"Table name ({table.name})", 1)

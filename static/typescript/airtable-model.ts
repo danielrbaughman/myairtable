@@ -24,9 +24,9 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	[key: string]: unknown;
 
 	// Mappings - must be defined by subclasses
-	protected nameToIdMap: Record<string, string> = {};
-	protected idToNameMap: Record<string, string> = {};
-	protected nameToPropertyMap: Record<string, string> = {};
+	protected static nameToIdMap: Record<string, string> = {};
+	protected static idToNameMap: Record<string, string> = {};
+	protected static nameToPropertyMap: Record<string, string> = {};
 
 	/** Zod schema for validation - must be defined by subclasses */
 	protected static schema: z.ZodTypeAny;
@@ -57,15 +57,17 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	/** Get a value by Airtable field name */
 	public get(key: Fld): any | undefined {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		return this[this.nameToPropertyMap[key as string]];
+		if (!(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string])
+			throw new Error(`Field name "${key}" does not exist on this model.`);
+		return this[(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string]];
 	}
 
 	/** Set a value by Airtable field name */
 	public set(key: Fld, value: any): void {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		this[this.nameToPropertyMap[key as string]] = value;
+		if (!(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string])
+			throw new Error(`Field name "${key}" does not exist on this model.`);
+		this[(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string]] = value;
 	}
 
 	/** Returns true if any fields have been modified */
@@ -125,7 +127,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		if (!useFieldIds) {
 			r.fields = Object.fromEntries(
 				Object.entries(r.fields).map(([key, value]) => {
-					const name = this.idToNameMap[key] || key;
+					const name = (this.constructor as typeof AirtableModel).idToNameMap[key] || key;
 					return [name, value];
 				}),
 			) as FldSt;

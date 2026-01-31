@@ -445,9 +445,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown, {table_name}Field> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
-            write.line_indented(f"protected nameToIdMap = {table_name}FieldNameIdMapping;", 1)
-            write.line_indented(f"protected idToNameMap = {table_name}FieldIdNameMapping;", 1)
-            write.line_indented(f"protected nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
+            write.line_indented(f"protected static nameToIdMap = {table_name}FieldNameIdMapping;", 1)
+            write.line_indented(f"protected static idToNameMap = {table_name}FieldIdNameMapping;", 1)
+            write.line_indented(f"protected static nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
             write.line_empty()
             write.docstring(f"Table name ({table.name})", 1)
             write.line_indented(f"public static tableName: string = '{table.name}';", 1)
