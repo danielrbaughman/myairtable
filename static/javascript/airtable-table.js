@@ -73,8 +73,10 @@ class AirtableTable {
 
 			try {
 				const records = await this._table.select(selectOptions).all();
-				const record = records.length === 0 ? {} : records[0];
-				return this.convertGetResult(record, returnAs);
+				if (records.length === 0) {
+					throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
+				}
+				return this.convertGetResult(records[0], returnAs);
 			} catch (error) {
 				// I am aware of how stupid this looks,
 				// but without it, errors from Airtable's API don't surface properly;
