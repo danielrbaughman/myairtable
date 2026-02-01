@@ -334,6 +334,7 @@ class AirtableModel {
 
 	updateModel(record) {
 		this.record = record;
+		this.id = record.id;
 		for (const desc of this.getFieldDescriptors()) {
 			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {

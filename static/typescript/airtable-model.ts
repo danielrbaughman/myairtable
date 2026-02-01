@@ -362,6 +362,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 
 	protected updateModel(record: ATRecord<FldSt>): void {
 		this.record = record;
+		this.id = record.id;
 		for (const desc of this.getFieldDescriptors()) {
 			const value = record.get(desc.fieldId as keyof FldSt) ?? record.get(desc.fieldName as keyof FldSt);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
