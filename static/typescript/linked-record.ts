@@ -46,7 +46,8 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	 */
 	public async get(fetch: boolean = false): Promise<Mdl | undefined> {
 		if (this.record === undefined || fetch) {
-			this.record = this.modelCtor!(this.id!, { baseId: this.__configBaseId!, ...this.__configOptions! });
+			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
+			this.record = this.modelCtor!(this.id!, config);
 			await this.record.fetch();
 		}
 		return this.record;
@@ -113,8 +114,8 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	 */
 	public async get(fetch: boolean = false): Promise<Mdl[]> {
 		if (this.records === undefined || fetch) {
-			this.records =
-				this.ids?.map((id) => this.modelCtor!(id, { baseId: this.__configBaseId!, ...this.__configOptions! })) ?? [];
+			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
+			this.records = this.ids?.map((id) => this.modelCtor!(id, config)) ?? [];
 			await Promise.all(this.records.map((record) => record.fetch()));
 		}
 		return this.records;
