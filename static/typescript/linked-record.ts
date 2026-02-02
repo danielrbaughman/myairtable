@@ -56,7 +56,7 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	/**
 	 * Sets the linked record value and updates the associated ID.
 	 *
-	 * @param value - The new record to link. If `undefined` or falsy, clears the current record and ID.
+	 * @param value - The new record to link.
 	 */
 	public set(value: Mdl): void {
 		if (!value) {
@@ -124,7 +124,7 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	/**
 	 * Sets the linked record values and updates the associated IDs.
 	 *
-	 * @param values - The new records to link. If `undefined` or falsy, clears the current records and IDs.
+	 * @param values - The new records to link.
 	 */
 	public set(values: Mdl[]): void {
 		if (!values || values.length === 0) {
@@ -134,6 +134,19 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 			this.records = values;
 			this._ids = values.map((value) => value.id);
 		}
+		this.onDirty?.();
+	}
+
+	/**
+	 * Adds a linked record value and updates the associated ID.
+	 *
+	 * @param value - The new record to link.
+	 */
+	public add(value: Mdl): void {
+		if (!this.records) this.records = [];
+		if (!this._ids) this._ids = [];
+		this.records.push(value);
+		this._ids.push(value.id);
 		this.onDirty?.();
 	}
 }

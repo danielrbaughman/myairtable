@@ -45,7 +45,7 @@ class LinkedRecord {
 	/**
 	 * Sets the linked record value and updates the associated ID.
 	 *
-	 * @param value - The new record to link. If `undefined` or falsy, clears the current record and ID.
+	 * @param value - The new record to link.
 	 */
 	set(value) {
 		if (!value) {
@@ -104,7 +104,7 @@ class LinkedRecords {
 	/**
 	 * Sets the linked record values and updates the associated IDs.
 	 *
-	 * @param values - The new records to link. If `undefined` or falsy, clears the current records and IDs.
+	 * @param values - The new records to link.
 	 */
 	set(values) {
 		if (!values || values.length === 0) {
@@ -114,6 +114,19 @@ class LinkedRecords {
 			this.records = values;
 			this._ids = values.map((value) => value.id);
 		}
+		this.onDirty?.();
+	}
+
+	/**
+	 * Adds a linked record value and updates the associated ID.
+	 *
+	 * @param value - The new record to link.
+	 */
+	add(value) {
+		if (!this.records) this.records = [];
+		if (!this._ids) this._ids = [];
+		this.records.push(value);
+		this._ids.push(value.id);
 		this.onDirty?.();
 	}
 }
