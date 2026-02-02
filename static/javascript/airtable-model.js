@@ -303,29 +303,33 @@ class AirtableModel {
 		return writableAttachments;
 	}
 
+	_createLinkedField(desc, value) {
+		if (desc.fieldType === "linkedRecord") {
+			// Airtable API always returns arrays for link fields; unwrap to single ID
+			const singleId = Array.isArray(value) ? value[0] : value;
+			return new LinkedRecord(
+				singleId,
+				desc.linkedModelFromId,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		} else {
+			return new LinkedRecords(
+				value,
+				desc.linkedModelFromId,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		}
+	}
+
 	initializeFields(data) {
 		for (const desc of this.getFieldDescriptors()) {
 			const value = data[desc.propertyName];
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
-				if (desc.fieldType === "linkedRecord") {
-					// Airtable API always returns arrays for link fields; unwrap to single ID
-					const singleId = Array.isArray(value) ? value[0] : value;
-					this._fields[desc.propertyName] = new LinkedRecord(
-						singleId,
-						desc.linkedModelFromId,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				} else {
-					this._fields[desc.propertyName] = new LinkedRecords(
-						value,
-						desc.linkedModelFromId,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				}
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
 			} else {
 				this._fields[desc.propertyName] = value;
 			}
@@ -338,25 +342,7 @@ class AirtableModel {
 		for (const desc of this.getFieldDescriptors()) {
 			const value = record.get(desc.fieldId) ?? record.get(desc.fieldName);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
-				if (desc.fieldType === "linkedRecord") {
-					// Airtable API always returns arrays for link fields; unwrap to single ID
-					const singleId = Array.isArray(value) ? value[0] : value;
-					this._fields[desc.propertyName] = new LinkedRecord(
-						singleId,
-						desc.linkedModelFromId,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				} else {
-					this._fields[desc.propertyName] = new LinkedRecords(
-						value,
-						desc.linkedModelFromId,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				}
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
 			} else {
 				this._fields[desc.propertyName] = value;
 			}

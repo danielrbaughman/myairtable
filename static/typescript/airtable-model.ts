@@ -331,29 +331,33 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return writableAttachments;
 	}
 
+	private _createLinkedField(desc: FieldDescriptor, value: unknown): LinkedRecord<any> | LinkedRecords<any> {
+		if (desc.fieldType === "linkedRecord") {
+			// Airtable API always returns arrays for link fields; unwrap to single ID
+			const singleId = Array.isArray(value) ? value[0] : value;
+			return new LinkedRecord(
+				singleId as RecordId,
+				desc.linkedModelFromId!,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		} else {
+			return new LinkedRecords(
+				value as RecordId[],
+				desc.linkedModelFromId!,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		}
+	}
+
 	protected initializeFields(data: Record<string, unknown>): void {
 		for (const desc of this.getFieldDescriptors()) {
 			const value = (data as any)[desc.propertyName];
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
-				if (desc.fieldType === "linkedRecord") {
-					// Airtable API always returns arrays for link fields; unwrap to single ID
-					const singleId = Array.isArray(value) ? value[0] : value;
-					this._fields[desc.propertyName] = new LinkedRecord(
-						singleId as RecordId,
-						desc.linkedModelFromId!,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				} else {
-					this._fields[desc.propertyName] = new LinkedRecords(
-						value as RecordId[],
-						desc.linkedModelFromId!,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				}
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
 			} else {
 				this._fields[desc.propertyName] = value;
 			}
@@ -366,25 +370,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		for (const desc of this.getFieldDescriptors()) {
 			const value = record.get(desc.fieldId as keyof FldSt) ?? record.get(desc.fieldName as keyof FldSt);
 			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
-				if (desc.fieldType === "linkedRecord") {
-					// Airtable API always returns arrays for link fields; unwrap to single ID
-					const singleId = Array.isArray(value) ? value[0] : value;
-					this._fields[desc.propertyName] = new LinkedRecord(
-						singleId as RecordId,
-						desc.linkedModelFromId!,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				} else {
-					this._fields[desc.propertyName] = new LinkedRecords(
-						value as RecordId[],
-						desc.linkedModelFromId!,
-						() => this.markDirty(desc.propertyName),
-						this.__configBaseId,
-						this.__configOptions,
-					);
-				}
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
 			} else {
 				this._fields[desc.propertyName] = value;
 			}
