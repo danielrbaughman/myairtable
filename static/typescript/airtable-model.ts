@@ -2,8 +2,20 @@
 /* eslint-disable no-unused-vars */
 import { AirtableOptions, Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
 import * as z from "zod";
-import { CreateRecordData, IRecord, recordIdSchema } from "./special-types";
+import { CreateRecordData, IRecord, RecordId, recordIdSchema } from "./special-types";
 import { getBaseId, getOptions } from "./helpers";
+import { LinkedRecord, LinkedRecords } from "./linked-record";
+
+export type FieldType = "generic" | "linkedRecord" | "linkedRecords" | "attachment";
+
+export interface FieldDescriptor {
+	propertyName: string;
+	fieldId: string;
+	fieldName: string;
+	isComputed: boolean;
+	fieldType: FieldType;
+	linkedModelFromId?: (id: any, config?: AirtableOptions & { baseId: string }) => any;
+}
 
 export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	// Base properties
@@ -12,12 +24,18 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	[key: string]: unknown;
 
 	// Mappings - must be defined by subclasses
-	protected nameToIdMap: Record<string, string> = {};
-	protected idToNameMap: Record<string, string> = {};
-	protected nameToPropertyMap: Record<string, string> = {};
+	protected static nameToIdMap: Record<string, string> = {};
+	protected static idToNameMap: Record<string, string> = {};
+	protected static nameToPropertyMap: Record<string, string> = {};
 
 	/** Zod schema for validation - must be defined by subclasses */
 	protected static schema: z.ZodTypeAny;
+
+	/** Field descriptors - must be defined by subclasses */
+	protected static fieldDescriptors: FieldDescriptor[] = [];
+
+	// Field storage
+	protected _fields: Record<string, unknown> = {};
 
 	// Change tracking
 	protected _dirtyFields: Set<string> = new Set();
@@ -31,19 +49,25 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.id = id ? recordIdSchema.parse(id) : id;
 	}
 
+	protected getFieldDescriptors(): FieldDescriptor[] {
+		return (this.constructor as typeof AirtableModel).fieldDescriptors;
+	}
+
 	//#region PUBLIC
 	/** Get a value by Airtable field name */
 	public get(key: Fld): any | undefined {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		return this[this.nameToPropertyMap[key as string]];
+		if (!(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string])
+			throw new Error(`Field name "${key}" does not exist on this model.`);
+		return this[(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string]];
 	}
 
 	/** Set a value by Airtable field name */
 	public set(key: Fld, value: any): void {
 		if (!this.record) throw new Error("_record is undefined. This means the object was not properly initialized.");
-		if (!this.nameToPropertyMap[key as string]) throw new Error(`Field name "${key}" does not exist on this model.`);
-		this[this.nameToPropertyMap[key as string]] = value;
+		if (!(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string])
+			throw new Error(`Field name "${key}" does not exist on this model.`);
+		this[(this.constructor as typeof AirtableModel).nameToPropertyMap[key as string]] = value;
 	}
 
 	/** Returns true if any fields have been modified */
@@ -67,7 +91,20 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	/** Converts the model to a plain object. */
-	public abstract toJson(): MdlInterface;
+	public toJson(): MdlInterface {
+		const result: Record<string, unknown> = {};
+		result.id = this.id || undefined;
+		for (const desc of this.getFieldDescriptors()) {
+			if (desc.fieldType === "linkedRecord" && !desc.isComputed) {
+				result[desc.propertyName] = (this._fields[desc.propertyName] as any)?.id;
+			} else if (desc.fieldType === "linkedRecords" && !desc.isComputed) {
+				result[desc.propertyName] = (this._fields[desc.propertyName] as any)?.ids;
+			} else {
+				result[desc.propertyName] = this._fields[desc.propertyName];
+			}
+		}
+		return result as MdlInterface;
+	}
 
 	/** Returns the model as a simple interface, equivalent to the original Airtable JSON payload. */
 	public toIRecord(useFieldIds: boolean = false): IRecord<FldSt> {
@@ -90,7 +127,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		if (!useFieldIds) {
 			r.fields = Object.fromEntries(
 				Object.entries(r.fields).map(([key, value]) => {
-					const name = this.idToNameMap[key] || key;
+					const name = (this.constructor as typeof AirtableModel).idToNameMap[key] || key;
 					return [name, value];
 				}),
 			) as FldSt;
@@ -167,6 +204,50 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this.id = "";
 	}
 
+	/**
+	 * Initializes a model instance from an Airtable.js `Record<FieldSet>`.
+	 * @param record - The Airtable record to initialize from.
+	 * @param config - Optional config object. By default, config values (e.g. BaseID and APIKey)
+	 * are picked up from environment variables. But if you are passing those values directly
+	 * into the main class, you need to pass them here as well if you want to use functions
+	 * like save() or fetch().
+	 */
+	public static fromRecord<T extends AirtableModel<any, any, any>>(
+		this: new (...args: any[]) => T,
+		record: ATRecord<any>,
+		config?: AirtableOptions & { baseId: string },
+	): T {
+		const instance = new this({ id: record.id });
+		if (config) {
+			const { baseId, ...options } = config;
+			instance.setConfig(baseId, options);
+		}
+		instance.updateModel(record);
+		instance.clearDirtyFlags();
+		return instance;
+	}
+
+	/**
+	 * Creates a model instance from a record ID without fetching data.
+	 * @param id - The Airtable record ID.
+	 * @param config - Optional config object. By default, config values (e.g. BaseID and APIKey)
+	 * are picked up from environment variables. But if you are passing those values directly
+	 * into the main class, you need to pass them here as well if you want to use functions
+	 * like save() or fetch().
+	 */
+	public static fromId<T extends AirtableModel<any, any, any>>(
+		this: new (...args: any[]) => T,
+		id: RecordId,
+		config?: AirtableOptions & { baseId: string },
+	): T {
+		const instance = new this({ id });
+		if (config) {
+			const { baseId, ...options } = config;
+			instance.setConfig(baseId, options);
+		}
+		return instance;
+	}
+
 	//#endregion
 
 	//#region PRIVATE
@@ -205,13 +286,34 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	protected writableFields(useFieldIds: boolean = true): Partial<FldSt> {
-		return {};
-		// To be overridden by subclasses
+		const fields: Partial<FldSt> = {};
+		for (const desc of this.getFieldDescriptors()) {
+			if (desc.isComputed) continue;
+			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
+			const key = useFieldIds ? desc.fieldId : desc.fieldName;
+			switch (desc.fieldType) {
+				case "linkedRecord": {
+					const rid = (this._fields[desc.propertyName] as any)?.id;
+					(fields as any)[key] = rid ? [rid] : undefined;
+					break;
+				}
+				case "linkedRecords":
+					(fields as any)[key] = (this._fields[desc.propertyName] as any)?.ids;
+					break;
+				case "attachment":
+					(fields as any)[key] = this.sanitizeAttachment(desc.propertyName);
+					break;
+				default:
+					(fields as any)[key] = this._fields[desc.propertyName];
+					break;
+			}
+		}
+		return fields;
 	}
 
 	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
 	protected sanitizeAttachment(fieldName: string): Attachment[] {
-		const attachments = this[fieldName] as Attachment[] | undefined;
+		const attachments = this._fields[fieldName] as Attachment[] | undefined;
 		const writableAttachments: Attachment[] = [];
 		if (attachments && Array.isArray(attachments)) {
 			for (const attachment of attachments) {
@@ -229,13 +331,73 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return writableAttachments;
 	}
 
+	private _createLinkedField(desc: FieldDescriptor, value: unknown): LinkedRecord<any> | LinkedRecords<any> {
+		if (desc.fieldType === "linkedRecord") {
+			// Airtable API always returns arrays for link fields; unwrap to single ID
+			const singleId = Array.isArray(value) ? value[0] : value;
+			return new LinkedRecord(
+				singleId as RecordId,
+				desc.linkedModelFromId!,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		} else {
+			return new LinkedRecords(
+				value as RecordId[],
+				desc.linkedModelFromId!,
+				() => this.markDirty(desc.propertyName),
+				this.__configBaseId,
+				this.__configOptions,
+			);
+		}
+	}
+
+	protected initializeFields(data: Record<string, unknown>): void {
+		for (const desc of this.getFieldDescriptors()) {
+			const value = (data as any)[desc.propertyName];
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
+			} else {
+				this._fields[desc.propertyName] = value;
+			}
+		}
+	}
+
 	protected updateModel(record: ATRecord<FldSt>): void {
 		this.record = record;
-		// To be overridden by subclasses
+		this.id = record.id;
+		for (const desc of this.getFieldDescriptors()) {
+			const value = record.get(desc.fieldId as keyof FldSt) ?? record.get(desc.fieldName as keyof FldSt);
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				this._fields[desc.propertyName] = this._createLinkedField(desc, value);
+			} else {
+				this._fields[desc.propertyName] = value;
+			}
+		}
+		this.validate();
 	}
 
 	protected updateRecord(): void {
-		// To be overridden by subclasses
+		if (!this.record)
+			throw new Error(
+				"Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.",
+			);
+		for (const desc of this.getFieldDescriptors()) {
+			if ((desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords") && !desc.isComputed) {
+				if (desc.fieldType === "linkedRecord") {
+					const rid = (this._fields[desc.propertyName] as any)?.id;
+					//@ts-ignore
+					this.record.set(desc.fieldId, rid ? [rid] : undefined);
+				} else {
+					//@ts-ignore
+					this.record.set(desc.fieldId, (this._fields[desc.propertyName] as any)?.ids);
+				}
+			} else {
+				//@ts-ignore
+				this.record.set(desc.fieldId, this._fields[desc.propertyName]);
+			}
+		}
 	}
 
 	//#endregion

@@ -254,13 +254,25 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line(f"export interface {table_name}FieldSetIds extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(field.id, field.typescript_type(), optional=True)
+                ts_type = field.typescript_type()
+                # Airtable API always uses arrays for link fields, even single-link ones
+                if ts_type == "RecordId":
+                    ts_type = "RecordId[]"
+                # Airtable's Attachment type has all fields required, but the API only needs { url } for writes
+                if ts_type == "Attachment[]":
+                    ts_type = "Partial<Attachment>[]"
+                write.property_row(field.id, ts_type, optional=True)
             write.line("}")
             write.line_empty()
             write.line(f"export interface {table_name}FieldSet extends FieldSet {{")
             for field in table.fields:
                 write.line_indented("//@ts-ignore")
-                write.property_row(sanitize_string(field.name), field.typescript_type(), is_name_string=True, optional=True)
+                ts_type = field.typescript_type()
+                if ts_type == "RecordId":
+                    ts_type = "RecordId[]"
+                if ts_type == "Attachment[]":
+                    ts_type = "Partial<Attachment>[]"
+                write.property_row(sanitize_string(field.name), ts_type, is_name_string=True, optional=True)
             write.line("}")
             write.line_empty()
 
@@ -368,6 +380,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             table_name = table.name_pascal()
             write.region(table.name_upper())
             write.line(f"export const {table_name}Schema = z.object({{")
+            write.line_indented("id: recordIdSchema.optional(),")
             for field in table.fields:
                 field_type = field.zod_type()
                 write.line_indented(f"{field.name_camel()}: {field_type},")
@@ -396,12 +409,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
         model_name = table.name_model()
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports
-            write.region("IMPORTS")
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
-            write.line('import { AirtableModel } from "../../static/airtable-model";')
+            write.line('import { AirtableModel, FieldDescriptor } from "../../static/airtable-model";')
             write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
             write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
-            write.line('import { getOptions, getBaseId } from "../../static/helpers";')
 
             # Import types for this table
             write.line("import {")
@@ -418,24 +429,20 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             if formulas:
                 write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
 
-            write.line("import {")
-            for _table in base.tables:
-                if _table.id == table.id:
-                    continue
-                _model_name = _table.name_model()
-                write.line_indented(f"{_model_name},")
-            write.line('} from "../models";')
+            linked_tables = table.linked_tables()
+            if linked_tables:
+                write.line("import {")
+                for _table in linked_tables:
+                    write.line_indented(f"{_table.name_model()},")
+                write.line('} from "../models";')
 
             # Import table class for this table
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
             if zod:
                 write.line(f"import {{ {table_name}Schema, I{table_name} }} from '../zod/{table_name_camel}';")
-            write.endregion()
             write.line_empty()
 
             # Table Model
-            write.region(table.name_upper())
-
             write.docstring(f"Model for `{table.name}` ({table.id})", 0)
             if zod:
                 write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, I{table_name}, {table_name}Field> {{")
@@ -444,9 +451,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown, {table_name}Field> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
-            write.line_indented(f"protected nameToIdMap = {table_name}FieldNameIdMapping;", 1)
-            write.line_indented(f"protected idToNameMap = {table_name}FieldIdNameMapping;", 1)
-            write.line_indented(f"protected nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
+            write.line_indented(f"protected static nameToIdMap = {table_name}FieldNameIdMapping;", 1)
+            write.line_indented(f"protected static idToNameMap = {table_name}FieldIdNameMapping;", 1)
+            write.line_indented(f"protected static nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
             write.line_empty()
             write.docstring(f"Table name ({table.name})", 1)
             write.line_indented(f"public static tableName: string = '{table.name}';", 1)
@@ -458,6 +465,33 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.docstring(f"Table ID ({table.id})", 1)
             write.line_indented(f"public get tableId(): string {{ return {model_name}.tableId; }}", 1)
             write.line_empty()
+
+            # Field descriptors
+            write.line_indented("protected static fieldDescriptors: FieldDescriptor[] = [", 1)
+            for field in table.fields:
+                field_name = field.name_camel()
+                field_type = field.typescript_type()
+                is_computed = "true" if field.is_computed() else "false"
+                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                    linked_record_type = field.get_linked_model_name()
+                    field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config) }},',
+                        2,
+                    )
+                elif field_type == "Attachment[]":
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "attachment" }},',
+                        2,
+                    )
+                else:
+                    write.line_indented(
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "generic" }},',
+                        2,
+                    )
+            write.line_indented("];", 1)
+            write.line_empty()
+
             for field in table.fields:
                 field_name = field.name_camel()
                 field_type = field.typescript_type()
@@ -476,60 +510,72 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
-                        write.line_indented(f"private _{field_name}!: LinkedRecord<{linked_record_type}>;", 1)
                         write.docstring(docstring)
-                        write.line_indented(f"public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            f'public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecord<{linked_record_type}>; }}',
+                            1,
+                        )
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
                     elif field_type == "RecordId[]":
-                        write.line_indented(f"private _{field_name}!: LinkedRecords<{linked_record_type}>;", 1)
                         write.docstring(docstring)
-                        write.line_indented(f"public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._{field_name}; }}", 1)
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._{field_name} = value!; this.markDirty('{field_name}'); }}",
+                            f'public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecords<{linked_record_type}>; }}',
+                            1,
+                        )
+                        write.line_indented(
+                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
                 else:
-                    write.line_indented(f"private _{field_name}?: {field_type};", 1)
                     write.docstring(docstring)
-                    write.line_indented(f"public get {field_name}(): {field_type} | undefined {{ return this._{field_name}; }}", 1)
                     write.line_indented(
-                        f"public set {field_name}(value: {field_type} | undefined) {{ this._{field_name} = value; this.markDirty('{field_name}'); }}",
+                        f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
+                    )
+                    write.line_indented(
+                        f"public set {field_name}(value: {field_type} | undefined) {{ this._fields[\"{field_name}\"] = value; this.markDirty('{field_name}'); }}",
                         1,
                     )
             write.line_empty()
-            write.line_indented("constructor({")
-            write.line_indented("id,", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                write.line_indented(f"{field_name},", 2)
-            write.line_indented("}: {", 1)
-            write.line_indented("id?: string,", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                write.line_indented(f"{field_name}?: {field_type},", 2)
-            write.line_indented("} = {}) {")
-            write.line_indented("super(id ?? '');", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = field.get_linked_model_name()
-                    if field_type == "RecordId":
-                        write.line_indented(
-                            f"this._{field_name} = new LinkedRecord<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                            2,
-                        )
-                    elif field_type == "RecordId[]":
-                        write.line_indented(
-                            f"this._{field_name} = new LinkedRecords<{linked_record_type}>({field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                            2,
-                        )
-                else:
-                    write.line_indented(f"this._{field_name} = {field_name};", 2)
+            if zod:
+                write.line_indented(f"constructor(data: I{table_name} = {{}}) {{")
+            else:
+                write.line_indented("constructor({")
+                write.line_indented("id,", 2)
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    write.line_indented(f"{field_name},", 2)
+                write.line_indented("}: {", 1)
+                write.line_indented("id?: string,", 2)
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    field_type = field.typescript_type()
+                    write.line_indented(f"{field_name}?: {field_type},", 2)
+                write.line_indented("} = {}) {")
+            prefix = "data." if zod else ""
+            write.line_indented(f"super({prefix}id ?? '');", 2)
+            if zod:
+                write.line_indented("this.initializeFields(data);", 2)
+            else:
+                for field in table.fields:
+                    field_name = field.name_camel()
+                    field_type = field.typescript_type()
+                    if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
+                        linked_record_type = field.get_linked_model_name()
+                        if field_type == "RecordId":
+                            write.line_indented(
+                                f"this._fields[\"{field_name}\"] = new LinkedRecord<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
+                                2,
+                            )
+                        elif field_type == "RecordId[]":
+                            write.line_indented(
+                                f"this._fields[\"{field_name}\"] = new LinkedRecords<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
+                                2,
+                            )
+                    else:
+                        write.line_indented(f'this._fields["{field_name}"] = {prefix}{field_name};', 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(this.getInstanceBaseId(), this.getInstanceOptions())._table, this.id, {{}});",
                 2,
@@ -538,113 +584,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("}", 1)
             write.line_empty()
 
-            write.line_indented(f"public static fromRecord(record: Record<{table_name}FieldSet>, table?: {table_name}Table): {model_name} {{")
-            write.line_indented(f"const instance = new {model_name}({{ id: record.id }});", 2)
-            write.line_indented("if (table) instance.setConfig(table.baseId, table._options);", 2)
-            write.line_indented("instance.updateModel(record);", 2)
-            write.line_indented("instance.clearDirtyFlags();", 2)
-            write.line_indented("return instance;", 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
-            write.line_indented(f"public static fromId(id: RecordId, baseId?: string, options?: AirtableOptions): {model_name} {{")
-            write.line_indented(f"const instance = new {model_name}({{ id }});", 2)
-            write.line_indented("if (baseId && options) instance.setConfig(baseId, options);", 2)
-            write.line_indented("return instance;", 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
-            write.line_indented(f"protected writableFields(useFieldIds: boolean = true): Partial<{table_name}FieldSet> {{")
-            write.line_indented(f"const fields: Partial<{table_name}FieldSet> = {{}};", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                if not field.is_computed():
-                    field_type = field.typescript_type()
-                    write.line_indented(f"if (this._isNew || this.isDirty('{field_name}')) {{", 2)
-                    if field_type == "RecordId" or field_type == "RecordId[]":
-                        if field_type == "RecordId":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name}?.id;', 3)
-                        elif field_type == "RecordId[]":
-                            write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name}?.ids;', 3)
-                    elif field_type == "Attachment[]":
-                        write.line_indented(
-                            f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this.sanitizeAttachment("_{field_name}");',
-                            3,
-                        )
-                    else:
-                        write.line_indented(f'fields[useFieldIds ? "{field.id}" : "{sanitize_string(field.name)}"] = this._{field_name};', 3)
-                    write.line_indented("}", 2)
-            write.line_indented("return fields;", 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
-            if zod:
-                write.line_indented(f"public toJson(): I{table_name} {{")
-            else:
-                write.line_indented("public toJson(): { [key: string]: unknown } {")
-            write.line_indented("return {", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    if field_type == "RecordId":
-                        write.line_indented(f"{field_name}: this._{field_name}?.id,", 3)
-                    else:
-                        write.line_indented(f"{field_name}: this._{field_name}?.ids,", 3)
-                else:
-                    write.line_indented(f"{field_name}: this._{field_name},", 3)
-            write.line_indented("};", 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
-            write.line_indented(f"protected updateModel(record: Record<{table_name}FieldSet>) {{")
-            write.line_indented("this.record = record;", 2)
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    linked_record_type = field.get_linked_model_name()
-                    if field_type == "RecordId":
-                        write.line_indented(
-                            f'this._{field_name} = new LinkedRecord<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'), this.__configBaseId, this.__configOptions);',
-                            2,
-                        )
-                    elif field_type == "RecordId[]":
-                        write.line_indented(
-                            f'this._{field_name} = new LinkedRecords<{linked_record_type}>((record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type}, {linked_record_type}.fromId, () => this.markDirty(\'{field_name}\'), this.__configBaseId, this.__configOptions);',
-                            2,
-                        )
-                else:
-                    write.line_indented(
-                        f'this._{field_name} = (record.get("{field.id}") ?? record.get("{sanitize_string(field.name)}")) as {field_type};', 2
-                    )
-            write.line_indented("this.validate();", 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
-            write.line_indented("protected updateRecord() {")
-            write.line_indented("if (!this.record) ", 2)
-            write.line_indented(
-                'throw new Error("Cannot convert to record: record is undefined. Please use fromRecord to initialize the instance.");', 3
-            )
-            for field in table.fields:
-                field_name = field.name_camel()
-                field_type = field.typescript_type()
-                if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                    if field_type == "RecordId":
-                        write.line_indented("//@ts-ignore", 2)
-                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.id);', 2)
-                    elif field_type == "RecordId[]":
-                        write.line_indented("//@ts-ignore", 2)
-                        write.line_indented(f'this.record.set("{field.id}", this._{field_name}?.ids);', 2)
-                else:
-                    write.line_indented("//@ts-ignore", 2)
-                    write.line_indented(f'this.record.set("{field.id}", this._{field_name});', 2)
-            write.line_indented("}", 1)
-            write.line_empty()
-
             write.line("}")
-            write.endregion()
 
     with WriteToTypeScriptFile(path=models_dir / "_models.ts") as write:
         write.line("import {")
@@ -706,7 +646,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, this), options);',
+                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}), options);',
                 2,
             )
             write.line_indented("}")

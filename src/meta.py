@@ -409,6 +409,7 @@ class Field(Named):
             "createdBy",
             "count",
             "button",
+            "autoNumber",
         ]
         return self.type in computed_types
 
@@ -506,6 +507,8 @@ class Field(Named):
                 return "Rollup"
             case "singleCollaborator":
                 return "Collaborator"
+            case "multipleCollaborators":
+                return "Collaborators"
             case "singleLineText":
                 return "Single Line Text"
             case "singleSelect":
