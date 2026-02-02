@@ -8,6 +8,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    deduplicate_names,
     reset_folder,
     sanitize_string,
 )
@@ -277,20 +278,20 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             views = table.views
-            view_names: list[str] = [sanitize_string(view.name) for view in views]
+            view_names: list[str] = deduplicate_names([sanitize_string(view.name) for view in views])
             view_ids: list[str] = [view.id for view in views]
             write.types(f"{table_name}View", view_names, f"View names for `{table.name}`")
             write.types(f"{table_name}ViewId", view_ids, f"View IDs for `{table.name}`")
             write.dict_class(
                 f"{table_name}ViewNameIdMapping",
-                [(sanitize_string(view.name), view.id) for view in table.views],
+                list(zip(view_names, view_ids)),
                 first_type=f"{table_name}View",
                 second_type=f"{table_name}ViewId",
                 is_value_string=True,
             )
             write.dict_class(
                 f"{table_name}ViewIdNameMapping",
-                [(view.id, sanitize_string(view.name)) for view in table.views],
+                list(zip(view_ids, view_names)),
                 first_type=f"{table_name}ViewId",
                 second_type=f"{table_name}View",
                 is_value_string=True,

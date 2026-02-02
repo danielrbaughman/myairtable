@@ -115,6 +115,19 @@ def sanitize_string(text: str) -> str:
     return text.replace('"', "'")
 
 
+def deduplicate_names(names: list[str]) -> list[str]:
+    """Append ' (2)', ' (3)', etc. to duplicate names to ensure uniqueness."""
+    counts: dict[str, int] = {}
+    result: list[str] = []
+    for name in names:
+        counts[name] = counts.get(name, 0) + 1
+        if counts[name] > 1:
+            result.append(f"{name} ({counts[name]})")
+        else:
+            result.append(name)
+    return result
+
+
 def copy_static_files(output_folder: Path, type: str):
     """Copy static template files to output folder. Uses optimized copytree."""
     source = Path(f"./static/{type}")

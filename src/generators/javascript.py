@@ -8,6 +8,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    deduplicate_names,
     reset_folder,
     sanitize_string,
 )
@@ -257,7 +258,7 @@ def write_types(base: Base, output_folder: Path) -> None:
                 exports.append(mapping_name)
 
             # Views
-            view_names: list[str] = [sanitize_string(view.name) for view in table.views]
+            view_names: list[str] = deduplicate_names([sanitize_string(view.name) for view in table.views])
             view_ids: list[str] = [view.id for view in table.views]
 
             write.const_array(f"{table.name_pascal()}Views", view_names, f"View names for `{table.name}`")
@@ -268,14 +269,14 @@ def write_types(base: Base, output_folder: Path) -> None:
 
             write.const_object(
                 f"{table.name_pascal()}ViewNameIdMapping",
-                [(sanitize_string(view.name), view.id) for view in table.views],
+                list(zip(view_names, view_ids)),
                 is_value_string=True,
             )
             exports.append(f"{table.name_pascal()}ViewNameIdMapping")
 
             write.const_object(
                 f"{table.name_pascal()}ViewIdNameMapping",
-                [(view.id, sanitize_string(view.name)) for view in table.views],
+                list(zip(view_ids, view_names)),
                 is_value_string=True,
             )
             exports.append(f"{table.name_pascal()}ViewIdNameMapping")
