@@ -784,6 +784,7 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
             write.line('export * from "./static/formula";')
         if wrappers:
             write.line('export * from "./static/airtable-model";')
+        write.line('export * from "./static/special-types";')
         write.line("")
 
 
