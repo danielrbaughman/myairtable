@@ -1,7 +1,7 @@
 import { AirtableOptions, FieldSet } from "airtable";
 import * as z from "zod";
 
-export { AirtableOptions, FieldSet, Record, RecordData, Attachment, Collaborator } from "airtable";
+export type { AirtableOptions, FieldSet, Record, RecordData, Attachment, Collaborator } from "airtable";
 
 export const baseIdSchema = z.string().regex(/\bapp[a-zA-Z0-9]{14}\b/, "Invalid Airtable Base ID");
 export const recordIdSchema = z.string().regex(/\brec[a-zA-Z0-9]{14}\b/, "Invalid Airtable Record ID");
