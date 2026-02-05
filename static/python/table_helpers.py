@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar
 
 from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict
 from pyairtable.orm import Model
@@ -52,3 +52,23 @@ def prepare_fields_for_save(fields: dict, calculated_fields: list[str]) -> dict:
     fields = remove_calculated_fields(fields, calculated_fields)
     fields = convert_datetime_fields_to_str(fields)
     return fields
+
+
+class SortOption(TypedDict, Generic[FieldType]):
+    field: FieldType
+    direction: Optional[Literal["asc", "desc"]]
+
+
+def convert_sort_options(sort: "list[SortOption] | None") -> list[str] | None:
+    """Convert SortOption dicts to pyairtable's expected string format."""
+    if sort is None:
+        return None
+    result = []
+    for option in sort:
+        field = option["field"]
+        direction = option.get("direction")
+        if direction == "desc":
+            result.append(f"-{field}")
+        else:
+            result.append(field)
+    return result

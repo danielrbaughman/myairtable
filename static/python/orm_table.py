@@ -6,7 +6,7 @@ from pyairtable.formulas import Formula
 
 from .formula import ID
 from .helpers import validate_keys
-from .table_helpers import DictType, FieldType, ORMType, ViewType, prepare_fields_for_save, sanitize_record_dict
+from .table_helpers import DictType, FieldType, ORMType, SortOption, ViewType, convert_sort_options, prepare_fields_for_save, sanitize_record_dict
 
 
 class ORMTable(Generic[ORMType, ViewType, FieldType]):
@@ -50,6 +50,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record_id: str,
         use_field_ids: bool = True,
         fields: list[FieldType] | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
         **options,
     ) -> ORMType:
         """
@@ -68,6 +72,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record_ids: list[str],
         use_field_ids: bool = True,
         fields: list[FieldType] | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
+        max_records: int | None = None,
         **options,
     ) -> list[ORMType]:
         """
@@ -89,6 +98,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         use_field_ids: bool = True,
         page_size: int = 100,
         fields: list[FieldType] | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
+        max_records: int | None = None,
         **options,
     ) -> list[ORMType]:
         """
@@ -115,6 +129,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         use_field_ids: bool = True,
         page_size: int = 100,
         fields: list[FieldType] | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
+        max_records: int | None = None,
         **options,
     ) -> ORMType | list[ORMType]:
         if fields is not None:
@@ -131,6 +150,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                     formula=ID.equals(record_id),
                     use_field_ids=use_field_ids,
                     fields=fields,
+                    sort=convert_sort_options(sort),
+                    offset=offset,
+                    time_zone=time_zone,
+                    user_locale=user_locale,
                     **options,
                 )
                 record_dict: RecordDict = record_dicts[0] if record_dicts else RecordDict()
@@ -138,6 +161,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 record_dict: RecordDict = self._table.get(
                     record_id,
                     use_field_ids=use_field_ids,
+                    sort=convert_sort_options(sort),
+                    offset=offset,
+                    time_zone=time_zone,
+                    user_locale=user_locale,
                     **options,
                 )
             record_dict: DictType = sanitize_record_dict(record_dict)
@@ -152,6 +179,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 use_field_ids=use_field_ids,
                 page_size=page_size,
                 fields=fields,
+                sort=convert_sort_options(sort),
+                offset=offset,
+                time_zone=time_zone,
+                user_locale=user_locale,
+                max_records=max_records,
                 **options,
             )
             record_dicts: list[DictType] = [sanitize_record_dict(r) for r in record_dicts]
@@ -166,6 +198,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 use_field_ids=use_field_ids,
                 page_size=page_size,
                 fields=fields,
+                sort=convert_sort_options(sort),
+                offset=offset,
+                time_zone=time_zone,
+                user_locale=user_locale,
+                max_records=max_records,
                 **options,
             )
             record_dicts: list[DictType] = [sanitize_record_dict(r) for r in record_dicts]

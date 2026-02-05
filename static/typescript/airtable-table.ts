@@ -1,15 +1,18 @@
 /* eslint-disable no-unused-vars */
 import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "airtable";
 import { AirtableModel } from "./airtable-model";
-import { QueryParams } from "airtable/lib/query_params";
+import { QueryParams, SortParameter } from "airtable/lib/query_params";
 import { ID } from "./formula";
 import { baseIdSchema, IRecord, validateRecordIds } from "./special-types";
 
-export interface Options<Fld> {
+/** Options for fetching records via `get()` */
+export interface FetchOptions<Fld> {
 	/** Number of records to return per page (Airtable API default is 100) */
 	pageSize?: number;
 	/** Specific fields to return */
 	fields?: Fld[];
+	/** Sort records by given field(s) */
+	sort?: SortOption<Fld>[];
 	/** Whether to use field IDs instead of names */
 	useFieldIds?: boolean;
 	/** Maximum number of records to return */
@@ -18,13 +21,25 @@ export interface Options<Fld> {
 	returnAs?: "model" | "record" | "interface";
 	/** Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly. */
 	onlyWritableFields?: boolean;
+	offset?: number;
+	timeZone?: string;
+	userLocale?: string;
 }
 
-export interface QueryOptions<Vw, Fld> extends Options<Fld> {
+/** Options for querying records via `get()` */
+export interface QueryOptions<Vw, Fld> extends FetchOptions<Fld> {
 	/** View name or ID to filter records */
 	view?: Vw;
 	/** Formula string to filter records */
 	formula?: string;
+}
+
+/** Sort records by given field */
+export interface SortOption<Fld> {
+	/** Field to sort by */
+	field: Fld;
+	/** Direction to sort */
+	direction?: "asc" | "desc";
 }
 
 /** Conditional return type for `get()` based on the `returnAs` option */
@@ -83,7 +98,7 @@ export class AirtableTable<
 	 * Fetches a single record by ID.
 	 *
 	 * @param recordId - The Airtable record ID.
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `fields` — Restrict which fields are returned (by name).
 	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
@@ -93,13 +108,13 @@ export class AirtableTable<
 	 */
 	public async get<R extends "model" | "record" | "interface">(
 		recordId: string,
-		options: Options<Fld> & { returnAs: R },
+		options: FetchOptions<Fld> & { returnAs: R },
 	): Promise<GetResult<FldSt, Mdl, R>>;
 	/**
 	 * Fetches multiple records by their IDs, returning them in the format specified by `options.returnAs`.
 	 *
 	 * @param recordIds - Array of Airtable record IDs.
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `fields` — Restrict which fields are returned (by name).
 	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
@@ -109,14 +124,15 @@ export class AirtableTable<
 	 */
 	public async get<R extends "model" | "record" | "interface">(
 		recordIds: string[],
-		options: Options<Fld> & { returnAs: R },
+		options: FetchOptions<Fld> & { returnAs: R },
 	): Promise<GetResult<FldSt, Mdl, R>[]>;
 	/**
 	 * Fetches records matching query options, returning them in the format specified by `options.returnAs`.
 	 *
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `view` — View name or ID to filter records.
 	 *   - `formula` — Formula string to filter records.
+	 *   - `sort` — Sort records by given field(s).
 	 *   - `fields` — Restrict which fields are returned (by name).
 	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
@@ -131,7 +147,7 @@ export class AirtableTable<
 	 * Fetches a single record by ID.
 	 *
 	 * @param recordId - The Airtable record ID.
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
 	 *   - `pageSize` — Records per API page (1–100, default 100).
 	 *   - `fields` — Restrict which fields are returned (by name).
@@ -139,12 +155,12 @@ export class AirtableTable<
 	 *   - `maxRecords` — Cap the total number of records returned.
 	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
 	 */
-	public async get(recordId: string, options?: Options<Fld>): Promise<Mdl>;
+	public async get(recordId: string, options?: FetchOptions<Fld>): Promise<Mdl>;
 	/**
 	 * Fetches multiple records by their IDs, returning them in the format specified by `options.returnAs`.
 	 *
 	 * @param recordIds - Array of Airtable record IDs.
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `fields` — Restrict which fields are returned (by name).
 	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
@@ -152,13 +168,14 @@ export class AirtableTable<
 	 *   - `maxRecords` — Cap the total number of records returned.
 	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
 	 */
-	public async get(recordIds: string[], options?: Options<Fld>): Promise<Mdl[]>;
+	public async get(recordIds: string[], options?: FetchOptions<Fld>): Promise<Mdl[]>;
 	/**
 	 * Fetches records matching query options, returning them in the format specified by `options.returnAs`.
 	 *
-	 * @param options - See also {@link Options}:
+	 * @param options - See also {@link FetchOptions}:
 	 *   - `view` — View name or ID to filter records.
 	 *   - `formula` — Formula string to filter records.
+	 *   - `sort` — Sort records by given field(s).
 	 *   - `fields` — Restrict which fields are returned (by name).
 	 *   - `useFieldIds` — When true, field keys are IDs (`fldXXX`) instead of names. Defaults to true when returning models; false otherwise.
 	 *   - `returnAs` — Determines the return format: `model`, `record`, or `interface`. Default: `model`.
@@ -169,7 +186,7 @@ export class AirtableTable<
 	public async get(options?: QueryOptions<Vw, Fld>): Promise<Mdl[]>;
 	public async get(
 		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<Vw, Fld>,
-		options?: Options<Fld>,
+		options?: FetchOptions<Fld>,
 	): Promise<any> {
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
@@ -178,12 +195,15 @@ export class AirtableTable<
 			const selectOptions: QueryParams<FldSt> = {
 				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
 			};
-			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) {
 				selectOptions.fields = options.fields as string[];
 			} else if (options?.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
+			if (options?.offset) selectOptions.offset = options.offset;
+			if (options?.timeZone) selectOptions.timeZone = options.timeZone;
+			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
 			try {
@@ -210,13 +230,18 @@ export class AirtableTable<
 			const selectOptions: QueryParams<FldSt> = {
 				filterByFormula: new ID().inList(recordIdOrIdsOrOptions),
 			};
-			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) {
 				selectOptions.fields = options.fields as string[];
 			} else if (options?.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (options?.sort) selectOptions.sort = options.sort as SortParameter<FldSt>[];
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
+			if (options?.offset) selectOptions.offset = options.offset;
+			if (options?.timeZone) selectOptions.timeZone = options.timeZone;
+			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
+
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
 			try {
@@ -235,15 +260,19 @@ export class AirtableTable<
 			const queryOptions = recordIdOrIdsOrOptions || {};
 			const returnAs = queryOptions.returnAs ?? "model";
 			const selectOptions: QueryParams<FldSt> = {};
-			if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
-			if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
-			if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 			if (queryOptions.fields) {
 				selectOptions.fields = queryOptions.fields as string[];
 			} else if (queryOptions.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
+			if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
+			if (queryOptions.sort) selectOptions.sort = queryOptions.sort as SortParameter<FldSt>[];
+			if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 			if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
+			if (queryOptions?.offset) selectOptions.offset = queryOptions.offset;
+			if (queryOptions?.timeZone) selectOptions.timeZone = queryOptions.timeZone;
+			if (queryOptions?.userLocale) selectOptions.userLocale = queryOptions.userLocale;
 			selectOptions.returnFieldsByFieldId = queryOptions.useFieldIds ?? returnAs === "model";
 
 			try {

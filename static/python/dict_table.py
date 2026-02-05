@@ -6,7 +6,17 @@ from pyairtable.formulas import Formula
 
 from .formula import ID
 from .helpers import validate_keys
-from .table_helpers import CreateDictType, DictType, FieldType, UpdateDictType, ViewType, prepare_fields_for_save, sanitize_record_dict
+from .table_helpers import (
+    CreateDictType,
+    DictType,
+    FieldType,
+    SortOption,
+    UpdateDictType,
+    ViewType,
+    convert_sort_options,
+    prepare_fields_for_save,
+    sanitize_record_dict,
+)
 
 
 class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, FieldType]):
@@ -57,6 +67,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         use_field_ids: bool = False,
         fields: list[FieldType] | None = None,
         max_records: int | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
         **options,
     ) -> DictType:
         """
@@ -77,6 +91,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         use_field_ids: bool = False,
         fields: list[FieldType] | None = None,
         max_records: int | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
         **options,
     ) -> list[DictType]:
         """
@@ -100,6 +118,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         page_size: int = 100,
         fields: list[FieldType] | None = None,
         max_records: int | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
         **options,
     ) -> list[DictType]:
         """
@@ -128,6 +150,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         page_size: int = 100,
         fields: list[FieldType] | None = None,
         max_records: int | None = None,
+        sort: list[SortOption[FieldType]] | None = None,
+        offset: int | None = None,
+        time_zone: str | None = None,
+        user_locale: str | None = None,
         **options,
     ) -> DictType | list[DictType]:
         if fields is not None:
@@ -145,6 +171,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     use_field_ids=use_field_ids,
                     fields=fields,
                     max_records=max_records,
+                    sort=convert_sort_options(sort),
+                    offset=offset,
+                    time_zone=time_zone,
+                    user_locale=user_locale,
                     **options,
                 )
                 record: RecordDict = record_dicts[0] if record_dicts else RecordDict()
@@ -153,6 +183,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     record_id,
                     use_field_ids=use_field_ids,
                     max_records=max_records,
+                    sort=convert_sort_options(sort),
+                    offset=offset,
+                    time_zone=time_zone,
+                    user_locale=user_locale,
                     **options,
                 )
             record: DictType = sanitize_record_dict(record)
@@ -166,6 +200,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 use_field_ids=use_field_ids,
                 page_size=page_size,
                 fields=fields,
+                sort=convert_sort_options(sort),
+                offset=offset,
+                time_zone=time_zone,
+                user_locale=user_locale,
                 **options,
             )
             records: list[DictType] = [sanitize_record_dict(r) for r in records]
@@ -180,6 +218,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 page_size=page_size,
                 fields=fields,
                 max_records=max_records,
+                sort=convert_sort_options(sort),
+                offset=offset,
+                time_zone=time_zone,
+                user_locale=user_locale,
                 **options,
             )
             records: list[DictType] = [sanitize_record_dict(r) for r in records]

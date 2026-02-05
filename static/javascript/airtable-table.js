@@ -63,12 +63,15 @@ class AirtableTable {
 			const selectOptions = {
 				filterByFormula: new ID().equals(recordIdOrIdsOrOptions),
 			};
-			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) {
 				selectOptions.fields = options.fields;
 			} else if (options?.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
+			if (options?.offset) selectOptions.offset = options.offset;
+			if (options?.timeZone) selectOptions.timeZone = options.timeZone;
+			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
 			try {
@@ -95,13 +98,17 @@ class AirtableTable {
 			const selectOptions = {
 				filterByFormula: new ID().inList(recordIdOrIdsOrOptions),
 			};
-			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.fields) {
 				selectOptions.fields = options.fields;
 			} else if (options?.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (options?.sort) selectOptions.sort = options.sort;
+			if (options?.pageSize) selectOptions.pageSize = options.pageSize;
 			if (options?.maxRecords) selectOptions.maxRecords = options.maxRecords;
+			if (options?.offset) selectOptions.offset = options.offset;
+			if (options?.timeZone) selectOptions.timeZone = options.timeZone;
+			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
 			try {
@@ -120,15 +127,19 @@ class AirtableTable {
 			const queryOptions = recordIdOrIdsOrOptions || {};
 			const returnAs = queryOptions.returnAs ?? "model";
 			const selectOptions = {};
-			if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
-			if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
-			if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 			if (queryOptions.fields) {
 				selectOptions.fields = queryOptions.fields;
 			} else if (queryOptions.onlyWritableFields && returnAs !== "model") {
 				selectOptions.fields = this.writableFieldIds;
 			}
+			if (queryOptions.view) selectOptions.view = this.getViewId(queryOptions.view);
+			if (queryOptions.formula) selectOptions.filterByFormula = queryOptions.formula;
+			if (queryOptions.sort) selectOptions.sort = queryOptions.sort;
+			if (queryOptions.pageSize) selectOptions.pageSize = queryOptions.pageSize;
 			if (queryOptions.maxRecords) selectOptions.maxRecords = queryOptions.maxRecords;
+			if (queryOptions.offset) selectOptions.offset = queryOptions.offset;
+			if (queryOptions.timeZone) selectOptions.timeZone = queryOptions.timeZone;
+			if (queryOptions.userLocale) selectOptions.userLocale = queryOptions.userLocale;
 			selectOptions.returnFieldsByFieldId = queryOptions.useFieldIds ?? returnAs === "model";
 
 			try {
