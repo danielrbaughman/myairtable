@@ -59,10 +59,10 @@ class SortOption(TypedDict, Generic[FieldType]):
     direction: Optional[Literal["asc", "desc"]]
 
 
-def convert_sort_options(sort: "list[SortOption] | None") -> list[str] | None:
+def convert_sort_options(sort: "list[SortOption] | None") -> list[str]:
     """Convert SortOption dicts to pyairtable's expected string format."""
     if sort is None:
-        return None
+        return []
     result = []
     for option in sort:
         field = option["field"]
