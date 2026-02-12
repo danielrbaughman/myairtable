@@ -530,7 +530,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                             f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
+                elif field.is_computed():
+                    # Computed: getter only (TypeScript enforces read-only at compile time)
+                    write.docstring(docstring)
+                    write.line_indented(
+                        f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
+                    )
                 else:
+                    # Writable: getter + setter
                     write.docstring(docstring)
                     write.line_indented(
                         f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1

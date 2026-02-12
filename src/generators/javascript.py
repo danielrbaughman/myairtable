@@ -497,9 +497,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
                 write.docstring(docstring)
                 write.line_indented(f'get {field.name_camel()}() {{ return this._fields["{field.name_camel()}"]; }}')
-                write.line_indented(
-                    f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
-                )
+                if not field.is_computed():
+                    write.line_indented(
+                        f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
+                    )
             write.line_empty()
 
             # Constructor
