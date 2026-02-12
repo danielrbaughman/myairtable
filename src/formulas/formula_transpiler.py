@@ -1,0 +1,384 @@
+"""
+Formula Translator: Converts tokenized Airtable formulas into native code strings.
+
+Recursive descent parser that builds an AST from Airtable formula tokens,
+then emits language-specific code (TypeScript, JavaScript, Python).
+
+All operators and functions route through AirtableRuntime for correct
+Airtable semantics (BLANK handling, type coercion).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Literal
+
+from .formula_tokenizer import Token, TokenType, tokenize_formula
+
+logger = logging.getLogger(__name__)
+
+Language = Literal["typescript", "javascript", "python"]
+
+
+# region AST Nodes
+@dataclass
+class NumberLiteral:
+    value: str
+
+
+@dataclass
+class StringLiteral:
+    value: str  # includes quotes
+
+
+@dataclass
+class FieldRef:
+    field_id: str  # the raw content between { }
+
+
+@dataclass
+class FunctionCall:
+    name: str  # uppercase function name
+    args: list[ASTNode]
+
+
+@dataclass
+class BinaryOp:
+    op: str
+    left: ASTNode
+    right: ASTNode
+
+
+@dataclass
+class UnaryOp:
+    op: str
+    operand: ASTNode
+
+
+ASTNode = NumberLiteral | StringLiteral | FieldRef | FunctionCall | BinaryOp | UnaryOp
+
+
+# endregion
+
+
+# region Parser
+class ParseError(Exception):
+    pass
+
+
+class FormulaParser:
+    """Recursive descent parser with operator precedence.
+
+    Precedence (low to high):
+      comparison (=, !=, <, >, <=, >=)
+      concat (&)
+      additive (+, -)
+      multiplicative (*, /)
+      unary (-)
+      atoms (literals, field refs, function calls, parens)
+    """
+
+    def __init__(self, tokens: tuple[Token, ...]):
+        # Filter out whitespace tokens
+        self.tokens = [t for t in tokens if t.type != TokenType.WHITESPACE]
+        self.pos = 0
+
+    def peek(self) -> Token | None:
+        if self.pos < len(self.tokens):
+            return self.tokens[self.pos]
+        return None
+
+    def advance(self) -> Token:
+        tok = self.tokens[self.pos]
+        self.pos += 1
+        return tok
+
+    def expect(self, token_type: TokenType, value: str | None = None) -> Token:
+        tok = self.peek()
+        if tok is None:
+            raise ParseError(f"Unexpected end of input, expected {token_type}")
+        if tok.type != token_type:
+            raise ParseError(f"Expected {token_type}, got {tok.type} ({tok.value!r})")
+        if value is not None and tok.value != value:
+            raise ParseError(f"Expected {value!r}, got {tok.value!r}")
+        return self.advance()
+
+    def parse(self) -> ASTNode:
+        node = self.parse_comparison()
+        if self.pos < len(self.tokens):
+            raise ParseError(f"Unexpected token after expression: {self.tokens[self.pos]}")
+        return node
+
+    def parse_comparison(self) -> ASTNode:
+        left = self.parse_concat()
+        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("=", "!=", "<", ">", "<=", ">="):
+            op = self.advance().value
+            right = self.parse_concat()
+            left = BinaryOp(op, left, right)
+        return left
+
+    def parse_concat(self) -> ASTNode:
+        left = self.parse_additive()
+        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value == "&":
+            self.advance()
+            right = self.parse_additive()
+            left = BinaryOp("&", left, right)
+        return left
+
+    def parse_additive(self) -> ASTNode:
+        left = self.parse_multiplicative()
+        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("+", "-"):
+            op = self.advance().value
+            right = self.parse_multiplicative()
+            left = BinaryOp(op, left, right)
+        return left
+
+    def parse_multiplicative(self) -> ASTNode:
+        left = self.parse_unary()
+        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("*", "/"):
+            op = self.advance().value
+            right = self.parse_unary()
+            left = BinaryOp(op, left, right)
+        return left
+
+    def parse_unary(self) -> ASTNode:
+        if self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value == "-":
+            self.advance()
+            operand = self.parse_unary()
+            return UnaryOp("-", operand)
+        return self.parse_atom()
+
+    def parse_atom(self) -> ASTNode:
+        tok = self.peek()
+        if tok is None:
+            raise ParseError("Unexpected end of input")
+
+        # Number literal (may already include negative sign from tokenizer)
+        if tok.type == TokenType.NUMBER:
+            self.advance()
+            return NumberLiteral(tok.value)
+
+        # String literal
+        if tok.type == TokenType.STRING:
+            self.advance()
+            return StringLiteral(tok.value)
+
+        # Field reference
+        if tok.type == TokenType.FIELD_REF:
+            self.advance()
+            # Strip surrounding { }
+            field_id = tok.value[1:-1]
+            return FieldRef(field_id)
+
+        # Function call
+        if tok.type == TokenType.FUNCTION:
+            func_name = self.advance().value.upper()
+            self.expect(TokenType.PARENTHESIS, "(")
+            args: list[ASTNode] = []
+            if self.peek() and not (self.peek().type == TokenType.PARENTHESIS and self.peek().value == ")"):
+                args.append(self.parse_comparison())
+                while self.peek() and self.peek().type == TokenType.COMMA:
+                    self.advance()  # skip comma
+                    args.append(self.parse_comparison())
+            self.expect(TokenType.PARENTHESIS, ")")
+            return FunctionCall(func_name, args)
+
+        # Parenthesized expression
+        if tok.type == TokenType.PARENTHESIS and tok.value == "(":
+            self.advance()
+            node = self.parse_comparison()
+            self.expect(TokenType.PARENTHESIS, ")")
+            return node
+
+        raise ParseError(f"Unexpected token: {tok.type} ({tok.value!r})")
+
+
+# endregion
+
+
+# region Operator mapping
+
+OPERATOR_MAP: dict[str, str] = {
+    "=": "EQ",
+    "!=": "NEQ",
+    "<": "LT",
+    ">": "GT",
+    "<=": "LTE",
+    ">=": "GTE",
+    "+": "ADD",
+    "-": "SUB",
+    "*": "MUL",
+    "/": "DIV",
+    "&": "CONCAT",
+}
+
+# endregion
+
+
+# region Code Emitter
+class CodeEmitter:
+    """Walks AST and emits language-specific code."""
+
+    def __init__(
+        self,
+        language: Language,
+        field_name_map: dict[str, str],
+        formula_field_ids: set[str],
+    ):
+        self.language = language
+        self.field_name_map = field_name_map  # field_id -> property name (camelCase or snake_case)
+        self.formula_field_ids = formula_field_ids  # set of field IDs that are formula fields
+        self._self = "self" if language == "python" else "this"
+        self._runtime = "F"
+
+    def emit(self, node: ASTNode) -> str:
+        if isinstance(node, NumberLiteral):
+            return node.value
+
+        if isinstance(node, StringLiteral):
+            return node.value
+
+        if isinstance(node, FieldRef):
+            return self._emit_field_ref(node)
+
+        if isinstance(node, FunctionCall):
+            return self._emit_function_call(node)
+
+        if isinstance(node, BinaryOp):
+            return self._emit_binary_op(node)
+
+        if isinstance(node, UnaryOp):
+            return self._emit_unary_op(node)
+
+        raise ParseError(f"Unknown AST node: {type(node)}")
+
+    def _emit_field_ref(self, node: FieldRef) -> str:
+        field_id = node.field_id
+        prop_name = self.field_name_map.get(field_id)
+        if prop_name is None:
+            raise ParseError(f"Unknown field reference: {{{field_id}}}")
+
+        if field_id in self.formula_field_ids:
+            # Formula field -> call as function with recalculate parameter
+            return f"{self._self}.{prop_name}(recalculate)"
+        else:
+            # Non-formula field -> access as property
+            return f"{self._self}.{prop_name}"
+
+    def _emit_function_call(self, node: FunctionCall) -> str:
+        name = node.name
+
+        # Special cases that reference model properties
+        if name == "RECORD_ID":
+            return f"{self._self}.id"
+
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        return f"{self._runtime}.{name}({args})"
+
+    def _emit_binary_op(self, node: BinaryOp) -> str:
+        func = OPERATOR_MAP.get(node.op)
+        if func is None:
+            raise ParseError(f"Unknown operator: {node.op}")
+        left = self.emit(node.left)
+        right = self.emit(node.right)
+        return f"{self._runtime}.{func}({left}, {right})"
+
+    def _emit_unary_op(self, node: UnaryOp) -> str:
+        if node.op == "-":
+            operand = self.emit(node.operand)
+            return f"{self._runtime}.NEG({operand})"
+        raise ParseError(f"Unknown unary operator: {node.op}")
+
+
+# endregion
+
+
+# Functions that cannot be evaluated at runtime (they need server-side context)
+UNTRANSPILABLE_FUNCTIONS: set[str] = {
+    "CREATED_TIME",
+    "LAST_MODIFIED_TIME",
+}
+
+
+def _contains_untranspilable(node: ASTNode) -> bool:
+    """Check if an AST contains any function calls that can't work at runtime."""
+    if isinstance(node, FunctionCall):
+        if node.name in UNTRANSPILABLE_FUNCTIONS:
+            return True
+        return any(_contains_untranspilable(arg) for arg in node.args)
+    if isinstance(node, BinaryOp):
+        return _contains_untranspilable(node.left) or _contains_untranspilable(node.right)
+    if isinstance(node, UnaryOp):
+        return _contains_untranspilable(node.operand)
+    return False
+
+
+# region Public API
+
+
+def transpile_formula(
+    formula: str,
+    language: Language,
+    field_name_map: dict[str, str],
+    formula_field_ids: set[str],
+) -> str | None:
+    """Transpile an Airtable formula to native code.
+
+    Args:
+        formula: The raw Airtable formula string.
+        language: Target language ("typescript", "javascript", "python").
+        field_name_map: Mapping of field_id -> property name in the target language.
+        formula_field_ids: Set of field IDs that are formula fields (called as functions).
+
+    Returns:
+        The transpiled code string, or None if translation fails.
+    """
+    if not formula or not formula.strip():
+        return None
+
+    try:
+        tokens = tokenize_formula(formula)
+        parser = FormulaParser(tokens)
+        ast = parser.parse()
+        if _contains_untranspilable(ast):
+            logger.info("Formula %r contains runtime-untranspilable functions, falling back to getter", formula)
+            return None
+        emitter = CodeEmitter(language, field_name_map, formula_field_ids)
+        return emitter.emit(ast)
+    except (ParseError, Exception) as e:
+        logger.warning("Could not transpile formula %r: %s", formula, e)
+        return None
+
+
+def transpile_table_formulas(
+    formulas: dict[str, str],
+    language: Language,
+    field_name_map: dict[str, str],
+    all_formula_field_ids: set[str],
+) -> dict[str, str]:
+    """Transpile all formula fields for a table.
+
+    All formula field IDs are treated as callable (since all formula fields
+    are always emitted as functions), so references to any formula field
+    will use function-call syntax regardless of whether that field's own
+    formula was translatable.
+
+    Args:
+        formulas: Mapping of field_id -> raw Airtable formula string.
+        language: Target language.
+        field_name_map: Mapping of field_id -> property name in the target language.
+        all_formula_field_ids: Set of ALL formula field IDs in the table.
+
+    Returns:
+        Mapping of field_id -> transpiled code string (only successfully transpiled formulas).
+    """
+    transpiled: dict[str, str] = {}
+    for field_id, formula_str in formulas.items():
+        code = transpile_formula(formula_str, language, field_name_map, all_formula_field_ids)
+        if code is not None:
+            transpiled[field_id] = code
+    return transpiled
+
+
+# endregion

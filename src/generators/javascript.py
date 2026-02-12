@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
 from ..utils.helpers import (
@@ -426,6 +427,15 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.require_statement([f"{table.name_pascal()}Table"], f"../tables/{table.name_camel()}")
             if zod:
                 write.require_statement([f"{table.name_pascal()}Schema"], f"../zod/{table.name_camel()}")
+
+            # Pre-transpile formula fields and add AirtableRuntime require if any succeed
+            formula_field_ids = table.formula_field_ids()
+            field_name_map = {f.id: f.name_camel() for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            transpiled_formulas = transpile_table_formulas(raw_formulas, "javascript", field_name_map, formula_field_ids)
+            has_any_formula = any(f.is_formula() for f in table.fields)
+            if has_any_formula:
+                write.line('const { AirtableRuntime: F } = require("../../static/airtable-runtime");')
             write.endregion()
             write.line_empty()
 
@@ -495,12 +505,22 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 else:
                     docstring: str = f"`{field.name}` ({field.id})"
 
-                write.docstring(docstring)
-                write.line_indented(f'get {field.name_camel()}() {{ return this._fields["{field.name_camel()}"]; }}')
-                if not field.is_computed():
-                    write.line_indented(
-                        f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
-                    )
+                if field.is_formula():
+                    # Formula field -> always a function with recalculate parameter
+                    write.docstring(docstring)
+                    write.line_indented(f"{field.name_camel()}(recalculate = false) {{")
+                    if field.id in transpiled_formulas:
+                        formula_code = transpiled_formulas[field.id]
+                        write.line_indented(f'if (recalculate) this._fields["{field.name_camel()}"] = {formula_code};', 2)
+                    write.line_indented(f'return this._fields["{field.name_camel()}"];', 2)
+                    write.line_indented("}")
+                else:
+                    write.docstring(docstring)
+                    write.line_indented(f'get {field.name_camel()}() {{ return this._fields["{field.name_camel()}"]; }}')
+                    if not field.is_computed():
+                        write.line_indented(
+                            f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
+                        )
             write.line_empty()
 
             # Constructor

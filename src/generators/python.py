@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
 from ..utils.helpers import (
@@ -437,7 +438,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
     for table in base.tables:
         with WriteToPythonFile(path=models_dir / f"{table.name_snake()}.py") as write:
             # Imports
-            write.line("from datetime import datetime")
+            write.line("from datetime import datetime, timedelta")
             write.line("from typing import Any, TYPE_CHECKING")
             write.line_empty()
             write.line("from pyairtable.orm import Model")
@@ -445,6 +446,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line_empty()
             write.line("from ...static.helpers import get_api_key, get_base_id")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
+            # Check if this table has any transpilable formula fields (pre-scan)
+            _has_formulas = any(field.is_formula() and field.options and field.options.formula for field in table.fields)
+            if _has_formulas:
+                write.line("from ...static.airtable_runtime import AirtableRuntime as F")
             write.select_options_import(table)
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
@@ -480,12 +485,34 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 write.line_indented(f"f: {table.name_pascal()}Formulas = {table.name_pascal()}Formulas()")
                 write.line_empty()
 
+            # Pre-transpile formula fields
+            formula_field_ids = table.formula_field_ids()
+            field_name_map = {f.id: f.name_snake() for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            transpiled_formulas = transpile_table_formulas(raw_formulas, "python", field_name_map, formula_field_ids)
+
             # properties
             for field in table.fields:
                 field_name = field.name_snake()
                 pyairtable_type = pyairtable_orm_type(field, base, output_folder, package_prefix=package_prefix)
-                write.line_indented(f"{field_name}: {pyairtable_type}")
-                write.property_docstring(field, table)
+
+                if field.is_formula():
+                    # Formula field -> always hidden ORM descriptor + public method
+                    # 1. Hidden ORM descriptor with _orm_ prefix for pyairtable deserialization
+                    write.line_indented(f"_orm_{field_name}: {pyairtable_type}")
+                    write.property_docstring(field, table)
+                    write.line_empty()
+                    # 2. Public method with recalculate support
+                    py_type = field.python_type()
+                    write.line_indented(f"def {field_name}(self, recalculate: bool = False) -> {py_type} | None:")
+                    if field.id in transpiled_formulas:
+                        formula_code = transpiled_formulas[field.id]
+                        write.line_indented("if recalculate:", 2)
+                        write.line_indented(f'self._fields["{field.id}"] = {formula_code}', 3)
+                    write.line_indented(f'return self._fields.get("{field.id}")', 2)
+                else:
+                    write.line_indented(f"{field_name}: {pyairtable_type}")
+                    write.property_docstring(field, table)
             write.line_empty()
 
     write_module_init(base, output_folder, Paths.MODELS)

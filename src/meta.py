@@ -386,6 +386,10 @@ class Field(Named):
             return bool(self.options.is_valid)
         return True
 
+    def is_formula(self) -> bool:
+        """Check if the field is a formula field."""
+        return self.type == "formula"
+
     def is_calculated(self) -> bool:
         """A field whose value is dependent on other fields."""
         calculated_types: list[FieldType] = [
@@ -851,6 +855,10 @@ class Table(Named):
         if self._field_id_to_name_cache is None:
             self._field_id_to_name_cache = {f.id: f.name for f in self.fields}
         return self._field_id_to_name_cache
+
+    def formula_field_ids(self) -> set[str]:
+        """Get the set of field IDs that are formula fields."""
+        return {f.id for f in self.fields if f.type == "formula"}
 
     def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
