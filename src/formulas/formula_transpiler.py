@@ -410,6 +410,13 @@ class CodeEmitter:
                 return f"math.log10({arg})"
             return f"Math.log10({arg})"
 
+        if name == "POWER":
+            base = self._emit_num(node.args[0])
+            exp = self._emit_num(node.args[1])
+            if self.language == "python":
+                return f"math.pow({base}, {exp})"
+            return f"Math.pow({base}, {exp})"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])
