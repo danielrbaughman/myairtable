@@ -9,24 +9,14 @@
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class AirtableRuntime {
-	// region BLANK semantics
+	// region Utilities
 	private static _isBlank(v: unknown): boolean {
 		return v === null || v === undefined;
 	}
 
 	/** Coerce value to number */
 	static N(v: unknown): number {
-		if (Array.isArray(v)) return AirtableRuntime._toNum(v[0]);
-		return AirtableRuntime._toNum(v);
-	}
-
-	/** Coerce value to string */
-	static S(v: unknown): string {
-		if (Array.isArray(v)) return AirtableRuntime._toStr(v[0]);
-		return AirtableRuntime._toStr(v);
-	}
-
-	private static _toNum(v: unknown): number {
+		if (Array.isArray(v)) return AirtableRuntime.N(v[0]);
 		if (AirtableRuntime._isBlank(v)) return 0;
 		if (typeof v === "boolean") return v ? 1 : 0;
 		if (typeof v === "number") return v;
@@ -37,7 +27,9 @@ export class AirtableRuntime {
 		return 0;
 	}
 
-	private static _toStr(v: unknown): string {
+	/** Coerce value to string */
+	static S(v: unknown): string {
+		if (Array.isArray(v)) return AirtableRuntime.S(v[0]);
 		if (AirtableRuntime._isBlank(v)) return "";
 		if (typeof v === "boolean") return v ? "1" : "0";
 		return String(v);
@@ -56,7 +48,7 @@ export class AirtableRuntime {
 	// region Numeric functions
 	static SUM(...args: unknown[]): number {
 		const flat = AirtableRuntime._flatArgs(args);
-		return flat.reduce<number>((acc, v) => acc + AirtableRuntime._toNum(v), 0);
+		return flat.reduce<number>((acc, v) => acc + AirtableRuntime.N(v), 0);
 	}
 
 	static AVERAGE(...args: unknown[]): number {
@@ -68,13 +60,13 @@ export class AirtableRuntime {
 	static MIN(...args: unknown[]): number {
 		const flat = AirtableRuntime._flatArgs(args);
 		if (flat.length === 0) return Infinity;
-		return Math.min(...flat.map((v) => AirtableRuntime._toNum(v)));
+		return Math.min(...flat.map((v) => AirtableRuntime.N(v)));
 	}
 
 	static MAX(...args: unknown[]): number {
 		const flat = AirtableRuntime._flatArgs(args);
 		if (flat.length === 0) return -Infinity;
-		return Math.max(...flat.map((v) => AirtableRuntime._toNum(v)));
+		return Math.max(...flat.map((v) => AirtableRuntime.N(v)));
 	}
 
 	static COUNT(...args: unknown[]): number {
@@ -93,84 +85,84 @@ export class AirtableRuntime {
 	}
 
 	static ROUND(value: unknown, precision?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const p = AirtableRuntime._toNum(precision);
+		const n = AirtableRuntime.N(value);
+		const p = AirtableRuntime.N(precision);
 		const factor = Math.pow(10, p);
 		return Math.round(n * factor) / factor;
 	}
 
 	static ROUNDUP(value: unknown, precision?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const p = AirtableRuntime._toNum(precision);
+		const n = AirtableRuntime.N(value);
+		const p = AirtableRuntime.N(precision);
 		const factor = Math.pow(10, p);
 		return Math.ceil(n * factor) / factor;
 	}
 
 	static ROUNDDOWN(value: unknown, precision?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const p = AirtableRuntime._toNum(precision);
+		const n = AirtableRuntime.N(value);
+		const p = AirtableRuntime.N(precision);
 		const factor = Math.pow(10, p);
 		return Math.floor(n * factor) / factor;
 	}
 
 	static CEILING(value: unknown, significance?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const s = AirtableRuntime._toNum(significance) || 1;
+		const n = AirtableRuntime.N(value);
+		const s = AirtableRuntime.N(significance) || 1;
 		return Math.ceil(n / s) * s;
 	}
 
 	static FLOOR(value: unknown, significance?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const s = AirtableRuntime._toNum(significance) || 1;
+		const n = AirtableRuntime.N(value);
+		const s = AirtableRuntime.N(significance) || 1;
 		return Math.floor(n / s) * s;
 	}
 
 	static INT(value: unknown): number {
-		return Math.floor(AirtableRuntime._toNum(value));
+		return Math.floor(AirtableRuntime.N(value));
 	}
 
 	static ABS(value: unknown): number {
-		return Math.abs(AirtableRuntime._toNum(value));
+		return Math.abs(AirtableRuntime.N(value));
 	}
 
 	static SQRT(value: unknown): number {
-		return Math.sqrt(AirtableRuntime._toNum(value));
+		return Math.sqrt(AirtableRuntime.N(value));
 	}
 
 	static POWER(base: unknown, exponent: unknown): number {
-		return Math.pow(AirtableRuntime._toNum(base), AirtableRuntime._toNum(exponent));
+		return Math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent));
 	}
 
 	static EXP(value: unknown): number {
-		return Math.exp(AirtableRuntime._toNum(value));
+		return Math.exp(AirtableRuntime.N(value));
 	}
 
 	static LOG(value: unknown, base?: unknown): number {
-		const n = AirtableRuntime._toNum(value);
+		const n = AirtableRuntime.N(value);
 		if (AirtableRuntime._isBlank(base)) return Math.log(n) / Math.log(10);
-		return Math.log(n) / Math.log(AirtableRuntime._toNum(base));
+		return Math.log(n) / Math.log(AirtableRuntime.N(base));
 	}
 
 	static LOG10(value: unknown): number {
-		return Math.log10(AirtableRuntime._toNum(value));
+		return Math.log10(AirtableRuntime.N(value));
 	}
 
 	static MOD(value: unknown, divisor: unknown): number {
-		const n = AirtableRuntime._toNum(value);
-		const d = AirtableRuntime._toNum(divisor);
+		const n = AirtableRuntime.N(value);
+		const d = AirtableRuntime.N(divisor);
 		if (d === 0) return NaN;
 		return n % d;
 	}
 
 	static EVEN(value: unknown): number {
-		const n = AirtableRuntime._toNum(value);
+		const n = AirtableRuntime.N(value);
 		const ceil = Math.ceil(Math.abs(n));
 		const result = ceil % 2 === 0 ? ceil : ceil + 1;
 		return n < 0 ? -result : result;
 	}
 
 	static ODD(value: unknown): number {
-		const n = AirtableRuntime._toNum(value);
+		const n = AirtableRuntime.N(value);
 		const ceil = Math.ceil(Math.abs(n));
 		const result = ceil % 2 === 1 ? ceil : ceil + 1;
 		return n < 0 ? -result : result;
@@ -185,51 +177,51 @@ export class AirtableRuntime {
 
 	// region String functions
 	static CONCATENATE(...args: unknown[]): string {
-		return args.map((a) => AirtableRuntime._toStr(a)).join("");
+		return args.map((a) => AirtableRuntime.S(a)).join("");
 	}
 
 	static LEFT(text: unknown, count: unknown): string {
-		return AirtableRuntime._toStr(text).slice(0, AirtableRuntime._toNum(count));
+		return AirtableRuntime.S(text).slice(0, AirtableRuntime.N(count));
 	}
 
 	static RIGHT(text: unknown, count: unknown): string {
-		const s = AirtableRuntime._toStr(text);
-		const n = AirtableRuntime._toNum(count);
+		const s = AirtableRuntime.S(text);
+		const n = AirtableRuntime.N(count);
 		return s.slice(Math.max(0, s.length - n));
 	}
 
 	static MID(text: unknown, start: unknown, count: unknown): string {
-		const s = AirtableRuntime._toStr(text);
-		const startIdx = AirtableRuntime._toNum(start) - 1; // Airtable is 1-indexed
-		const len = AirtableRuntime._toNum(count);
+		const s = AirtableRuntime.S(text);
+		const startIdx = AirtableRuntime.N(start) - 1; // Airtable is 1-indexed
+		const len = AirtableRuntime.N(count);
 		return s.slice(startIdx, startIdx + len);
 	}
 
 	static FIND(needle: unknown, haystack: unknown, start?: unknown): number {
-		const s = AirtableRuntime._toStr(haystack);
-		const n = AirtableRuntime._toStr(needle);
-		const startIdx = AirtableRuntime._isBlank(start) ? 0 : AirtableRuntime._toNum(start) - 1;
+		const s = AirtableRuntime.S(haystack);
+		const n = AirtableRuntime.S(needle);
+		const startIdx = AirtableRuntime._isBlank(start) ? 0 : AirtableRuntime.N(start) - 1;
 		const idx = s.indexOf(n, startIdx);
 		return idx === -1 ? 0 : idx + 1; // 1-indexed, 0 = not found
 	}
 
 	static SEARCH(needle: unknown, haystack: unknown, start?: unknown): number {
-		const s = AirtableRuntime._toStr(haystack).toLowerCase();
-		const n = AirtableRuntime._toStr(needle).toLowerCase();
-		const startIdx = AirtableRuntime._isBlank(start) ? 0 : AirtableRuntime._toNum(start) - 1;
+		const s = AirtableRuntime.S(haystack).toLowerCase();
+		const n = AirtableRuntime.S(needle).toLowerCase();
+		const startIdx = AirtableRuntime._isBlank(start) ? 0 : AirtableRuntime.N(start) - 1;
 		const idx = s.indexOf(n, startIdx);
 		return idx === -1 ? 0 : idx + 1;
 	}
 
 	static SUBSTITUTE(text: unknown, oldStr: unknown, newStr: unknown, index?: unknown): string {
-		const s = AirtableRuntime._toStr(text);
-		const o = AirtableRuntime._toStr(oldStr);
-		const n = AirtableRuntime._toStr(newStr);
+		const s = AirtableRuntime.S(text);
+		const o = AirtableRuntime.S(oldStr);
+		const n = AirtableRuntime.S(newStr);
 		if (AirtableRuntime._isBlank(index)) {
 			return s.split(o).join(n);
 		}
 		let count = 0;
-		const target = AirtableRuntime._toNum(index);
+		const target = AirtableRuntime.N(index);
 		return s.replace(new RegExp(o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), (match) => {
 			count++;
 			return count === target ? n : match;
@@ -237,18 +229,18 @@ export class AirtableRuntime {
 	}
 
 	static REPLACE(text: unknown, start: unknown, count: unknown, replacement: unknown): string {
-		const s = AirtableRuntime._toStr(text);
-		const startIdx = AirtableRuntime._toNum(start) - 1;
-		const len = AirtableRuntime._toNum(count);
-		return s.slice(0, startIdx) + AirtableRuntime._toStr(replacement) + s.slice(startIdx + len);
+		const s = AirtableRuntime.S(text);
+		const startIdx = AirtableRuntime.N(start) - 1;
+		const len = AirtableRuntime.N(count);
+		return s.slice(0, startIdx) + AirtableRuntime.S(replacement) + s.slice(startIdx + len);
 	}
 
 	static TRIM(text: unknown): string {
-		return AirtableRuntime._toStr(text).trim();
+		return AirtableRuntime.S(text).trim();
 	}
 
 	static REPT(text: unknown, count: unknown): string {
-		return AirtableRuntime._toStr(text).repeat(Math.max(0, AirtableRuntime._toNum(count)));
+		return AirtableRuntime.S(text).repeat(Math.max(0, AirtableRuntime.N(count)));
 	}
 
 	static T(value: unknown): string {
@@ -256,12 +248,12 @@ export class AirtableRuntime {
 	}
 
 	static ENCODE_URL_COMPONENT(text: unknown): string {
-		return encodeURIComponent(AirtableRuntime._toStr(text));
+		return encodeURIComponent(AirtableRuntime.S(text));
 	}
 
 	static REGEX_MATCH(text: unknown, regex: unknown): boolean {
 		try {
-			return new RegExp(AirtableRuntime._toStr(regex)).test(AirtableRuntime._toStr(text));
+			return new RegExp(AirtableRuntime.S(regex)).test(AirtableRuntime.S(text));
 		} catch {
 			return false;
 		}
@@ -269,7 +261,7 @@ export class AirtableRuntime {
 
 	static REGEX_EXTRACT(text: unknown, regex: unknown): string | null {
 		try {
-			const match = AirtableRuntime._toStr(text).match(new RegExp(AirtableRuntime._toStr(regex)));
+			const match = AirtableRuntime.S(text).match(new RegExp(AirtableRuntime.S(regex)));
 			return match ? match[0] : null;
 		} catch {
 			return null;
@@ -278,12 +270,9 @@ export class AirtableRuntime {
 
 	static REGEX_REPLACE(text: unknown, regex: unknown, replacement: unknown): string {
 		try {
-			return AirtableRuntime._toStr(text).replace(
-				new RegExp(AirtableRuntime._toStr(regex), "g"),
-				AirtableRuntime._toStr(replacement),
-			);
+			return AirtableRuntime.S(text).replace(new RegExp(AirtableRuntime.S(regex), "g"), AirtableRuntime.S(replacement));
 		} catch {
-			return AirtableRuntime._toStr(text);
+			return AirtableRuntime.S(text);
 		}
 	}
 	// endregion
@@ -299,10 +288,10 @@ export class AirtableRuntime {
 
 	static DATEADD(date: unknown, count: unknown, unit: unknown): string | null {
 		if (AirtableRuntime._isBlank(date)) return null;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		if (isNaN(d.getTime())) return null;
-		const n = AirtableRuntime._toNum(count);
-		const u = AirtableRuntime._toStr(unit).toLowerCase();
+		const n = AirtableRuntime.N(count);
+		const u = AirtableRuntime.S(unit).toLowerCase();
 		switch (u) {
 			case "years":
 				d.setFullYear(d.getFullYear() + n);
@@ -331,11 +320,11 @@ export class AirtableRuntime {
 
 	static DATETIME_DIFF(date1: unknown, date2: unknown, unit?: unknown): number {
 		if (AirtableRuntime._isBlank(date1) || AirtableRuntime._isBlank(date2)) return 0;
-		const d1 = new Date(AirtableRuntime._toStr(date1));
-		const d2 = new Date(AirtableRuntime._toStr(date2));
+		const d1 = new Date(AirtableRuntime.S(date1));
+		const d2 = new Date(AirtableRuntime.S(date2));
 		if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
 		const diffMs = d1.getTime() - d2.getTime();
-		const u = AirtableRuntime._toStr(unit || "days").toLowerCase();
+		const u = AirtableRuntime.S(unit || "days").toLowerCase();
 		switch (u) {
 			case "milliseconds":
 				return diffMs;
@@ -360,14 +349,14 @@ export class AirtableRuntime {
 
 	static DATETIME_FORMAT(date: unknown, _format?: unknown): string {
 		if (AirtableRuntime._isBlank(date)) return "";
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		if (isNaN(d.getTime())) return "";
 		return d.toISOString();
 	}
 
 	static DATETIME_PARSE(text: unknown, _format?: unknown, _locale?: unknown): string | null {
 		if (AirtableRuntime._isBlank(text)) return null;
-		const d = new Date(AirtableRuntime._toStr(text));
+		const d = new Date(AirtableRuntime.S(text));
 		if (isNaN(d.getTime())) return null;
 		return d.toISOString();
 	}
@@ -382,49 +371,49 @@ export class AirtableRuntime {
 
 	static YEAR(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getFullYear();
 	}
 
 	static MONTH(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getMonth() + 1;
 	}
 
 	static DAY(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getDate();
 	}
 
 	static HOUR(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getHours();
 	}
 
 	static MINUTE(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getMinutes();
 	}
 
 	static SECOND(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getSeconds();
 	}
 
 	static WEEKDAY(date: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		return isNaN(d.getTime()) ? 0 : d.getDay();
 	}
 
 	static WEEKNUM(date: unknown, startDay?: unknown): number {
 		if (AirtableRuntime._isBlank(date)) return 0;
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		if (isNaN(d.getTime())) return 0;
 		const dayNames: Record<string, number> = {
 			sunday: 0,
@@ -437,7 +426,7 @@ export class AirtableRuntime {
 		};
 		const startDow = AirtableRuntime._isBlank(startDay)
 			? 0
-			: (dayNames[AirtableRuntime._toStr(startDay).toLowerCase()] ?? 0);
+			: (dayNames[AirtableRuntime.S(startDay).toLowerCase()] ?? 0);
 		const startOfYear = new Date(d.getFullYear(), 0, 1);
 		const startDayOfWeek = startOfYear.getDay();
 		const dayOfYear = Math.floor((d.getTime() - startOfYear.getTime()) / 86400000);
@@ -447,14 +436,14 @@ export class AirtableRuntime {
 
 	static DATESTR(date: unknown): string {
 		if (AirtableRuntime._isBlank(date)) return "";
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		if (isNaN(d.getTime())) return "";
 		return d.toISOString().slice(0, 10);
 	}
 
 	static TIMESTR(date: unknown): string {
 		if (AirtableRuntime._isBlank(date)) return "";
-		const d = new Date(AirtableRuntime._toStr(date));
+		const d = new Date(AirtableRuntime.S(date));
 		if (isNaN(d.getTime())) return "";
 		return d.toISOString().slice(11, 19);
 	}
@@ -481,9 +470,9 @@ export class AirtableRuntime {
 
 	static WORKDAY(startDate: unknown, numDays: unknown): string | null {
 		if (AirtableRuntime._isBlank(startDate)) return null;
-		const d = new Date(AirtableRuntime._toStr(startDate));
+		const d = new Date(AirtableRuntime.S(startDate));
 		if (isNaN(d.getTime())) return null;
-		let remaining = AirtableRuntime._toNum(numDays);
+		let remaining = AirtableRuntime.N(numDays);
 		const direction = remaining > 0 ? 1 : -1;
 		remaining = Math.abs(remaining);
 		while (remaining > 0) {
@@ -496,8 +485,8 @@ export class AirtableRuntime {
 
 	static WORKDAY_DIFF(startDate: unknown, endDate: unknown): number {
 		if (AirtableRuntime._isBlank(startDate) || AirtableRuntime._isBlank(endDate)) return 0;
-		const d1 = new Date(AirtableRuntime._toStr(startDate));
-		const d2 = new Date(AirtableRuntime._toStr(endDate));
+		const d1 = new Date(AirtableRuntime.S(startDate));
+		const d2 = new Date(AirtableRuntime.S(endDate));
 		if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
 		let count = 0;
 		const current = new Date(d1);
@@ -513,9 +502,9 @@ export class AirtableRuntime {
 
 	// region Array functions
 	static ARRAYJOIN(arr: unknown, separator?: unknown): string {
-		if (!Array.isArray(arr)) return AirtableRuntime._toStr(arr);
-		const sep = AirtableRuntime._isBlank(separator) ? ", " : AirtableRuntime._toStr(separator);
-		return arr.map((v) => AirtableRuntime._toStr(v)).join(sep);
+		if (!Array.isArray(arr)) return AirtableRuntime.S(arr);
+		const sep = AirtableRuntime._isBlank(separator) ? ", " : AirtableRuntime.S(separator);
+		return arr.map((v) => AirtableRuntime.S(v)).join(sep);
 	}
 
 	static ARRAYUNIQUE(arr: unknown): unknown[] {
@@ -535,21 +524,8 @@ export class AirtableRuntime {
 	// endregion
 
 	// region Record/Special functions
-	static RECORD_ID(): string {
-		// This is handled specially in the emitter (returns this.id)
-		return "";
-	}
-
-	static CREATED_TIME(): string | null {
-		return null;
-	}
-
-	static LAST_MODIFIED_TIME(): string | null {
-		return null;
-	}
-
 	static ERROR(message?: unknown): never {
-		throw new Error(AirtableRuntime._toStr(message || "Error"));
+		throw new Error(AirtableRuntime.S(message || "Error"));
 	}
 
 	static ISERROR(value: unknown): boolean {

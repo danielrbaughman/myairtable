@@ -17,7 +17,7 @@ from typing import Any
 
 
 class AirtableRuntime:
-    # region BLANK semantics
+    # region Utilities
     @staticmethod
     def _is_blank(v: Any) -> bool:
         return v is None
@@ -26,18 +26,7 @@ class AirtableRuntime:
     def N(v: Any) -> int | float:  # noqa: N802
         """Coerce value to number"""
         if isinstance(v, list):
-            return AirtableRuntime._to_num(v[0] if v else None)
-        return AirtableRuntime._to_num(v)
-
-    @staticmethod
-    def S(v: Any) -> str:  # noqa: N802
-        """Coerce value to string"""
-        if isinstance(v, list):
-            return AirtableRuntime._to_str(v[0] if v else None)
-        return AirtableRuntime._to_str(v)
-
-    @staticmethod
-    def _to_num(v: Any) -> int | float:
+            return AirtableRuntime.N(v[0] if v else None)
         if v is None:
             return 0
         if isinstance(v, bool):
@@ -52,7 +41,10 @@ class AirtableRuntime:
         return 0
 
     @staticmethod
-    def _to_str(v: Any) -> str:
+    def S(v: Any) -> str:  # noqa: N802
+        """Coerce value to string"""
+        if isinstance(v, list):
+            return AirtableRuntime.S(v[0] if v else None)
         if v is None:
             return ""
         if isinstance(v, bool):
@@ -75,7 +67,7 @@ class AirtableRuntime:
     @staticmethod
     def SUM(*args: Any) -> int | float:  # noqa: N802
         flat = AirtableRuntime._flat_args(args)
-        return sum(AirtableRuntime._to_num(v) for v in flat)
+        return sum(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def AVERAGE(*args: Any) -> float:  # noqa: N802
@@ -89,14 +81,14 @@ class AirtableRuntime:
         flat = AirtableRuntime._flat_args(args)
         if not flat:
             return float("inf")
-        return min(AirtableRuntime._to_num(v) for v in flat)
+        return min(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def MAX(*args: Any) -> int | float:  # noqa: N802
         flat = AirtableRuntime._flat_args(args)
         if not flat:
             return float("-inf")
-        return max(AirtableRuntime._to_num(v) for v in flat)
+        return max(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def COUNT(*args: Any) -> int:  # noqa: N802
@@ -114,85 +106,85 @@ class AirtableRuntime:
 
     @staticmethod
     def ROUND(value: Any, precision: Any = 0) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        p = int(AirtableRuntime._to_num(precision))
+        n = AirtableRuntime.N(value)
+        p = int(AirtableRuntime.N(precision))
         return round(n, p)
 
     @staticmethod
     def ROUNDUP(value: Any, precision: Any = 0) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        p = int(AirtableRuntime._to_num(precision))
+        n = AirtableRuntime.N(value)
+        p = int(AirtableRuntime.N(precision))
         factor = 10**p
         return math.ceil(n * factor) / factor
 
     @staticmethod
     def ROUNDDOWN(value: Any, precision: Any = 0) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        p = int(AirtableRuntime._to_num(precision))
+        n = AirtableRuntime.N(value)
+        p = int(AirtableRuntime.N(precision))
         factor = 10**p
         return math.floor(n * factor) / factor
 
     @staticmethod
     def CEILING(value: Any, significance: Any = 1) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        s = AirtableRuntime._to_num(significance) or 1
+        n = AirtableRuntime.N(value)
+        s = AirtableRuntime.N(significance) or 1
         return math.ceil(n / s) * s
 
     @staticmethod
     def FLOOR(value: Any, significance: Any = 1) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        s = AirtableRuntime._to_num(significance) or 1
+        n = AirtableRuntime.N(value)
+        s = AirtableRuntime.N(significance) or 1
         return math.floor(n / s) * s
 
     @staticmethod
     def INT(value: Any) -> int:  # noqa: N802
-        return math.floor(AirtableRuntime._to_num(value))
+        return math.floor(AirtableRuntime.N(value))
 
     @staticmethod
     def ABS(value: Any) -> int | float:  # noqa: N802
-        return abs(AirtableRuntime._to_num(value))
+        return abs(AirtableRuntime.N(value))
 
     @staticmethod
     def SQRT(value: Any) -> float:  # noqa: N802
-        return math.sqrt(AirtableRuntime._to_num(value))
+        return math.sqrt(AirtableRuntime.N(value))
 
     @staticmethod
     def POWER(base: Any, exponent: Any) -> float:  # noqa: N802
-        return math.pow(AirtableRuntime._to_num(base), AirtableRuntime._to_num(exponent))
+        return math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent))
 
     @staticmethod
     def EXP(value: Any) -> float:  # noqa: N802
-        return math.exp(AirtableRuntime._to_num(value))
+        return math.exp(AirtableRuntime.N(value))
 
     @staticmethod
     def LOG(value: Any, base: Any = None) -> float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
+        n = AirtableRuntime.N(value)
         if base is None:
             return math.log10(n)
-        return math.log(n) / math.log(AirtableRuntime._to_num(base))
+        return math.log(n) / math.log(AirtableRuntime.N(base))
 
     @staticmethod
     def LOG10(value: Any) -> float:  # noqa: N802
-        return math.log10(AirtableRuntime._to_num(value))
+        return math.log10(AirtableRuntime.N(value))
 
     @staticmethod
     def MOD(value: Any, divisor: Any) -> int | float:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
-        d = AirtableRuntime._to_num(divisor)
+        n = AirtableRuntime.N(value)
+        d = AirtableRuntime.N(divisor)
         if d == 0:
             return float("nan")
         return n % d
 
     @staticmethod
     def EVEN(value: Any) -> int:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
+        n = AirtableRuntime.N(value)
         ceil_val = math.ceil(abs(n))
         result = ceil_val if ceil_val % 2 == 0 else ceil_val + 1
         return -result if n < 0 else result
 
     @staticmethod
     def ODD(value: Any) -> int:  # noqa: N802
-        n = AirtableRuntime._to_num(value)
+        n = AirtableRuntime.N(value)
         ceil_val = math.ceil(abs(n))
         result = ceil_val if ceil_val % 2 == 1 else ceil_val + 1
         return -result if n < 0 else result
@@ -212,49 +204,49 @@ class AirtableRuntime:
     # region String functions
     @staticmethod
     def CONCATENATE(*args: Any) -> str:  # noqa: N802
-        return "".join(AirtableRuntime._to_str(a) for a in args)
+        return "".join(AirtableRuntime.S(a) for a in args)
 
     @staticmethod
     def LEFT(text: Any, count: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(text)[: int(AirtableRuntime._to_num(count))]
+        return AirtableRuntime.S(text)[: int(AirtableRuntime.N(count))]
 
     @staticmethod
     def RIGHT(text: Any, count: Any) -> str:  # noqa: N802
-        s = AirtableRuntime._to_str(text)
-        n = int(AirtableRuntime._to_num(count))
+        s = AirtableRuntime.S(text)
+        n = int(AirtableRuntime.N(count))
         return s[max(0, len(s) - n) :]
 
     @staticmethod
     def MID(text: Any, start: Any, count: Any) -> str:  # noqa: N802
-        s = AirtableRuntime._to_str(text)
-        start_idx = int(AirtableRuntime._to_num(start)) - 1
-        length = int(AirtableRuntime._to_num(count))
+        s = AirtableRuntime.S(text)
+        start_idx = int(AirtableRuntime.N(start)) - 1
+        length = int(AirtableRuntime.N(count))
         return s[start_idx : start_idx + length]
 
     @staticmethod
     def FIND(needle: Any, haystack: Any, start: Any = None) -> int:  # noqa: N802
-        s = AirtableRuntime._to_str(haystack)
-        n = AirtableRuntime._to_str(needle)
-        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime._to_num(start)) - 1
+        s = AirtableRuntime.S(haystack)
+        n = AirtableRuntime.S(needle)
+        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime.N(start)) - 1
         idx = s.find(n, start_idx)
         return 0 if idx == -1 else idx + 1
 
     @staticmethod
     def SEARCH(needle: Any, haystack: Any, start: Any = None) -> int:  # noqa: N802
-        s = AirtableRuntime._to_str(haystack).lower()
-        n = AirtableRuntime._to_str(needle).lower()
-        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime._to_num(start)) - 1
+        s = AirtableRuntime.S(haystack).lower()
+        n = AirtableRuntime.S(needle).lower()
+        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime.N(start)) - 1
         idx = s.find(n, start_idx)
         return 0 if idx == -1 else idx + 1
 
     @staticmethod
     def SUBSTITUTE(text: Any, old_str: Any, new_str: Any, index: Any = None) -> str:  # noqa: N802
-        s = AirtableRuntime._to_str(text)
-        o = AirtableRuntime._to_str(old_str)
-        n = AirtableRuntime._to_str(new_str)
+        s = AirtableRuntime.S(text)
+        o = AirtableRuntime.S(old_str)
+        n = AirtableRuntime.S(new_str)
         if AirtableRuntime._is_blank(index):
             return s.replace(o, n)
-        target = int(AirtableRuntime._to_num(index))
+        target = int(AirtableRuntime.N(index))
         count = 0
 
         def _replacer(match: re.Match[str]) -> str:
@@ -266,18 +258,18 @@ class AirtableRuntime:
 
     @staticmethod
     def REPLACE(text: Any, start: Any, count: Any, replacement: Any) -> str:  # noqa: N802
-        s = AirtableRuntime._to_str(text)
-        start_idx = int(AirtableRuntime._to_num(start)) - 1
-        length = int(AirtableRuntime._to_num(count))
-        return s[:start_idx] + AirtableRuntime._to_str(replacement) + s[start_idx + length :]
+        s = AirtableRuntime.S(text)
+        start_idx = int(AirtableRuntime.N(start)) - 1
+        length = int(AirtableRuntime.N(count))
+        return s[:start_idx] + AirtableRuntime.S(replacement) + s[start_idx + length :]
 
     @staticmethod
     def TRIM(text: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(text).strip()
+        return AirtableRuntime.S(text).strip()
 
     @staticmethod
     def REPT(text: Any, count: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(text) * max(0, int(AirtableRuntime._to_num(count)))
+        return AirtableRuntime.S(text) * max(0, int(AirtableRuntime.N(count)))
 
     @staticmethod
     def T(value: Any) -> str:  # noqa: N802
@@ -285,19 +277,19 @@ class AirtableRuntime:
 
     @staticmethod
     def ENCODE_URL_COMPONENT(text: Any) -> str:  # noqa: N802
-        return urllib.parse.quote(AirtableRuntime._to_str(text), safe="")
+        return urllib.parse.quote(AirtableRuntime.S(text), safe="")
 
     @staticmethod
     def REGEX_MATCH(text: Any, regex: Any) -> bool:  # noqa: N802
         try:
-            return bool(re.search(AirtableRuntime._to_str(regex), AirtableRuntime._to_str(text)))
+            return bool(re.search(AirtableRuntime.S(regex), AirtableRuntime.S(text)))
         except re.error:
             return False
 
     @staticmethod
     def REGEX_EXTRACT(text: Any, regex: Any) -> str | None:  # noqa: N802
         try:
-            match = re.search(AirtableRuntime._to_str(regex), AirtableRuntime._to_str(text))
+            match = re.search(AirtableRuntime.S(regex), AirtableRuntime.S(text))
             return match.group(0) if match else None
         except re.error:
             return None
@@ -305,9 +297,9 @@ class AirtableRuntime:
     @staticmethod
     def REGEX_REPLACE(text: Any, regex: Any, replacement: Any) -> str:  # noqa: N802
         try:
-            return re.sub(AirtableRuntime._to_str(regex), AirtableRuntime._to_str(replacement), AirtableRuntime._to_str(text))
+            return re.sub(AirtableRuntime.S(regex), AirtableRuntime.S(replacement), AirtableRuntime.S(text))
         except re.error:
-            return AirtableRuntime._to_str(text)
+            return AirtableRuntime.S(text)
 
     # endregion
 
@@ -325,11 +317,11 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return None
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return None
-        n = int(AirtableRuntime._to_num(count))
-        u = AirtableRuntime._to_str(unit).lower()
+        n = int(AirtableRuntime.N(count))
+        u = AirtableRuntime.S(unit).lower()
         if u == "years":
             d = d.replace(year=d.year + n)
         elif u == "months":
@@ -354,11 +346,11 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date1) or AirtableRuntime._is_blank(date2):
             return 0
         try:
-            d1 = datetime.fromisoformat(AirtableRuntime._to_str(date1).replace("Z", "+00:00"))
-            d2 = datetime.fromisoformat(AirtableRuntime._to_str(date2).replace("Z", "+00:00"))
+            d1 = datetime.fromisoformat(AirtableRuntime.S(date1).replace("Z", "+00:00"))
+            d2 = datetime.fromisoformat(AirtableRuntime.S(date2).replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return 0
-        u = AirtableRuntime._to_str(unit or "days").lower()
+        u = AirtableRuntime.S(unit or "days").lower()
         diff = d1 - d2
         total_seconds = diff.total_seconds()
         if u == "milliseconds":
@@ -384,7 +376,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return ""
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             return d.isoformat()
         except (ValueError, TypeError):
             return ""
@@ -394,7 +386,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(text):
             return None
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(text).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(text).replace("Z", "+00:00"))
             return d.isoformat()
         except (ValueError, TypeError):
             return None
@@ -412,7 +404,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).year
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).year
         except (ValueError, TypeError):
             return 0
 
@@ -421,7 +413,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).month
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).month
         except (ValueError, TypeError):
             return 0
 
@@ -430,7 +422,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).day
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).day
         except (ValueError, TypeError):
             return 0
 
@@ -439,7 +431,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).hour
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).hour
         except (ValueError, TypeError):
             return 0
 
@@ -448,7 +440,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).minute
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).minute
         except (ValueError, TypeError):
             return 0
 
@@ -457,7 +449,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            return datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00")).second
+            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).second
         except (ValueError, TypeError):
             return 0
 
@@ -466,7 +458,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             return (d.weekday() + 1) % 7  # Sunday=0, Monday=1, ...
         except (ValueError, TypeError):
             return 0
@@ -476,12 +468,12 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return 0
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             day_names = {"sunday": 6, "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5}
             if AirtableRuntime._is_blank(start_day):
                 start_dow = 6  # Sunday (Python: Monday=0)
             else:
-                start_dow = day_names.get(AirtableRuntime._to_str(start_day).lower(), 6)
+                start_dow = day_names.get(AirtableRuntime.S(start_day).lower(), 6)
             start_of_year = datetime(d.year, 1, 1, tzinfo=d.tzinfo)
             day_of_year = (d - start_of_year).days
             start_day_of_week = start_of_year.weekday()  # Monday=0
@@ -495,7 +487,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return ""
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             return d.strftime("%Y-%m-%d")
         except (ValueError, TypeError):
             return ""
@@ -505,7 +497,7 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(date):
             return ""
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             return d.strftime("%H:%M:%S")
         except (ValueError, TypeError):
             return ""
@@ -535,10 +527,10 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(start_date):
             return None
         try:
-            d = datetime.fromisoformat(AirtableRuntime._to_str(start_date).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return None
-        remaining = int(AirtableRuntime._to_num(num_days))
+        remaining = int(AirtableRuntime.N(num_days))
         direction = 1 if remaining > 0 else -1
         remaining = abs(remaining)
         while remaining > 0:
@@ -552,8 +544,8 @@ class AirtableRuntime:
         if AirtableRuntime._is_blank(start_date) or AirtableRuntime._is_blank(end_date):
             return 0
         try:
-            d1 = datetime.fromisoformat(AirtableRuntime._to_str(start_date).replace("Z", "+00:00"))
-            d2 = datetime.fromisoformat(AirtableRuntime._to_str(end_date).replace("Z", "+00:00"))
+            d1 = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
+            d2 = datetime.fromisoformat(AirtableRuntime.S(end_date).replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return 0
         count = 0
@@ -571,9 +563,9 @@ class AirtableRuntime:
     @staticmethod
     def ARRAYJOIN(arr: Any, separator: Any = None) -> str:  # noqa: N802
         if not isinstance(arr, list):
-            return AirtableRuntime._to_str(arr)
-        sep = ", " if AirtableRuntime._is_blank(separator) else AirtableRuntime._to_str(separator)
-        return sep.join(AirtableRuntime._to_str(v) for v in arr)
+            return AirtableRuntime.S(arr)
+        sep = ", " if AirtableRuntime._is_blank(separator) else AirtableRuntime.S(separator)
+        return sep.join(AirtableRuntime.S(v) for v in arr)
 
     @staticmethod
     def ARRAYUNIQUE(arr: Any) -> list[Any]:  # noqa: N802
@@ -611,20 +603,8 @@ class AirtableRuntime:
 
     # region Record/Special
     @staticmethod
-    def RECORD_ID() -> str:  # noqa: N802
-        return ""
-
-    # @staticmethod
-    # def CREATED_TIME() -> str | None:  # noqa: N802
-    #     return None
-
-    # @staticmethod
-    # def LAST_MODIFIED_TIME() -> str | None:  # noqa: N802
-    #     return None
-
-    @staticmethod
     def ERROR(message: Any = None) -> None:  # noqa: N802
-        raise ValueError(AirtableRuntime._to_str(message or "Error"))
+        raise ValueError(AirtableRuntime.S(message or "Error"))
 
     @staticmethod
     def ISERROR(value: Any) -> bool:  # noqa: N802
