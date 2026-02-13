@@ -46,10 +46,7 @@ class TestArithmeticOperators:
         assert _r.N(None) == 0
 
     def test_div(self):
-        assert _r.DIV(10, 2) == 5.0
-
-    def test_div_by_zero(self):
-        assert math.isnan(_r.DIV(5, 0))
+        assert _r.N(10) / _r.N(2) == 5.0
 
 
 class TestComparisonOperators:

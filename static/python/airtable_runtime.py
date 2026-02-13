@@ -61,16 +61,6 @@ class AirtableRuntime:
 
     # endregion
 
-    # region Arithmetic operators
-    @staticmethod
-    def DIV(a: Any, b: Any) -> float:  # noqa: N802
-        divisor = AirtableRuntime._to_num(b)
-        if divisor == 0:
-            return float("nan")
-        return AirtableRuntime._to_num(a) / divisor
-
-    # endregion
-
     # region Comparison operators
     @staticmethod
     def EQ(a: Any, b: Any) -> bool:  # noqa: N802

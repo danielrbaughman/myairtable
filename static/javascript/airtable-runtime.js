@@ -44,14 +44,6 @@ class AirtableRuntime {
 	}
 	// endregion
 
-	// region Arithmetic operators
-	static DIV(a, b) {
-		const divisor = AirtableRuntime._toNum(b);
-		if (divisor === 0) return NaN;
-		return AirtableRuntime._toNum(a) / divisor;
-	}
-	// endregion
-
 	// region Comparison operators
 	static EQ(a, b) {
 		if (AirtableRuntime._isBlank(a) && AirtableRuntime._isBlank(b)) return true;

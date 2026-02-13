@@ -206,7 +206,6 @@ OPERATOR_MAP: dict[str, str] = {
     ">": "GT",
     "<=": "LTE",
     ">=": "GTE",
-    "/": "DIV",
     "&": "CONCAT",
 }
 
@@ -368,7 +367,7 @@ class CodeEmitter:
         """Emit node in numeric context. Literals pass through; arithmetic recurses; others get F.N()."""
         if isinstance(node, NumberLiteral):
             return node.value
-        if isinstance(node, BinaryOp) and node.op in ("+", "-", "*"):
+        if isinstance(node, BinaryOp) and node.op in ("+", "-", "*", "/"):
             left = self._emit_num(node.left)
             right = self._emit_num(node.right)
             return f"({left} {node.op} {right})"
@@ -377,7 +376,7 @@ class CodeEmitter:
         return f"{self._runtime}.N({self.emit(node)})"
 
     def _emit_binary_op(self, node: BinaryOp) -> str:
-        if node.op in ("+", "-", "*"):
+        if node.op in ("+", "-", "*", "/"):
             return self._emit_num(node)
         func = OPERATOR_MAP.get(node.op)
         if func is None:
