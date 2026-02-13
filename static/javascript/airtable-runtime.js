@@ -223,14 +223,6 @@ class AirtableRuntime {
 			return false;
 		}
 	}
-	static REGEX_EXTRACT(text, regex) {
-		try {
-			const match = AirtableRuntime.S(text).match(new RegExp(AirtableRuntime.S(regex)));
-			return match ? match[0] : null;
-		} catch {
-			return null;
-		}
-	}
 	static REGEX_REPLACE(text, regex, replacement) {
 		try {
 			return AirtableRuntime.S(text).replace(new RegExp(AirtableRuntime.S(regex), "g"), AirtableRuntime.S(replacement));

@@ -417,6 +417,13 @@ class CodeEmitter:
                 return f"math.pow({base}, {exp})"
             return f"Math.pow({base}, {exp})"
 
+        if name == "REGEX_EXTRACT":
+            text = self._emit_str(node.args[0])
+            regex = self._emit_str(node.args[1])
+            if self.language == "python":
+                return f"(m.group(0) if (m := re.search({regex}, {text})) else None)"
+            return f"({text}.match(new RegExp({regex}))?.[0] ?? null)"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

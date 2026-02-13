@@ -250,14 +250,6 @@ class AirtableRuntime:
             return False
 
     @staticmethod
-    def REGEX_EXTRACT(text: Any, regex: Any) -> str | None:  # noqa: N802
-        try:
-            match = re.search(AirtableRuntime.S(regex), AirtableRuntime.S(text))
-            return match.group(0) if match else None
-        except re.error:
-            return None
-
-    @staticmethod
     def REGEX_REPLACE(text: Any, regex: Any, replacement: Any) -> str:  # noqa: N802
         try:
             return re.sub(AirtableRuntime.S(regex), AirtableRuntime.S(replacement), AirtableRuntime.S(text))

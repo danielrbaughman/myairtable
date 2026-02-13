@@ -228,15 +228,6 @@ export class AirtableRuntime {
 		}
 	}
 
-	static REGEX_EXTRACT(text: unknown, regex: unknown): string | null {
-		try {
-			const match = AirtableRuntime.S(text).match(new RegExp(AirtableRuntime.S(regex)));
-			return match ? match[0] : null;
-		} catch {
-			return null;
-		}
-	}
-
 	static REGEX_REPLACE(text: unknown, regex: unknown, replacement: unknown): string {
 		try {
 			return AirtableRuntime.S(text).replace(new RegExp(AirtableRuntime.S(regex), "g"), AirtableRuntime.S(replacement));

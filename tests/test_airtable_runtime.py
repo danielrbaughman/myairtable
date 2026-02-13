@@ -166,9 +166,6 @@ class TestStringFunctions:
         assert _r.REGEX_MATCH("hello123", r"\d+") is True
         assert _r.REGEX_MATCH("hello", r"\d+") is False
 
-    def test_regex_extract(self):
-        assert _r.REGEX_EXTRACT("hello123", r"\d+") == "123"
-
     def test_regex_replace(self):
         assert _r.REGEX_REPLACE("hello123", r"\d+", "X") == "helloX"
 
