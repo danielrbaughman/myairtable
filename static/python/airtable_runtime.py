@@ -18,10 +18,6 @@ from typing import Any
 class AirtableRuntime:
     # region Utilities
     @staticmethod
-    def _is_blank(v: Any) -> bool:
-        return v is None
-
-    @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
         """Coerce value to number"""
         if isinstance(v, list):
@@ -97,7 +93,7 @@ class AirtableRuntime:
     @staticmethod
     def COUNTA(*args: Any) -> int:  # noqa: N802
         flat = AirtableRuntime._flat_args(args)
-        return sum(1 for v in flat if not AirtableRuntime._is_blank(v) and v != "")
+        return sum(1 for v in flat if v is not None and v != "")
 
     @staticmethod
     def COUNTALL(*args: Any) -> int:  # noqa: N802
@@ -166,7 +162,7 @@ class AirtableRuntime:
 
     @staticmethod
     def VALUE(value: Any) -> int | float:  # noqa: N802
-        if AirtableRuntime._is_blank(value):
+        if value is None:
             return 0
         try:
             s = str(value)
@@ -202,7 +198,7 @@ class AirtableRuntime:
     def FIND(needle: Any, haystack: Any, start: Any = None) -> int:  # noqa: N802
         s = AirtableRuntime.S(haystack)
         n = AirtableRuntime.S(needle)
-        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime.N(start)) - 1
+        start_idx = 0 if start is None else int(AirtableRuntime.N(start)) - 1
         idx = s.find(n, start_idx)
         return 0 if idx == -1 else idx + 1
 
@@ -210,7 +206,7 @@ class AirtableRuntime:
     def SEARCH(needle: Any, haystack: Any, start: Any = None) -> int:  # noqa: N802
         s = AirtableRuntime.S(haystack).lower()
         n = AirtableRuntime.S(needle).lower()
-        start_idx = 0 if AirtableRuntime._is_blank(start) else int(AirtableRuntime.N(start)) - 1
+        start_idx = 0 if start is None else int(AirtableRuntime.N(start)) - 1
         idx = s.find(n, start_idx)
         return 0 if idx == -1 else idx + 1
 
@@ -219,7 +215,7 @@ class AirtableRuntime:
         s = AirtableRuntime.S(text)
         o = AirtableRuntime.S(old_str)
         n = AirtableRuntime.S(new_str)
-        if AirtableRuntime._is_blank(index):
+        if index is None:
             return s.replace(o, n)
         target = int(AirtableRuntime.N(index))
         count = 0
@@ -281,7 +277,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DATEADD(date: Any, count: Any, unit: Any) -> str | None:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return None
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
@@ -310,7 +306,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DATETIME_DIFF(date1: Any, date2: Any, unit: Any = None) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date1) or AirtableRuntime._is_blank(date2):
+        if date1 is None or date2 is None:
             return 0
         try:
             d1 = datetime.fromisoformat(AirtableRuntime.S(date1).replace("Z", "+00:00"))
@@ -340,7 +336,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DATETIME_FORMAT(date: Any, _format: Any = None) -> str:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return ""
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
@@ -350,7 +346,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DATETIME_PARSE(text: Any, _format: Any = None, _locale: Any = None) -> str | None:  # noqa: N802
-        if AirtableRuntime._is_blank(text):
+        if text is None:
             return None
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(text).replace("Z", "+00:00"))
@@ -368,7 +364,7 @@ class AirtableRuntime:
 
     @staticmethod
     def YEAR(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).year
@@ -377,7 +373,7 @@ class AirtableRuntime:
 
     @staticmethod
     def MONTH(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).month
@@ -386,7 +382,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DAY(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).day
@@ -395,7 +391,7 @@ class AirtableRuntime:
 
     @staticmethod
     def HOUR(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).hour
@@ -404,7 +400,7 @@ class AirtableRuntime:
 
     @staticmethod
     def MINUTE(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).minute
@@ -413,7 +409,7 @@ class AirtableRuntime:
 
     @staticmethod
     def SECOND(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).second
@@ -422,7 +418,7 @@ class AirtableRuntime:
 
     @staticmethod
     def WEEKDAY(date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
@@ -432,12 +428,12 @@ class AirtableRuntime:
 
     @staticmethod
     def WEEKNUM(date: Any, start_day: Any = None) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return 0
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
             day_names = {"sunday": 6, "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5}
-            if AirtableRuntime._is_blank(start_day):
+            if start_day is None:
                 start_dow = 6  # Sunday (Python: Monday=0)
             else:
                 start_dow = day_names.get(AirtableRuntime.S(start_day).lower(), 6)
@@ -451,7 +447,7 @@ class AirtableRuntime:
 
     @staticmethod
     def DATESTR(date: Any) -> str:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return ""
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
@@ -461,7 +457,7 @@ class AirtableRuntime:
 
     @staticmethod
     def TIMESTR(date: Any) -> str:  # noqa: N802
-        if AirtableRuntime._is_blank(date):
+        if date is None:
             return ""
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
@@ -491,7 +487,7 @@ class AirtableRuntime:
 
     @staticmethod
     def WORKDAY(start_date: Any, num_days: Any) -> str | None:  # noqa: N802
-        if AirtableRuntime._is_blank(start_date):
+        if start_date is None:
             return None
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
@@ -508,7 +504,7 @@ class AirtableRuntime:
 
     @staticmethod
     def WORKDAY_DIFF(start_date: Any, end_date: Any) -> int:  # noqa: N802
-        if AirtableRuntime._is_blank(start_date) or AirtableRuntime._is_blank(end_date):
+        if start_date is None or end_date is None:
             return 0
         try:
             d1 = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
@@ -531,7 +527,7 @@ class AirtableRuntime:
     def ARRAYJOIN(arr: Any, separator: Any = None) -> str:  # noqa: N802
         if not isinstance(arr, list):
             return AirtableRuntime.S(arr)
-        sep = ", " if AirtableRuntime._is_blank(separator) else AirtableRuntime.S(separator)
+        sep = ", " if separator is None else AirtableRuntime.S(separator)
         return sep.join(AirtableRuntime.S(v) for v in arr)
 
     @staticmethod
@@ -547,8 +543,8 @@ class AirtableRuntime:
     @staticmethod
     def ARRAYCOMPACT(arr: Any) -> list[Any]:  # noqa: N802
         if not isinstance(arr, list):
-            return [] if AirtableRuntime._is_blank(arr) else [arr]
-        return [v for v in arr if not AirtableRuntime._is_blank(v) and v != ""]
+            return [] if arr is None else [arr]
+        return [v for v in arr if v is not None and v != ""]
 
     @staticmethod
     def ARRAYFLATTEN(arr: Any) -> list[Any]:  # noqa: N802
