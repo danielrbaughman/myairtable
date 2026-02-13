@@ -233,9 +233,6 @@ class AirtableRuntime {
 		return s.slice(0, startIdx) + AirtableRuntime.S(replacement) + s.slice(startIdx + len);
 	}
 
-	static TRIM(text) {
-		return AirtableRuntime.S(text).trim();
-	}
 	static REPT(text, count) {
 		return AirtableRuntime.S(text).repeat(Math.max(0, AirtableRuntime.N(count)));
 	}

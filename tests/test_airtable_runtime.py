@@ -165,7 +165,7 @@ class TestStringFunctions:
         assert _r.S("Hello").upper() == "HELLO"
 
     def test_trim(self):
-        assert _r.TRIM("  hello  ") == "hello"
+        assert _r.S("  hello  ").strip() == "hello"
 
     def test_rept(self):
         assert _r.REPT("ab", 3) == "ababab"
