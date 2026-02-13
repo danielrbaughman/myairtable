@@ -336,6 +336,26 @@ class CodeEmitter:
                 result = f"{cond} ? {val} : {result}"
             return f"({result})"
 
+        if name == "SWITCH":
+            expr = self.emit(node.args[0])
+            rest = node.args[1:]
+            pairs = []
+            for i in range(0, len(rest) - 1, 2):
+                pairs.append((self.emit(rest[i]), self.emit(rest[i + 1])))
+            if len(rest) % 2 == 1:
+                fallback = self.emit(rest[-1])
+            else:
+                fallback = "None" if self.language == "python" else "null"
+            if self.language == "python":
+                result = fallback
+                for pattern, val in reversed(pairs):
+                    result = f"{val} if {self._runtime}.EQ({expr}, {pattern}) else {result}"
+                return f"({result})"
+            result = fallback
+            for pattern, val in reversed(pairs):
+                result = f"{self._runtime}.EQ({expr}, {pattern}) ? {val} : {result}"
+            return f"({result})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

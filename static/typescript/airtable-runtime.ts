@@ -31,14 +31,6 @@ export class AirtableRuntime {
 		return String(v);
 	}
 
-	private static _toBool(v: unknown): boolean {
-		if (AirtableRuntime._isBlank(v)) return false;
-		if (typeof v === "boolean") return v;
-		if (typeof v === "number") return v !== 0;
-		if (typeof v === "string") return v !== "";
-		return true;
-	}
-
 	private static _flatArgs(args: unknown[]): unknown[] {
 		const result: unknown[] = [];
 		for (const a of args) {
@@ -100,16 +92,6 @@ export class AirtableRuntime {
 	// endregion
 
 	// region Logical functions
-	static SWITCH(expr: unknown, ...args: unknown[]): unknown {
-		// SWITCH(expr, pattern1, value1, pattern2, value2, ..., [default])
-		for (let i = 0; i < args.length - 1; i += 2) {
-			if (AirtableRuntime.EQ(expr, args[i])) return args[i + 1];
-		}
-		// If odd number of args after expr, last is default
-		if (args.length % 2 === 1) return args[args.length - 1];
-		return null;
-	}
-
 	static BLANK(value?: unknown): null {
 		if (value !== undefined) AirtableRuntime._isBlank(value);
 		return null;

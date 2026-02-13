@@ -46,18 +46,6 @@ class AirtableRuntime:
         return str(v)
 
     @staticmethod
-    def _to_bool(v: Any) -> bool:
-        if v is None:
-            return False
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, (int, float)):
-            return v != 0
-        if isinstance(v, str):
-            return v != ""
-        return True
-
-    @staticmethod
     def _flat_args(args: tuple[Any, ...]) -> list[Any]:
         result: list[Any] = []
         for a in args:
@@ -134,15 +122,6 @@ class AirtableRuntime:
     # endregion
 
     # region Logical functions
-    @staticmethod
-    def SWITCH(expr: Any, *args: Any) -> Any:  # noqa: N802
-        for i in range(0, len(args) - 1, 2):
-            if AirtableRuntime.EQ(expr, args[i]):
-                return args[i + 1]
-        if len(args) % 2 == 1:
-            return args[-1]
-        return None
-
     @staticmethod
     def BLANK(value: Any | None = None) -> bool | None:  # noqa: N802
         if value is not None:

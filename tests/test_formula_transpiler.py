@@ -224,6 +224,14 @@ class TestTypeScriptEmitter:
         result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
         assert result == '(F.GT(this.myField, 10) ? "high" : F.GT(this.myField, 5) ? "med" : true ? "low" : null)'
 
+    def test_switch_no_default(self):
+        result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
+        assert result == '(F.EQ(this.myField, "a") ? 1 : F.EQ(this.myField, "b") ? 2 : null)'
+
+    def test_switch_with_default(self):
+        result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2, 99)')
+        assert result == '(F.EQ(this.myField, "a") ? 1 : F.EQ(this.myField, "b") ? 2 : 99)'
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -304,6 +312,14 @@ class TestPythonEmitter:
     def test_ifs_multiple_pairs(self):
         result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
         assert result == '("high" if F.GT(self.my_field, 10) else "med" if F.GT(self.my_field, 5) else "low" if True else None)'
+
+    def test_switch_no_default(self):
+        result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
+        assert result == '(1 if F.EQ(self.my_field, "a") else 2 if F.EQ(self.my_field, "b") else None)'
+
+    def test_switch_with_default(self):
+        result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2, 99)')
+        assert result == '(1 if F.EQ(self.my_field, "a") else 2 if F.EQ(self.my_field, "b") else 99)'
 
 
 # endregion

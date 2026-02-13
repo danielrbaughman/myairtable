@@ -30,14 +30,6 @@ class AirtableRuntime {
 		return String(v);
 	}
 
-	static _toBool(v) {
-		if (AirtableRuntime._isBlank(v)) return false;
-		if (typeof v === "boolean") return v;
-		if (typeof v === "number") return v !== 0;
-		if (typeof v === "string") return v !== "";
-		return true;
-	}
-
 	static _flatArgs(args) {
 		const result = [];
 		for (const a of args) {
@@ -99,14 +91,6 @@ class AirtableRuntime {
 	// endregion
 
 	// region Logical functions
-	static SWITCH(expr, ...args) {
-		for (let i = 0; i < args.length - 1; i += 2) {
-			if (AirtableRuntime.EQ(expr, args[i])) return args[i + 1];
-		}
-		if (args.length % 2 === 1) return args[args.length - 1];
-		return null;
-	}
-
 	static BLANK() {
 		return null;
 	}

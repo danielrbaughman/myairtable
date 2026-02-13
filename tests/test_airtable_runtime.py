@@ -79,13 +79,6 @@ class TestComparisonOperators:
         assert _r.GTE(5, 5) is True
 
 
-class TestLogicalFunctions:
-    def test_switch(self):
-        assert _r.SWITCH("a", "a", 1, "b", 2, 99) == 1
-        assert _r.SWITCH("b", "a", 1, "b", 2, 99) == 2
-        assert _r.SWITCH("c", "a", 1, "b", 2, 99) == 99
-
-
 class TestNumericFunctions:
     def test_sum(self):
         assert _r.SUM(1, 2, 3) == 6
