@@ -13,6 +13,10 @@ class AirtableRuntime {
 		return v === null || v === undefined;
 	}
 
+	static N(v) {
+		return AirtableRuntime._toNum(v);
+	}
+
 	static _toNum(v) {
 		if (AirtableRuntime._isBlank(v)) return 0;
 		if (typeof v === "boolean") return v ? 1 : 0;
@@ -41,22 +45,10 @@ class AirtableRuntime {
 	// endregion
 
 	// region Arithmetic operators
-	static ADD(a, b) {
-		return AirtableRuntime._toNum(a) + AirtableRuntime._toNum(b);
-	}
-	static SUB(a, b) {
-		return AirtableRuntime._toNum(a) - AirtableRuntime._toNum(b);
-	}
-	static MUL(a, b) {
-		return AirtableRuntime._toNum(a) * AirtableRuntime._toNum(b);
-	}
 	static DIV(a, b) {
 		const divisor = AirtableRuntime._toNum(b);
 		if (divisor === 0) return NaN;
 		return AirtableRuntime._toNum(a) / divisor;
-	}
-	static NEG(a) {
-		return -AirtableRuntime._toNum(a);
 	}
 	// endregion
 

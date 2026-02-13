@@ -23,6 +23,10 @@ class AirtableRuntime:
         return v is None
 
     @staticmethod
+    def N(v: Any) -> int | float:  # noqa: N802
+        return AirtableRuntime._to_num(v)
+
+    @staticmethod
     def _to_num(v: Any) -> int | float:
         if v is None:
             return 0
@@ -59,27 +63,11 @@ class AirtableRuntime:
 
     # region Arithmetic operators
     @staticmethod
-    def ADD(a: Any, b: Any) -> int | float:  # noqa: N802
-        return AirtableRuntime._to_num(a) + AirtableRuntime._to_num(b)
-
-    @staticmethod
-    def SUB(a: Any, b: Any) -> int | float:  # noqa: N802
-        return AirtableRuntime._to_num(a) - AirtableRuntime._to_num(b)
-
-    @staticmethod
-    def MUL(a: Any, b: Any) -> int | float:  # noqa: N802
-        return AirtableRuntime._to_num(a) * AirtableRuntime._to_num(b)
-
-    @staticmethod
     def DIV(a: Any, b: Any) -> float:  # noqa: N802
         divisor = AirtableRuntime._to_num(b)
         if divisor == 0:
             return float("nan")
         return AirtableRuntime._to_num(a) / divisor
-
-    @staticmethod
-    def NEG(a: Any) -> int | float:  # noqa: N802
-        return -AirtableRuntime._to_num(a)
 
     # endregion
 

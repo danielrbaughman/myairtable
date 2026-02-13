@@ -10,7 +10,7 @@ class TestBlankSemantics:
 
     def test_blank_plus_number(self):
         """BLANK() + 5 = 5 (BLANK treated as 0 in numeric context)."""
-        assert _r.ADD(None, 5) == 5
+        assert _r.N(None) + 5 == 5
 
     def test_blank_concat_string(self):
         """BLANK() & "hello" = "hello" (BLANK treated as "" in string context)."""
@@ -30,27 +30,26 @@ class TestBlankSemantics:
 
 
 class TestArithmeticOperators:
-    def test_add(self):
-        assert _r.ADD(3, 4) == 7
+    def test_n_coercion(self):
+        """N() coerces values to numbers like the old ADD/SUB/MUL/NEG did."""
+        assert _r.N(3) + _r.N(4) == 7
+        assert _r.N(10) - _r.N(3) == 7
+        assert _r.N(3) * _r.N(4) == 12
+        assert -_r.N(5) == -5
 
-    def test_sub(self):
-        assert _r.SUB(10, 3) == 7
+    def test_n_string_coercion(self):
+        """'5' + 3 should coerce to 8 via N()."""
+        assert _r.N("5") + 3 == 8
 
-    def test_mul(self):
-        assert _r.MUL(3, 4) == 12
+    def test_n_blank_coercion(self):
+        """BLANK coerces to 0 via N()."""
+        assert _r.N(None) == 0
 
     def test_div(self):
         assert _r.DIV(10, 2) == 5.0
 
     def test_div_by_zero(self):
         assert math.isnan(_r.DIV(5, 0))
-
-    def test_neg(self):
-        assert _r.NEG(5) == -5
-
-    def test_string_coercion_in_add(self):
-        """'5' + 3 should coerce to 8."""
-        assert _r.ADD("5", 3) == 8
 
 
 class TestComparisonOperators:

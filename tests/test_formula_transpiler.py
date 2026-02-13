@@ -157,7 +157,7 @@ class TestTypeScriptEmitter:
 
     def test_addition(self):
         result = self._transpile("{fld1} + 5")
-        assert result == "F.ADD(this.myField, 5)"
+        assert result == "(F.N(this.myField) + 5)"
 
     def test_concat(self):
         result = self._transpile('{fld1} & " items"')
@@ -218,7 +218,7 @@ class TestTypeScriptEmitter:
     def test_complex_formula(self):
         """IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())"""
         result = self._transpile("IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())")
-        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? F.ADD(this.myField, this.otherField) : null)"
+        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? (F.N(this.myField) + F.N(this.otherField)) : null)"
 
     def test_ifs_single_pair(self):
         result = self._transpile("IFS({fld1}, 1)")
@@ -276,7 +276,7 @@ class TestPythonEmitter:
         assert self._transpile("LEN({fld1})") == "F.LEN(self.my_field)"
 
     def test_addition(self):
-        assert self._transpile("{fld1} + 5") == "F.ADD(self.my_field, 5)"
+        assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 
     def test_record_id(self):
         assert self._transpile("RECORD_ID()") == "self.id"
@@ -359,12 +359,12 @@ class TestEdgeCases:
     def test_negative_number(self):
         result = transpile_formula("-5", "typescript", {}, set())
         assert result is not None
-        # Could be parsed as UnaryOp("-", 5) -> F.NEG(5) or as NumberLiteral("-5") -> "-5"
-        assert result in ["-5", "F.NEG(5)"]
+        # Could be parsed as UnaryOp("-", 5) -> (-5) or as NumberLiteral("-5") -> "-5"
+        assert result in ["-5", "(-5)"]
 
     def test_nested_parens(self):
         result = transpile_formula("((1 + 2))", "typescript", {}, set())
-        assert result == "F.ADD(1, 2)"
+        assert result == "(1 + 2)"
 
     def test_multiple_comparisons(self):
         """Chained comparisons should work."""
@@ -422,7 +422,7 @@ class TestRealWorldFormulas:
 
     def test_math(self):
         result = self._transpile("{fldAmount} * 1.1")
-        assert result == "F.MUL(this.amount, 1.1)"
+        assert result == "(F.N(this.amount) * 1.1)"
 
     def test_datetime_diff(self):
         result = self._transpile('DATETIME_DIFF(NOW(), {fldDate}, "days")')

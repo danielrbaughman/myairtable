@@ -206,9 +206,6 @@ OPERATOR_MAP: dict[str, str] = {
     ">": "GT",
     "<=": "LTE",
     ">=": "GTE",
-    "+": "ADD",
-    "-": "SUB",
-    "*": "MUL",
     "/": "DIV",
     "&": "CONCAT",
 }
@@ -367,7 +364,21 @@ class CodeEmitter:
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 
+    def _emit_num(self, node: ASTNode) -> str:
+        """Emit node in numeric context. Literals pass through; arithmetic recurses; others get F.N()."""
+        if isinstance(node, NumberLiteral):
+            return node.value
+        if isinstance(node, BinaryOp) and node.op in ("+", "-", "*"):
+            left = self._emit_num(node.left)
+            right = self._emit_num(node.right)
+            return f"({left} {node.op} {right})"
+        if isinstance(node, UnaryOp) and node.op == "-":
+            return f"(-{self._emit_num(node.operand)})"
+        return f"{self._runtime}.N({self.emit(node)})"
+
     def _emit_binary_op(self, node: BinaryOp) -> str:
+        if node.op in ("+", "-", "*"):
+            return self._emit_num(node)
         func = OPERATOR_MAP.get(node.op)
         if func is None:
             raise ParseError(f"Unknown operator: {node.op}")
@@ -377,8 +388,7 @@ class CodeEmitter:
 
     def _emit_unary_op(self, node: UnaryOp) -> str:
         if node.op == "-":
-            operand = self.emit(node.operand)
-            return f"{self._runtime}.NEG({operand})"
+            return self._emit_num(node)
         raise ParseError(f"Unknown unary operator: {node.op}")
 
 
