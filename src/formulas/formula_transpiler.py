@@ -398,6 +398,12 @@ class CodeEmitter:
                 return f"math.sqrt({arg})"
             return f"Math.sqrt({arg})"
 
+        if name == "EXP":
+            arg = self._emit_num(node.args[0])
+            if self.language == "python":
+                return f"math.exp({arg})"
+            return f"Math.exp({arg})"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

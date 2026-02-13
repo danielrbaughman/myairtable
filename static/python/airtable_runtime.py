@@ -140,10 +140,6 @@ class AirtableRuntime:
         return math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent))
 
     @staticmethod
-    def EXP(value: Any) -> float:  # noqa: N802
-        return math.exp(AirtableRuntime.N(value))
-
-    @staticmethod
     def LOG(value: Any, base: Any = None) -> float:  # noqa: N802
         n = AirtableRuntime.N(value)
         if base is None:

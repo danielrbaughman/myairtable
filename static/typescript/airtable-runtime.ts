@@ -121,10 +121,6 @@ export class AirtableRuntime {
 		return Math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent));
 	}
 
-	static EXP(value: unknown): number {
-		return Math.exp(AirtableRuntime.N(value));
-	}
-
 	static LOG(value: unknown, base?: unknown): number {
 		const n = AirtableRuntime.N(value);
 		if (AirtableRuntime._isBlank(base)) return Math.log(n) / Math.log(10);
