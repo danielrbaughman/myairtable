@@ -147,10 +147,6 @@ class AirtableRuntime:
         return math.log(n) / math.log(AirtableRuntime.N(base))
 
     @staticmethod
-    def LOG10(value: Any) -> float:  # noqa: N802
-        return math.log10(AirtableRuntime.N(value))
-
-    @staticmethod
     def MOD(value: Any, divisor: Any) -> int | float:  # noqa: N802
         n = AirtableRuntime.N(value)
         d = AirtableRuntime.N(divisor)

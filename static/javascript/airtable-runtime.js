@@ -125,10 +125,6 @@ class AirtableRuntime {
 		return Math.log(n) / Math.log(AirtableRuntime.N(base));
 	}
 
-	static LOG10(value) {
-		return Math.log10(AirtableRuntime.N(value));
-	}
-
 	static MOD(value, divisor) {
 		const n = AirtableRuntime.N(value);
 		const d = AirtableRuntime.N(divisor);
