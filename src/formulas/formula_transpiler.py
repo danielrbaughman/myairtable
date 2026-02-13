@@ -386,6 +386,12 @@ class CodeEmitter:
                 return f"math.floor({arg})"
             return f"Math.floor({arg})"
 
+        if name == "ABS":
+            arg = self._emit_num(node.args[0])
+            if self.language == "python":
+                return f"abs({arg})"
+            return f"Math.abs({arg})"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

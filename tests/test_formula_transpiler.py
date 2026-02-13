@@ -249,7 +249,7 @@ class TestJavaScriptEmitter:
         assert self._transpile("{fld1}") == "this.myField"
 
     def test_function_call(self):
-        assert self._transpile("ABS({fld1})") == "F.ABS(this.myField)"
+        assert self._transpile("ABS({fld1})") == "Math.abs(F.N(this.myField))"
 
 
 class TestPythonEmitter:
