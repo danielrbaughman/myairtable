@@ -122,13 +122,6 @@ class AirtableRuntime {
 		return Math.log(n) / Math.log(AirtableRuntime.N(base));
 	}
 
-	static MOD(value, divisor) {
-		const n = AirtableRuntime.N(value);
-		const d = AirtableRuntime.N(divisor);
-		if (d === 0) return NaN;
-		return n % d;
-	}
-
 	static EVEN(value) {
 		const n = AirtableRuntime.N(value);
 		const ceil = Math.ceil(Math.abs(n));

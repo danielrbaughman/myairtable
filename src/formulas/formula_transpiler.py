@@ -417,6 +417,11 @@ class CodeEmitter:
                 return f"math.pow({base}, {exp})"
             return f"Math.pow({base}, {exp})"
 
+        if name == "MOD":
+            value = self._emit_num(node.args[0])
+            divisor = self._emit_num(node.args[1])
+            return f"({value} % {divisor})"
+
         if name == "REGEX_EXTRACT":
             text = self._emit_str(node.args[0])
             regex = self._emit_str(node.args[1])

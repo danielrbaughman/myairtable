@@ -104,9 +104,6 @@ class TestNumericFunctions:
     def test_rounddown(self):
         assert _r.ROUNDDOWN(3.459, 2) == 3.45
 
-    def test_mod(self):
-        assert _r.MOD(7, 3) == 1
-
     def test_even(self):
         assert _r.EVEN(3) == 4
         assert _r.EVEN(4) == 4

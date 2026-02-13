@@ -139,14 +139,6 @@ class AirtableRuntime:
         return math.log(n) / math.log(AirtableRuntime.N(base))
 
     @staticmethod
-    def MOD(value: Any, divisor: Any) -> int | float:  # noqa: N802
-        n = AirtableRuntime.N(value)
-        d = AirtableRuntime.N(divisor)
-        if d == 0:
-            return float("nan")
-        return n % d
-
-    @staticmethod
     def EVEN(value: Any) -> int:  # noqa: N802
         n = AirtableRuntime.N(value)
         ceil_val = math.ceil(abs(n))
