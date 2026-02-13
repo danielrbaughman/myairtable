@@ -203,10 +203,6 @@ export class AirtableRuntime {
 		return s.slice(startIdx, startIdx + len);
 	}
 
-	static LEN(text: unknown): number {
-		return AirtableRuntime._toStr(text).length;
-	}
-
 	static FIND(needle: unknown, haystack: unknown, start?: unknown): number {
 		const s = AirtableRuntime._toStr(haystack);
 		const n = AirtableRuntime._toStr(needle);

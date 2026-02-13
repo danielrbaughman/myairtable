@@ -201,10 +201,6 @@ class AirtableRuntime {
 		return s.slice(startIdx, startIdx + len);
 	}
 
-	static LEN(text) {
-		return AirtableRuntime._toStr(text).length;
-	}
-
 	static FIND(needle, haystack, start) {
 		const s = AirtableRuntime._toStr(haystack);
 		const n = AirtableRuntime._toStr(needle);

@@ -273,7 +273,7 @@ class TestPythonEmitter:
         assert result == "self.my_field"
 
     def test_function_call(self):
-        assert self._transpile("LEN({fld1})") == "F.LEN(self.my_field)"
+        assert self._transpile("LEN({fld1})") == "len(F.S(self.my_field))"
 
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"

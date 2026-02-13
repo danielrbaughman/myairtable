@@ -360,6 +360,12 @@ class CodeEmitter:
                 op = " or " if self.language == "python" else " || "
             return f"({op.join(parts)})"
 
+        if name == "LEN":
+            arg = self._emit_str(node.args[0])
+            if self.language == "python":
+                return f"len({arg})"
+            return f"{arg}.length"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

@@ -146,7 +146,7 @@ class TestStringFunctions:
         assert _r.MID("hello", 2, 3) == "ell"
 
     def test_len(self):
-        assert _r.LEN("hello") == 5
+        assert len(_r.S("hello")) == 5
 
     def test_find(self):
         assert _r.FIND("ll", "hello") == 3

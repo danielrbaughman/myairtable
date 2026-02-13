@@ -230,10 +230,6 @@ class AirtableRuntime:
         return s[start_idx : start_idx + length]
 
     @staticmethod
-    def LEN(text: Any) -> int:  # noqa: N802
-        return len(AirtableRuntime._to_str(text))
-
-    @staticmethod
     def FIND(needle: Any, haystack: Any, start: Any = None) -> int:  # noqa: N802
         s = AirtableRuntime._to_str(haystack)
         n = AirtableRuntime._to_str(needle)
