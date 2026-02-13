@@ -104,9 +104,6 @@ class TestNumericFunctions:
     def test_rounddown(self):
         assert _r.ROUNDDOWN(3.459, 2) == 3.45
 
-    def test_sqrt(self):
-        assert _r.SQRT(16) == 4.0
-
     def test_power(self):
         assert _r.POWER(2, 3) == 8.0
 

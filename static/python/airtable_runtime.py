@@ -136,10 +136,6 @@ class AirtableRuntime:
         return math.floor(n / s) * s
 
     @staticmethod
-    def SQRT(value: Any) -> float:  # noqa: N802
-        return math.sqrt(AirtableRuntime.N(value))
-
-    @staticmethod
     def POWER(base: Any, exponent: Any) -> float:  # noqa: N802
         return math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent))
 

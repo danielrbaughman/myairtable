@@ -117,10 +117,6 @@ export class AirtableRuntime {
 		return Math.floor(n / s) * s;
 	}
 
-	static SQRT(value: unknown): number {
-		return Math.sqrt(AirtableRuntime.N(value));
-	}
-
 	static POWER(base: unknown, exponent: unknown): number {
 		return Math.pow(AirtableRuntime.N(base), AirtableRuntime.N(exponent));
 	}
