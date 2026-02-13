@@ -145,6 +145,11 @@ class TestTypeScriptEmitter:
         result = self._transpile("{fld1}", formula_ids={"fld1"})
         assert result == "this.myField(recalculate)"
 
+    def test_linked_record_field_ref(self):
+        """Linked record field refs should use .ids for the raw array."""
+        result = transpile_formula("{fld1}", "typescript", {"fld1": "myField"}, set(), linked_record_field_ids={"fld1"})
+        assert result == "this.myField.ids"
+
     def test_addition(self):
         result = self._transpile("{fld1} + 5")
         assert result == "F.ADD(this.myField, 5)"
@@ -163,7 +168,7 @@ class TestTypeScriptEmitter:
 
     def test_nested_function(self):
         result = self._transpile("IF({fld1} > 0, {fld1}, 0)")
-        assert result == "F.IF(F.GT(this.myField, 0), this.myField, 0)"
+        assert result == "(F.GT(this.myField, 0) ? this.myField : 0)"
 
     def test_record_id(self):
         result = self._transpile("RECORD_ID()")
@@ -177,7 +182,7 @@ class TestTypeScriptEmitter:
 
     def test_if_with_true(self):
         result = self._transpile("IF(TRUE(), 1, 2)")
-        assert result == "F.IF(true, 1, 2)"
+        assert result == "(true ? 1 : 2)"
 
     def test_not_field(self):
         assert self._transpile("NOT({fld1})") == "!this.myField"
@@ -204,7 +209,7 @@ class TestTypeScriptEmitter:
     def test_complex_formula(self):
         """IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())"""
         result = self._transpile("IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())")
-        assert result == "F.IF(F.GT(F.COUNTA(this.myField), 0), F.ADD(this.myField, this.otherField), F.BLANK())"
+        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? F.ADD(this.myField, this.otherField) : F.BLANK())"
 
 
 class TestJavaScriptEmitter:
@@ -236,6 +241,11 @@ class TestPythonEmitter:
     def test_formula_field_ref(self):
         result = self._transpile("{fld1}", formula_ids={"fld1"})
         assert result == "self.my_field(recalculate)"
+
+    def test_linked_record_field_ref_python(self):
+        """Python linked record fields are plain lists, no .ids needed."""
+        result = transpile_formula("{fld1}", "python", {"fld1": "my_field"}, set(), linked_record_field_ids={"fld1"})
+        assert result == "self.my_field"
 
     def test_function_call(self):
         assert self._transpile("LEN({fld1})") == "F.LEN(self.my_field)"
@@ -272,7 +282,7 @@ class TestPythonEmitter:
 
     def test_if_with_false(self):
         result = self._transpile("IF(FALSE(), 1, 2)")
-        assert result == "F.IF(False, 1, 2)"
+        assert result == "(1 if False else 2)"
 
 
 # endregion
@@ -356,7 +366,7 @@ class TestRealWorldFormulas:
 
     def test_if_blank(self):
         result = self._transpile('IF({fldName} = BLANK(), "N/A", {fldName})')
-        assert result == 'F.IF(F.EQ(this.name, F.BLANK()), "N/A", this.name)'
+        assert result == '(F.EQ(this.name, F.BLANK()) ? "N/A" : this.name)'
 
     def test_concatenation(self):
         result = self._transpile('{fldName} & " - " & {fldStatus}')

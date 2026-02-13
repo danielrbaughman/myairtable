@@ -135,10 +135,6 @@ class AirtableRuntime:
 
     # region Logical functions
     @staticmethod
-    def IF(condition: Any, if_true: Any, if_false: Any = None) -> Any:  # noqa: N802
-        return if_true if AirtableRuntime._to_bool(condition) else if_false
-
-    @staticmethod
     def SWITCH(expr: Any, *args: Any) -> Any:  # noqa: N802
         for i in range(0, len(args) - 1, 2):
             if AirtableRuntime.EQ(expr, args[i]):

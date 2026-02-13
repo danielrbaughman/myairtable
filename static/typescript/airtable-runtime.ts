@@ -100,10 +100,6 @@ export class AirtableRuntime {
 	// endregion
 
 	// region Logical functions
-	static IF(condition: unknown, ifTrue: unknown, ifFalse?: unknown): unknown {
-		return AirtableRuntime._toBool(condition) ? ifTrue : (ifFalse ?? null);
-	}
-
 	static SWITCH(expr: unknown, ...args: unknown[]): unknown {
 		// SWITCH(expr, pattern1, value1, pattern2, value2, ..., [default])
 		for (let i = 0; i < args.length - 1; i += 2) {

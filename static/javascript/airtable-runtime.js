@@ -99,10 +99,6 @@ class AirtableRuntime {
 	// endregion
 
 	// region Logical functions
-	static IF(condition, ifTrue, ifFalse) {
-		return AirtableRuntime._toBool(condition) ? ifTrue : (ifFalse ?? null);
-	}
-
 	static SWITCH(expr, ...args) {
 		for (let i = 0; i < args.length - 1; i += 2) {
 			if (AirtableRuntime.EQ(expr, args[i])) return args[i + 1];

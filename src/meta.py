@@ -860,6 +860,10 @@ class Table(Named):
         """Get the set of field IDs that are formula fields."""
         return {f.id for f in self.fields if f.type == "formula"}
 
+    def linked_record_field_ids(self) -> set[str]:
+        """Get the set of field IDs that are linked record fields."""
+        return {f.id for f in self.fields if f.type == "multipleRecordLinks"}
+
     def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
 
