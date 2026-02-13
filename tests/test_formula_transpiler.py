@@ -197,7 +197,11 @@ class TestTypeScriptEmitter:
 
     def test_blank(self):
         result = self._transpile("BLANK()")
-        assert result == "F.BLANK()"
+        assert result == "null"
+
+    def test_blank_with_arg(self):
+        result = self._transpile("BLANK({fld1})")
+        assert result == "(this.myField == null)"
 
     def test_and(self):
         assert self._transpile("AND({fld1}, {fld2})") == "(this.myField && this.otherField)"
@@ -214,7 +218,7 @@ class TestTypeScriptEmitter:
     def test_complex_formula(self):
         """IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())"""
         result = self._transpile("IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())")
-        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? F.ADD(this.myField, this.otherField) : F.BLANK())"
+        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? F.ADD(this.myField, this.otherField) : null)"
 
     def test_ifs_single_pair(self):
         result = self._transpile("IFS({fld1}, 1)")
@@ -300,6 +304,13 @@ class TestPythonEmitter:
 
     def test_xor(self):
         assert self._transpile("XOR({fld1}, {fld2})") == "((not self.my_field) != (not self.other_field))"
+
+    def test_blank(self):
+        assert self._transpile("BLANK()") == "None"
+
+    def test_blank_with_arg(self):
+        result = self._transpile("BLANK({fld1})")
+        assert result == "(self.my_field is None)"
 
     def test_if_with_false(self):
         result = self._transpile("IF(FALSE(), 1, 2)")
@@ -403,7 +414,7 @@ class TestRealWorldFormulas:
 
     def test_if_blank(self):
         result = self._transpile('IF({fldName} = BLANK(), "N/A", {fldName})')
-        assert result == '(F.EQ(this.name, F.BLANK()) ? "N/A" : this.name)'
+        assert result == '(F.EQ(this.name, null) ? "N/A" : this.name)'
 
     def test_concatenation(self):
         result = self._transpile('{fldName} & " - " & {fldStatus}')

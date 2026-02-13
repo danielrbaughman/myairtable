@@ -121,15 +121,6 @@ class AirtableRuntime:
 
     # endregion
 
-    # region Logical functions
-    @staticmethod
-    def BLANK(value: Any | None = None) -> bool | None:  # noqa: N802
-        if value is not None:
-            return AirtableRuntime._is_blank(value)
-        return None
-
-    # endregion
-
     # region Numeric functions
     @staticmethod
     def SUM(*args: Any) -> int | float:  # noqa: N802

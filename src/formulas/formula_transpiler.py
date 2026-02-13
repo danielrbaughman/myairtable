@@ -289,6 +289,14 @@ class CodeEmitter:
         if name == "FALSE":
             return "False" if self.language == "python" else "false"
 
+        if name == "BLANK":
+            if not node.args:
+                return "None" if self.language == "python" else "null"
+            arg = self.emit(node.args[0])
+            if self.language == "python":
+                return f"({arg} is None)"
+            return f"({arg} == null)"
+
         if name == "NOT":
             arg = self.emit(node.args[0])
             return f"not {arg}" if self.language == "python" else f"!{arg}"

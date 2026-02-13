@@ -90,12 +90,6 @@ class AirtableRuntime {
 	}
 	// endregion
 
-	// region Logical functions
-	static BLANK() {
-		return null;
-	}
-	// endregion
-
 	// region Numeric functions
 	static SUM(...args) {
 		const flat = AirtableRuntime._flatArgs(args);

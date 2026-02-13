@@ -8,9 +8,6 @@ from static.python.airtable_runtime import AirtableRuntime as _r  # noqa: N813
 class TestBlankSemantics:
     """BLANK() handling is central to Airtable formula behavior."""
 
-    def test_blank_returns_none(self):
-        assert _r.BLANK() is None
-
     def test_blank_plus_number(self):
         """BLANK() + 5 = 5 (BLANK treated as 0 in numeric context)."""
         assert _r.ADD(None, 5) == 5

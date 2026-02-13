@@ -91,13 +91,6 @@ export class AirtableRuntime {
 	}
 	// endregion
 
-	// region Logical functions
-	static BLANK(value?: unknown): null {
-		if (value !== undefined) AirtableRuntime._isBlank(value);
-		return null;
-	}
-	// endregion
-
 	// region Numeric functions
 	static SUM(...args: unknown[]): number {
 		const flat = AirtableRuntime._flatArgs(args);
