@@ -55,18 +55,6 @@ export class AirtableRuntime {
 	static NEQ(a: unknown, b: unknown): boolean {
 		return !AirtableRuntime.EQ(a, b);
 	}
-	static LT(a: unknown, b: unknown): boolean {
-		return AirtableRuntime._toNum(a) < AirtableRuntime._toNum(b);
-	}
-	static GT(a: unknown, b: unknown): boolean {
-		return AirtableRuntime._toNum(a) > AirtableRuntime._toNum(b);
-	}
-	static LTE(a: unknown, b: unknown): boolean {
-		return AirtableRuntime._toNum(a) <= AirtableRuntime._toNum(b);
-	}
-	static GTE(a: unknown, b: unknown): boolean {
-		return AirtableRuntime._toNum(a) >= AirtableRuntime._toNum(b);
-	}
 	// endregion
 
 	// region String concat operator

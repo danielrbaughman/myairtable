@@ -58,18 +58,18 @@ class TestComparisonOperators:
         assert _r.NEQ(5, 6) is True
 
     def test_lt(self):
-        assert _r.LT(3, 5) is True
-        assert _r.LT(5, 3) is False
+        assert (_r.N(3) < _r.N(5)) is True
+        assert (_r.N(5) < _r.N(3)) is False
 
     def test_gt(self):
-        assert _r.GT(5, 3) is True
+        assert (_r.N(5) > _r.N(3)) is True
 
     def test_lte(self):
-        assert _r.LTE(3, 3) is True
-        assert _r.LTE(3, 4) is True
+        assert (_r.N(3) <= _r.N(3)) is True
+        assert (_r.N(3) <= _r.N(4)) is True
 
     def test_gte(self):
-        assert _r.GTE(5, 5) is True
+        assert (_r.N(5) >= _r.N(5)) is True
 
 
 class TestNumericFunctions:

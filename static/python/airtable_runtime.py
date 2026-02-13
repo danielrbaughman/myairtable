@@ -74,22 +74,6 @@ class AirtableRuntime:
     def NEQ(a: Any, b: Any) -> bool:  # noqa: N802
         return not AirtableRuntime.EQ(a, b)
 
-    @staticmethod
-    def LT(a: Any, b: Any) -> bool:  # noqa: N802
-        return AirtableRuntime._to_num(a) < AirtableRuntime._to_num(b)
-
-    @staticmethod
-    def GT(a: Any, b: Any) -> bool:  # noqa: N802
-        return AirtableRuntime._to_num(a) > AirtableRuntime._to_num(b)
-
-    @staticmethod
-    def LTE(a: Any, b: Any) -> bool:  # noqa: N802
-        return AirtableRuntime._to_num(a) <= AirtableRuntime._to_num(b)
-
-    @staticmethod
-    def GTE(a: Any, b: Any) -> bool:  # noqa: N802
-        return AirtableRuntime._to_num(a) >= AirtableRuntime._to_num(b)
-
     # endregion
 
     # region String concat

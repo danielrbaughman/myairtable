@@ -173,7 +173,7 @@ class TestTypeScriptEmitter:
 
     def test_nested_function(self):
         result = self._transpile("IF({fld1} > 0, {fld1}, 0)")
-        assert result == "(F.GT(this.myField, 0) ? this.myField : 0)"
+        assert result == "((F.N(this.myField) > 0) ? this.myField : 0)"
 
     def test_record_id(self):
         result = self._transpile("RECORD_ID()")
@@ -218,7 +218,7 @@ class TestTypeScriptEmitter:
     def test_complex_formula(self):
         """IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())"""
         result = self._transpile("IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())")
-        assert result == "(F.GT(F.COUNTA(this.myField), 0) ? (F.N(this.myField) + F.N(this.otherField)) : null)"
+        assert result == "((F.N(F.COUNTA(this.myField)) > 0) ? (F.N(this.myField) + F.N(this.otherField)) : null)"
 
     def test_ifs_single_pair(self):
         result = self._transpile("IFS({fld1}, 1)")
@@ -226,7 +226,7 @@ class TestTypeScriptEmitter:
 
     def test_ifs_multiple_pairs(self):
         result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
-        assert result == '(F.GT(this.myField, 10) ? "high" : F.GT(this.myField, 5) ? "med" : true ? "low" : null)'
+        assert result == '((F.N(this.myField) > 10) ? "high" : (F.N(this.myField) > 5) ? "med" : true ? "low" : null)'
 
     def test_switch_no_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
@@ -322,7 +322,7 @@ class TestPythonEmitter:
 
     def test_ifs_multiple_pairs(self):
         result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
-        assert result == '("high" if F.GT(self.my_field, 10) else "med" if F.GT(self.my_field, 5) else "low" if True else None)'
+        assert result == '("high" if (F.N(self.my_field) > 10) else "med" if (F.N(self.my_field) > 5) else "low" if True else None)'
 
     def test_switch_no_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')

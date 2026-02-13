@@ -54,18 +54,6 @@ class AirtableRuntime {
 	static NEQ(a, b) {
 		return !AirtableRuntime.EQ(a, b);
 	}
-	static LT(a, b) {
-		return AirtableRuntime._toNum(a) < AirtableRuntime._toNum(b);
-	}
-	static GT(a, b) {
-		return AirtableRuntime._toNum(a) > AirtableRuntime._toNum(b);
-	}
-	static LTE(a, b) {
-		return AirtableRuntime._toNum(a) <= AirtableRuntime._toNum(b);
-	}
-	static GTE(a, b) {
-		return AirtableRuntime._toNum(a) >= AirtableRuntime._toNum(b);
-	}
 	// endregion
 
 	// region String concat

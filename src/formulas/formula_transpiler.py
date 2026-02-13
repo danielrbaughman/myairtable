@@ -202,10 +202,6 @@ class FormulaParser:
 OPERATOR_MAP: dict[str, str] = {
     "=": "EQ",
     "!=": "NEQ",
-    "<": "LT",
-    ">": "GT",
-    "<=": "LTE",
-    ">=": "GTE",
     "&": "CONCAT",
 }
 
@@ -378,6 +374,10 @@ class CodeEmitter:
     def _emit_binary_op(self, node: BinaryOp) -> str:
         if node.op in ("+", "-", "*", "/"):
             return self._emit_num(node)
+        if node.op in ("<", ">", "<=", ">="):
+            left = self._emit_num(node.left)
+            right = self._emit_num(node.right)
+            return f"({left} {node.op} {right})"
         func = OPERATOR_MAP.get(node.op)
         if func is None:
             raise ParseError(f"Unknown operator: {node.op}")
