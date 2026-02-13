@@ -144,13 +144,6 @@ class AirtableRuntime:
         return None
 
     @staticmethod
-    def IFS(*args: Any) -> Any:  # noqa: N802
-        for i in range(0, len(args) - 1, 2):
-            if AirtableRuntime._to_bool(args[i]):
-                return args[i + 1]
-        return None
-
-    @staticmethod
     def BLANK(value: Any | None = None) -> bool | None:  # noqa: N802
         if value is not None:
             return AirtableRuntime._is_blank(value)

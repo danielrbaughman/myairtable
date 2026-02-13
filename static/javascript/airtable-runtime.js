@@ -107,13 +107,6 @@ class AirtableRuntime {
 		return null;
 	}
 
-	static IFS(...args) {
-		for (let i = 0; i < args.length - 1; i += 2) {
-			if (AirtableRuntime._toBool(args[i])) return args[i + 1];
-		}
-		return null;
-	}
-
 	static BLANK() {
 		return null;
 	}

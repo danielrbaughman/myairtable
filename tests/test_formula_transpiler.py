@@ -211,6 +211,14 @@ class TestTypeScriptEmitter:
         result = self._transpile("IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())")
         assert result == "(F.GT(F.COUNTA(this.myField), 0) ? F.ADD(this.myField, this.otherField) : F.BLANK())"
 
+    def test_ifs_single_pair(self):
+        result = self._transpile("IFS({fld1}, 1)")
+        assert result == "(this.myField ? 1 : null)"
+
+    def test_ifs_multiple_pairs(self):
+        result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
+        assert result == '(F.GT(this.myField, 10) ? "high" : F.GT(this.myField, 5) ? "med" : true ? "low" : null)'
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -283,6 +291,14 @@ class TestPythonEmitter:
     def test_if_with_false(self):
         result = self._transpile("IF(FALSE(), 1, 2)")
         assert result == "(1 if False else 2)"
+
+    def test_ifs_single_pair(self):
+        result = self._transpile("IFS({fld1}, 1)")
+        assert result == "(1 if self.my_field else None)"
+
+    def test_ifs_multiple_pairs(self):
+        result = self._transpile('IFS({fld1} > 10, "high", {fld1} > 5, "med", TRUE(), "low")')
+        assert result == '("high" if F.GT(self.my_field, 10) else "med" if F.GT(self.my_field, 5) else "low" if True else None)'
 
 
 # endregion

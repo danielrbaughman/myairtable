@@ -316,6 +316,21 @@ class CodeEmitter:
                 return f"({if_true} if {cond} else {if_false})"
             return f"({cond} ? {if_true} : {if_false})"
 
+        if name == "IFS":
+            pairs = []
+            for i in range(0, len(node.args) - 1, 2):
+                pairs.append((self.emit(node.args[i]), self.emit(node.args[i + 1])))
+            fallback = "None" if self.language == "python" else "null"
+            if self.language == "python":
+                result = fallback
+                for cond, val in reversed(pairs):
+                    result = f"{val} if {cond} else {result}"
+                return f"({result})"
+            result = fallback
+            for cond, val in reversed(pairs):
+                result = f"{cond} ? {val} : {result}"
+            return f"({result})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

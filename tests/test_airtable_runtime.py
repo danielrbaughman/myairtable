@@ -85,9 +85,6 @@ class TestLogicalFunctions:
         assert _r.SWITCH("b", "a", 1, "b", 2, 99) == 2
         assert _r.SWITCH("c", "a", 1, "b", 2, 99) == 99
 
-    def test_ifs(self):
-        assert _r.IFS(False, 1, True, 2, True, 3) == 2
-
 
 class TestNumericFunctions:
     def test_sum(self):
