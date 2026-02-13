@@ -146,9 +146,14 @@ class TestTypeScriptEmitter:
         assert result == "this.myField(recalculate)"
 
     def test_linked_record_field_ref(self):
-        """Linked record field refs should use .ids for the raw array."""
+        """Plural linked record field refs should use .ids for the raw array."""
         result = transpile_formula("{fld1}", "typescript", {"fld1": "myField"}, set(), linked_record_field_ids={"fld1"})
         assert result == "this.myField.ids"
+
+    def test_single_linked_record_field_ref(self):
+        """Single linked record field refs should use .id."""
+        result = transpile_formula("{fld1}", "typescript", {"fld1": "myField"}, set(), single_linked_record_field_ids={"fld1"})
+        assert result == "this.myField.id"
 
     def test_addition(self):
         result = self._transpile("{fld1} + 5")

@@ -431,9 +431,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             # Pre-transpile formula fields and add AirtableRuntime require if any succeed
             formula_field_ids = table.formula_field_ids()
             linked_record_field_ids = table.linked_record_field_ids()
+            single_linked_record_field_ids = table.single_linked_record_field_ids()
             field_name_map = {f.id: f.name_camel() for f in table.fields}
             raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
-            transpiled_formulas = transpile_table_formulas(raw_formulas, "javascript", field_name_map, formula_field_ids, linked_record_field_ids)
+            transpiled_formulas = transpile_table_formulas(
+                raw_formulas, "javascript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
+            )
             has_any_formula = any(f.is_formula() for f in table.fields)
             if has_any_formula:
                 write.line('const { AirtableRuntime: F } = require("../../static/airtable-runtime");')

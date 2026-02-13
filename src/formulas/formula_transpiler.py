@@ -226,11 +226,13 @@ class CodeEmitter:
         field_name_map: dict[str, str],
         formula_field_ids: set[str],
         linked_record_field_ids: set[str] | None = None,
+        single_linked_record_field_ids: set[str] | None = None,
     ):
         self.language = language
         self.field_name_map = field_name_map  # field_id -> property name (camelCase or snake_case)
         self.formula_field_ids = formula_field_ids  # set of field IDs that are formula fields
-        self.linked_record_field_ids = linked_record_field_ids or set()  # set of field IDs that are linked records
+        self.linked_record_field_ids = linked_record_field_ids or set()  # set of field IDs that are linked records (plural, .ids)
+        self.single_linked_record_field_ids = single_linked_record_field_ids or set()  # single linked records (.id)
         self._self = "self" if language == "python" else "this"
         self._runtime = "F"
 
@@ -265,8 +267,11 @@ class CodeEmitter:
             # Formula field -> call as function with recalculate parameter
             return f"{self._self}.{prop_name}(recalculate)"
         elif field_id in self.linked_record_field_ids and self.language != "python":
-            # Linked record field in TS/JS -> access .ids for the raw array
+            # Plural linked record field in TS/JS -> access .ids for the raw array
             return f"{self._self}.{prop_name}.ids"
+        elif field_id in self.single_linked_record_field_ids and self.language != "python":
+            # Single linked record field in TS/JS -> access .id
+            return f"{self._self}.{prop_name}.id"
         else:
             # Non-formula field -> access as property
             return f"{self._self}.{prop_name}"
@@ -381,6 +386,7 @@ def transpile_formula(
     field_name_map: dict[str, str],
     formula_field_ids: set[str],
     linked_record_field_ids: set[str] | None = None,
+    single_linked_record_field_ids: set[str] | None = None,
 ) -> str | None:
     """Transpile an Airtable formula to native code.
 
@@ -389,7 +395,8 @@ def transpile_formula(
         language: Target language ("typescript", "javascript", "python").
         field_name_map: Mapping of field_id -> property name in the target language.
         formula_field_ids: Set of field IDs that are formula fields (called as functions).
-        linked_record_field_ids: Set of field IDs that are linked record fields.
+        linked_record_field_ids: Set of field IDs that are plural linked record fields (.ids).
+        single_linked_record_field_ids: Set of field IDs that are single linked record fields (.id).
 
     Returns:
         The transpiled code string, or None if translation fails.
@@ -404,7 +411,7 @@ def transpile_formula(
         if _contains_untranspilable(ast):
             logger.info("Formula %r contains runtime-untranspilable functions, falling back to getter", formula)
             return None
-        emitter = CodeEmitter(language, field_name_map, formula_field_ids, linked_record_field_ids)
+        emitter = CodeEmitter(language, field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids)
         return emitter.emit(ast)
     except (ParseError, Exception) as e:
         logger.warning("Could not transpile formula %r: %s", formula, e)
@@ -417,6 +424,7 @@ def transpile_table_formulas(
     field_name_map: dict[str, str],
     all_formula_field_ids: set[str],
     linked_record_field_ids: set[str] | None = None,
+    single_linked_record_field_ids: set[str] | None = None,
 ) -> dict[str, str]:
     """Transpile all formula fields for a table.
 
@@ -430,14 +438,17 @@ def transpile_table_formulas(
         language: Target language.
         field_name_map: Mapping of field_id -> property name in the target language.
         all_formula_field_ids: Set of ALL formula field IDs in the table.
-        linked_record_field_ids: Set of field IDs that are linked record fields.
+        linked_record_field_ids: Set of field IDs that are plural linked record fields (.ids).
+        single_linked_record_field_ids: Set of field IDs that are single linked record fields (.id).
 
     Returns:
         Mapping of field_id -> transpiled code string (only successfully transpiled formulas).
     """
     transpiled: dict[str, str] = {}
     for field_id, formula_str in formulas.items():
-        code = transpile_formula(formula_str, language, field_name_map, all_formula_field_ids, linked_record_field_ids)
+        code = transpile_formula(
+            formula_str, language, field_name_map, all_formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
+        )
         if code is not None:
             transpiled[field_id] = code
     return transpiled

@@ -861,8 +861,12 @@ class Table(Named):
         return {f.id for f in self.fields if f.type == "formula"}
 
     def linked_record_field_ids(self) -> set[str]:
-        """Get the set of field IDs that are linked record fields."""
-        return {f.id for f in self.fields if f.type == "multipleRecordLinks"}
+        """Get the set of field IDs that are linked record fields (plural, .ids)."""
+        return {f.id for f in self.fields if f.type == "multipleRecordLinks" and not (f.options and f.options.prefers_single_record_link)}
+
+    def single_linked_record_field_ids(self) -> set[str]:
+        """Get the set of field IDs that are single linked record fields (.id)."""
+        return {f.id for f in self.fields if f.type == "multipleRecordLinks" and f.options and f.options.prefers_single_record_link}
 
     def field_ids(self) -> list[str]:
         return [field.id for field in self.fields]
