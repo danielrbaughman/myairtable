@@ -51,12 +51,6 @@ export class AirtableRuntime {
 	}
 	// endregion
 
-	// region String concat operator
-	static CONCAT(a: unknown, b: unknown): string {
-		return AirtableRuntime._toStr(a) + AirtableRuntime._toStr(b);
-	}
-	// endregion
-
 	// region Numeric functions
 	static SUM(...args: unknown[]): number {
 		const flat = AirtableRuntime._flatArgs(args);

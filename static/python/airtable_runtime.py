@@ -69,13 +69,6 @@ class AirtableRuntime:
 
     # endregion
 
-    # region String concat
-    @staticmethod
-    def CONCAT(a: Any, b: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(a) + AirtableRuntime._to_str(b)
-
-    # endregion
-
     # region Numeric functions
     @staticmethod
     def SUM(*args: Any) -> int | float:  # noqa: N802

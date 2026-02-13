@@ -14,7 +14,7 @@ class TestBlankSemantics:
 
     def test_blank_concat_string(self):
         """BLANK() & "hello" = "hello" (BLANK treated as "" in string context)."""
-        assert _r.CONCAT(None, "hello") == "hello"
+        assert _r.S(None) + "hello" == "hello"
 
     def test_blank_is_falsy(self):
         """BLANK is falsy in native truthiness checks."""
@@ -202,10 +202,10 @@ class TestArrayFunctions:
 
 class TestConcatOperator:
     def test_string_concat(self):
-        assert _r.CONCAT("hello", " world") == "hello world"
+        assert _r.S("hello") + _r.S(" world") == "hello world"
 
     def test_number_to_string_concat(self):
-        assert _r.CONCAT(5, " items") == "5 items"
+        assert _r.S(5) + _r.S(" items") == "5 items"
 
     def test_blank_concat(self):
-        assert _r.CONCAT(None, "hello") == "hello"
+        assert _r.S(None) + _r.S("hello") == "hello"

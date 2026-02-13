@@ -194,15 +194,6 @@ class FormulaParser:
         raise ParseError(f"Unexpected token: {tok.type} ({tok.value!r})")
 
 
-# endregion
-
-
-# region Operator mapping
-
-OPERATOR_MAP: dict[str, str] = {
-    "&": "CONCAT",
-}
-
 # Type inference for equality coercion — when one side of == / != has a known
 # type, we wrap the other side in F.S() or F.N() to flatten potential arrays.
 _STRING_RETURNING_FUNCTIONS: set[str] = {
@@ -434,6 +425,16 @@ class CodeEmitter:
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 
+    def _emit_str(self, node: ASTNode) -> str:
+        """Emit node in string context. String literals pass through; concat recurses; others get F.S()."""
+        if isinstance(node, StringLiteral):
+            return node.value
+        if isinstance(node, BinaryOp) and node.op == "&":
+            left = self._emit_str(node.left)
+            right = self._emit_str(node.right)
+            return f"({left} + {right})"
+        return f"{self._runtime}.S({self.emit(node)})"
+
     def _emit_num(self, node: ASTNode) -> str:
         """Emit node in numeric context. Literals pass through; arithmetic recurses; others get F.N()."""
         if isinstance(node, NumberLiteral):
@@ -497,12 +498,9 @@ class CodeEmitter:
             right = self._emit_eq_operand(node.right, node.left)
             native_op = "==" if node.op == "=" else "!="
             return f"({left} {native_op} {right})"
-        func = OPERATOR_MAP.get(node.op)
-        if func is None:
-            raise ParseError(f"Unknown operator: {node.op}")
-        left = self.emit(node.left)
-        right = self.emit(node.right)
-        return f"{self._runtime}.{func}({left}, {right})"
+        if node.op == "&":
+            return self._emit_str(node)
+        raise ParseError(f"Unknown operator: {node.op}")
 
     def _emit_unary_op(self, node: UnaryOp) -> str:
         if node.op == "-":

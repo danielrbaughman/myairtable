@@ -161,7 +161,7 @@ class TestTypeScriptEmitter:
 
     def test_concat(self):
         result = self._transpile('{fld1} & " items"')
-        assert result == 'F.CONCAT(this.myField, " items")'
+        assert result == '(F.S(this.myField) + " items")'
 
     def test_equality(self):
         result = self._transpile("{fld1} = 5")
@@ -419,7 +419,7 @@ class TestRealWorldFormulas:
 
     def test_concatenation(self):
         result = self._transpile('{fldName} & " - " & {fldStatus}')
-        assert result == 'F.CONCAT(F.CONCAT(this.name, " - "), this.status)'
+        assert result == '((F.S(this.name) + " - ") + F.S(this.status))'
 
     def test_math(self):
         result = self._transpile("{fldAmount} * 1.1")
