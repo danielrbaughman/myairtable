@@ -18,6 +18,16 @@ from typing import Any
 class AirtableRuntime:
     # region Utilities
     @staticmethod
+    def _flatten(args: tuple[Any, ...]) -> list[Any]:
+        result: list[Any] = []
+        for a in args:
+            if isinstance(a, list):
+                result.extend(a)
+            else:
+                result.append(a)
+        return result
+
+    @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
         """Coerce value to number"""
         if isinstance(v, list):
@@ -46,58 +56,48 @@ class AirtableRuntime:
             return "1" if v else "0"
         return str(v)
 
-    @staticmethod
-    def _flat_args(args: tuple[Any, ...]) -> list[Any]:
-        result: list[Any] = []
-        for a in args:
-            if isinstance(a, list):
-                result.extend(a)
-            else:
-                result.append(a)
-        return result
-
     # endregion
 
     # region Numeric functions
     @staticmethod
     def SUM(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         return sum(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def AVERAGE(*args: Any) -> float:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         if not flat:
             return float("nan")
         return AirtableRuntime.SUM(*flat) / len(flat)
 
     @staticmethod
     def MIN(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         if not flat:
             return float("inf")
         return min(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def MAX(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         if not flat:
             return float("-inf")
         return max(AirtableRuntime.N(v) for v in flat)
 
     @staticmethod
     def COUNT(*args: Any) -> int:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         return sum(1 for v in flat if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)))
 
     @staticmethod
     def COUNTA(*args: Any) -> int:  # noqa: N802
-        flat = AirtableRuntime._flat_args(args)
+        flat = AirtableRuntime._flatten(args)
         return sum(1 for v in flat if v is not None and v != "")
 
     @staticmethod
     def COUNTALL(*args: Any) -> int:  # noqa: N802
-        return len(AirtableRuntime._flat_args(args))
+        return len(AirtableRuntime._flatten(args))
 
     @staticmethod
     def ROUND(value: Any, precision: Any = 0) -> float:  # noqa: N802
