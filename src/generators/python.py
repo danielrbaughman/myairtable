@@ -451,6 +451,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             if _has_formulas:
                 write.line("from ...static.airtable_runtime import AirtableRuntime as F")
                 write.line("import urllib.parse")
+                write.line("import math")
             write.select_options_import(table)
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")

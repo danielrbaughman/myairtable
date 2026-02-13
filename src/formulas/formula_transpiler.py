@@ -380,6 +380,12 @@ class CodeEmitter:
                 return f'urllib.parse.quote({arg}, safe="")'
             return f"encodeURIComponent({arg})"
 
+        if name == "INT":
+            arg = self._emit_num(node.args[0])
+            if self.language == "python":
+                return f"math.floor({arg})"
+            return f"Math.floor({arg})"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

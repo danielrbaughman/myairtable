@@ -104,9 +104,6 @@ class TestNumericFunctions:
     def test_rounddown(self):
         assert _r.ROUNDDOWN(3.459, 2) == 3.45
 
-    def test_int(self):
-        assert _r.INT(3.9) == 3
-
     def test_abs(self):
         assert _r.ABS(-5) == 5
 

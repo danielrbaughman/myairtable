@@ -117,10 +117,6 @@ export class AirtableRuntime {
 		return Math.floor(n / s) * s;
 	}
 
-	static INT(value: unknown): number {
-		return Math.floor(AirtableRuntime.N(value));
-	}
-
 	static ABS(value: unknown): number {
 		return Math.abs(AirtableRuntime.N(value));
 	}

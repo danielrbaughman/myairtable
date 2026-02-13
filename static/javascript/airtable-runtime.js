@@ -115,10 +115,6 @@ class AirtableRuntime {
 		return Math.floor(n / s) * s;
 	}
 
-	static INT(value) {
-		return Math.floor(AirtableRuntime.N(value));
-	}
-
 	static ABS(value) {
 		return Math.abs(AirtableRuntime.N(value));
 	}
