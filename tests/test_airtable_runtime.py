@@ -86,22 +86,6 @@ class TestLogicalFunctions:
     def test_if_false(self):
         assert _r.IF(False, "yes", "no") == "no"
 
-    def test_and(self):
-        assert _r.AND(True, True) is True
-        assert _r.AND(True, False) is False
-
-    def test_or(self):
-        assert _r.OR(False, True) is True
-        assert _r.OR(False, False) is False
-
-    def test_not(self):
-        assert _r.NOT(True) is False
-        assert _r.NOT(False) is True
-
-    def test_xor(self):
-        assert _r.XOR(True, False) is True
-        assert _r.XOR(True, True) is False
-
     def test_switch(self):
         assert _r.SWITCH("a", "a", 1, "b", 2, 99) == 1
         assert _r.SWITCH("b", "a", 1, "b", 2, 99) == 2

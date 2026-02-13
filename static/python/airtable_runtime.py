@@ -155,34 +155,6 @@ class AirtableRuntime:
         return None
 
     @staticmethod
-    def AND(*args: Any) -> bool:  # noqa: N802
-        if not args:
-            return True
-        return all(AirtableRuntime._to_bool(a) for a in args)
-
-    @staticmethod
-    def OR(*args: Any) -> bool:  # noqa: N802
-        if not args:
-            return False
-        return any(AirtableRuntime._to_bool(a) for a in args)
-
-    @staticmethod
-    def XOR(a: Any, b: Any) -> bool:  # noqa: N802
-        return AirtableRuntime._to_bool(a) != AirtableRuntime._to_bool(b)
-
-    @staticmethod
-    def NOT(a: Any) -> bool:  # noqa: N802
-        return not AirtableRuntime._to_bool(a)
-
-    @staticmethod
-    def TRUE() -> bool:  # noqa: N802
-        return True
-
-    @staticmethod
-    def FALSE() -> bool:  # noqa: N802
-        return False
-
-    @staticmethod
     def BLANK(value: Any | None = None) -> bool | None:  # noqa: N802
         if value is not None:
             return AirtableRuntime._is_blank(value)

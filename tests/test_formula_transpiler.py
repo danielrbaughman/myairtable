@@ -169,9 +169,37 @@ class TestTypeScriptEmitter:
         result = self._transpile("RECORD_ID()")
         assert result == "this.id"
 
+    def test_true(self):
+        assert self._transpile("TRUE()") == "true"
+
+    def test_false(self):
+        assert self._transpile("FALSE()") == "false"
+
+    def test_if_with_true(self):
+        result = self._transpile("IF(TRUE(), 1, 2)")
+        assert result == "F.IF(true, 1, 2)"
+
+    def test_not_field(self):
+        assert self._transpile("NOT({fld1})") == "!this.myField"
+
+    def test_not_true(self):
+        assert self._transpile("NOT(TRUE())") == "!true"
+
     def test_blank(self):
         result = self._transpile("BLANK()")
         assert result == "F.BLANK()"
+
+    def test_and(self):
+        assert self._transpile("AND({fld1}, {fld2})") == "(this.myField && this.otherField)"
+
+    def test_or(self):
+        assert self._transpile("OR({fld1}, {fld2})") == "(this.myField || this.otherField)"
+
+    def test_not_and(self):
+        assert self._transpile("NOT(AND({fld1}, {fld2}))") == "!(this.myField && this.otherField)"
+
+    def test_xor(self):
+        assert self._transpile("XOR({fld1}, {fld2})") == "(!this.myField !== !this.otherField)"
 
     def test_complex_formula(self):
         """IF(COUNTA({fld1}) > 0, {fld1} + {fld2}, BLANK())"""
@@ -217,6 +245,34 @@ class TestPythonEmitter:
 
     def test_record_id(self):
         assert self._transpile("RECORD_ID()") == "self.id"
+
+    def test_true(self):
+        assert self._transpile("TRUE()") == "True"
+
+    def test_false(self):
+        assert self._transpile("FALSE()") == "False"
+
+    def test_not_field(self):
+        assert self._transpile("NOT({fld1})") == "not self.my_field"
+
+    def test_not_true(self):
+        assert self._transpile("NOT(TRUE())") == "not True"
+
+    def test_and(self):
+        assert self._transpile("AND({fld1}, {fld2})") == "(self.my_field and self.other_field)"
+
+    def test_or(self):
+        assert self._transpile("OR({fld1}, {fld2})") == "(self.my_field or self.other_field)"
+
+    def test_not_and(self):
+        assert self._transpile("NOT(AND({fld1}, {fld2}))") == "not (self.my_field and self.other_field)"
+
+    def test_xor(self):
+        assert self._transpile("XOR({fld1}, {fld2})") == "((not self.my_field) != (not self.other_field))"
+
+    def test_if_with_false(self):
+        result = self._transpile("IF(FALSE(), 1, 2)")
+        assert result == "F.IF(False, 1, 2)"
 
 
 # endregion

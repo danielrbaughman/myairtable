@@ -118,30 +118,6 @@ class AirtableRuntime {
 		return null;
 	}
 
-	static AND(...args) {
-		if (args.length === 0) return true;
-		return args.every((a) => AirtableRuntime._toBool(a));
-	}
-
-	static OR(...args) {
-		if (args.length === 0) return false;
-		return args.some((a) => AirtableRuntime._toBool(a));
-	}
-
-	static XOR(a, b) {
-		return AirtableRuntime._toBool(a) !== AirtableRuntime._toBool(b);
-	}
-
-	static NOT(a) {
-		return !AirtableRuntime._toBool(a);
-	}
-
-	static TRUE() {
-		return true;
-	}
-	static FALSE() {
-		return false;
-	}
 	static BLANK() {
 		return null;
 	}

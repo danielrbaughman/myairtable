@@ -273,6 +273,36 @@ class CodeEmitter:
         if name == "RECORD_ID":
             return f"{self._self}.id"
 
+        # Boolean literals - emit native syntax
+        if name == "TRUE":
+            return "True" if self.language == "python" else "true"
+        if name == "FALSE":
+            return "False" if self.language == "python" else "false"
+
+        if name == "NOT":
+            arg = self.emit(node.args[0])
+            return f"not {arg}" if self.language == "python" else f"!{arg}"
+
+        if name in ("AND", "OR"):
+            parts = [self.emit(arg) for arg in node.args]
+            if len(parts) == 0:
+                if name == "AND":
+                    return "True" if self.language == "python" else "true"
+                return "False" if self.language == "python" else "false"
+            if len(parts) == 1:
+                return parts[0]
+            op = " and " if self.language == "python" else " && "
+            if name == "OR":
+                op = " or " if self.language == "python" else " || "
+            return f"({op.join(parts)})"
+
+        if name == "XOR":
+            left = self.emit(node.args[0])
+            right = self.emit(node.args[1])
+            if self.language == "python":
+                return f"((not {left}) != (not {right}))"
+            return f"(!{left} !== !{right})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 
