@@ -243,10 +243,6 @@ export class AirtableRuntime {
 		return typeof value === "string" ? value : "";
 	}
 
-	static ENCODE_URL_COMPONENT(text: unknown): string {
-		return encodeURIComponent(AirtableRuntime.S(text));
-	}
-
 	static REGEX_MATCH(text: unknown, regex: unknown): boolean {
 		try {
 			return new RegExp(AirtableRuntime.S(regex)).test(AirtableRuntime.S(text));

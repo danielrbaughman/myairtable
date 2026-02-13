@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 import re
-import urllib.parse
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -270,10 +269,6 @@ class AirtableRuntime:
     @staticmethod
     def T(value: Any) -> str:  # noqa: N802
         return value if isinstance(value, str) else ""
-
-    @staticmethod
-    def ENCODE_URL_COMPONENT(text: Any) -> str:  # noqa: N802
-        return urllib.parse.quote(AirtableRuntime.S(text), safe="")
 
     @staticmethod
     def REGEX_MATCH(text: Any, regex: Any) -> bool:  # noqa: N802

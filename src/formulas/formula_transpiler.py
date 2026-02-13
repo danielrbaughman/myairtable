@@ -374,6 +374,12 @@ class CodeEmitter:
             method = {"LOWER": "toLowerCase", "UPPER": "toUpperCase", "TRIM": "trim"}[name]
             return f"{arg}.{method}()"
 
+        if name == "ENCODE_URL_COMPONENT":
+            arg = self._emit_str(node.args[0])
+            if self.language == "python":
+                return f'urllib.parse.quote({arg}, safe="")'
+            return f"encodeURIComponent({arg})"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])
