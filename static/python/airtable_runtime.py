@@ -24,7 +24,15 @@ class AirtableRuntime:
 
     @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
+        if isinstance(v, list):
+            return AirtableRuntime._to_num(v[0] if v else None)
         return AirtableRuntime._to_num(v)
+
+    @staticmethod
+    def S(v: Any) -> str:  # noqa: N802
+        if isinstance(v, list):
+            return AirtableRuntime._to_str(v[0] if v else None)
+        return AirtableRuntime._to_str(v)
 
     @staticmethod
     def _to_num(v: Any) -> int | float:
@@ -58,21 +66,6 @@ class AirtableRuntime:
             else:
                 result.append(a)
         return result
-
-    # endregion
-
-    # region Comparison operators
-    @staticmethod
-    def EQ(a: Any, b: Any) -> bool:  # noqa: N802
-        if AirtableRuntime._is_blank(a) and AirtableRuntime._is_blank(b):
-            return True
-        if AirtableRuntime._is_blank(a) or AirtableRuntime._is_blank(b):
-            return False
-        return a == b
-
-    @staticmethod
-    def NEQ(a: Any, b: Any) -> bool:  # noqa: N802
-        return not AirtableRuntime.EQ(a, b)
 
     # endregion
 

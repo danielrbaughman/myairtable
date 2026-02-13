@@ -14,7 +14,13 @@ class AirtableRuntime {
 	}
 
 	static N(v) {
+		if (Array.isArray(v)) return AirtableRuntime._toNum(v[0]);
 		return AirtableRuntime._toNum(v);
+	}
+
+	static S(v) {
+		if (Array.isArray(v)) return AirtableRuntime._toStr(v[0]);
+		return AirtableRuntime._toStr(v);
 	}
 
 	static _toNum(v) {
@@ -41,18 +47,6 @@ class AirtableRuntime {
 			else result.push(a);
 		}
 		return result;
-	}
-	// endregion
-
-	// region Comparison operators
-	static EQ(a, b) {
-		if (AirtableRuntime._isBlank(a) && AirtableRuntime._isBlank(b)) return true;
-		if (AirtableRuntime._isBlank(a) || AirtableRuntime._isBlank(b)) return false;
-		// eslint-disable-next-line eqeqeq
-		return a == b;
-	}
-	static NEQ(a, b) {
-		return !AirtableRuntime.EQ(a, b);
 	}
 	// endregion
 

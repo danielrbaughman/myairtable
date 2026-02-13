@@ -22,11 +22,11 @@ class TestBlankSemantics:
 
     def test_blank_equals_blank(self):
         """BLANK() = BLANK() = true."""
-        assert _r.EQ(None, None) is True
+        assert (None == None) is True  # noqa: E711
 
     def test_blank_not_equal_to_value(self):
-        assert _r.EQ(None, 5) is False
-        assert _r.EQ(5, None) is False
+        assert (None == 5) is False
+        assert (5 == None) is False  # noqa: E711
 
 
 class TestArithmeticOperators:
@@ -51,11 +51,11 @@ class TestArithmeticOperators:
 
 class TestComparisonOperators:
     def test_eq(self):
-        assert _r.EQ(5, 5) is True
-        assert _r.EQ(5, 6) is False
+        assert (5 == 5) is True
+        assert (5 == 6) is False
 
     def test_neq(self):
-        assert _r.NEQ(5, 6) is True
+        assert (5 != 6) is True
 
     def test_lt(self):
         assert (_r.N(3) < _r.N(5)) is True

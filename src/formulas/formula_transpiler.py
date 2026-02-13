@@ -200,9 +200,72 @@ class FormulaParser:
 # region Operator mapping
 
 OPERATOR_MAP: dict[str, str] = {
-    "=": "EQ",
-    "!=": "NEQ",
     "&": "CONCAT",
+}
+
+# Type inference for equality coercion — when one side of == / != has a known
+# type, we wrap the other side in F.S() or F.N() to flatten potential arrays.
+_STRING_RETURNING_FUNCTIONS: set[str] = {
+    "LEFT",
+    "RIGHT",
+    "MID",
+    "LOWER",
+    "UPPER",
+    "TRIM",
+    "SUBSTITUTE",
+    "REPLACE",
+    "CONCATENATE",
+    "REPT",
+    "T",
+    "ENCODE_URL_COMPONENT",
+    "REGEX_EXTRACT",
+    "REGEX_REPLACE",
+    "ARRAYJOIN",
+    "DATESTR",
+    "TIMESTR",
+    "DATETIME_FORMAT",
+}
+
+_NUMBER_RETURNING_FUNCTIONS: set[str] = {
+    "LEN",
+    "FIND",
+    "SEARCH",
+    "SUM",
+    "AVERAGE",
+    "MIN",
+    "MAX",
+    "COUNT",
+    "COUNTA",
+    "COUNTALL",
+    "ROUND",
+    "ROUNDUP",
+    "ROUNDDOWN",
+    "CEILING",
+    "FLOOR",
+    "INT",
+    "ABS",
+    "SQRT",
+    "POWER",
+    "EXP",
+    "LOG",
+    "LOG10",
+    "MOD",
+    "EVEN",
+    "ODD",
+    "VALUE",
+    "YEAR",
+    "MONTH",
+    "DAY",
+    "HOUR",
+    "MINUTE",
+    "SECOND",
+    "WEEKDAY",
+    "WEEKNUM",
+    "DATETIME_DIFF",
+    "TONOW",
+    "FROMNOW",
+    "WORKDAY_DIFF",
+    "N",
 }
 
 # endregion
@@ -337,7 +400,7 @@ class CodeEmitter:
             return f"({result})"
 
         if name == "SWITCH":
-            expr = self.emit(node.args[0])
+            expr_node = node.args[0]
             rest = node.args[1:]
             pairs = []
             for i in range(0, len(rest) - 1, 2):
@@ -346,14 +409,26 @@ class CodeEmitter:
                 fallback = self.emit(rest[-1])
             else:
                 fallback = "None" if self.language == "python" else "null"
+            # Coerce expr to match pattern type when types differ
+            first_pattern = rest[0] if rest else None
+            expr_type = self._infer_type(expr_node)
+            pattern_type = self._infer_type(first_pattern) if first_pattern else None
+            if isinstance(expr_node, (StringLiteral, NumberLiteral)):
+                expr = self.emit(expr_node)
+            elif pattern_type == "string" and expr_type != "string":
+                expr = f"{self._runtime}.S({self.emit(expr_node)})"
+            elif pattern_type == "number" and expr_type != "number":
+                expr = f"{self._runtime}.N({self.emit(expr_node)})"
+            else:
+                expr = self.emit(expr_node)
             if self.language == "python":
                 result = fallback
                 for pattern, val in reversed(pairs):
-                    result = f"{val} if {self._runtime}.EQ({expr}, {pattern}) else {result}"
+                    result = f"{val} if ({expr} == {pattern}) else {result}"
                 return f"({result})"
             result = fallback
             for pattern, val in reversed(pairs):
-                result = f"{self._runtime}.EQ({expr}, {pattern}) ? {val} : {result}"
+                result = f"({expr} == {pattern}) ? {val} : {result}"
             return f"({result})"
 
         args = ", ".join(self.emit(arg) for arg in node.args)
@@ -371,6 +446,45 @@ class CodeEmitter:
             return f"(-{self._emit_num(node.operand)})"
         return f"{self._runtime}.N({self.emit(node)})"
 
+    @staticmethod
+    def _infer_type(node: ASTNode) -> str | None:
+        """Infer the result type of a node for equality coercion."""
+        if isinstance(node, StringLiteral):
+            return "string"
+        if isinstance(node, NumberLiteral):
+            return "number"
+        if isinstance(node, FunctionCall):
+            if node.name in _STRING_RETURNING_FUNCTIONS:
+                return "string"
+            if node.name in _NUMBER_RETURNING_FUNCTIONS:
+                return "number"
+        if isinstance(node, BinaryOp):
+            if node.op in ("+", "-", "*", "/"):
+                return "number"
+            if node.op == "&":
+                return "string"
+        if isinstance(node, UnaryOp) and node.op == "-":
+            return "number"
+        return None
+
+    def _emit_eq_operand(self, node: ASTNode, other: ASTNode) -> str:
+        """Emit a node for equality comparison, coercing based on the other operand's type.
+
+        Fields may have array types (e.g. string[] | undefined) due to Airtable's
+        return data shape, and function return types may not match the literal on
+        the other side (e.g. DATETIME_FORMAT returns string, compared to number 7).
+        We coerce with F.S() or F.N() to flatten arrays and align types.
+        """
+        if isinstance(node, (StringLiteral, NumberLiteral)):
+            return self.emit(node)
+        node_type = self._infer_type(node)
+        other_type = self._infer_type(other)
+        if other_type == "string" and node_type != "string":
+            return f"{self._runtime}.S({self.emit(node)})"
+        if other_type == "number" and node_type != "number":
+            return f"{self._runtime}.N({self.emit(node)})"
+        return self.emit(node)
+
     def _emit_binary_op(self, node: BinaryOp) -> str:
         if node.op in ("+", "-", "*", "/"):
             return self._emit_num(node)
@@ -378,6 +492,11 @@ class CodeEmitter:
             left = self._emit_num(node.left)
             right = self._emit_num(node.right)
             return f"({left} {node.op} {right})"
+        if node.op in ("=", "!="):
+            left = self._emit_eq_operand(node.left, node.right)
+            right = self._emit_eq_operand(node.right, node.left)
+            native_op = "==" if node.op == "=" else "!="
+            return f"({left} {native_op} {right})"
         func = OPERATOR_MAP.get(node.op)
         if func is None:
             raise ParseError(f"Unknown operator: {node.op}")

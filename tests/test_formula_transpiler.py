@@ -165,7 +165,7 @@ class TestTypeScriptEmitter:
 
     def test_equality(self):
         result = self._transpile("{fld1} = 5")
-        assert result == "F.EQ(this.myField, 5)"
+        assert result == "(F.N(this.myField) == 5)"
 
     def test_function_call(self):
         result = self._transpile("COUNTA({fld1})")
@@ -230,11 +230,11 @@ class TestTypeScriptEmitter:
 
     def test_switch_no_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
-        assert result == '(F.EQ(this.myField, "a") ? 1 : F.EQ(this.myField, "b") ? 2 : null)'
+        assert result == '((F.S(this.myField) == "a") ? 1 : (F.S(this.myField) == "b") ? 2 : null)'
 
     def test_switch_with_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2, 99)')
-        assert result == '(F.EQ(this.myField, "a") ? 1 : F.EQ(this.myField, "b") ? 2 : 99)'
+        assert result == '((F.S(this.myField) == "a") ? 1 : (F.S(this.myField) == "b") ? 2 : 99)'
 
 
 class TestJavaScriptEmitter:
@@ -326,11 +326,11 @@ class TestPythonEmitter:
 
     def test_switch_no_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
-        assert result == '(1 if F.EQ(self.my_field, "a") else 2 if F.EQ(self.my_field, "b") else None)'
+        assert result == '(1 if (F.S(self.my_field) == "a") else 2 if (F.S(self.my_field) == "b") else None)'
 
     def test_switch_with_default(self):
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2, 99)')
-        assert result == '(1 if F.EQ(self.my_field, "a") else 2 if F.EQ(self.my_field, "b") else 99)'
+        assert result == '(1 if (F.S(self.my_field) == "a") else 2 if (F.S(self.my_field) == "b") else 99)'
 
 
 # endregion
@@ -369,7 +369,7 @@ class TestEdgeCases:
     def test_multiple_comparisons(self):
         """Chained comparisons should work."""
         result = transpile_formula("1 = 1", "typescript", {}, set())
-        assert result == "F.EQ(1, 1)"
+        assert result == "(1 == 1)"
 
     def test_created_time_returns_none(self):
         """CREATED_TIME() cannot be evaluated at runtime, should return None."""
@@ -413,8 +413,9 @@ class TestRealWorldFormulas:
         assert result == "F.COUNTA(this.jobsLink)"
 
     def test_if_blank(self):
+        """Field = BLANK() — no coercion since BLANK() is not a literal."""
         result = self._transpile('IF({fldName} = BLANK(), "N/A", {fldName})')
-        assert result == '(F.EQ(this.name, null) ? "N/A" : this.name)'
+        assert result == '((this.name == null) ? "N/A" : this.name)'
 
     def test_concatenation(self):
         result = self._transpile('{fldName} & " - " & {fldStatus}')
