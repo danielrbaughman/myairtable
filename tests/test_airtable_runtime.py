@@ -161,8 +161,8 @@ class TestStringFunctions:
         assert _r.REPLACE("hello", 2, 3, "XY") == "hXYo"
 
     def test_lower_upper(self):
-        assert _r.LOWER("Hello") == "hello"
-        assert _r.UPPER("Hello") == "HELLO"
+        assert _r.S("Hello").lower() == "hello"
+        assert _r.S("Hello").upper() == "HELLO"
 
     def test_trim(self):
         assert _r.TRIM("  hello  ") == "hello"

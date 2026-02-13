@@ -366,6 +366,14 @@ class CodeEmitter:
                 return f"len({arg})"
             return f"{arg}.length"
 
+        if name in ("LOWER", "UPPER"):
+            arg = self._emit_str(node.args[0])
+            if self.language == "python":
+                method = "lower" if name == "LOWER" else "upper"
+                return f"{arg}.{method}()"
+            method = "toLowerCase" if name == "LOWER" else "toUpperCase"
+            return f"{arg}.{method}()"
+
         if name == "XOR":
             left = self.emit(node.args[0])
             right = self.emit(node.args[1])

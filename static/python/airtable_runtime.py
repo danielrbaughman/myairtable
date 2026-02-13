@@ -24,12 +24,14 @@ class AirtableRuntime:
 
     @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
+        """Coerce value to number"""
         if isinstance(v, list):
             return AirtableRuntime._to_num(v[0] if v else None)
         return AirtableRuntime._to_num(v)
 
     @staticmethod
     def S(v: Any) -> str:  # noqa: N802
+        """Coerce value to string"""
         if isinstance(v, list):
             return AirtableRuntime._to_str(v[0] if v else None)
         return AirtableRuntime._to_str(v)
@@ -268,14 +270,6 @@ class AirtableRuntime:
         start_idx = int(AirtableRuntime._to_num(start)) - 1
         length = int(AirtableRuntime._to_num(count))
         return s[:start_idx] + AirtableRuntime._to_str(replacement) + s[start_idx + length :]
-
-    @staticmethod
-    def LOWER(text: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(text).lower()
-
-    @staticmethod
-    def UPPER(text: Any) -> str:  # noqa: N802
-        return AirtableRuntime._to_str(text).upper()
 
     @staticmethod
     def TRIM(text: Any) -> str:  # noqa: N802

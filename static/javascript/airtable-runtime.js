@@ -13,11 +13,13 @@ class AirtableRuntime {
 		return v === null || v === undefined;
 	}
 
+	/** Coerce value to number */
 	static N(v) {
 		if (Array.isArray(v)) return AirtableRuntime._toNum(v[0]);
 		return AirtableRuntime._toNum(v);
 	}
 
+	/** Coerce value to string */
 	static S(v) {
 		if (Array.isArray(v)) return AirtableRuntime._toStr(v[0]);
 		return AirtableRuntime._toStr(v);
@@ -239,12 +241,6 @@ class AirtableRuntime {
 		return s.slice(0, startIdx) + AirtableRuntime._toStr(replacement) + s.slice(startIdx + len);
 	}
 
-	static LOWER(text) {
-		return AirtableRuntime._toStr(text).toLowerCase();
-	}
-	static UPPER(text) {
-		return AirtableRuntime._toStr(text).toUpperCase();
-	}
 	static TRIM(text) {
 		return AirtableRuntime._toStr(text).trim();
 	}

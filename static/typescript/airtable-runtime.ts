@@ -14,11 +14,13 @@ export class AirtableRuntime {
 		return v === null || v === undefined;
 	}
 
+	/** Coerce value to number */
 	static N(v: unknown): number {
 		if (Array.isArray(v)) return AirtableRuntime._toNum(v[0]);
 		return AirtableRuntime._toNum(v);
 	}
 
+	/** Coerce value to string */
 	static S(v: unknown): string {
 		if (Array.isArray(v)) return AirtableRuntime._toStr(v[0]);
 		return AirtableRuntime._toStr(v);
@@ -239,14 +241,6 @@ export class AirtableRuntime {
 		const startIdx = AirtableRuntime._toNum(start) - 1;
 		const len = AirtableRuntime._toNum(count);
 		return s.slice(0, startIdx) + AirtableRuntime._toStr(replacement) + s.slice(startIdx + len);
-	}
-
-	static LOWER(text: unknown): string {
-		return AirtableRuntime._toStr(text).toLowerCase();
-	}
-
-	static UPPER(text: unknown): string {
-		return AirtableRuntime._toStr(text).toUpperCase();
 	}
 
 	static TRIM(text: unknown): string {
