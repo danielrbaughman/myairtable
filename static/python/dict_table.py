@@ -203,6 +203,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 use_field_ids=use_field_ids,
                 page_size=page_size,
                 fields=fields,
+                max_records=max_records,
                 sort=convert_sort_options(sort),
                 offset=offset,
                 time_zone=time_zone,
