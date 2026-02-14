@@ -112,6 +112,16 @@ class TestNumericFunctions:
         assert _r.ODD(4) == 5
         assert _r.ODD(3) == 3
 
+    def test_s_strips_decimal_zero_from_whole_floats(self):
+        """Airtable strips .0 from whole-number floats in string context."""
+        assert _r.S(15.0) == "15"
+        assert _r.S(100.0) == "100"
+        assert _r.S(0.0) == "0"
+        assert _r.S(2.5) == "2.5"
+        assert _r.S(2.718281828459045) == "2.718281828459045"
+        assert _r.S(float("nan")) == "nan"
+        assert _r.S(float("inf")) == "inf"
+
     def test_value(self):
         assert _r.VALUE("42") == 42
         assert math.isnan(_r.VALUE("abc"))

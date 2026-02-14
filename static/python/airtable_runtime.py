@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -48,13 +48,15 @@ class AirtableRuntime:
 
     @staticmethod
     def S(v: Any) -> str:  # noqa: N802
-        """Coerce value to string"""
+        """Coerce value to string. Airtable strips .0 from whole-number floats."""
         if isinstance(v, list):
             return AirtableRuntime.S(v[0] if v else None)
         if v is None:
             return ""
         if isinstance(v, bool):
             return "1" if v else "0"
+        if isinstance(v, float) and v.is_integer() and not math.isnan(v) and not math.isinf(v):
+            return str(int(v))
         return str(v)
 
     @staticmethod
@@ -64,6 +66,8 @@ class AirtableRuntime:
             return AirtableRuntime.D(v[0] if v else None)
         if isinstance(v, datetime):
             return v
+        if isinstance(v, date):
+            return datetime(v.year, v.month, v.day, tzinfo=timezone.utc)
         if isinstance(v, (int, float)):
             return datetime.fromtimestamp(v, tz=timezone.utc)
         s = AirtableRuntime.S(v) if v is not None else ""
