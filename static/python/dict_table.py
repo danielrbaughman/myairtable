@@ -163,6 +163,9 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             record_ids = record_id
             record_id = None  # type: ignore
 
+        if isinstance(record_id, str) and not record_id.strip():
+            raise ValueError("Record ID cannot be an empty string.")
+
         if record_id and isinstance(record_id, str):
             if fields is not None:
                 # table.get does not support fields parameter, so we use table.all with a formula instead
