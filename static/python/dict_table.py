@@ -269,7 +269,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record, list) and len(record) > 0 and (isinstance(record[0], DictType) or isinstance(record[0], CreateDictType)):
+        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], dict):
             records = record
             record = None  # type: ignore
 
@@ -331,7 +331,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record, list) and len(record) > 0 and (isinstance(record[0], DictType) or isinstance(record[0], UpdateDictType)):
+        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], dict):
             records = record
             record = None  # type: ignore
 
