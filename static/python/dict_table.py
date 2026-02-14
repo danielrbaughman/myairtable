@@ -142,8 +142,8 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
 
     def get(
         self,
-        record_id: str = "",
-        record_ids: list[str] = [],
+        record_id: str | None = None,
+        record_ids: list[str] | None = None,
         formula: Optional[Formula] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = False,
@@ -194,7 +194,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 )
             record: DictType = sanitize_record_dict(record)
             return record
-        elif len(record_ids) > 0:
+        elif record_ids and len(record_ids) > 0:
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             records: list[RecordDict] = self._table.all(
