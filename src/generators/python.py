@@ -429,6 +429,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
     "LastModifiedByField",
     "AutoNumberField",
     "CollaboratorField",
+    "MultipleCollaboratorsField",
 )
 
 
@@ -797,7 +798,7 @@ SIMPLE_ORM_TYPES: dict[str, str] = {
     "number": "NumberField",
     "multipleAttachments": "AttachmentsField",
     "singleCollaborator": "CollaboratorField",
-    "multipleCollaborators": "CollaboratorField",
+    "multipleCollaborators": "MultipleCollaboratorsField",
     "button": "ButtonField",
 }
 
