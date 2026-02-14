@@ -57,6 +57,18 @@ class AirtableRuntime:
             return "1" if v else "0"
         return str(v)
 
+    @staticmethod
+    def D(v: Any) -> datetime:  # noqa: N802
+        """Coerce value to datetime"""
+        if isinstance(v, list):
+            return AirtableRuntime.D(v[0] if v else None)
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, (int, float)):
+            return datetime.fromtimestamp(v, tz=timezone.utc)
+        s = AirtableRuntime.S(v) if v is not None else ""
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
     # endregion
 
     # region Numeric functions
@@ -264,10 +276,7 @@ class AirtableRuntime:
     def DATEADD(date: Any, count: Any, unit: Any) -> str | None:  # noqa: N802
         if date is None:
             return None
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return None
+        d = AirtableRuntime.D(date)
         n = int(AirtableRuntime.N(count))
         u = AirtableRuntime.S(unit).lower()
         if u == "years":
@@ -293,11 +302,8 @@ class AirtableRuntime:
     def DATETIME_DIFF(date1: Any, date2: Any, unit: Any = None) -> int:  # noqa: N802
         if date1 is None or date2 is None:
             return 0
-        try:
-            d1 = datetime.fromisoformat(AirtableRuntime.S(date1).replace("Z", "+00:00"))
-            d2 = datetime.fromisoformat(AirtableRuntime.S(date2).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return 0
+        d1 = AirtableRuntime.D(date1)
+        d2 = AirtableRuntime.D(date2)
         u = AirtableRuntime.S(unit or "days").lower()
         diff = d1 - d2
         total_seconds = diff.total_seconds()
@@ -323,10 +329,7 @@ class AirtableRuntime:
     def DATETIME_FORMAT(date: Any, fmt: Any = None) -> str:  # noqa: N802
         if date is None:
             return ""
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return ""
+        d = AirtableRuntime.D(date)
         if fmt is None:
             return d.isoformat()
         f = AirtableRuntime.S(fmt)
@@ -356,11 +359,7 @@ class AirtableRuntime:
     def DATETIME_PARSE(text: Any, _format: Any = None, _locale: Any = None) -> str | None:  # noqa: N802
         if text is None:
             return None
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(text).replace("Z", "+00:00"))
-            return d.isoformat()
-        except (ValueError, TypeError):
-            return None
+        return AirtableRuntime.D(text).isoformat()
 
     @staticmethod
     def SET_LOCALE(date: Any, _locale: Any) -> Any:  # noqa: N802
@@ -370,10 +369,7 @@ class AirtableRuntime:
     def SET_TIMEZONE(date: Any, tz: Any) -> str | None:  # noqa: N802
         if date is None:
             return None
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return None
+        d = AirtableRuntime.D(date)
         target_tz = ZoneInfo(AirtableRuntime.S(tz))
         local_dt = d.astimezone(target_tz)
         # Replace tzinfo with UTC so UTC-based formatting shows local time values
@@ -384,104 +380,71 @@ class AirtableRuntime:
     def YEAR(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).year
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).year
 
     @staticmethod
     def MONTH(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).month
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).month
 
     @staticmethod
     def DAY(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).day
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).day
 
     @staticmethod
     def HOUR(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).hour
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).hour
 
     @staticmethod
     def MINUTE(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).minute
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).minute
 
     @staticmethod
     def SECOND(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            return datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00")).second
-        except (ValueError, TypeError):
-            return 0
+        return AirtableRuntime.D(date).second
 
     @staticmethod
     def WEEKDAY(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-            return (d.weekday() + 1) % 7  # Sunday=0, Monday=1, ...
-        except (ValueError, TypeError):
-            return 0
+        return (AirtableRuntime.D(date).weekday() + 1) % 7  # Sunday=0, Monday=1, ...
 
     @staticmethod
     def WEEKNUM(date: Any, start_day: Any = None) -> int:  # noqa: N802
         if date is None:
             return 0
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-            day_names = {"sunday": 6, "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5}
-            if start_day is None:
-                start_dow = 6  # Sunday (Python: Monday=0)
-            else:
-                start_dow = day_names.get(AirtableRuntime.S(start_day).lower(), 6)
-            start_of_year = datetime(d.year, 1, 1, tzinfo=d.tzinfo)
-            day_of_year = (d - start_of_year).days
-            start_day_of_week = start_of_year.weekday()  # Monday=0
-            adjusted = day_of_year + ((start_day_of_week - start_dow + 7) % 7)
-            return (adjusted // 7) + 1
-        except (ValueError, TypeError):
-            return 0
+        d = AirtableRuntime.D(date)
+        day_names = {"sunday": 6, "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5}
+        if start_day is None:
+            start_dow = 6  # Sunday (Python: Monday=0)
+        else:
+            start_dow = day_names.get(AirtableRuntime.S(start_day).lower(), 6)
+        start_of_year = datetime(d.year, 1, 1, tzinfo=d.tzinfo)
+        day_of_year = (d - start_of_year).days
+        start_day_of_week = start_of_year.weekday()  # Monday=0
+        adjusted = day_of_year + ((start_day_of_week - start_dow + 7) % 7)
+        return (adjusted // 7) + 1
 
     @staticmethod
     def DATESTR(date: Any) -> str:  # noqa: N802
         if date is None:
             return ""
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-            return d.strftime("%Y-%m-%d")
-        except (ValueError, TypeError):
-            return ""
+        return AirtableRuntime.D(date).strftime("%Y-%m-%d")
 
     @staticmethod
     def TIMESTR(date: Any) -> str:  # noqa: N802
         if date is None:
             return ""
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-            return d.strftime("%H:%M:%S")
-        except (ValueError, TypeError):
-            return ""
+        return AirtableRuntime.D(date).strftime("%H:%M:%S")
 
     @staticmethod
     def TONOW(date: Any, unit: Any = None) -> int | str:  # noqa: N802
@@ -497,11 +460,8 @@ class AirtableRuntime:
 
     @staticmethod
     def _human_duration(date1: Any, date2: Any) -> str:
-        try:
-            d1 = datetime.fromisoformat(AirtableRuntime.S(date1).replace("Z", "+00:00"))
-            d2 = datetime.fromisoformat(AirtableRuntime.S(date2).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return "0 seconds"
+        d1 = AirtableRuntime.D(date1)
+        d2 = AirtableRuntime.D(date2)
         diff_seconds = abs(int((d1 - d2).total_seconds()))
         minutes = diff_seconds // 60
         hours = minutes // 60
@@ -536,10 +496,7 @@ class AirtableRuntime:
     def WORKDAY(start_date: Any, num_days: Any) -> str | None:  # noqa: N802
         if start_date is None:
             return None
-        try:
-            d = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return None
+        d = AirtableRuntime.D(start_date)
         remaining = int(AirtableRuntime.N(num_days))
         direction = 1 if remaining > 0 else -1
         remaining = abs(remaining)
@@ -553,11 +510,8 @@ class AirtableRuntime:
     def WORKDAY_DIFF(start_date: Any, end_date: Any) -> int:  # noqa: N802
         if start_date is None or end_date is None:
             return 0
-        try:
-            d1 = datetime.fromisoformat(AirtableRuntime.S(start_date).replace("Z", "+00:00"))
-            d2 = datetime.fromisoformat(AirtableRuntime.S(end_date).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return 0
+        d1 = AirtableRuntime.D(start_date)
+        d2 = AirtableRuntime.D(end_date)
         count = 0
         current = d1
         direction = 1 if d2 > d1 else -1

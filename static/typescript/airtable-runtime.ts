@@ -44,6 +44,24 @@ export class AirtableRuntime {
 		if (typeof v === "boolean") return v ? "1" : "0";
 		return String(v);
 	}
+
+	/** Coerce value to Date */
+	static D(v: unknown): Date {
+		if (Array.isArray(v)) return AirtableRuntime.D(v[0]);
+		if (v instanceof Date) {
+			if (isNaN(v.getTime())) throw new Error("Invalid date");
+			return v;
+		}
+		if (typeof v === "number") {
+			const d = new Date(v);
+			if (isNaN(d.getTime())) throw new Error("Invalid date");
+			return d;
+		}
+		const s = AirtableRuntime.isNull(v) ? "" : AirtableRuntime.S(v);
+		const d = new Date(s);
+		if (isNaN(d.getTime())) throw new Error("Invalid date");
+		return d;
+	}
 	// endregion
 
 	// region Numeric functions
@@ -241,8 +259,7 @@ export class AirtableRuntime {
 
 	static DATEADD(date: unknown, count: unknown, unit: unknown): string | null {
 		if (AirtableRuntime.isNull(date)) return null;
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return null;
+		const d = AirtableRuntime.D(date);
 		const n = AirtableRuntime.N(count);
 		const u = AirtableRuntime.S(unit).toLowerCase();
 		switch (u) {
@@ -273,9 +290,8 @@ export class AirtableRuntime {
 
 	static DATETIME_DIFF(date1: unknown, date2: unknown, unit?: unknown): number {
 		if (AirtableRuntime.isNull(date1) || AirtableRuntime.isNull(date2)) return 0;
-		const d1 = new Date(AirtableRuntime.S(date1));
-		const d2 = new Date(AirtableRuntime.S(date2));
-		if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+		const d1 = AirtableRuntime.D(date1);
+		const d2 = AirtableRuntime.D(date2);
 		const diffMs = d1.getTime() - d2.getTime();
 		const u = AirtableRuntime.S(unit || "days").toLowerCase();
 		switch (u) {
@@ -302,8 +318,7 @@ export class AirtableRuntime {
 
 	static DATETIME_FORMAT(date: unknown, format?: unknown): string {
 		if (AirtableRuntime.isNull(date)) return "";
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return "";
+		const d = AirtableRuntime.D(date);
 		if (AirtableRuntime.isNull(format)) return d.toISOString();
 		const f = AirtableRuntime.S(format);
 		return f.replace(/YYYY|YY|MM|DD|HH|hh|mm|ss|A|a/g, (token) => {
@@ -336,9 +351,7 @@ export class AirtableRuntime {
 
 	static DATETIME_PARSE(text: unknown, _format?: unknown, _locale?: unknown): string | null {
 		if (AirtableRuntime.isNull(text)) return null;
-		const d = new Date(AirtableRuntime.S(text));
-		if (isNaN(d.getTime())) return null;
-		return d.toISOString();
+		return AirtableRuntime.D(text).toISOString();
 	}
 
 	static SET_LOCALE(date: unknown, _locale: unknown): unknown {
@@ -347,8 +360,7 @@ export class AirtableRuntime {
 
 	static SET_TIMEZONE(date: unknown, timezone: unknown): string | null {
 		if (AirtableRuntime.isNull(date)) return null;
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return null;
+		const d = AirtableRuntime.D(date);
 		const tz = AirtableRuntime.S(timezone);
 		const parts = new Intl.DateTimeFormat("en-US", {
 			timeZone: tz,
@@ -376,50 +388,42 @@ export class AirtableRuntime {
 
 	static YEAR(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCFullYear();
+		return AirtableRuntime.D(date).getUTCFullYear();
 	}
 
 	static MONTH(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCMonth() + 1;
+		return AirtableRuntime.D(date).getUTCMonth() + 1;
 	}
 
 	static DAY(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCDate();
+		return AirtableRuntime.D(date).getUTCDate();
 	}
 
 	static HOUR(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCHours();
+		return AirtableRuntime.D(date).getUTCHours();
 	}
 
 	static MINUTE(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCMinutes();
+		return AirtableRuntime.D(date).getUTCMinutes();
 	}
 
 	static SECOND(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCSeconds();
+		return AirtableRuntime.D(date).getUTCSeconds();
 	}
 
 	static WEEKDAY(date: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getUTCDay();
+		return AirtableRuntime.D(date).getUTCDay();
 	}
 
 	static WEEKNUM(date: unknown, startDay?: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return 0;
+		const d = AirtableRuntime.D(date);
 		const dayNames: Record<string, number> = {
 			sunday: 0,
 			monday: 1,
@@ -439,16 +443,12 @@ export class AirtableRuntime {
 
 	static DATESTR(date: unknown): string {
 		if (AirtableRuntime.isNull(date)) return "";
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return "";
-		return d.toISOString().slice(0, 10);
+		return AirtableRuntime.D(date).toISOString().slice(0, 10);
 	}
 
 	static TIMESTR(date: unknown): string {
 		if (AirtableRuntime.isNull(date)) return "";
-		const d = new Date(AirtableRuntime.S(date));
-		if (isNaN(d.getTime())) return "";
-		return d.toISOString().slice(11, 19);
+		return AirtableRuntime.D(date).toISOString().slice(11, 19);
 	}
 
 	static TONOW(date: unknown, unit?: unknown): number | string {
@@ -462,8 +462,8 @@ export class AirtableRuntime {
 	}
 
 	private static humanDuration(date1: unknown, date2: unknown): string {
-		const d1 = new Date(AirtableRuntime.S(date1));
-		const d2 = new Date(AirtableRuntime.S(date2));
+		const d1 = AirtableRuntime.D(date1);
+		const d2 = AirtableRuntime.D(date2);
 		const diffMs = Math.abs(d1.getTime() - d2.getTime());
 		const seconds = Math.floor(diffMs / 1000);
 		const minutes = Math.floor(seconds / 60);
@@ -493,8 +493,7 @@ export class AirtableRuntime {
 
 	static WORKDAY(startDate: unknown, numDays: unknown): string | null {
 		if (AirtableRuntime.isNull(startDate)) return null;
-		const d = new Date(AirtableRuntime.S(startDate));
-		if (isNaN(d.getTime())) return null;
+		const d = AirtableRuntime.D(startDate);
 		let remaining = AirtableRuntime.N(numDays);
 		const direction = remaining > 0 ? 1 : -1;
 		remaining = Math.abs(remaining);
@@ -508,9 +507,8 @@ export class AirtableRuntime {
 
 	static WORKDAY_DIFF(startDate: unknown, endDate: unknown): number {
 		if (AirtableRuntime.isNull(startDate) || AirtableRuntime.isNull(endDate)) return 0;
-		const d1 = new Date(AirtableRuntime.S(startDate));
-		const d2 = new Date(AirtableRuntime.S(endDate));
-		if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+		const d1 = AirtableRuntime.D(startDate);
+		const d2 = AirtableRuntime.D(endDate);
 		let count = 0;
 		const current = new Date(d1);
 		const direction = d2 > d1 ? 1 : -1;
