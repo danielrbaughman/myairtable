@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 class AirtableRuntime:
@@ -319,14 +320,37 @@ class AirtableRuntime:
         return int(total_seconds / 86400)
 
     @staticmethod
-    def DATETIME_FORMAT(date: Any, _format: Any = None) -> str:  # noqa: N802
+    def DATETIME_FORMAT(date: Any, fmt: Any = None) -> str:  # noqa: N802
         if date is None:
             return ""
         try:
             d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
-            return d.isoformat()
         except (ValueError, TypeError):
             return ""
+        if fmt is None:
+            return d.isoformat()
+        f = AirtableRuntime.S(fmt)
+        # Convert Moment.js-style tokens to strftime
+        token_map = [
+            ("YYYY", "%Y"),
+            ("YY", "%y"),
+            ("MM", "%m"),
+            ("DD", "%d"),
+            ("HH", "%H"),
+            ("hh", "%I"),
+            ("mm", "%M"),
+            ("ss", "%S"),
+            ("A", "%p"),
+            ("a", "%p"),
+        ]
+        strftime_fmt = f
+        for token, replacement in token_map:
+            strftime_fmt = strftime_fmt.replace(token, replacement)
+        result = d.strftime(strftime_fmt)
+        # Handle lowercase am/pm for 'a' token
+        if "a" in f and "A" not in f:
+            result = result.replace("AM", "am").replace("PM", "pm")
+        return result
 
     @staticmethod
     def DATETIME_PARSE(text: Any, _format: Any = None, _locale: Any = None) -> str | None:  # noqa: N802
@@ -343,8 +367,18 @@ class AirtableRuntime:
         return date
 
     @staticmethod
-    def SET_TIMEZONE(date: Any, _timezone: Any) -> Any:  # noqa: N802
-        return date
+    def SET_TIMEZONE(date: Any, tz: Any) -> str | None:  # noqa: N802
+        if date is None:
+            return None
+        try:
+            d = datetime.fromisoformat(AirtableRuntime.S(date).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        target_tz = ZoneInfo(AirtableRuntime.S(tz))
+        local_dt = d.astimezone(target_tz)
+        # Replace tzinfo with UTC so UTC-based formatting shows local time values
+        adjusted = local_dt.replace(tzinfo=timezone.utc)
+        return adjusted.isoformat()
 
     @staticmethod
     def YEAR(date: Any) -> int:  # noqa: N802
@@ -450,12 +484,41 @@ class AirtableRuntime:
             return ""
 
     @staticmethod
-    def TONOW(date: Any, unit: Any = None) -> int:  # noqa: N802
-        return AirtableRuntime.DATETIME_DIFF(datetime.now().isoformat(), date, unit or "days")
+    def TONOW(date: Any, unit: Any = None) -> int | str:  # noqa: N802
+        if unit is not None:
+            return AirtableRuntime.DATETIME_DIFF(datetime.now(tz=timezone.utc).isoformat(), date, unit)
+        return AirtableRuntime._human_duration(date, datetime.now(tz=timezone.utc).isoformat())
 
     @staticmethod
-    def FROMNOW(date: Any, unit: Any = None) -> int:  # noqa: N802
-        return AirtableRuntime.DATETIME_DIFF(date, datetime.now().isoformat(), unit or "days")
+    def FROMNOW(date: Any, unit: Any = None) -> int | str:  # noqa: N802
+        if unit is not None:
+            return AirtableRuntime.DATETIME_DIFF(date, datetime.now(tz=timezone.utc).isoformat(), unit)
+        return AirtableRuntime._human_duration(date, datetime.now(tz=timezone.utc).isoformat())
+
+    @staticmethod
+    def _human_duration(date1: Any, date2: Any) -> str:
+        try:
+            d1 = datetime.fromisoformat(AirtableRuntime.S(date1).replace("Z", "+00:00"))
+            d2 = datetime.fromisoformat(AirtableRuntime.S(date2).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return "0 seconds"
+        diff_seconds = abs(int((d1 - d2).total_seconds()))
+        minutes = diff_seconds // 60
+        hours = minutes // 60
+        days = hours // 24
+        months = abs((d1.year - d2.year) * 12 + (d1.month - d2.month))
+        years = months // 12
+        if years > 0:
+            return f"{years} year{'s' if years != 1 else ''}"
+        if months > 0:
+            return f"{months} month{'s' if months != 1 else ''}"
+        if days > 0:
+            return f"{days} day{'s' if days != 1 else ''}"
+        if hours > 0:
+            return f"{hours} hour{'s' if hours != 1 else ''}"
+        if minutes > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
+        return f"{diff_seconds} second{'s' if diff_seconds != 1 else ''}"
 
     @staticmethod
     def IS_SAME(date1: Any, date2: Any, unit: Any = None) -> bool:  # noqa: N802
@@ -498,6 +561,8 @@ class AirtableRuntime:
         count = 0
         current = d1
         direction = 1 if d2 > d1 else -1
+        if current.weekday() < 5:
+            count += direction
         while (direction == 1 and current < d2) or (direction == -1 and current > d2):
             current += timedelta(days=direction)
             if current.weekday() < 5:

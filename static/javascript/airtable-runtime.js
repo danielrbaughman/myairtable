@@ -242,25 +242,25 @@ class AirtableRuntime {
 		const u = AirtableRuntime.S(unit).toLowerCase();
 		switch (u) {
 			case "years":
-				d.setFullYear(d.getFullYear() + n);
+				d.setUTCFullYear(d.getUTCFullYear() + n);
 				break;
 			case "months":
-				d.setMonth(d.getMonth() + n);
+				d.setUTCMonth(d.getUTCMonth() + n);
 				break;
 			case "weeks":
-				d.setDate(d.getDate() + n * 7);
+				d.setUTCDate(d.getUTCDate() + n * 7);
 				break;
 			case "days":
-				d.setDate(d.getDate() + n);
+				d.setUTCDate(d.getUTCDate() + n);
 				break;
 			case "hours":
-				d.setHours(d.getHours() + n);
+				d.setUTCHours(d.getUTCHours() + n);
 				break;
 			case "minutes":
-				d.setMinutes(d.getMinutes() + n);
+				d.setUTCMinutes(d.getUTCMinutes() + n);
 				break;
 			case "seconds":
-				d.setSeconds(d.getSeconds() + n);
+				d.setUTCSeconds(d.getUTCSeconds() + n);
 				break;
 		}
 		return d.toISOString();
@@ -287,18 +287,46 @@ class AirtableRuntime {
 			case "weeks":
 				return Math.floor(diffMs / (86400000 * 7));
 			case "months":
-				return (d1.getFullYear() - d2.getFullYear()) * 12 + (d1.getMonth() - d2.getMonth());
+				return (d1.getUTCFullYear() - d2.getUTCFullYear()) * 12 + (d1.getUTCMonth() - d2.getUTCMonth());
 			case "years":
-				return d1.getFullYear() - d2.getFullYear();
+				return d1.getUTCFullYear() - d2.getUTCFullYear();
 			default:
 				return Math.floor(diffMs / 86400000);
 		}
 	}
 
-	static DATETIME_FORMAT(date, _format) {
+	static DATETIME_FORMAT(date, format) {
 		if (AirtableRuntime._isNull(date)) return "";
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? "" : d.toISOString();
+		if (isNaN(d.getTime())) return "";
+		if (AirtableRuntime._isNull(format)) return d.toISOString();
+		const f = AirtableRuntime.S(format);
+		return f.replace(/YYYY|YY|MM|DD|HH|hh|mm|ss|A|a/g, (token) => {
+			switch (token) {
+				case "YYYY":
+					return String(d.getUTCFullYear());
+				case "YY":
+					return String(d.getUTCFullYear()).slice(-2);
+				case "MM":
+					return String(d.getUTCMonth() + 1).padStart(2, "0");
+				case "DD":
+					return String(d.getUTCDate()).padStart(2, "0");
+				case "HH":
+					return String(d.getUTCHours()).padStart(2, "0");
+				case "hh":
+					return String(d.getUTCHours() % 12 || 12).padStart(2, "0");
+				case "mm":
+					return String(d.getUTCMinutes()).padStart(2, "0");
+				case "ss":
+					return String(d.getUTCSeconds()).padStart(2, "0");
+				case "A":
+					return d.getUTCHours() < 12 ? "AM" : "PM";
+				case "a":
+					return d.getUTCHours() < 12 ? "am" : "pm";
+				default:
+					return token;
+			}
+		});
 	}
 
 	static DATETIME_PARSE(text, _format, _locale) {
@@ -310,44 +338,69 @@ class AirtableRuntime {
 	static SET_LOCALE(date, _locale) {
 		return date;
 	}
-	static SET_TIMEZONE(date, _timezone) {
-		return date;
+	static SET_TIMEZONE(date, timezone) {
+		if (AirtableRuntime._isNull(date)) return null;
+		const d = new Date(AirtableRuntime.S(date));
+		if (isNaN(d.getTime())) return null;
+		const tz = AirtableRuntime.S(timezone);
+		const parts = new Intl.DateTimeFormat("en-US", {
+			timeZone: tz,
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			hour12: false,
+		}).formatToParts(d);
+		const get = (type) => parts.find((p) => p.type === type)?.value ?? "0";
+		const adjusted = new Date(
+			Date.UTC(
+				parseInt(get("year")),
+				parseInt(get("month")) - 1,
+				parseInt(get("day")),
+				parseInt(get("hour")),
+				parseInt(get("minute")),
+				parseInt(get("second")),
+			),
+		);
+		return adjusted.toISOString();
 	}
 
 	static YEAR(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getFullYear();
+		return isNaN(d.getTime()) ? 0 : d.getUTCFullYear();
 	}
 	static MONTH(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getMonth() + 1;
+		return isNaN(d.getTime()) ? 0 : d.getUTCMonth() + 1;
 	}
 	static DAY(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getDate();
+		return isNaN(d.getTime()) ? 0 : d.getUTCDate();
 	}
 	static HOUR(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getHours();
+		return isNaN(d.getTime()) ? 0 : d.getUTCHours();
 	}
 	static MINUTE(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getMinutes();
+		return isNaN(d.getTime()) ? 0 : d.getUTCMinutes();
 	}
 	static SECOND(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getSeconds();
+		return isNaN(d.getTime()) ? 0 : d.getUTCSeconds();
 	}
 	static WEEKDAY(date) {
 		if (AirtableRuntime._isNull(date)) return 0;
 		const d = new Date(AirtableRuntime.S(date));
-		return isNaN(d.getTime()) ? 0 : d.getDay();
+		return isNaN(d.getTime()) ? 0 : d.getUTCDay();
 	}
 	static WEEKNUM(date, startDay) {
 		if (AirtableRuntime._isNull(date)) return 0;
@@ -355,8 +408,8 @@ class AirtableRuntime {
 		if (isNaN(d.getTime())) return 0;
 		const dayNames = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
 		const startDow = AirtableRuntime._isNull(startDay) ? 0 : (dayNames[AirtableRuntime.S(startDay).toLowerCase()] ?? 0);
-		const startOfYear = new Date(d.getFullYear(), 0, 1);
-		const startDayOfWeek = startOfYear.getDay();
+		const startOfYear = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+		const startDayOfWeek = startOfYear.getUTCDay();
 		const dayOfYear = Math.floor((d.getTime() - startOfYear.getTime()) / 86400000);
 		const adjusted = dayOfYear + ((startDayOfWeek - startDow + 7) % 7);
 		return Math.ceil((adjusted + 1) / 7);
@@ -372,10 +425,29 @@ class AirtableRuntime {
 		return isNaN(d.getTime()) ? "" : d.toISOString().slice(11, 19);
 	}
 	static TONOW(date, unit) {
-		return AirtableRuntime.DATETIME_DIFF(new Date().toISOString(), date, unit || "days");
+		if (!AirtableRuntime._isNull(unit)) return AirtableRuntime.DATETIME_DIFF(new Date().toISOString(), date, unit);
+		return AirtableRuntime._humanDuration(date, new Date().toISOString());
 	}
 	static FROMNOW(date, unit) {
-		return AirtableRuntime.DATETIME_DIFF(date, new Date().toISOString(), unit || "days");
+		if (!AirtableRuntime._isNull(unit)) return AirtableRuntime.DATETIME_DIFF(date, new Date().toISOString(), unit);
+		return AirtableRuntime._humanDuration(date, new Date().toISOString());
+	}
+	static _humanDuration(date1, date2) {
+		const d1 = new Date(AirtableRuntime.S(date1));
+		const d2 = new Date(AirtableRuntime.S(date2));
+		const diffMs = Math.abs(d1.getTime() - d2.getTime());
+		const seconds = Math.floor(diffMs / 1000);
+		const minutes = Math.floor(seconds / 60);
+		const hours = Math.floor(minutes / 60);
+		const days = Math.floor(hours / 24);
+		const months = Math.abs((d1.getUTCFullYear() - d2.getUTCFullYear()) * 12 + (d1.getUTCMonth() - d2.getUTCMonth()));
+		const years = Math.floor(months / 12);
+		if (years > 0) return `${years} year${years !== 1 ? "s" : ""}`;
+		if (months > 0) return `${months} month${months !== 1 ? "s" : ""}`;
+		if (days > 0) return `${days} day${days !== 1 ? "s" : ""}`;
+		if (hours > 0) return `${hours} hour${hours !== 1 ? "s" : ""}`;
+		if (minutes > 0) return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+		return `${seconds} second${seconds !== 1 ? "s" : ""}`;
 	}
 	static IS_SAME(date1, date2, unit) {
 		return AirtableRuntime.DATETIME_DIFF(date1, date2, unit || "days") === 0;
@@ -395,8 +467,8 @@ class AirtableRuntime {
 		const direction = remaining > 0 ? 1 : -1;
 		remaining = Math.abs(remaining);
 		while (remaining > 0) {
-			d.setDate(d.getDate() + direction);
-			const dow = d.getDay();
+			d.setUTCDate(d.getUTCDate() + direction);
+			const dow = d.getUTCDay();
 			if (dow !== 0 && dow !== 6) remaining--;
 		}
 		return d.toISOString();
@@ -410,9 +482,11 @@ class AirtableRuntime {
 		let count = 0;
 		const current = new Date(d1);
 		const direction = d2 > d1 ? 1 : -1;
+		const startDow = current.getUTCDay();
+		if (startDow !== 0 && startDow !== 6) count += direction;
 		while (direction === 1 ? current < d2 : current > d2) {
-			current.setDate(current.getDate() + direction);
-			const dow = current.getDay();
+			current.setUTCDate(current.getUTCDate() + direction);
+			const dow = current.getUTCDay();
 			if (dow !== 0 && dow !== 6) count += direction;
 		}
 		return count;
