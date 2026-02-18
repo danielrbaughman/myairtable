@@ -311,6 +311,9 @@ class TestPythonEmitter:
     def test_now(self):
         assert self._transpile("NOW()") == "datetime.now().isoformat()"
 
+    def test_set_locale(self):
+        assert self._transpile('SET_LOCALE({fld1}, "en")') == "self.my_field"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

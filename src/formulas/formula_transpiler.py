@@ -543,6 +543,9 @@ class CodeEmitter:
         if name == "NOW" and self.language == "python":
             return "datetime.now().isoformat()"
 
+        if name == "SET_LOCALE" and self.language == "python":
+            return self.emit(node.args[0])
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 
