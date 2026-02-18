@@ -296,6 +296,9 @@ class TestPythonEmitter:
     def test_concatenate(self):
         assert self._transpile('CONCATENATE({fld1}, " ", {fld2})') == '"".join(F.AS((self.my_field, " ", self.other_field,)))'
 
+    def test_rept(self):
+        assert self._transpile("REPT({fld1}, 3)") == "(F.S(self.my_field) * 3)"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

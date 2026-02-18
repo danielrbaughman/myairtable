@@ -518,6 +518,14 @@ class CodeEmitter:
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f'"".join({self._runtime}.AS(({args},)))'
 
+        if name == "REPT" and self.language == "python":
+            text = self._emit_str(node.args[0])
+            if isinstance(node.args[1], NumberLiteral):
+                count = node.args[1].value
+            else:
+                count = f"int({self._emit_num(node.args[1])})"
+            return f"({text} * {count})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

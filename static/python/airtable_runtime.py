@@ -220,10 +220,6 @@ class AirtableRuntime:
         return s[:start_idx] + AirtableRuntime.S(replacement) + s[start_idx + length :]
 
     @staticmethod
-    def REPT(text: Any, count: Any) -> str:  # noqa: N802
-        return AirtableRuntime.S(text) * max(0, int(AirtableRuntime.N(count)))
-
-    @staticmethod
     def T(value: Any) -> str:  # noqa: N802
         return value if isinstance(value, str) else ""
 

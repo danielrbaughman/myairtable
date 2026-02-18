@@ -143,9 +143,6 @@ class TestStringFunctions:
     def test_trim(self):
         assert _r.S("  hello  ").strip() == "hello"
 
-    def test_rept(self):
-        assert _r.REPT("ab", 3) == "ababab"
-
     def test_t(self):
         assert _r.T("hello") == "hello"
         assert _r.T(42) == ""
