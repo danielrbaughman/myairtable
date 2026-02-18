@@ -318,11 +318,6 @@ class AirtableRuntime {
 		});
 	}
 
-	static DATETIME_PARSE(text, _format, _locale) {
-		if (AirtableRuntime._isNull(text)) return null;
-		return AirtableRuntime.D(text).toISOString();
-	}
-
 	static SET_LOCALE(date, _locale) {
 		return date;
 	}

@@ -257,6 +257,9 @@ class TestTypeScriptEmitter:
     def test_regex_replace(self):
         assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 'F.S(this.myField).replace(new RegExp("\\\\d+", "g"), "X")'
 
+    def test_datetime_parse(self):
+        assert self._transpile("DATETIME_PARSE({fld1})") == "F.D(this.myField)"
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -292,6 +295,9 @@ class TestJavaScriptEmitter:
 
     def test_regex_replace(self):
         assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 'F.S(this.myField).replace(new RegExp("\\\\d+", "g"), "X")'
+
+    def test_datetime_parse(self):
+        assert self._transpile("DATETIME_PARSE({fld1})") == "F.D(this.myField)"
 
 
 class TestPythonEmitter:

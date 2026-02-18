@@ -579,7 +579,7 @@ class CodeEmitter:
         if name == "SET_LOCALE" and self.language == "python":
             return self.emit(node.args[0])
 
-        if name == "DATETIME_PARSE" and self.language == "python":
+        if name == "DATETIME_PARSE":
             return f"{self._runtime}.D({self.emit(node.args[0])})"
 
         date_attrs = {"YEAR": "year", "MONTH": "month", "DAY": "day", "HOUR": "hour", "MINUTE": "minute", "SECOND": "second"}
