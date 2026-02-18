@@ -248,6 +248,9 @@ class TestTypeScriptEmitter:
     def test_concatenate(self):
         assert self._transpile("CONCATENATE({fld1}, {fld2})") == 'F.AS([this.myField, this.otherField]).join("")'
 
+    def test_rept(self):
+        assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -274,6 +277,9 @@ class TestJavaScriptEmitter:
 
     def test_concatenate(self):
         assert self._transpile("CONCATENATE({fld1})") == 'F.AS([this.myField]).join("")'
+
+    def test_rept(self):
+        assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
 
 
 class TestPythonEmitter:
