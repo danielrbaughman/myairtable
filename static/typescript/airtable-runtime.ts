@@ -320,10 +320,6 @@ export class AirtableRuntime {
 		});
 	}
 
-	static SET_LOCALE(date: unknown, _locale: unknown): unknown {
-		return date;
-	}
-
 	static SET_TIMEZONE(date: unknown, timezone: unknown): string | null {
 		if (AirtableRuntime.isNull(date)) return null;
 		const d = AirtableRuntime.D(date);

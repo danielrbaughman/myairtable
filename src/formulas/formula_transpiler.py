@@ -576,7 +576,7 @@ class CodeEmitter:
         if name == "NOW" and self.language == "python":
             return "datetime.now().isoformat()"
 
-        if name == "SET_LOCALE" and self.language == "python":
+        if name == "SET_LOCALE":
             return self.emit(node.args[0])
 
         if name == "DATETIME_PARSE":

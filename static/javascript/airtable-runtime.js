@@ -318,9 +318,6 @@ class AirtableRuntime {
 		});
 	}
 
-	static SET_LOCALE(date, _locale) {
-		return date;
-	}
 	static SET_TIMEZONE(date, timezone) {
 		if (AirtableRuntime._isNull(date)) return null;
 		const d = AirtableRuntime.D(date);
