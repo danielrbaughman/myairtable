@@ -15,7 +15,8 @@ export class AirtableRuntime {
 		return v === null || v === undefined;
 	}
 
-	private static flatten(args: unknown[]): unknown[] {
+	/** Coerce arguments to a flat array */
+	static A(args: unknown[]): unknown[] {
 		const result: unknown[] = [];
 		for (const a of args) {
 			if (Array.isArray(a)) result.push(...a);
@@ -66,40 +67,40 @@ export class AirtableRuntime {
 
 	// region Numeric functions
 	static SUM(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		return flat.reduce<number>((acc, v) => acc + AirtableRuntime.N(v), 0);
 	}
 
 	static AVERAGE(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		if (flat.length === 0) return NaN;
 		return AirtableRuntime.SUM(...flat) / flat.length;
 	}
 
 	static MIN(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		if (flat.length === 0) return Infinity;
 		return Math.min(...flat.map((v) => AirtableRuntime.N(v)));
 	}
 
 	static MAX(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		if (flat.length === 0) return -Infinity;
 		return Math.max(...flat.map((v) => AirtableRuntime.N(v)));
 	}
 
 	static COUNT(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		return flat.filter((v) => typeof v === "number" && !isNaN(v)).length;
 	}
 
 	static COUNTA(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		return flat.filter((v) => !AirtableRuntime.isNull(v) && v !== "").length;
 	}
 
 	static COUNTALL(...args: unknown[]): number {
-		const flat = AirtableRuntime.flatten(args);
+		const flat = AirtableRuntime.A(args);
 		return flat.length;
 	}
 
