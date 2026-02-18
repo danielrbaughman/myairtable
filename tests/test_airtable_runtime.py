@@ -147,13 +147,6 @@ class TestStringFunctions:
         assert _r.T("hello") == "hello"
         assert _r.T(42) == ""
 
-    def test_regex_match(self):
-        assert _r.REGEX_MATCH("hello123", r"\d+") is True
-        assert _r.REGEX_MATCH("hello", r"\d+") is False
-
-    def test_regex_replace(self):
-        assert _r.REGEX_REPLACE("hello123", r"\d+", "X") == "helloX"
-
 
 class TestArrayFunctions:
     def test_arrayjoin(self):

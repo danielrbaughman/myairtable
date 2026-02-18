@@ -223,20 +223,6 @@ class AirtableRuntime:
     def T(value: Any) -> str:  # noqa: N802
         return value if isinstance(value, str) else ""
 
-    @staticmethod
-    def REGEX_MATCH(text: Any, regex: Any) -> bool:  # noqa: N802
-        try:
-            return bool(re.search(AirtableRuntime.S(regex), AirtableRuntime.S(text)))
-        except re.error:
-            return False
-
-    @staticmethod
-    def REGEX_REPLACE(text: Any, regex: Any, replacement: Any) -> str:  # noqa: N802
-        try:
-            return re.sub(AirtableRuntime.S(regex), AirtableRuntime.S(replacement), AirtableRuntime.S(text))
-        except re.error:
-            return AirtableRuntime.S(text)
-
     # endregion
 
     # region Date/Time functions

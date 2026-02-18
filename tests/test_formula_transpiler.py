@@ -299,6 +299,12 @@ class TestPythonEmitter:
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "(F.S(self.my_field) * 3)"
 
+    def test_regex_match(self):
+        assert self._transpile('REGEX_MATCH({fld1}, "\\\\d+")') == 'bool(re.search("\\\\d+", F.S(self.my_field)))'
+
+    def test_regex_replace(self):
+        assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 're.sub("\\\\d+", "X", F.S(self.my_field))'
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 
