@@ -96,10 +96,6 @@ class AirtableRuntime {
 		return flat.filter((v) => !AirtableRuntime._isNull(v) && v !== "").length;
 	}
 
-	static COUNTALL(...args) {
-		return AirtableRuntime.A(args).length;
-	}
-
 	static ROUND(value, precision) {
 		const n = AirtableRuntime.N(value);
 		const p = AirtableRuntime.N(precision);

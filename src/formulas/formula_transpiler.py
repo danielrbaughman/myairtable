@@ -506,6 +506,10 @@ class CodeEmitter:
                 return f"min({an})"
             return f"max({an})"
 
+        if name == "COUNTALL" and self.language != "python":
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f"{self._runtime}.A([{args}]).length"
+
         if name == "COUNTALL" and self.language == "python":
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f"len({self._runtime}.A(({args},)))"

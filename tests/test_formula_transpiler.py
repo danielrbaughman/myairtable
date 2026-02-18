@@ -242,6 +242,9 @@ class TestTypeScriptEmitter:
     def test_max(self):
         assert self._transpile("MAX({fld1}, {fld2})") == "Math.max(...F.AN([this.myField, this.otherField]))"
 
+    def test_countall(self):
+        assert self._transpile("COUNTALL({fld1}, {fld2})") == "F.A([this.myField, this.otherField]).length"
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -262,6 +265,9 @@ class TestJavaScriptEmitter:
 
     def test_max(self):
         assert self._transpile("MAX({fld1})") == "Math.max(...F.AN([this.myField]))"
+
+    def test_countall(self):
+        assert self._transpile("COUNTALL({fld1})") == "F.A([this.myField]).length"
 
 
 class TestPythonEmitter:
