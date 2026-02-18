@@ -287,6 +287,9 @@ class TestPythonEmitter:
     def test_max(self):
         assert self._transpile("MAX({fld1}, {fld2})") == "max(F.AN((self.my_field, self.other_field,)))"
 
+    def test_countall(self):
+        assert self._transpile("COUNTALL({fld1}, {fld2})") == "len(F.A((self.my_field, self.other_field,)))"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

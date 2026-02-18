@@ -100,10 +100,6 @@ class AirtableRuntime:
         return sum(1 for v in flat if v is not None and v != "")
 
     @staticmethod
-    def COUNTALL(*args: Any) -> int:  # noqa: N802
-        return len(AirtableRuntime.A(args))
-
-    @staticmethod
     def ROUND(value: Any, precision: Any = 0) -> float:  # noqa: N802
         n = AirtableRuntime.N(value)
         p = int(AirtableRuntime.N(precision))

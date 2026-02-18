@@ -82,9 +82,6 @@ class TestNumericFunctions:
     def test_counta(self):
         assert _r.COUNTA(1, "a", None, "") == 2
 
-    def test_countall(self):
-        assert _r.COUNTALL(1, None, "", 0) == 4
-
     def test_round(self):
         assert _r.ROUND(3.456, 2) == 3.46
 
