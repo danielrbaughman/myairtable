@@ -549,6 +549,10 @@ class CodeEmitter:
         if name == "DATETIME_PARSE" and self.language == "python":
             return f"{self._runtime}.D({self.emit(node.args[0])})"
 
+        date_attrs = {"YEAR": "year", "MONTH": "month", "DAY": "day", "HOUR": "hour", "MINUTE": "minute", "SECOND": "second"}
+        if name in date_attrs and self.language == "python":
+            return f"{self._runtime}.D({self.emit(node.args[0])}).{date_attrs[name]}"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

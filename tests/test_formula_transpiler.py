@@ -317,6 +317,24 @@ class TestPythonEmitter:
     def test_datetime_parse(self):
         assert self._transpile("DATETIME_PARSE({fld1})") == "F.D(self.my_field)"
 
+    def test_year(self):
+        assert self._transpile("YEAR({fld1})") == "F.D(self.my_field).year"
+
+    def test_month(self):
+        assert self._transpile("MONTH({fld1})") == "F.D(self.my_field).month"
+
+    def test_day(self):
+        assert self._transpile("DAY({fld1})") == "F.D(self.my_field).day"
+
+    def test_hour(self):
+        assert self._transpile("HOUR({fld1})") == "F.D(self.my_field).hour"
+
+    def test_minute(self):
+        assert self._transpile("MINUTE({fld1})") == "F.D(self.my_field).minute"
+
+    def test_second(self):
+        assert self._transpile("SECOND({fld1})") == "F.D(self.my_field).second"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

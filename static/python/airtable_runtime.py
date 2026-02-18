@@ -321,42 +321,6 @@ class AirtableRuntime:
         return adjusted.isoformat()
 
     @staticmethod
-    def YEAR(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).year
-
-    @staticmethod
-    def MONTH(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).month
-
-    @staticmethod
-    def DAY(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).day
-
-    @staticmethod
-    def HOUR(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).hour
-
-    @staticmethod
-    def MINUTE(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).minute
-
-    @staticmethod
-    def SECOND(date: Any) -> int:  # noqa: N802
-        if date is None:
-            return 0
-        return AirtableRuntime.D(date).second
-
-    @staticmethod
     def WEEKDAY(date: Any) -> int:  # noqa: N802
         if date is None:
             return 0
