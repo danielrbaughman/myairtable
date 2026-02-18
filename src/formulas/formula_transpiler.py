@@ -514,6 +514,10 @@ class CodeEmitter:
                 prec = "0"
             return f"round({val}, {prec})"
 
+        if name == "CONCATENATE" and self.language == "python":
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f'"".join({self._runtime}.AS(({args},)))'
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

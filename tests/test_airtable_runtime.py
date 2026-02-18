@@ -112,9 +112,6 @@ class TestNumericFunctions:
 
 
 class TestStringFunctions:
-    def test_concatenate(self):
-        assert _r.CONCATENATE("a", "b", "c") == "abc"
-
     def test_left(self):
         assert _r.LEFT("hello", 3) == "hel"
 

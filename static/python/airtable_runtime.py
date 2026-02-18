@@ -35,6 +35,11 @@ class AirtableRuntime:
         return [AirtableRuntime.N(v) for v in AirtableRuntime.A(args)]
 
     @staticmethod
+    def AS(args: tuple[Any, ...]) -> list[str]:  # noqa: N802
+        """Coerce arguments to a flat array of strings"""
+        return [AirtableRuntime.S(v) for v in AirtableRuntime.A(args)]
+
+    @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
         """Coerce value to number"""
         if isinstance(v, list):
@@ -157,10 +162,6 @@ class AirtableRuntime:
     # endregion
 
     # region String functions
-    @staticmethod
-    def CONCATENATE(*args: Any) -> str:  # noqa: N802
-        return "".join(AirtableRuntime.S(a) for a in args)
-
     @staticmethod
     def LEFT(text: Any, count: Any) -> str:  # noqa: N802
         return AirtableRuntime.S(text)[: int(AirtableRuntime.N(count))]
