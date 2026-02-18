@@ -157,10 +157,6 @@ class AirtableRuntime {
 	// endregion
 
 	// region String functions
-	static CONCATENATE(...args) {
-		return args.map((a) => AirtableRuntime.S(a)).join("");
-	}
-
 	static LEFT(text, count) {
 		return AirtableRuntime.S(text).slice(0, AirtableRuntime.N(count));
 	}

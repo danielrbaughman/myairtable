@@ -245,6 +245,9 @@ class TestTypeScriptEmitter:
     def test_countall(self):
         assert self._transpile("COUNTALL({fld1}, {fld2})") == "F.A([this.myField, this.otherField]).length"
 
+    def test_concatenate(self):
+        assert self._transpile("CONCATENATE({fld1}, {fld2})") == 'F.AS([this.myField, this.otherField]).join("")'
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -268,6 +271,9 @@ class TestJavaScriptEmitter:
 
     def test_countall(self):
         assert self._transpile("COUNTALL({fld1})") == "F.A([this.myField]).length"
+
+    def test_concatenate(self):
+        assert self._transpile("CONCATENATE({fld1})") == 'F.AS([this.myField]).join("")'
 
 
 class TestPythonEmitter:
