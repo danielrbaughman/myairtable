@@ -84,10 +84,8 @@ class AirtableRuntime:
     # region Numeric functions
     @staticmethod
     def AVERAGE(*args: Any) -> float:  # noqa: N802
-        flat = AirtableRuntime.A(args)
-        if not flat:
-            return float("nan")
-        return sum(AirtableRuntime.N(v) for v in flat) / len(flat)
+        flat = AirtableRuntime.AN(args)
+        return sum(flat) / len(flat)
 
     @staticmethod
     def COUNT(*args: Any) -> int:  # noqa: N802
