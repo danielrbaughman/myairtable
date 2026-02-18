@@ -305,6 +305,12 @@ class TestPythonEmitter:
     def test_regex_replace(self):
         assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 're.sub("\\\\d+", "X", F.S(self.my_field))'
 
+    def test_today(self):
+        assert self._transpile("TODAY()") == 'datetime.now().strftime("%Y-%m-%d")'
+
+    def test_now(self):
+        assert self._transpile("NOW()") == "datetime.now().isoformat()"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

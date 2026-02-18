@@ -537,6 +537,12 @@ class CodeEmitter:
             repl = self._emit_str(node.args[2])
             return f"re.sub({regex}, {repl}, {text})"
 
+        if name == "TODAY" and self.language == "python":
+            return 'datetime.now().strftime("%Y-%m-%d")'
+
+        if name == "NOW" and self.language == "python":
+            return "datetime.now().isoformat()"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

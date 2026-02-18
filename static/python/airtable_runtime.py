@@ -227,14 +227,6 @@ class AirtableRuntime:
 
     # region Date/Time functions
     @staticmethod
-    def TODAY() -> str:  # noqa: N802
-        return datetime.now().strftime("%Y-%m-%d")
-
-    @staticmethod
-    def NOW() -> str:  # noqa: N802
-        return datetime.now().isoformat()
-
-    @staticmethod
     def DATEADD(date: Any, count: Any, unit: Any) -> str | None:  # noqa: N802
         if date is None:
             return None
