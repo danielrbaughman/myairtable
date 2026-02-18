@@ -263,6 +263,27 @@ class TestTypeScriptEmitter:
     def test_set_locale(self):
         assert self._transpile('SET_LOCALE({fld1}, "en")') == "this.myField"
 
+    def test_year(self):
+        assert self._transpile("YEAR({fld1})") == "F.D(this.myField).getUTCFullYear()"
+
+    def test_month(self):
+        assert self._transpile("MONTH({fld1})") == "(F.D(this.myField).getUTCMonth() + 1)"
+
+    def test_day(self):
+        assert self._transpile("DAY({fld1})") == "F.D(this.myField).getUTCDate()"
+
+    def test_hour(self):
+        assert self._transpile("HOUR({fld1})") == "F.D(this.myField).getUTCHours()"
+
+    def test_minute(self):
+        assert self._transpile("MINUTE({fld1})") == "F.D(this.myField).getUTCMinutes()"
+
+    def test_second(self):
+        assert self._transpile("SECOND({fld1})") == "F.D(this.myField).getUTCSeconds()"
+
+    def test_weekday(self):
+        assert self._transpile("WEEKDAY({fld1})") == "F.D(this.myField).getUTCDay()"
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -304,6 +325,15 @@ class TestJavaScriptEmitter:
 
     def test_set_locale(self):
         assert self._transpile('SET_LOCALE({fld1}, "en")') == "this.myField"
+
+    def test_year(self):
+        assert self._transpile("YEAR({fld1})") == "F.D(this.myField).getUTCFullYear()"
+
+    def test_month(self):
+        assert self._transpile("MONTH({fld1})") == "(F.D(this.myField).getUTCMonth() + 1)"
+
+    def test_weekday(self):
+        assert self._transpile("WEEKDAY({fld1})") == "F.D(this.myField).getUTCDay()"
 
 
 class TestPythonEmitter:

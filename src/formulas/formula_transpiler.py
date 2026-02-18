@@ -582,6 +582,21 @@ class CodeEmitter:
         if name == "DATETIME_PARSE":
             return f"{self._runtime}.D({self.emit(node.args[0])})"
 
+        js_date_getters = {
+            "YEAR": "getUTCFullYear",
+            "MONTH": "getUTCMonth",
+            "DAY": "getUTCDate",
+            "HOUR": "getUTCHours",
+            "MINUTE": "getUTCMinutes",
+            "SECOND": "getUTCSeconds",
+            "WEEKDAY": "getUTCDay",
+        }
+        if name in js_date_getters and self.language != "python":
+            d = f"{self._runtime}.D({self.emit(node.args[0])})"
+            if name == "MONTH":
+                return f"({d}.getUTCMonth() + 1)"
+            return f"{d}.{js_date_getters[name]}()"
+
         date_attrs = {"YEAR": "year", "MONTH": "month", "DAY": "day", "HOUR": "hour", "MINUTE": "minute", "SECOND": "second"}
         if name in date_attrs and self.language == "python":
             return f"{self._runtime}.D({self.emit(node.args[0])}).{date_attrs[name]}"

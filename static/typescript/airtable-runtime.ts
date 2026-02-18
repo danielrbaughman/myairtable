@@ -348,41 +348,6 @@ export class AirtableRuntime {
 		return adjusted.toISOString();
 	}
 
-	static YEAR(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCFullYear();
-	}
-
-	static MONTH(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCMonth() + 1;
-	}
-
-	static DAY(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCDate();
-	}
-
-	static HOUR(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCHours();
-	}
-
-	static MINUTE(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCMinutes();
-	}
-
-	static SECOND(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCSeconds();
-	}
-
-	static WEEKDAY(date: unknown): number {
-		if (AirtableRuntime.isNull(date)) return 0;
-		return AirtableRuntime.D(date).getUTCDay();
-	}
-
 	static WEEKNUM(date: unknown, startDay?: unknown): number {
 		if (AirtableRuntime.isNull(date)) return 0;
 		const d = AirtableRuntime.D(date);
