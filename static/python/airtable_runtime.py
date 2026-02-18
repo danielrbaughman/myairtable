@@ -90,20 +90,6 @@ class AirtableRuntime:
         return sum(AirtableRuntime.N(v) for v in flat) / len(flat)
 
     @staticmethod
-    def MIN(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime.A(args)
-        if not flat:
-            return float("inf")
-        return min(AirtableRuntime.N(v) for v in flat)
-
-    @staticmethod
-    def MAX(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime.A(args)
-        if not flat:
-            return float("-inf")
-        return max(AirtableRuntime.N(v) for v in flat)
-
-    @staticmethod
     def COUNT(*args: Any) -> int:  # noqa: N802
         flat = AirtableRuntime.A(args)
         return sum(1 for v in flat if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)))

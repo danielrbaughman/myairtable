@@ -76,10 +76,6 @@ class TestNumericFunctions:
     def test_average(self):
         assert _r.AVERAGE(2, 4, 6) == 4.0
 
-    def test_min_max(self):
-        assert _r.MIN(3, 1, 2) == 1
-        assert _r.MAX(3, 1, 2) == 3
-
     def test_count(self):
         assert _r.COUNT(1, "a", 3, None) == 2
 

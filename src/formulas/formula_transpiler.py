@@ -491,9 +491,14 @@ class CodeEmitter:
                 result = f"({expr} == {pattern}) ? {val} : {result}"
             return f"({result})"
 
-        if name == "SUM" and self.language == "python":
+        if name in ("SUM", "MIN", "MAX") and self.language == "python":
             args = ", ".join(self.emit(arg) for arg in node.args)
-            return f"sum({self._runtime}.AN(({args},)))"
+            an = f"{self._runtime}.AN(({args},))"
+            if name == "SUM":
+                return f"sum({an})"
+            if name == "MIN":
+                return f"min({an})"
+            return f"max({an})"
 
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"

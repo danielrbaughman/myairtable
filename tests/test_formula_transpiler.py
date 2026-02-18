@@ -281,6 +281,12 @@ class TestPythonEmitter:
     def test_sum_single_arg(self):
         assert self._transpile("SUM({fld1})") == "sum(F.AN((self.my_field,)))"
 
+    def test_min(self):
+        assert self._transpile("MIN({fld1}, {fld2})") == "min(F.AN((self.my_field, self.other_field,)))"
+
+    def test_max(self):
+        assert self._transpile("MAX({fld1}, {fld2})") == "max(F.AN((self.my_field, self.other_field,)))"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 
