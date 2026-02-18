@@ -66,7 +66,7 @@ class WriteToPythonFile(WriteToFile):
         self.line_empty()
 
     def literal(self, name: str, list: list[str]):
-        self.line(f"{name} = Literal[")
+        self.line(f"type {name} = Literal[")
         for item in list:
             self.line_indented(f'"{item}",')
         self.line("]")
