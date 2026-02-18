@@ -100,12 +100,6 @@ class AirtableRuntime:
         return sum(1 for v in flat if v is not None and v != "")
 
     @staticmethod
-    def ROUND(value: Any, precision: Any = 0) -> float:  # noqa: N802
-        n = AirtableRuntime.N(value)
-        p = int(AirtableRuntime.N(precision))
-        return round(n, p)
-
-    @staticmethod
     def ROUNDUP(value: Any, precision: Any = 0) -> float:  # noqa: N802
         n = AirtableRuntime.N(value)
         p = int(AirtableRuntime.N(precision))

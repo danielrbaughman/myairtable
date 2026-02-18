@@ -290,6 +290,9 @@ class TestPythonEmitter:
     def test_countall(self):
         assert self._transpile("COUNTALL({fld1}, {fld2})") == "len(F.A((self.my_field, self.other_field,)))"
 
+    def test_round(self):
+        assert self._transpile("ROUND({fld1}, 2)") == "round(F.N(self.my_field), 2)"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 

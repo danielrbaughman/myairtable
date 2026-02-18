@@ -504,6 +504,16 @@ class CodeEmitter:
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f"len({self._runtime}.A(({args},)))"
 
+        if name == "ROUND" and self.language == "python":
+            val = self._emit_num(node.args[0])
+            if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
+                prec = node.args[1].value
+            elif len(node.args) > 1:
+                prec = f"int({self._emit_num(node.args[1])})"
+            else:
+                prec = "0"
+            return f"round({val}, {prec})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 
