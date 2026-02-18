@@ -251,6 +251,12 @@ class TestTypeScriptEmitter:
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
 
+    def test_regex_match(self):
+        assert self._transpile('REGEX_MATCH({fld1}, "\\\\d+")') == 'new RegExp("\\\\d+").test(F.S(this.myField))'
+
+    def test_regex_replace(self):
+        assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 'F.S(this.myField).replace(new RegExp("\\\\d+", "g"), "X")'
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -280,6 +286,12 @@ class TestJavaScriptEmitter:
 
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
+
+    def test_regex_match(self):
+        assert self._transpile('REGEX_MATCH({fld1}, "\\\\d+")') == 'new RegExp("\\\\d+").test(F.S(this.myField))'
+
+    def test_regex_replace(self):
+        assert self._transpile('REGEX_REPLACE({fld1}, "\\\\d+", "X")') == 'F.S(this.myField).replace(new RegExp("\\\\d+", "g"), "X")'
 
 
 class TestPythonEmitter:

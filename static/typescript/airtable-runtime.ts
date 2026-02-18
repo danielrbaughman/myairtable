@@ -217,21 +217,6 @@ export class AirtableRuntime {
 		return typeof value === "string" ? value : "";
 	}
 
-	static REGEX_MATCH(text: unknown, regex: unknown): boolean {
-		try {
-			return new RegExp(AirtableRuntime.S(regex)).test(AirtableRuntime.S(text));
-		} catch {
-			return false;
-		}
-	}
-
-	static REGEX_REPLACE(text: unknown, regex: unknown, replacement: unknown): string {
-		try {
-			return AirtableRuntime.S(text).replace(new RegExp(AirtableRuntime.S(regex), "g"), AirtableRuntime.S(replacement));
-		} catch {
-			return AirtableRuntime.S(text);
-		}
-	}
 	// endregion
 
 	// region Date/Time functions

@@ -548,10 +548,21 @@ class CodeEmitter:
                 count = f"int({self._emit_num(node.args[1])})"
             return f"({text} * {count})"
 
+        if name == "REGEX_MATCH" and self.language != "python":
+            text = self._emit_str(node.args[0])
+            regex = self._emit_str(node.args[1])
+            return f"new RegExp({regex}).test({text})"
+
         if name == "REGEX_MATCH" and self.language == "python":
             text = self._emit_str(node.args[0])
             regex = self._emit_str(node.args[1])
             return f"bool(re.search({regex}, {text}))"
+
+        if name == "REGEX_REPLACE" and self.language != "python":
+            text = self._emit_str(node.args[0])
+            regex = self._emit_str(node.args[1])
+            repl = self._emit_str(node.args[2])
+            return f'{text}.replace(new RegExp({regex}, "g"), {repl})'
 
         if name == "REGEX_REPLACE" and self.language == "python":
             text = self._emit_str(node.args[0])
