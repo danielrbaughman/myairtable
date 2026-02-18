@@ -24,6 +24,16 @@ class AirtableRuntime {
 		return result;
 	}
 
+	/** Coerce arguments to a flat array of numbers */
+	static AN(args) {
+		return AirtableRuntime.A(args).map((v) => AirtableRuntime.N(v));
+	}
+
+	/** Coerce arguments to a flat array of strings */
+	static AS(args) {
+		return AirtableRuntime.A(args).map((v) => AirtableRuntime.S(v));
+	}
+
 	/** Coerce value to number */
 	static N(v) {
 		if (Array.isArray(v)) return AirtableRuntime.N(v[0]);

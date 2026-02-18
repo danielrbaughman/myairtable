@@ -25,6 +25,16 @@ export class AirtableRuntime {
 		return result;
 	}
 
+	/** Coerce arguments to a flat array of numbers */
+	static AN(args: unknown[]): number[] {
+		return AirtableRuntime.A(args).map((v) => AirtableRuntime.N(v));
+	}
+
+	/** Coerce arguments to a flat array of strings */
+	static AS(args: unknown[]): string[] {
+		return AirtableRuntime.A(args).map((v) => AirtableRuntime.S(v));
+	}
+
 	/** Coerce value to number */
 	static N(v: unknown): number {
 		if (Array.isArray(v)) return AirtableRuntime.N(v[0]);
@@ -67,26 +77,26 @@ export class AirtableRuntime {
 
 	// region Numeric functions
 	static SUM(...args: unknown[]): number {
-		const flat = AirtableRuntime.A(args);
-		return flat.reduce<number>((acc, v) => acc + AirtableRuntime.N(v), 0);
+		const flat = AirtableRuntime.AN(args);
+		return flat.reduce<number>((acc, v) => acc + v, 0);
 	}
 
 	static AVERAGE(...args: unknown[]): number {
-		const flat = AirtableRuntime.A(args);
+		const flat = AirtableRuntime.AN(args);
 		if (flat.length === 0) return NaN;
 		return AirtableRuntime.SUM(...flat) / flat.length;
 	}
 
 	static MIN(...args: unknown[]): number {
-		const flat = AirtableRuntime.A(args);
+		const flat = AirtableRuntime.AN(args);
 		if (flat.length === 0) return Infinity;
-		return Math.min(...flat.map((v) => AirtableRuntime.N(v)));
+		return Math.min(...flat);
 	}
 
 	static MAX(...args: unknown[]): number {
-		const flat = AirtableRuntime.A(args);
+		const flat = AirtableRuntime.AN(args);
 		if (flat.length === 0) return -Infinity;
-		return Math.max(...flat.map((v) => AirtableRuntime.N(v)));
+		return Math.max(...flat);
 	}
 
 	static COUNT(...args: unknown[]): number {
@@ -166,7 +176,7 @@ export class AirtableRuntime {
 
 	// region String functions
 	static CONCATENATE(...args: unknown[]): string {
-		return args.map((a) => AirtableRuntime.S(a)).join("");
+		return AirtableRuntime.AS(args).join("");
 	}
 
 	static LEFT(text: unknown, count: unknown): string {
