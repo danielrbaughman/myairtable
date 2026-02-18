@@ -236,6 +236,12 @@ class TestTypeScriptEmitter:
         result = self._transpile('SWITCH({fld1}, "a", 1, "b", 2, 99)')
         assert result == '((F.S(this.myField) == "a") ? 1 : (F.S(this.myField) == "b") ? 2 : 99)'
 
+    def test_min(self):
+        assert self._transpile("MIN({fld1}, {fld2})") == "Math.min(...F.AN([this.myField, this.otherField]))"
+
+    def test_max(self):
+        assert self._transpile("MAX({fld1}, {fld2})") == "Math.max(...F.AN([this.myField, this.otherField]))"
+
 
 class TestJavaScriptEmitter:
     """Test JavaScript code emission (same as TS but uses 'this')."""
@@ -250,6 +256,12 @@ class TestJavaScriptEmitter:
 
     def test_function_call(self):
         assert self._transpile("ABS({fld1})") == "Math.abs(F.N(this.myField))"
+
+    def test_min(self):
+        assert self._transpile("MIN({fld1})") == "Math.min(...F.AN([this.myField]))"
+
+    def test_max(self):
+        assert self._transpile("MAX({fld1})") == "Math.max(...F.AN([this.myField]))"
 
 
 class TestPythonEmitter:

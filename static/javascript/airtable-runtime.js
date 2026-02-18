@@ -86,18 +86,6 @@ class AirtableRuntime {
 		return AirtableRuntime.SUM(...flat) / flat.length;
 	}
 
-	static MIN(...args) {
-		const flat = AirtableRuntime.A(args);
-		if (flat.length === 0) return Infinity;
-		return Math.min(...flat.map((v) => AirtableRuntime.N(v)));
-	}
-
-	static MAX(...args) {
-		const flat = AirtableRuntime.A(args);
-		if (flat.length === 0) return -Infinity;
-		return Math.max(...flat.map((v) => AirtableRuntime.N(v)));
-	}
-
 	static COUNT(...args) {
 		const flat = AirtableRuntime.A(args);
 		return flat.filter((v) => typeof v === "number" && !isNaN(v)).length;
