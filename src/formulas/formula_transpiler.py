@@ -546,6 +546,9 @@ class CodeEmitter:
         if name == "SET_LOCALE" and self.language == "python":
             return self.emit(node.args[0])
 
+        if name == "DATETIME_PARSE" and self.language == "python":
+            return f"{self._runtime}.D({self.emit(node.args[0])})"
+
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{name}({args})"
 

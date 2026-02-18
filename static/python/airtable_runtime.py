@@ -310,12 +310,6 @@ class AirtableRuntime:
         return result
 
     @staticmethod
-    def DATETIME_PARSE(text: Any, _format: Any = None, _locale: Any = None) -> str | None:  # noqa: N802
-        if text is None:
-            return None
-        return AirtableRuntime.D(text).isoformat()
-
-    @staticmethod
     def SET_TIMEZONE(date: Any, tz: Any) -> str | None:  # noqa: N802
         if date is None:
             return None

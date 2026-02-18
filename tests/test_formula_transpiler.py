@@ -314,6 +314,9 @@ class TestPythonEmitter:
     def test_set_locale(self):
         assert self._transpile('SET_LOCALE({fld1}, "en")') == "self.my_field"
 
+    def test_datetime_parse(self):
+        assert self._transpile("DATETIME_PARSE({fld1})") == "F.D(self.my_field)"
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 
