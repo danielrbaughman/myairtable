@@ -73,12 +73,6 @@ class TestComparisonOperators:
 
 
 class TestNumericFunctions:
-    def test_sum(self):
-        assert _r.SUM(1, 2, 3) == 6
-
-    def test_sum_with_array(self):
-        assert _r.SUM([1, 2, 3]) == 6
-
     def test_average(self):
         assert _r.AVERAGE(2, 4, 6) == 4.0
 

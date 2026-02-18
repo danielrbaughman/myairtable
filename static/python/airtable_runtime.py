@@ -30,6 +30,11 @@ class AirtableRuntime:
         return result
 
     @staticmethod
+    def AN(args: tuple[Any, ...]) -> list[int | float]:  # noqa: N802
+        """Coerce arguments to a flat array of numbers"""
+        return [AirtableRuntime.N(v) for v in AirtableRuntime.A(args)]
+
+    @staticmethod
     def N(v: Any) -> int | float:  # noqa: N802
         """Coerce value to number"""
         if isinstance(v, list):
@@ -78,16 +83,11 @@ class AirtableRuntime:
 
     # region Numeric functions
     @staticmethod
-    def SUM(*args: Any) -> int | float:  # noqa: N802
-        flat = AirtableRuntime.A(args)
-        return sum(AirtableRuntime.N(v) for v in flat)
-
-    @staticmethod
     def AVERAGE(*args: Any) -> float:  # noqa: N802
         flat = AirtableRuntime.A(args)
         if not flat:
             return float("nan")
-        return AirtableRuntime.SUM(*flat) / len(flat)
+        return sum(AirtableRuntime.N(v) for v in flat) / len(flat)
 
     @staticmethod
     def MIN(*args: Any) -> int | float:  # noqa: N802
