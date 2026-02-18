@@ -31,7 +31,7 @@ class WriteToPythonFile(WriteToFile):
             self.line(f'"""{docstring}"""')
         self.line_empty()
 
-    def property_docstring(self, field: Field, table: Table):
+    def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
         base_info = f"{sanitize_string(field.name)} `{field.id}`"
 
         # Build tags
@@ -47,16 +47,16 @@ class WriteToPythonFile(WriteToFile):
         # Check for formula and output multi-line if present
         formula = field.formula(sanitized=True, condense=True)
         if formula:
-            self.line_indented('"""')
-            self.line_indented(base_info)
-            self.line_indented("")
-            self.line_indented("```")
+            self.line_indented('"""', indent_level)
+            self.line_indented(base_info, indent_level)
+            self.line_indented("", indent_level)
+            self.line_indented("```", indent_level)
             for line in field.formula(sanitized=True, format=True).splitlines():
-                self.line_indented(line)
-            self.line_indented("```")
-            self.line_indented('"""')
+                self.line_indented(line, indent_level)
+            self.line_indented("```", indent_level)
+            self.line_indented('"""', indent_level)
         else:
-            self.line_indented(f'"""{base_info}"""')
+            self.line_indented(f'"""{base_info}"""', indent_level)
 
     def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str", value_is_string: bool = True):
         self.line(f"{name}: dict[{first_type}, {second_type}] = {{")
@@ -489,6 +489,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 write.line_indented(f"f: {table.name_pascal()}Formulas = {table.name_pascal()}Formulas()")
                 write.line_empty()
 
+            write.line_indented("evaluate_formulas_at_runtime: bool = False")
+            write.line_empty()
+
             # Pre-transpile formula fields
             formula_field_ids = table.formula_field_ids()
             field_name_map = {f.id: f.name_snake() for f in table.fields}
@@ -501,17 +504,17 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 pyairtable_type = pyairtable_orm_type(field, base, output_folder, package_prefix=package_prefix)
 
                 if field.is_formula():
-                    # Formula field -> always hidden ORM descriptor + public method
+                    # Formula field -> hidden ORM descriptor + computed property
                     # 1. Hidden ORM descriptor with _orm_ prefix for pyairtable deserialization
                     write.line_indented(f"_orm_{field_name}: {pyairtable_type}")
-                    write.property_docstring(field, table)
-                    write.line_empty()
-                    # 2. Public method with recalculate support
+                    # 2. Public computed property
                     py_type = field.python_type()
-                    write.line_indented(f"def {field_name}(self, recalculate: bool = False) -> {py_type} | None:")
+                    write.line_indented("@property")
+                    write.line_indented(f"def {field_name}(self) -> {py_type} | None:")
+                    write.property_docstring(field, table, 2)
                     if field.id in transpiled_formulas:
                         formula_code = transpiled_formulas[field.id]
-                        write.line_indented("if recalculate:", 2)
+                        write.line_indented("if self.evaluate_formulas_at_runtime:", 2)
                         write.line_indented(f'self._fields["{field.id}"] = {formula_code}', 3)
                     write.line_indented(f'return self._fields.get("{field.id}")', 2)
                 else:

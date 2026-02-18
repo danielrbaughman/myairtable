@@ -510,12 +510,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     docstring: str = f"`{field.name}` ({field.id})"
 
                 if field.is_formula():
-                    # Formula field -> always a function with recalculate parameter
+                    # Formula field -> computed property that checks evaluateFormulasAtRuntime
                     write.docstring(docstring)
-                    write.line_indented(f"{field.name_camel()}(recalculate = false) {{")
+                    write.line_indented(f"get {field.name_camel()}() {{")
                     if field.id in transpiled_formulas:
                         formula_code = transpiled_formulas[field.id]
-                        write.line_indented(f'if (recalculate) this._fields["{field.name_camel()}"] = {formula_code};', 2)
+                        write.line_indented(f'if (this.evaluateFormulasAtRuntime) this._fields["{field.name_camel()}"] = {formula_code};', 2)
                     write.line_indented(f'return this._fields["{field.name_camel()}"];', 2)
                     write.line_indented("}")
                 else:

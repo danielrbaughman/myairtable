@@ -6,6 +6,7 @@ class AirtableModel {
 	// Base properties
 	record;
 	id;
+	evaluateFormulasAtRuntime = false;
 
 	// Mappings - must be defined by subclasses
 	static nameToIdMap = {};

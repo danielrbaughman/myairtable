@@ -141,9 +141,9 @@ class TestTypeScriptEmitter:
         assert self._transpile("{fld1}") == "this.myField"
 
     def test_formula_field_ref(self):
-        """Formula field refs should be called as functions."""
+        """Formula field refs should be accessed as properties."""
         result = self._transpile("{fld1}", formula_ids={"fld1"})
-        assert result == "this.myField(recalculate)"
+        assert result == "this.myField"
 
     def test_linked_record_field_ref(self):
         """Plural linked record field refs should use .ids for the raw array."""
@@ -265,7 +265,7 @@ class TestPythonEmitter:
 
     def test_formula_field_ref(self):
         result = self._transpile("{fld1}", formula_ids={"fld1"})
-        assert result == "self.my_field(recalculate)"
+        assert result == "self.my_field"
 
     def test_linked_record_field_ref_python(self):
         """Python linked record fields are plain lists, no .ids needed."""

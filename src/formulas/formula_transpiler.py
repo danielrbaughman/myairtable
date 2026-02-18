@@ -310,8 +310,8 @@ class CodeEmitter:
             raise ParseError(f"Unknown field reference: {{{field_id}}}")
 
         if field_id in self.formula_field_ids:
-            # Formula field -> call as function with recalculate parameter
-            return f"{self._self}.{prop_name}(recalculate)"
+            # Formula field -> access as property (getter checks evaluate_formulas_at_runtime)
+            return f"{self._self}.{prop_name}"
         elif field_id in self.linked_record_field_ids and self.language != "python":
             # Plural linked record field in TS/JS -> access .ids for the raw array
             return f"{self._self}.{prop_name}.ids"

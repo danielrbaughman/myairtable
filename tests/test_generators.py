@@ -142,11 +142,11 @@ class TestTypeScriptComputedFields:
         write_models(base, output_folder, formulas=False, zod=False)
         return _read_generated_model(output_folder, "typescript")
 
-    def test_formula_field_is_function(self, tmp_path: Path):
-        """A formula field should be a function, not a getter."""
+    def test_formula_field_is_getter(self, tmp_path: Path):
+        """A formula field should be a getter, not a method."""
         content = self._generate([("My Formula", "fld001", "formula")], tmp_path)
-        assert "public myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
         assert "set myFormula(" not in content
 
     def test_writable_field_has_getter_and_setter(self, tmp_path: Path):
@@ -177,9 +177,9 @@ class TestTypeScriptComputedFields:
         ]
         content = self._generate(fields_spec, tmp_path)
 
-        # Formula: function
-        assert "public myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        # Formula: getter
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
         # Non-formula computed: getter only
         assert "get created()" in content
         assert "set created(" not in content
@@ -203,11 +203,11 @@ class TestJavaScriptComputedFields:
         write_models(base, output_folder, formulas=False, zod=False)
         return _read_generated_model(output_folder, "javascript")
 
-    def test_formula_field_is_function(self, tmp_path: Path):
-        """A formula field should be a function, not a getter."""
+    def test_formula_field_is_getter(self, tmp_path: Path):
+        """A formula field should be a getter, not a method."""
         content = self._generate([("My Formula", "fld001", "formula")], tmp_path)
-        assert "myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
         assert "set myFormula(" not in content
 
     def test_writable_field_has_getter_and_setter(self, tmp_path: Path):
@@ -255,7 +255,7 @@ class TestPythonComputedFields:
 
 
 class TestTypeScriptFormulaFunctions:
-    """TypeScript generator should emit functions for formula fields with transpilable formulas."""
+    """TypeScript generator should emit getters for formula fields with transpilable formulas."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
         from src.generators.typescript import write_models
@@ -266,33 +266,33 @@ class TestTypeScriptFormulaFunctions:
         write_models(base, output_folder, formulas=False, zod=False)
         return _read_generated_model(output_folder, "typescript")
 
-    def test_formula_field_generates_function(self, tmp_path: Path):
-        """A formula field with a transpilable formula should generate a function."""
+    def test_formula_field_generates_getter(self, tmp_path: Path):
+        """A formula field with a transpilable formula should generate a getter."""
         fields_spec = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
         ]
         formula_map = {"fld002": "COUNTA({fld001})"}
         content = self._generate(fields_spec, tmp_path, formula_map=formula_map)
-        # Should be a function, not a getter
-        assert "public myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
         assert "F.COUNTA(this.myNumber)" in content
+        assert "evaluateFormulasAtRuntime" in content
         assert "AirtableRuntime as F" in content
 
-    def test_formula_field_without_formula_is_still_function(self, tmp_path: Path):
-        """A formula field without a transpilable formula is still a function (just no recalculate body)."""
+    def test_formula_field_without_formula_is_still_getter(self, tmp_path: Path):
+        """A formula field without a transpilable formula is still a getter."""
         fields_spec = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
-        assert "public myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
 
     def test_rollup_still_generates_getter(self, tmp_path: Path):
         """Rollup fields should still generate getter-only, not functions."""
         fields_spec = [("My Rollup", "fld001", "rollup")]
         content = self._generate(fields_spec, tmp_path)
         assert "get myRollup()" in content
-        assert "public myRollup(recalculate" not in content
+        assert "myRollup(recalculate" not in content
 
     def test_no_runtime_import_without_formulas(self, tmp_path: Path):
         """Runtime import should only appear when there are formula fields."""
@@ -301,7 +301,7 @@ class TestTypeScriptFormulaFunctions:
         assert "AirtableRuntime" not in content and "F." not in content
 
     def test_formula_references_another_formula(self, tmp_path: Path):
-        """A formula referencing another formula field should call it as a function."""
+        """A formula referencing another formula field should access it as a property."""
         fields_spec = [
             ("Base Value", "fld001", "number"),
             ("Formula A", "fld002", "formula"),
@@ -312,12 +312,13 @@ class TestTypeScriptFormulaFunctions:
             "fld003": "{fld002} * 2",
         }
         content = self._generate(fields_spec, tmp_path, formula_map=formula_map)
-        # Formula B should call Formula A as a function
-        assert "this.formulaA(recalculate)" in content
+        # Formula B should reference Formula A as a property
+        assert "this.formulaA" in content
+        assert "this.formulaA(recalculate)" not in content
 
 
 class TestJavaScriptFormulaFunctions:
-    """JavaScript generator should emit functions for formula fields with transpilable formulas."""
+    """JavaScript generator should emit getters for formula fields with transpilable formulas."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
         from src.generators.javascript import write_models
@@ -328,28 +329,29 @@ class TestJavaScriptFormulaFunctions:
         write_models(base, output_folder, formulas=False, zod=False)
         return _read_generated_model(output_folder, "javascript")
 
-    def test_formula_field_generates_function(self, tmp_path: Path):
-        """A formula field with a transpilable formula should generate a function."""
+    def test_formula_field_generates_getter(self, tmp_path: Path):
+        """A formula field with a transpilable formula should generate a getter."""
         fields_spec = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
         ]
         formula_map = {"fld002": "COUNTA({fld001})"}
         content = self._generate(fields_spec, tmp_path, formula_map=formula_map)
-        assert "myFormula(recalculate = false)" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
         assert "F.COUNTA(this.myNumber)" in content
+        assert "evaluateFormulasAtRuntime" in content
 
-    def test_formula_field_without_formula_is_still_function(self, tmp_path: Path):
-        """A formula field without a transpilable formula is still a function."""
+    def test_formula_field_without_formula_is_still_getter(self, tmp_path: Path):
+        """A formula field without a transpilable formula is still a getter."""
         fields_spec = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
-        assert "myFormula(recalculate" in content
-        assert "get myFormula()" not in content
+        assert "get myFormula()" in content
+        assert "myFormula(recalculate" not in content
 
 
 class TestPythonFormulaFunctions:
-    """Python generator should emit hidden ORM descriptors + methods for formula fields."""
+    """Python generator should emit hidden ORM descriptors + properties for formula fields."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
         from src.generators.python import write_models
@@ -361,8 +363,8 @@ class TestPythonFormulaFunctions:
         model_path = output_folder / "dynamic" / "models" / "test_table.py"
         return model_path.read_text()
 
-    def test_formula_field_generates_method(self, tmp_path: Path):
-        """A formula field with a transpilable formula should generate a method."""
+    def test_formula_field_generates_property(self, tmp_path: Path):
+        """A formula field with a transpilable formula should generate a property."""
         fields_spec = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
@@ -371,17 +373,22 @@ class TestPythonFormulaFunctions:
         content = self._generate(fields_spec, tmp_path, formula_map=formula_map)
         # Should have hidden ORM descriptor
         assert "_orm_my_formula:" in content
-        # Should have public method
-        assert "def my_formula(self, recalculate: bool = False)" in content
+        # Should have @property
+        assert "@property" in content
+        assert "def my_formula(self)" in content
+        assert "recalculate" not in content
+        assert "evaluate_formulas_at_runtime" in content
         assert "F.COUNTA(self.my_number)" in content
         assert "AirtableRuntime as F" in content
 
-    def test_formula_field_without_formula_is_still_method(self, tmp_path: Path):
-        """A formula field without a transpilable formula is still a method with hidden ORM descriptor."""
+    def test_formula_field_without_formula_is_still_property(self, tmp_path: Path):
+        """A formula field without a transpilable formula is still a property with hidden ORM descriptor."""
         fields_spec = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
         assert "_orm_my_formula:" in content
-        assert "def my_formula(self, recalculate: bool = False)" in content
+        assert "@property" in content
+        assert "def my_formula(self)" in content
+        assert "recalculate" not in content
 
 
 # endregion
