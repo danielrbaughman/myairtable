@@ -343,18 +343,6 @@ class AirtableRuntime:
         return (adjusted // 7) + 1
 
     @staticmethod
-    def DATESTR(date: Any) -> str:  # noqa: N802
-        if date is None:
-            return ""
-        return AirtableRuntime.D(date).strftime("%Y-%m-%d")
-
-    @staticmethod
-    def TIMESTR(date: Any) -> str:  # noqa: N802
-        if date is None:
-            return ""
-        return AirtableRuntime.D(date).strftime("%H:%M:%S")
-
-    @staticmethod
     def TONOW(date: Any, unit: Any = None) -> int | str:  # noqa: N802
         if unit is not None:
             return AirtableRuntime.DATETIME_DIFF(datetime.now(tz=timezone.utc).isoformat(), date, unit)

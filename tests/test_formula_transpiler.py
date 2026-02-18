@@ -335,6 +335,12 @@ class TestPythonEmitter:
     def test_second(self):
         assert self._transpile("SECOND({fld1})") == "F.D(self.my_field).second"
 
+    def test_datestr(self):
+        assert self._transpile("DATESTR({fld1})") == 'F.D(self.my_field).strftime("%Y-%m-%d")'
+
+    def test_timestr(self):
+        assert self._transpile("TIMESTR({fld1})") == 'F.D(self.my_field).strftime("%H:%M:%S")'
+
     def test_addition(self):
         assert self._transpile("{fld1} + 5") == "(F.N(self.my_field) + 5)"
 
