@@ -21,6 +21,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	// Base properties
 	protected record?: ATRecord<FldSt>;
 	public id: string;
+	public evaluateFormulasAtRuntime: boolean = false;
 	[key: string]: unknown;
 
 	// Mappings - must be defined by subclasses

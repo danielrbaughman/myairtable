@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
 from ..utils.helpers import (
@@ -441,6 +442,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
             if zod:
                 write.line(f"import {{ {table_name}Schema, I{table_name} }} from '../zod/{table_name_camel}';")
+
+            # Pre-transpile formula fields and add AirtableRuntime import if any succeed
+            formula_field_ids = table.formula_field_ids()
+            linked_record_field_ids = table.linked_record_field_ids()
+            single_linked_record_field_ids = table.single_linked_record_field_ids()
+            field_name_map = {f.id: f.name_camel() for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            transpiled_formulas = transpile_table_formulas(
+                raw_formulas, "typescript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
+            )
+            has_any_formula = any(f.is_formula() for f in table.fields)
+            if has_any_formula:
+                write.line('import { AirtableRuntime as F } from "../../static/airtable-runtime";')
             write.line_empty()
 
             # Table Model
@@ -530,7 +544,23 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                             f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
+                elif field.is_formula():
+                    # Formula field -> computed property that checks evaluateFormulasAtRuntime
+                    write.docstring(docstring)
+                    write.line_indented(f"public get {field_name}(): {field_type} | undefined {{", 1)
+                    if field.id in transpiled_formulas:
+                        formula_code = transpiled_formulas[field.id]
+                        write.line_indented(f'if (this.evaluateFormulasAtRuntime) this._fields["{field_name}"] = {formula_code};', 2)
+                    write.line_indented(f'return this._fields["{field_name}"] as {field_type};', 2)
+                    write.line_indented("}", 1)
+                elif field.is_computed():
+                    # Computed: getter only (TypeScript enforces read-only at compile time)
+                    write.docstring(docstring)
+                    write.line_indented(
+                        f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
+                    )
                 else:
+                    # Writable: getter + setter
                     write.docstring(docstring)
                     write.line_indented(
                         f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1

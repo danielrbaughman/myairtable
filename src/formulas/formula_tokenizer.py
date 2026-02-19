@@ -104,6 +104,7 @@ AIRTABLE_FUNCTIONS: frozenset[str] = frozenset(
         "SECOND",
         "WEEKDAY",
         "WEEKNUM",
+        "DATESTR",
         "TIMESTR",
         "TONOW",
         "FROMNOW",
@@ -286,33 +287,42 @@ class FormulaTokenizer:
         return True
 
     def _try_number(self) -> bool:
-        """Tokenize numeric literals (integers and decimals)."""
+        """Tokenize numeric literals (integers and decimals, including .05 style)."""
         start = self.pos
 
         # Handle negative numbers
         if self.formula[self.pos] == "-":
             if not self._is_negative_number_context():
                 return False
-            # Check if followed by digit
-            if self.pos + 1 >= self.formula_len or not self.formula[self.pos + 1].isdigit():
+            # Check if followed by digit or decimal point
+            if self.pos + 1 >= self.formula_len or (not self.formula[self.pos + 1].isdigit() and self.formula[self.pos + 1] != "."):
                 return False
             self.pos += 1
 
-        # Must start with digit
-        if self.pos >= self.formula_len or not self.formula[self.pos].isdigit():
+        # Must start with digit or decimal point
+        if self.pos >= self.formula_len or (not self.formula[self.pos].isdigit() and self.formula[self.pos] != "."):
             self.pos = start
             return False
 
-        # Consume digits
-        while self.pos < self.formula_len and self.formula[self.pos].isdigit():
+        # Handle leading decimal point (.05 style)
+        if self.formula[self.pos] == ".":
+            # Must be followed by a digit
+            if self.pos + 1 >= self.formula_len or not self.formula[self.pos + 1].isdigit():
+                self.pos = start
+                return False
             self.pos += 1
-
-        # Optional decimal part
-        if self.pos < self.formula_len and self.formula[self.pos] == ".":
-            self.pos += 1
-            # Consume fractional digits
             while self.pos < self.formula_len and self.formula[self.pos].isdigit():
                 self.pos += 1
+        else:
+            # Consume integer digits
+            while self.pos < self.formula_len and self.formula[self.pos].isdigit():
+                self.pos += 1
+
+            # Optional decimal part
+            if self.pos < self.formula_len and self.formula[self.pos] == ".":
+                self.pos += 1
+                while self.pos < self.formula_len and self.formula[self.pos].isdigit():
+                    self.pos += 1
 
         value = self.formula[start : self.pos]
         self._add_token(TokenType.NUMBER, value)

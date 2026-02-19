@@ -122,8 +122,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
 
     def get(
         self,
-        record_id: str = "",
-        record_ids: list[str] = [],
+        record_id: str | None = None,
+        record_ids: list[str] | None = None,
         formula: Optional[Formula] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = True,
@@ -142,6 +142,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         if isinstance(record_id, list) and len(record_id) > 0 and isinstance(record_id[0], str):
             record_ids = record_id
             record_id = None  # type: ignore
+
+        if isinstance(record_id, str) and not record_id.strip():
+            raise ValueError("Record ID cannot be an empty string.")
 
         if record_id:
             if fields is not None:
@@ -170,7 +173,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record_dict: DictType = sanitize_record_dict(record_dict)
             record_orm: ORMType = self._orm_cls.from_record(record_dict)
             return record_orm
-        elif len(record_ids) > 0:
+        elif record_ids and len(record_ids) > 0:
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             record_dicts: list[RecordDict] = self._table.all(
@@ -243,7 +246,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             new_records = self.get(record_ids=[r.id for r in records])
             return new_records
         else:
-            if not record:
+            if record is None:
                 raise ValueError("Record to create cannot be None.")
             record.save()  # type: ignore
             new_record = self.get(record_id=record.id)  # type: ignore
@@ -279,6 +282,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record = None  # type: ignore
 
         if isinstance(records, list):
+            if records is None:
+                raise ValueError("Records to update cannot be None.")
             records: list[RecordDict] = [r.to_record() for r in records]  # type: ignore
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)
@@ -288,6 +293,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             orm_records = [self._orm_cls.from_record(r) for r in records]
             return orm_records
         else:
+            if record is None:
+                raise ValueError("Record to update cannot be None.")
             record: RecordDict = record.to_record()  # type: ignore
             record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)  # type: ignore
             record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True)
