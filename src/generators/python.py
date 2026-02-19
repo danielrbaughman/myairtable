@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from rich import print
@@ -671,6 +672,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line("from .types import TableName")
         write.line("from ..static.airtable_table import TableType")
         write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config")
+        write.line("from ..static.schema_types import BaseSchema")
         write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
         write.endregion()
         write.line_empty()
@@ -680,6 +682,9 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.region("MAIN CLASS")
         write.line("class Airtable:")
         write.line_indented(main_doc_string())
+        write.line_empty()
+        schema_json = json.dumps(base.to_dict())
+        write.line_indented(f"schema: BaseSchema = {schema_json}")
         write.line_empty()
         write.line_indented("_api: Api")
         write.line_indented("_base_id: str")
