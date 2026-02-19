@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from rich import print
@@ -683,8 +682,8 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line("class Airtable:")
         write.line_indented(main_doc_string())
         write.line_empty()
-        schema_json = json.dumps(base.to_dict())
-        write.line_indented(f"schema: BaseSchema = {schema_json}")
+        schema_repr = repr(base.to_dict())
+        write.line_indented(f"schema: BaseSchema = {schema_repr}")
         write.line_empty()
         write.line_indented("_api: Api")
         write.line_indented("_base_id: str")
