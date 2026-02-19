@@ -194,6 +194,7 @@ class Paths:
     MODELS = "models"
     TABLES = "tables"
     FORMULAS = "formulas"
+    OPTIONS = "options"
     DOCS = "docs"
     ZOD = "zod"
 

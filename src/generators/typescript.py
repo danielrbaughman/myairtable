@@ -117,6 +117,11 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
             if verbose:
                 print("[dim] - TypeScript formula helpers generated.[/]")
 
+    with timer.timer("TypeScript: write_options"):
+        write_options(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript options generated.[/]")
+
     if zod:
         with timer.timer("TypeScript: write_zod_schemas"):
             write_zod_schemas(base, output_folder)
@@ -430,6 +435,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line(f'}} from "../types/{table_name_camel}";')
             if formulas:
                 write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
+            if len(table.select_fields()) > 0:
+                write.line(f"import {{ {table_name}Options }} from '../options/{table_name_camel}';")
 
             linked_tables = table.linked_tables()
             if linked_tables:
@@ -466,6 +473,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line(f"export class {model_name} extends AirtableModel<{table_name}FieldSet, unknown, {table_name}Field> {{")
             if formulas:
                 write.line_indented(f"public static f = {table_name}Formulas")
+            if len(table.select_fields()) > 0:
+                write.line_indented(f"public static o = {table_name}Options")
             write.line_indented(f"protected static nameToIdMap = {table_name}FieldNameIdMapping;", 1)
             write.line_indented(f"protected static idToNameMap = {table_name}FieldIdNameMapping;", 1)
             write.line_indented(f"protected static nameToPropertyMap = {table_name}FieldNamePropertyMapping;", 1)
@@ -742,6 +751,33 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     write_barrel_export(base, formulas_dir)
 
 
+def write_options(base: Base, output_folder: Path) -> None:
+    options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
+
+    for table in base.tables:
+        table_name = table.name_pascal()
+        table_name_camel = table.name_camel()
+        select_fields = table.select_fields()
+        with WriteToTypeScriptFile(path=options_dir / f"{table_name_camel}.ts") as write:
+            if len(select_fields) > 0:
+                # Import the const arrays from types
+                write.line("import {")
+                for field in select_fields:
+                    write.line_indented(f"{field.options_name()}s,")
+                write.line(f'}} from "../types/{table_name_camel}";')
+                write.line_empty()
+
+            # Namespace with property per select field
+            write.line(f"export namespace {table_name}Options {{")
+            for field in select_fields:
+                write.line_indented(f"export const {field.name_camel()} = {field.options_name()}s;")
+            write.line("}")
+            write.line_empty()
+
+    # Write barrel export index.ts
+    write_barrel_export(base, options_dir)
+
+
 # endregion
 
 
@@ -806,6 +842,7 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
         write.line('export * from "./types";')
         if formulas:
             write.line('export * from "./formulas";')
+        write.line('export * from "./options";')
         write.line("")
 
     with WriteToTypeScriptFile(path=output_folder / "index.ts") as write:

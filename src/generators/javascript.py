@@ -115,6 +115,11 @@ def generate_javascript(base: Base, output_folder: Path, formulas: bool = True, 
             if verbose:
                 print("[dim] - JavaScript formula helpers generated.[/]")
 
+    with timer.timer("JavaScript: write_options"):
+        write_options(base, output_folder)
+        if verbose:
+            print("[dim] - JavaScript options generated.[/]")
+
     if zod:
         with timer.timer("JavaScript: write_zod_schemas"):
             write_zod_schemas(base, output_folder)
@@ -420,6 +425,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             if formulas:
                 write.require_statement([f"{table.name_pascal()}Formulas"], f"../formulas/{table.name_camel()}")
+            if len(table.select_fields()) > 0:
+                write.require_statement([f"{table.name_pascal()}Options"], f"../options/{table.name_camel()}")
 
             # Note: Other models are loaded lazily to avoid circular dependencies
 
@@ -452,6 +459,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                 write.line_indented(f"static schema = {table.name_pascal()}Schema;")
             if formulas:
                 write.line_indented(f"static f = {table.name_pascal()}Formulas;")
+            if len(table.select_fields()) > 0:
+                write.line_indented(f"static o = {table.name_pascal()}Options;")
             write.line_indented(f"static nameToIdMap = {table.name_pascal()}FieldNameIdMapping;")
             write.line_indented(f"static idToNameMap = {table.name_pascal()}FieldIdNameMapping;")
             write.line_indented(f"static nameToPropertyMap = {table.name_pascal()}FieldNamePropertyMapping;")
@@ -632,6 +641,31 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     write_barrel_export(base, formulas_dir)
 
 
+def write_options(base: Base, output_folder: Path) -> None:
+    options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
+
+    for table in base.tables:
+        select_fields = table.select_fields()
+        with WriteToJavaScriptFile(path=options_dir / f"{table.name_camel()}.js") as write:
+            if len(select_fields) > 0:
+                # Require the const arrays from types
+                option_names = [f"{field.options_name()}s" for field in select_fields]
+                write.require_statement(option_names, f"../types/{table.name_camel()}")
+                write.line_empty()
+
+            # Object with property per select field
+            write.line(f"const {table.name_pascal()}Options = {{")
+            for field in select_fields:
+                write.line_indented(f"{field.name_camel()}: {field.options_name()}s,")
+            write.line("};")
+            write.line_empty()
+
+            write.module_exports([f"{table.name_pascal()}Options"])
+
+    # Write barrel export index.js
+    write_barrel_export(base, options_dir)
+
+
 # endregion
 
 
@@ -691,6 +725,7 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
         write.line_indented('...require("./types"),')
         if formulas:
             write.line_indented('...require("./formulas"),')
+        write.line_indented('...require("./options"),')
         write.line("};")
         write.line("")
 

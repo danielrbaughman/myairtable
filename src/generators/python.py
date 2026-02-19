@@ -140,6 +140,11 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
             if verbose:
                 print("[dim] - Python formula helpers generated.[/]")
 
+    with timer.timer("Python: write_options"):
+        write_options(base, output_folder)
+        if verbose:
+            print("[dim] - Python options generated.[/]")
+
     if wrappers:
         with timer.timer("Python: write_tables"):
             write_tables(base, output_folder)
@@ -457,6 +462,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.select_options_import(table)
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
+            if len(table.select_fields()) > 0:
+                write.line(f"from ..options import {table.name_pascal()}Options")
             linked_tables = table.linked_tables()
             if len(linked_tables) > 0:
                 write.line("if TYPE_CHECKING:")
@@ -487,6 +494,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
 
             if formulas:
                 write.line_indented(f"f: {table.name_pascal()}Formulas = {table.name_pascal()}Formulas()")
+                write.line_empty()
+            if len(table.select_fields()) > 0:
+                write.line_indented(f"o: {table.name_pascal()}Options = {table.name_pascal()}Options()")
                 write.line_empty()
 
             write.line_indented("evaluate_formulas_at_runtime: bool = False")
@@ -625,6 +635,29 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     write_module_init(base, output_folder, Paths.FORMULAS)
 
 
+def write_options(base: Base, output_folder: Path) -> None:
+    options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
+
+    for table in base.tables:
+        select_fields = table.select_fields()
+        with WriteToPythonFile(path=options_dir / f"{table.name_snake()}.py") as write:
+            if len(select_fields) > 0:
+                # Import const arrays from types
+                write.multiline_import("..types", [f"{field.options_name()}s" for field in select_fields])
+                write.line_empty()
+
+            # Class with property per select field
+            write.line(f"class {table.name_pascal()}Options:")
+            if len(select_fields) > 0:
+                for field in select_fields:
+                    write.line_indented(f"{field.name_snake()} = {field.options_name()}s")
+            else:
+                write.line_indented("pass")
+            write.line_empty()
+
+    write_module_init(base, output_folder, Paths.OPTIONS)
+
+
 # endregion
 
 
@@ -693,6 +726,7 @@ def write_init(output_folder: Path, formulas: bool, wrappers: bool) -> None:
             write.line("from .airtable_main import *  # noqa: F403")
         if formulas:
             write.line("from .formulas import *  # noqa: F403")
+        write.line("from .options import *  # noqa: F403")
 
     with WriteToPythonFile(path=output_folder / "__init__.py") as write:
         # Imports
