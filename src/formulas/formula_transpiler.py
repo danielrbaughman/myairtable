@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from .formula_tokenizer import Token, TokenType, tokenize_formula
 
@@ -112,7 +112,7 @@ class FormulaParser:
 
     def parse_comparison(self) -> ASTNode:
         left = self.parse_concat()
-        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("=", "!=", "<", ">", "<=", ">="):
+        while (tok := self.peek()) and tok.type == TokenType.OPERATOR and tok.value in ("=", "!=", "<", ">", "<=", ">="):
             op = self.advance().value
             right = self.parse_concat()
             left = BinaryOp(op, left, right)
@@ -120,7 +120,7 @@ class FormulaParser:
 
     def parse_concat(self) -> ASTNode:
         left = self.parse_additive()
-        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value == "&":
+        while (tok := self.peek()) and tok.type == TokenType.OPERATOR and tok.value == "&":
             self.advance()
             right = self.parse_additive()
             left = BinaryOp("&", left, right)
@@ -128,7 +128,7 @@ class FormulaParser:
 
     def parse_additive(self) -> ASTNode:
         left = self.parse_multiplicative()
-        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("+", "-"):
+        while (tok := self.peek()) and tok.type == TokenType.OPERATOR and tok.value in ("+", "-"):
             op = self.advance().value
             right = self.parse_multiplicative()
             left = BinaryOp(op, left, right)
@@ -136,14 +136,14 @@ class FormulaParser:
 
     def parse_multiplicative(self) -> ASTNode:
         left = self.parse_unary()
-        while self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value in ("*", "/"):
+        while (tok := self.peek()) and tok.type == TokenType.OPERATOR and tok.value in ("*", "/"):
             op = self.advance().value
             right = self.parse_unary()
             left = BinaryOp(op, left, right)
         return left
 
     def parse_unary(self) -> ASTNode:
-        if self.peek() and self.peek().type == TokenType.OPERATOR and self.peek().value == "-":
+        if (tok := self.peek()) and tok.type == TokenType.OPERATOR and tok.value == "-":
             self.advance()
             operand = self.parse_unary()
             return UnaryOp("-", operand)
@@ -323,292 +323,369 @@ class CodeEmitter:
             return f"{self._self}.{prop_name}"
 
     def _emit_function_call(self, node: FunctionCall) -> str:
-        name = node.name
+        handler = self._FUNCTION_HANDLERS.get(node.name)
+        if handler is not None:
+            result = handler(self, node)
+            if result is not None:
+                return result
+        # Default: runtime function call
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        return f"{self._runtime}.{node.name}({args})"
 
-        # Special cases that reference model properties
-        if name == "RECORD_ID":
-            return f"{self._self}.id"
+    # region Function Handlers
 
-        # Boolean literals - emit native syntax
-        if name == "TRUE":
+    def _emit_fn_record_id(self, node: FunctionCall) -> str:
+        return f"{self._self}.id"
+
+    def _emit_fn_true(self, node: FunctionCall) -> str:
+        return "True" if self.language == "python" else "true"
+
+    def _emit_fn_false(self, node: FunctionCall) -> str:
+        return "False" if self.language == "python" else "false"
+
+    def _emit_fn_blank(self, node: FunctionCall) -> str:
+        if not node.args:
+            return "None" if self.language == "python" else "null"
+        arg = self.emit(node.args[0])
+        if self.language == "python":
+            return f"({arg} is None)"
+        return f"({arg} == null)"
+
+    def _emit_fn_not(self, node: FunctionCall) -> str:
+        arg = self.emit(node.args[0])
+        return f"not {arg}" if self.language == "python" else f"!{arg}"
+
+    def _emit_fn_and(self, node: FunctionCall) -> str:
+        parts = [self.emit(arg) for arg in node.args]
+        if len(parts) == 0:
             return "True" if self.language == "python" else "true"
-        if name == "FALSE":
+        if len(parts) == 1:
+            return parts[0]
+        op = " and " if self.language == "python" else " && "
+        return f"({op.join(parts)})"
+
+    def _emit_fn_or(self, node: FunctionCall) -> str:
+        parts = [self.emit(arg) for arg in node.args]
+        if len(parts) == 0:
             return "False" if self.language == "python" else "false"
+        if len(parts) == 1:
+            return parts[0]
+        op = " or " if self.language == "python" else " || "
+        return f"({op.join(parts)})"
 
-        if name == "BLANK":
-            if not node.args:
-                return "None" if self.language == "python" else "null"
-            arg = self.emit(node.args[0])
-            if self.language == "python":
-                return f"({arg} is None)"
-            return f"({arg} == null)"
+    def _emit_fn_len(self, node: FunctionCall) -> str:
+        arg = self._emit_str(node.args[0])
+        if self.language == "python":
+            return f"len({arg})"
+        return f"{arg}.length"
 
-        if name == "NOT":
-            arg = self.emit(node.args[0])
-            return f"not {arg}" if self.language == "python" else f"!{arg}"
+    def _emit_fn_str_method(self, node: FunctionCall) -> str:
+        arg = self._emit_str(node.args[0])
+        if self.language == "python":
+            method = {"LOWER": "lower", "UPPER": "upper", "TRIM": "strip"}[node.name]
+        else:
+            method = {"LOWER": "toLowerCase", "UPPER": "toUpperCase", "TRIM": "trim"}[node.name]
+        return f"{arg}.{method}()"
 
-        if name in ("AND", "OR"):
-            parts = [self.emit(arg) for arg in node.args]
-            if len(parts) == 0:
-                if name == "AND":
-                    return "True" if self.language == "python" else "true"
-                return "False" if self.language == "python" else "false"
-            if len(parts) == 1:
-                return parts[0]
-            op = " and " if self.language == "python" else " && "
-            if name == "OR":
-                op = " or " if self.language == "python" else " || "
-            return f"({op.join(parts)})"
+    def _emit_fn_encode_url_component(self, node: FunctionCall) -> str:
+        arg = self._emit_str(node.args[0])
+        if self.language == "python":
+            return f'urllib.parse.quote({arg}, safe="")'
+        return f"encodeURIComponent({arg})"
 
-        if name == "LEN":
-            arg = self._emit_str(node.args[0])
-            if self.language == "python":
-                return f"len({arg})"
-            return f"{arg}.length"
+    def _emit_fn_int(self, node: FunctionCall) -> str:
+        arg = self._emit_num(node.args[0])
+        if self.language == "python":
+            return f"math.floor({arg})"
+        return f"Math.floor({arg})"
 
-        if name in ("LOWER", "UPPER", "TRIM"):
-            arg = self._emit_str(node.args[0])
-            if self.language == "python":
-                method = {"LOWER": "lower", "UPPER": "upper", "TRIM": "strip"}[name]
-                return f"{arg}.{method}()"
-            method = {"LOWER": "toLowerCase", "UPPER": "toUpperCase", "TRIM": "trim"}[name]
-            return f"{arg}.{method}()"
+    def _emit_fn_abs(self, node: FunctionCall) -> str:
+        arg = self._emit_num(node.args[0])
+        if self.language == "python":
+            return f"abs({arg})"
+        return f"Math.abs({arg})"
 
-        if name == "ENCODE_URL_COMPONENT":
-            arg = self._emit_str(node.args[0])
-            if self.language == "python":
-                return f'urllib.parse.quote({arg}, safe="")'
-            return f"encodeURIComponent({arg})"
+    def _emit_fn_sqrt(self, node: FunctionCall) -> str:
+        arg = self._emit_num(node.args[0])
+        if self.language == "python":
+            return f"math.sqrt({arg})"
+        return f"Math.sqrt({arg})"
 
-        if name == "INT":
-            arg = self._emit_num(node.args[0])
-            if self.language == "python":
-                return f"math.floor({arg})"
-            return f"Math.floor({arg})"
+    def _emit_fn_exp(self, node: FunctionCall) -> str:
+        arg = self._emit_num(node.args[0])
+        if self.language == "python":
+            return f"math.exp({arg})"
+        return f"Math.exp({arg})"
 
-        if name == "ABS":
-            arg = self._emit_num(node.args[0])
-            if self.language == "python":
-                return f"abs({arg})"
-            return f"Math.abs({arg})"
+    def _emit_fn_log10(self, node: FunctionCall) -> str:
+        arg = self._emit_num(node.args[0])
+        if self.language == "python":
+            return f"math.log10({arg})"
+        return f"Math.log10({arg})"
 
-        if name == "SQRT":
-            arg = self._emit_num(node.args[0])
-            if self.language == "python":
-                return f"math.sqrt({arg})"
-            return f"Math.sqrt({arg})"
+    def _emit_fn_power(self, node: FunctionCall) -> str:
+        base = self._emit_num(node.args[0])
+        exp = self._emit_num(node.args[1])
+        if self.language == "python":
+            return f"math.pow({base}, {exp})"
+        return f"Math.pow({base}, {exp})"
 
-        if name == "EXP":
-            arg = self._emit_num(node.args[0])
-            if self.language == "python":
-                return f"math.exp({arg})"
-            return f"Math.exp({arg})"
+    def _emit_fn_mod(self, node: FunctionCall) -> str:
+        value = self._emit_num(node.args[0])
+        divisor = self._emit_num(node.args[1])
+        return f"({value} % {divisor})"
 
-        if name == "LOG10":
-            arg = self._emit_num(node.args[0])
-            if self.language == "python":
-                return f"math.log10({arg})"
-            return f"Math.log10({arg})"
+    def _emit_fn_regex_extract(self, node: FunctionCall) -> str:
+        text = self._emit_str(node.args[0])
+        regex = self._emit_str(node.args[1])
+        if self.language == "python":
+            return f"(m.group(0) if (m := re.search({regex}, {text})) else None)"
+        return f"({text}.match(new RegExp({regex}))?.[0] ?? null)"
 
-        if name == "POWER":
-            base = self._emit_num(node.args[0])
-            exp = self._emit_num(node.args[1])
-            if self.language == "python":
-                return f"math.pow({base}, {exp})"
-            return f"Math.pow({base}, {exp})"
+    def _emit_fn_xor(self, node: FunctionCall) -> str:
+        left = self.emit(node.args[0])
+        right = self.emit(node.args[1])
+        if self.language == "python":
+            return f"((not {left}) != (not {right}))"
+        return f"(!{left} !== !{right})"
 
-        if name == "MOD":
-            value = self._emit_num(node.args[0])
-            divisor = self._emit_num(node.args[1])
-            return f"({value} % {divisor})"
+    def _emit_fn_if(self, node: FunctionCall) -> str:
+        cond = self.emit(node.args[0])
+        if_true = self.emit(node.args[1])
+        if_false = self.emit(node.args[2]) if len(node.args) > 2 else ("None" if self.language == "python" else "null")
+        if self.language == "python":
+            return f"({if_true} if {cond} else {if_false})"
+        return f"({cond} ? {if_true} : {if_false})"
 
-        if name == "REGEX_EXTRACT":
-            text = self._emit_str(node.args[0])
-            regex = self._emit_str(node.args[1])
-            if self.language == "python":
-                return f"(m.group(0) if (m := re.search({regex}, {text})) else None)"
-            return f"({text}.match(new RegExp({regex}))?.[0] ?? null)"
-
-        if name == "XOR":
-            left = self.emit(node.args[0])
-            right = self.emit(node.args[1])
-            if self.language == "python":
-                return f"((not {left}) != (not {right}))"
-            return f"(!{left} !== !{right})"
-
-        if name == "IF":
-            cond = self.emit(node.args[0])
-            if_true = self.emit(node.args[1])
-            if_false = self.emit(node.args[2]) if len(node.args) > 2 else ("None" if self.language == "python" else "null")
-            if self.language == "python":
-                return f"({if_true} if {cond} else {if_false})"
-            return f"({cond} ? {if_true} : {if_false})"
-
-        if name == "IFS":
-            pairs = []
-            for i in range(0, len(node.args) - 1, 2):
-                pairs.append((self.emit(node.args[i]), self.emit(node.args[i + 1])))
-            fallback = "None" if self.language == "python" else "null"
-            if self.language == "python":
-                result = fallback
-                for cond, val in reversed(pairs):
-                    result = f"{val} if {cond} else {result}"
-                return f"({result})"
+    def _emit_fn_ifs(self, node: FunctionCall) -> str:
+        pairs = []
+        for i in range(0, len(node.args) - 1, 2):
+            pairs.append((self.emit(node.args[i]), self.emit(node.args[i + 1])))
+        fallback = "None" if self.language == "python" else "null"
+        if self.language == "python":
             result = fallback
             for cond, val in reversed(pairs):
-                result = f"{cond} ? {val} : {result}"
+                result = f"{val} if {cond} else {result}"
             return f"({result})"
+        result = fallback
+        for cond, val in reversed(pairs):
+            result = f"{cond} ? {val} : {result}"
+        return f"({result})"
 
-        if name == "SWITCH":
-            expr_node = node.args[0]
-            rest = node.args[1:]
-            pairs = []
-            for i in range(0, len(rest) - 1, 2):
-                pairs.append((self.emit(rest[i]), self.emit(rest[i + 1])))
-            if len(rest) % 2 == 1:
-                fallback = self.emit(rest[-1])
-            else:
-                fallback = "None" if self.language == "python" else "null"
-            # Coerce expr to match pattern type when types differ
-            first_pattern = rest[0] if rest else None
-            expr_type = self._infer_type(expr_node)
-            pattern_type = self._infer_type(first_pattern) if first_pattern else None
-            if isinstance(expr_node, (StringLiteral, NumberLiteral)):
-                expr = self.emit(expr_node)
-            elif pattern_type == "string" and expr_type != "string":
-                expr = f"{self._runtime}.S({self.emit(expr_node)})"
-            elif pattern_type == "number" and expr_type != "number":
-                expr = f"{self._runtime}.N({self.emit(expr_node)})"
-            else:
-                expr = self.emit(expr_node)
-            if self.language == "python":
-                result = fallback
-                for pattern, val in reversed(pairs):
-                    result = f"{val} if ({expr} == {pattern}) else {result}"
-                return f"({result})"
+    def _emit_fn_switch(self, node: FunctionCall) -> str:
+        expr_node = node.args[0]
+        rest = node.args[1:]
+        pairs = []
+        for i in range(0, len(rest) - 1, 2):
+            pairs.append((self.emit(rest[i]), self.emit(rest[i + 1])))
+        if len(rest) % 2 == 1:
+            fallback = self.emit(rest[-1])
+        else:
+            fallback = "None" if self.language == "python" else "null"
+        # Coerce expr to match pattern type when types differ
+        first_pattern = rest[0] if rest else None
+        expr_type = self._infer_type(expr_node)
+        pattern_type = self._infer_type(first_pattern) if first_pattern else None
+        if isinstance(expr_node, (StringLiteral, NumberLiteral)):
+            expr = self.emit(expr_node)
+        elif pattern_type == "string" and expr_type != "string":
+            expr = f"{self._runtime}.S({self.emit(expr_node)})"
+        elif pattern_type == "number" and expr_type != "number":
+            expr = f"{self._runtime}.N({self.emit(expr_node)})"
+        else:
+            expr = self.emit(expr_node)
+        if self.language == "python":
             result = fallback
             for pattern, val in reversed(pairs):
-                result = f"({expr} == {pattern}) ? {val} : {result}"
+                result = f"{val} if ({expr} == {pattern}) else {result}"
             return f"({result})"
+        result = fallback
+        for pattern, val in reversed(pairs):
+            result = f"({expr} == {pattern}) ? {val} : {result}"
+        return f"({result})"
 
-        if name in ("MIN", "MAX") and self.language != "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
-            an = f"{self._runtime}.AN([{args}])"
-            func = "Math.min" if name == "MIN" else "Math.max"
-            return f"{func}(...{an})"
+    def _emit_fn_min(self, node: FunctionCall) -> str:
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        if self.language == "python":
+            return f"min({self._runtime}.AN(({args},)))"
+        an = f"{self._runtime}.AN([{args}])"
+        return f"Math.min(...{an})"
 
-        if name in ("SUM", "MIN", "MAX") and self.language == "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
-            an = f"{self._runtime}.AN(({args},))"
-            if name == "SUM":
-                return f"sum({an})"
-            if name == "MIN":
-                return f"min({an})"
-            return f"max({an})"
+    def _emit_fn_max(self, node: FunctionCall) -> str:
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        if self.language == "python":
+            return f"max({self._runtime}.AN(({args},)))"
+        an = f"{self._runtime}.AN([{args}])"
+        return f"Math.max(...{an})"
 
-        if name == "COUNTALL" and self.language != "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
-            return f"{self._runtime}.A([{args}]).length"
+    def _emit_fn_sum(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.SUM()
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        return f"sum({self._runtime}.AN(({args},)))"
 
-        if name == "COUNTALL" and self.language == "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
+    def _emit_fn_countall(self, node: FunctionCall) -> str:
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        if self.language == "python":
             return f"len({self._runtime}.A(({args},)))"
+        return f"{self._runtime}.A([{args}]).length"
 
-        if name == "ROUND" and self.language == "python":
-            val = self._emit_num(node.args[0])
-            if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
-                prec = node.args[1].value
-            elif len(node.args) > 1:
-                prec = f"int({self._emit_num(node.args[1])})"
-            else:
-                prec = "0"
-            return f"round({val}, {prec})"
+    def _emit_fn_round(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.ROUND()
+        val = self._emit_num(node.args[0])
+        if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
+            prec = node.args[1].value
+        elif len(node.args) > 1:
+            prec = f"int({self._emit_num(node.args[1])})"
+        else:
+            prec = "0"
+        return f"round({val}, {prec})"
 
-        if name == "CONCATENATE" and self.language != "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
-            return f'{self._runtime}.AS([{args}]).join("")'
-
-        if name == "CONCATENATE" and self.language == "python":
-            args = ", ".join(self.emit(arg) for arg in node.args)
+    def _emit_fn_concatenate(self, node: FunctionCall) -> str:
+        args = ", ".join(self.emit(arg) for arg in node.args)
+        if self.language == "python":
             return f'"".join({self._runtime}.AS(({args},)))'
+        return f'{self._runtime}.AS([{args}]).join("")'
 
-        if name == "REPT" and self.language != "python":
-            text = self._emit_str(node.args[0])
-            if isinstance(node.args[1], NumberLiteral):
-                count = node.args[1].value
-            else:
-                count = self._emit_num(node.args[1])
-            return f"{text}.repeat({count})"
-
-        if name == "REPT" and self.language == "python":
-            text = self._emit_str(node.args[0])
+    def _emit_fn_rept(self, node: FunctionCall) -> str:
+        text = self._emit_str(node.args[0])
+        if self.language == "python":
             if isinstance(node.args[1], NumberLiteral):
                 count = node.args[1].value
             else:
                 count = f"int({self._emit_num(node.args[1])})"
             return f"({text} * {count})"
+        if isinstance(node.args[1], NumberLiteral):
+            count = node.args[1].value
+        else:
+            count = self._emit_num(node.args[1])
+        return f"{text}.repeat({count})"
 
-        if name == "REGEX_MATCH" and self.language != "python":
-            text = self._emit_str(node.args[0])
-            regex = self._emit_str(node.args[1])
-            return f"new RegExp({regex}).test({text})"
-
-        if name == "REGEX_MATCH" and self.language == "python":
-            text = self._emit_str(node.args[0])
-            regex = self._emit_str(node.args[1])
+    def _emit_fn_regex_match(self, node: FunctionCall) -> str:
+        text = self._emit_str(node.args[0])
+        regex = self._emit_str(node.args[1])
+        if self.language == "python":
             return f"bool(re.search({regex}, {text}))"
+        return f"new RegExp({regex}).test({text})"
 
-        if name == "REGEX_REPLACE" and self.language != "python":
-            text = self._emit_str(node.args[0])
-            regex = self._emit_str(node.args[1])
-            repl = self._emit_str(node.args[2])
-            return f'{text}.replace(new RegExp({regex}, "g"), {repl})'
-
-        if name == "REGEX_REPLACE" and self.language == "python":
-            text = self._emit_str(node.args[0])
-            regex = self._emit_str(node.args[1])
-            repl = self._emit_str(node.args[2])
+    def _emit_fn_regex_replace(self, node: FunctionCall) -> str:
+        text = self._emit_str(node.args[0])
+        regex = self._emit_str(node.args[1])
+        repl = self._emit_str(node.args[2])
+        if self.language == "python":
             return f"re.sub({regex}, {repl}, {text})"
+        return f'{text}.replace(new RegExp({regex}, "g"), {repl})'
 
-        if name == "TODAY" and self.language == "python":
-            return 'datetime.now().strftime("%Y-%m-%d")'
+    def _emit_fn_today(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.TODAY()
+        return 'datetime.now().strftime("%Y-%m-%d")'
 
-        if name == "NOW" and self.language == "python":
-            return "datetime.now().isoformat()"
+    def _emit_fn_now(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.NOW()
+        return "datetime.now().isoformat()"
 
-        if name == "SET_LOCALE":
-            return self.emit(node.args[0])
+    def _emit_fn_set_locale(self, node: FunctionCall) -> str:
+        return self.emit(node.args[0])
 
-        if name == "DATETIME_PARSE":
-            return f"{self._runtime}.D({self.emit(node.args[0])})"
+    def _emit_fn_datetime_parse(self, node: FunctionCall) -> str:
+        return f"{self._runtime}.D({self.emit(node.args[0])})"
 
-        js_date_getters = {
-            "YEAR": "getUTCFullYear",
-            "MONTH": "getUTCMonth",
-            "DAY": "getUTCDate",
-            "HOUR": "getUTCHours",
-            "MINUTE": "getUTCMinutes",
-            "SECOND": "getUTCSeconds",
-            "WEEKDAY": "getUTCDay",
-        }
-        if name in js_date_getters and self.language != "python":
-            d = f"{self._runtime}.D({self.emit(node.args[0])})"
-            if name == "MONTH":
+    _JS_DATE_GETTERS: dict[str, str] = {
+        "YEAR": "getUTCFullYear",
+        "MONTH": "getUTCMonth",
+        "DAY": "getUTCDate",
+        "HOUR": "getUTCHours",
+        "MINUTE": "getUTCMinutes",
+        "SECOND": "getUTCSeconds",
+        "WEEKDAY": "getUTCDay",
+    }
+
+    _PY_DATE_ATTRS: dict[str, str] = {
+        "YEAR": "year",
+        "MONTH": "month",
+        "DAY": "day",
+        "HOUR": "hour",
+        "MINUTE": "minute",
+        "SECOND": "second",
+    }
+
+    def _emit_fn_date_part(self, node: FunctionCall) -> str | None:
+        d = f"{self._runtime}.D({self.emit(node.args[0])})"
+        if self.language != "python":
+            getter = self._JS_DATE_GETTERS.get(node.name)
+            if getter is None:
+                return None
+            if node.name == "MONTH":
                 return f"({d}.getUTCMonth() + 1)"
-            return f"{d}.{js_date_getters[name]}()"
+            return f"{d}.{getter}()"
+        attr = self._PY_DATE_ATTRS.get(node.name)
+        if attr is None:
+            return None  # WEEKDAY falls through to F.WEEKDAY()
+        return f"{d}.{attr}"
 
-        date_attrs = {"YEAR": "year", "MONTH": "month", "DAY": "day", "HOUR": "hour", "MINUTE": "minute", "SECOND": "second"}
-        if name in date_attrs and self.language == "python":
-            return f"{self._runtime}.D({self.emit(node.args[0])}).{date_attrs[name]}"
+    def _emit_fn_datestr(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.DATESTR()
+        return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%Y-%m-%d")'
 
-        if name == "DATESTR" and self.language == "python":
-            return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%Y-%m-%d")'
+    def _emit_fn_timestr(self, node: FunctionCall) -> str | None:
+        if self.language != "python":
+            return None  # Fall through to F.TIMESTR()
+        return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%H:%M:%S")'
 
-        if name == "TIMESTR" and self.language == "python":
-            return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%H:%M:%S")'
+    # endregion
 
-        args = ", ".join(self.emit(arg) for arg in node.args)
-        return f"{self._runtime}.{name}({args})"
+    _FUNCTION_HANDLERS: dict[str, Callable] = {
+        "RECORD_ID": _emit_fn_record_id,
+        "TRUE": _emit_fn_true,
+        "FALSE": _emit_fn_false,
+        "BLANK": _emit_fn_blank,
+        "NOT": _emit_fn_not,
+        "AND": _emit_fn_and,
+        "OR": _emit_fn_or,
+        "LEN": _emit_fn_len,
+        "LOWER": _emit_fn_str_method,
+        "UPPER": _emit_fn_str_method,
+        "TRIM": _emit_fn_str_method,
+        "ENCODE_URL_COMPONENT": _emit_fn_encode_url_component,
+        "INT": _emit_fn_int,
+        "ABS": _emit_fn_abs,
+        "SQRT": _emit_fn_sqrt,
+        "EXP": _emit_fn_exp,
+        "LOG10": _emit_fn_log10,
+        "POWER": _emit_fn_power,
+        "MOD": _emit_fn_mod,
+        "REGEX_EXTRACT": _emit_fn_regex_extract,
+        "XOR": _emit_fn_xor,
+        "IF": _emit_fn_if,
+        "IFS": _emit_fn_ifs,
+        "SWITCH": _emit_fn_switch,
+        "MIN": _emit_fn_min,
+        "MAX": _emit_fn_max,
+        "SUM": _emit_fn_sum,
+        "COUNTALL": _emit_fn_countall,
+        "ROUND": _emit_fn_round,
+        "CONCATENATE": _emit_fn_concatenate,
+        "REPT": _emit_fn_rept,
+        "REGEX_MATCH": _emit_fn_regex_match,
+        "REGEX_REPLACE": _emit_fn_regex_replace,
+        "TODAY": _emit_fn_today,
+        "NOW": _emit_fn_now,
+        "SET_LOCALE": _emit_fn_set_locale,
+        "DATETIME_PARSE": _emit_fn_datetime_parse,
+        "YEAR": _emit_fn_date_part,
+        "MONTH": _emit_fn_date_part,
+        "DAY": _emit_fn_date_part,
+        "HOUR": _emit_fn_date_part,
+        "MINUTE": _emit_fn_date_part,
+        "SECOND": _emit_fn_date_part,
+        "WEEKDAY": _emit_fn_date_part,
+        "DATESTR": _emit_fn_datestr,
+        "TIMESTR": _emit_fn_timestr,
+    }
 
     def _emit_str(self, node: ASTNode) -> str:
         """Emit node in string context. String literals pass through; concat recurses; others get F.S()."""
@@ -752,7 +829,7 @@ def transpile_formula(
             return None
         emitter = CodeEmitter(language, field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids)
         return emitter.emit(ast)
-    except (ParseError, Exception) as e:
+    except Exception as e:
         logger.warning("Could not transpile formula %r: %s", formula, e)
         return None
 
