@@ -488,8 +488,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line_empty()
 
             # to_record_dict
-            write.line_indented(f"def to_record_dict(self) -> {table.name_pascal()}RecordDict:")
-            write.line_indented("return self.to_record()", 2)
+            write.line_indented(f"def to_record_dict(self, only_writable: bool = False) -> {table.name_pascal()}RecordDict:")
+            write.line_indented("return self.to_record(only_writable)", 2)
             write.line_empty()
 
             if formulas:
