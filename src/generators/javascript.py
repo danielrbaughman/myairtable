@@ -596,7 +596,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId, options) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, {table.name_pascal()}FieldNameIdMapping, {table.name_pascal()}FieldIdNameMapping, {table.name_pascal()}WritableFieldIds, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}), options);',
+                f'super(baseId, "{table.id}", {table.name_pascal()}ViewNameIdMapping, {table.name_pascal()}FieldNameIdMapping, {table.name_pascal()}FieldIdNameMapping, {table.name_pascal()}WritableFieldIds, (record) => require("../models/{table.name_camel()}").{table.name_model()}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}, false), options);',
                 2,
             )
             write.line_indented("}")

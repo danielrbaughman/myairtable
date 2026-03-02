@@ -687,7 +687,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
             write.line_indented("constructor(baseId: string, options: AirtableOptions) {")
             write.line_indented(
-                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}), options);',
+                f'super(baseId, "{table.id}", {table_name}ViewNameIdMapping, {table_name}FieldNameIdMapping, {table_name}FieldIdNameMapping, {table_name}WritableFieldIds, (record) => {model_name}.fromRecord(record, {{ baseId: this.baseId, ...this._options }}, false), options);',
                 2,
             )
             write.line_indented("}")

@@ -217,13 +217,14 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this: new (...args: any[]) => T,
 		record: ATRecord<any>,
 		config?: AirtableOptions & { baseId: string },
+		validate: boolean = true,
 	): T {
 		const instance = new this({ id: record.id });
 		if (config) {
 			const { baseId, ...options } = config;
 			instance.setConfig(baseId, options);
 		}
-		instance.updateModel(record);
+		instance.updateModel(record, validate);
 		instance.clearDirtyFlags();
 		return instance;
 	}
@@ -365,7 +366,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		}
 	}
 
-	protected updateModel(record: ATRecord<FldSt>): void {
+	protected updateModel(record: ATRecord<FldSt>, validate: boolean = true): void {
 		this.record = record;
 		this.id = record.id;
 		for (const desc of this.getFieldDescriptors()) {
@@ -376,7 +377,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 				this._fields[desc.propertyName] = value;
 			}
 		}
-		this.validate();
+		if (validate) this.validate();
 	}
 
 	protected updateRecord(): void {

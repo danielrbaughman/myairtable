@@ -195,13 +195,13 @@ class AirtableModel {
 	 * into the main class, you need to pass them here as well if you want to use functions
 	 * like save() or fetch().
 	 */
-	static fromRecord(record, config) {
+	static fromRecord(record, config, validate = true) {
 		const instance = new this({ id: record.id });
 		if (config) {
 			const { baseId, ...options } = config;
 			instance.setConfig(baseId, options);
 		}
-		instance.updateModel(record);
+		instance.updateModel(record, validate);
 		instance.clearDirtyFlags();
 		return instance;
 	}
@@ -337,7 +337,7 @@ class AirtableModel {
 		}
 	}
 
-	updateModel(record) {
+	updateModel(record, validate = true) {
 		this.record = record;
 		this.id = record.id;
 		for (const desc of this.getFieldDescriptors()) {
@@ -348,7 +348,7 @@ class AirtableModel {
 				this._fields[desc.propertyName] = value;
 			}
 		}
-		this.validate();
+		if (validate) this.validate();
 	}
 
 	updateRecord() {
