@@ -93,7 +93,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     @overload
     def get(
         self,
-        formula: Optional[Formula] = None,
+        formula: Optional[Formula | str] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = True,
         page_size: int = 100,

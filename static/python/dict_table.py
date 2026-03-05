@@ -112,7 +112,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
     @overload
     def get(
         self,
-        formula: Optional[Formula] = None,
+        formula: Optional[Formula | str] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = False,
         page_size: int = 100,
@@ -144,7 +144,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         self,
         record_id: str | None = None,
         record_ids: list[str] | None = None,
-        formula: Optional[Formula] = None,
+        formula: Optional[Formula | str] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = False,
         page_size: int = 100,
@@ -216,7 +216,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             records: list[RecordDict] = self._table.all(
-                formula=formula.flatten() if formula else None,
+                formula=Formula(str(formula)).flatten() if formula else None,
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
