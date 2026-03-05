@@ -247,7 +247,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 records = record
                 record = None  # type: ignore
 
-        if records:
+        if records is not None and isinstance(records, list):
+            if records is None:
+                raise ValueError("Records to create cannot be None.")
+            if len(records) == 0:
+                return []
             self._orm_cls.batch_save(records)
             new_records = self.get(record_ids=[r.id for r in records])
             return new_records
@@ -290,9 +294,11 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 records = record
                 record = None  # type: ignore
 
-        if isinstance(records, list):
+        if records is not None and isinstance(records, list):
             if records is None:
                 raise ValueError("Records to update cannot be None.")
+            if len(records) == 0:
+                return []
             records: list[RecordDict] = [r.to_record() for r in records]  # type: ignore
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)

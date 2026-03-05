@@ -283,9 +283,11 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 records = record
                 record = None  # type: ignore
 
-        if records:
+        if records is not None and isinstance(records, list):
             if records is None:
                 raise ValueError("Records to create cannot be None.")
+            if len(records) == 0:
+                return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
             records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
@@ -348,9 +350,11 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 records = record
                 record = None  # type: ignore
 
-        if isinstance(records, list):
+        if records is not None and isinstance(records, list):
             if records is None:
                 raise ValueError("Records to update cannot be None.")
+            if len(records) == 0:
+                return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
             update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in records]
