@@ -124,7 +124,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record_id: str | None = None,
         record_ids: list[str] | None = None,
-        formula: Optional[Formula] = None,
+        formula: Optional[Formula | str] = None,
         view: Optional[ViewType] = None,
         use_field_ids: bool = True,
         page_size: int = 100,
@@ -196,7 +196,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
             record_dicts: list[RecordDict] = self._table.all(
-                formula=formula.flatten() if formula else None,
+                formula=Formula(str(formula)).flatten() if formula else None,
                 view=self.get_view_id(view) if view else None,
                 use_field_ids=use_field_ids,
                 page_size=page_size,
