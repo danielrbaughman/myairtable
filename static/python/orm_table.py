@@ -139,9 +139,12 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         if fields is not None:
             validate_keys(fields, self._field_names)
 
-        if isinstance(record_id, list) and len(record_id) > 0 and isinstance(record_id[0], str):
-            record_ids = record_id
-            record_id = None  # type: ignore
+        if isinstance(record_id, list):
+            if len(record_id) == 0:
+                return []
+            if len(record_id) > 0 and isinstance(record_id[0], str):
+                record_ids = record_id
+                record_id = None  # type: ignore
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -237,9 +240,12 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
     ) -> ORMType | list[ORMType]:
-        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], self._orm_cls):
-            records = record
-            record = None  # type: ignore
+        if isinstance(record, list):
+            if len(record) == 0:
+                return []
+            if len(record) > 0 and isinstance(record[0], self._orm_cls):
+                records = record
+                record = None  # type: ignore
 
         if records:
             self._orm_cls.batch_save(records)
@@ -277,9 +283,12 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
     ) -> ORMType | list[ORMType]:
-        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], self._orm_cls):
-            records = record
-            record = None  # type: ignore
+        if isinstance(record, list):
+            if len(record) == 0:
+                return []
+            if len(record) > 0 and isinstance(record[0], self._orm_cls):
+                records = record
+                record = None  # type: ignore
 
         if isinstance(records, list):
             if records is None:

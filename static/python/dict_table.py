@@ -159,9 +159,12 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         if fields is not None:
             validate_keys(fields, self._field_names)
 
-        if isinstance(record_id, list) and len(record_id) > 0 and isinstance(record_id[0], str):
-            record_ids = record_id
-            record_id = None  # type: ignore
+        if isinstance(record_id, list):
+            if len(record_id) == 0:
+                return []
+            if len(record_id) > 0 and isinstance(record_id[0], str):
+                record_ids = record_id
+                record_id = None  # type: ignore
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -273,9 +276,12 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], dict):
-            records = record
-            record = None  # type: ignore
+        if isinstance(record, list):
+            if len(record) == 0:
+                return []
+            if len(record) > 0 and isinstance(record[0], dict):
+                records = record
+                record = None  # type: ignore
 
         if records:
             if records is None:
@@ -335,9 +341,12 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         **options,
     ) -> DictType | list[DictType]:
         calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
-        if isinstance(record, list) and len(record) > 0 and isinstance(record[0], dict):
-            records = record
-            record = None  # type: ignore
+        if isinstance(record, list):
+            if len(record) == 0:
+                return []
+            if len(record) > 0 and isinstance(record[0], dict):
+                records = record
+                record = None  # type: ignore
 
         if isinstance(records, list):
             if records is None:
