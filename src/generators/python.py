@@ -58,6 +58,15 @@ class WriteToPythonFile(WriteToFile):
         else:
             self.line_indented(f'"""{base_info}"""', indent_level)
 
+    def docstring(self, text: str | list[str], indent: int = 1):
+        if isinstance(text, list):
+            self.line_indented('"""', indent)
+            for line in text:
+                self.line_indented(line, indent)
+            self.line_indented('"""', indent)
+        else:
+            self.line_indented(f'"""{text}"""', indent)
+
     def dict_class(self, name: str, pairs: list[tuple[str, str]], first_type: str = "str", second_type: str = "str", value_is_string: bool = True):
         self.line(f"{name}: dict[{first_type}, {second_type}] = {{")
         for k, v in pairs:
@@ -324,6 +333,13 @@ def write_types(base: Base, output_folder: Path) -> None:
             [(table.id, table.name) for table in base.tables],
             first_type="TableId",
             second_type="TableName",
+        )
+        write.dict_class(
+            "TableNamePropertyMapping",
+            [(table.name, table.name_snake()) for table in base.tables],
+            first_type="TableName",
+            second_type="str",
+            value_is_string=True,
         )
         write.dict_class(
             "TableIdToFieldNameIdMapping",
@@ -669,7 +685,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line("from pyairtable import Api")
         write.line_empty()
         write.line("from .types import TableName")
-        write.line("from ..static.airtable_table import TableType")
+        write.line("from ..static.airtable_table import AirtableTable, TableType")
         write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config")
         write.line("from ..static.schema_types import BaseSchema")
         write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
@@ -687,7 +703,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_empty()
         write.line_indented("_api: Api")
         write.line_indented("_base_id: str")
-        write.line_indented("_tables: dict[TableName, TableType] = {}")
+        write.line_indented("_tables: dict[TableName, AirtableTable] = {}")
         write.line_empty()
         write.line_indented(
             'def __init__(self, api_key: str | None = None, base_id: str | None = None, endpoint_url: str = "https://api.airtable.com"):'
@@ -702,6 +718,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("set_airtable_config(self._base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
+        write.line_indented("def table(self, table_name: TableName) -> AirtableTable:")
+        write.docstring("Get a table by its Airtable name.", 2)
+        write.line_indented("from .types import TableNamePropertyMapping", 2)
+        write.line_indented("return getattr(self, TableNamePropertyMapping[table_name])", 2)
+        write.line_empty()
+
         for table in base.tables:
             write.line_indented("@property")
             write.line_indented(f"def {table.name_snake()}(self) -> {table.name_pascal()}Table:")
