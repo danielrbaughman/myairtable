@@ -3,6 +3,7 @@ from typing import Generic, TypeVar
 from pyairtable import Table
 
 from .dict_table import DictTable
+from .helpers import build_url
 from .orm_table import ORMTable
 from .table_helpers import CreateDictType, DictType, FieldType, ORMType, UpdateDictType, ViewType
 
@@ -51,7 +52,6 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         create_cls: type[CreateDictType],
         update_cls: type[UpdateDictType],
         orm_cls: type[ORMType],
-        # pydantic_cls: type[PydanticType],
         calculated_field_names: list[str],
         calculated_field_ids: list[str],
         view_name_id_mapping: "dict[ViewType, str]",
@@ -60,11 +60,11 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         instance = cls()
         instance._table = table
         instance.id = table.id
+        instance.base_id = table.base.id
         instance._dict_cls = dict_cls
         instance._create_cls = create_cls
         instance._update_cls = update_cls
         instance._orm_cls = orm_cls
-        # instance._pydantic_cls = pydantic_cls
 
         instance._calculated_field_names = calculated_field_names
         instance._calculated_field_ids = calculated_field_ids
@@ -83,6 +83,13 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         )
 
         return instance
+
+    def url(self, view: ViewType | None = None) -> str:
+        """Get the URL for the Airtable table, with optional view."""
+        if view:
+            return build_url(base_id=self.base_id, table_id=self.id, view_id=self.get_view_id(view))
+        else:
+            return build_url(base_id=self.base_id, table_id=self.id)
 
 
 # endregion

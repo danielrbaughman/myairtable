@@ -106,6 +106,24 @@ function validateKey(name, names) {
 	}
 }
 
+const baseUrl = "https://airtable.com";
+
+function buildUrl(baseId = "", tableId = "", viewId = "", recordId = "") {
+	if (!baseId) {
+		return baseId;
+	} else if (!tableId) {
+		return `${baseUrl}/${baseId}`;
+	} else if (!viewId && !recordId) {
+		return `${baseUrl}/${baseId}/${tableId}`;
+	} else if (viewId && !recordId) {
+		return `${baseUrl}/${baseId}/${tableId}/${viewId}`;
+	} else if (recordId && !viewId) {
+		return `${baseUrl}/${baseId}/${tableId}/${recordId}`;
+	} else {
+		return `${baseUrl}/${baseId}/${tableId}/${viewId}/${recordId}`;
+	}
+}
+
 module.exports = {
 	setAirtableConfig,
 	getConfigForBase,
@@ -118,4 +136,5 @@ module.exports = {
 	getCustomHeaders,
 	getOptions,
 	validateKey,
+	buildUrl,
 };

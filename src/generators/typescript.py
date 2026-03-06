@@ -421,11 +421,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line('import { AirtableModel, FieldDescriptor } from "../../static/airtable-model";')
             write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
             write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
+            write.line('import { buildUrl } from "../../static/helpers";')
 
             # Import types for this table
             write.line("import {")
             write.line_indented(f"{table_name}FieldSet,")
             write.line_indented(f"{table_name}Field,")
+            write.line_indented(f"{table_name}View,")
+            write.line_indented(f"{table_name}ViewNameIdMapping,")
             write.line_indented(f"{table_name}FieldNameIdMapping,")
             write.line_indented(f"{table_name}FieldIdNameMapping,")
             write.line_indented(f"{table_name}FieldNamePropertyMapping,")
@@ -625,6 +628,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("}", 1)
             write.line_empty()
 
+            # url
+            has_field_called_url: bool = any(field.name_camel() == "url" for field in table.fields)
+            url_method_name: str = "URL" if has_field_called_url else "url"
+            write.docstring("Get the URL for this record in Airtable, with optional view.", 1)
+            write.line_indented(f"public {url_method_name}(view?: {table_name}View): string {{")
+            write.line_indented("if (view) {", 2)
+            write.line_indented(f"return buildUrl(this.getInstanceBaseId(), '{table.id}', this.id, {table_name}ViewNameIdMapping[view]);", 3)
+            write.line_indented("} else {", 2)
+            write.line_indented(f"return buildUrl(this.getInstanceBaseId(), '{table.id}', this.id);", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line_empty()
+
             write.line("}")
 
     with WriteToTypeScriptFile(path=models_dir / "_models.ts") as write:
@@ -788,7 +804,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         # Imports
         write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
         write.line('import { BaseSchema } from "../static/schema-types";')
-        write.line('import { getApiKey, getBaseId, setAirtableConfig } from "../static/helpers";')
+        write.line('import { getApiKey, getBaseId, setAirtableConfig, buildUrl } from "../static/helpers";')
         write.line("import {")
         for table in base.tables:
             table_name_pascal = table.name_pascal()
@@ -831,6 +847,11 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.docstring("Get a table by its Airtable name.", 1)
         write.line_indented("public table<T extends TableName>(tableName: T): TableNameToTableType[T] {")
         write.line_indented("return this[TableNamePropertyMapping[tableName] as keyof this] as TableNameToTableType[T];", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.docstring("Get the URL for the Airtable base.", 1)
+        write.line_indented("public url(): string {")
+        write.line_indented("return buildUrl(this.baseId);", 2)
         write.line_indented("}")
         write.line("}")
 

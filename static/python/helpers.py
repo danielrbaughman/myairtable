@@ -77,3 +77,21 @@ def validate_keys(field_names: Sequence[str], valid_names: list[str]):
         raise ValueError(f"""Invalid field names:
 {"\n".join(invalid_names)}
 """)
+
+
+base_url: str = "https://airtable.com"
+
+
+def build_url(base_id: str = "", table_id: str = "", view_id: str = "", record_id: str = "") -> str:
+    if not base_id:
+        return base_id
+    elif not table_id:
+        return f"{base_url}/{base_id}"
+    elif not view_id and not record_id:
+        return f"{base_url}/{base_id}/{table_id}"
+    elif view_id and not record_id:
+        return f"{base_url}/{base_id}/{table_id}/{view_id}"
+    elif record_id and not view_id:
+        return f"{base_url}/{base_id}/{table_id}/{record_id}"
+    else:
+        return f"{base_url}/{base_id}/{table_id}/{view_id}/{record_id}"

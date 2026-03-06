@@ -108,3 +108,26 @@ export function validateKey<T extends string>(name: T, names: readonly T[] | T[]
 		throw new Error(`Invalid field name: ${name}.`);
 	}
 }
+
+const baseUrl: string = "https://airtable.com";
+
+export function buildUrl(
+	baseId: string = "",
+	tableId: string = "",
+	viewId: string = "",
+	recordId: string = "",
+): string {
+	if (!baseId) {
+		return baseId;
+	} else if (!tableId) {
+		return `${baseUrl}/${baseId}`;
+	} else if (!viewId && !recordId) {
+		return `${baseUrl}/${baseId}/${tableId}`;
+	} else if (viewId && !recordId) {
+		return `${baseUrl}/${baseId}/${tableId}/${viewId}`;
+	} else if (recordId && !viewId) {
+		return `${baseUrl}/${baseId}/${tableId}/${recordId}`;
+	} else {
+		return `${baseUrl}/${baseId}/${tableId}/${viewId}/${recordId}`;
+	}
+}

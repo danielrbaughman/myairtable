@@ -406,7 +406,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.region("REQUIRES")
             write.require_statement(["AirtableModel"], "../../static/airtable-model")
             write.require_statement(["LinkedRecord", "LinkedRecords"], "../../static/linked-record")
-            write.require_statement(["getOptions", "getBaseId"], "../../static/helpers")
+            write.require_statement(["getOptions", "getBaseId", "buildUrl"], "../../static/helpers")
 
             # Require field mappings from types
             write.require_statement(
@@ -414,6 +414,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                     f"{table.name_pascal()}FieldNameIdMapping",
                     f"{table.name_pascal()}FieldIdNameMapping",
                     f"{table.name_pascal()}FieldNamePropertyMapping",
+                    f"{table.name_pascal()}ViewNameIdMapping",
                 ],
                 f"../types/{table.name_camel()}",
             )
@@ -549,6 +550,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
             write.line_indented("}")
             write.line_empty()
 
+            # url
+            has_field_called_url: bool = any(field.name_camel() == "url" for field in table.fields)
+            url_method_name: str = "URL" if has_field_called_url else "url"
+            write.docstring("Get the URL for this record in Airtable, with optional view.")
+            write.line_indented(f"{url_method_name}(view) {{")
+            write.line_indented("if (view) {", 2)
+            write.line_indented(f"return buildUrl(this.getInstanceBaseId(), '{table.id}', this.id, {table.name_pascal()}ViewNameIdMapping[view]);", 3)
+            write.line_indented("} else {", 2)
+            write.line_indented(f"return buildUrl(this.getInstanceBaseId(), '{table.id}', this.id);", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line_empty()
+
             write.line("}")
             write.endregion()
 
@@ -674,7 +688,7 @@ def write_options(base: Base, output_folder: Path) -> None:
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToJavaScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.js") as write:
         # Requires
-        write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig"], "../static/helpers")
+        write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig", "buildUrl"], "../static/helpers")
         table_classes = [f"{table.name_pascal()}Table" for table in base.tables]
         write.require_statement(table_classes, "./tables")
         write.require_statement(["TableNamePropertyMapping"], "./types")
@@ -709,6 +723,11 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.docstring("Get a table by its Airtable name.", 1)
         write.line_indented("table(tableName) {")
         write.line_indented("return this[TableNamePropertyMapping[tableName]];", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.docstring("Get the URL for the Airtable base.", 1)
+        write.line_indented("url() {")
+        write.line_indented("return buildUrl(this.baseId);", 2)
         write.line_indented("}")
         write.line("}")
         write.line_empty()

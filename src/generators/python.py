@@ -458,6 +458,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
+        has_field_called_url: bool = any(field.name_snake() == "url" for field in table.fields)
+        url_method_name: str = "URL" if has_field_called_url else "url"
+
         with WriteToPythonFile(path=models_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.line("from datetime import datetime, timedelta")
@@ -466,7 +469,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line("from pyairtable.orm import Model")
             write.line(f"from pyairtable.orm.fields import {', '.join(PYAIRTABLE_FIELD_TYPES)}")
             write.line_empty()
-            write.line("from ...static.helpers import get_api_key, get_base_id")
+            write.line("from ...static.helpers import get_api_key, get_base_id, build_url")
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
             # Check if this table has any transpilable formula fields (pre-scan)
             _has_formulas = any(field.is_formula() and field.options and field.options.formula for field in table.fields)
@@ -478,6 +481,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.select_options_import(table)
             write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
             write.line(f"from ..formulas import {table.name_pascal()}Formulas")
+            write.line(f"from ..types import {table.name_pascal()}View, {table.name_pascal()}ViewNameIdMapping")
             if len(table.select_fields()) > 0:
                 write.line(f"from ..options import {table.name_pascal()}Options")
             linked_tables = table.linked_tables()
@@ -506,6 +510,18 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             # to_record_dict
             write.line_indented(f"def to_record_dict(self, only_writable: bool = False) -> {table.name_pascal()}RecordDict:")
             write.line_indented("return self.to_record(only_writable)", 2)
+            write.line_empty()
+
+            # url
+            write.line_indented(f"def {url_method_name}(self, view: {table.name_pascal()}View | None = None) -> str:")
+            write.docstring("Get the URL for this record in Airtable, with optional view.", 2)
+            write.line_indented("if view:", 2)
+            write.line_indented(
+                f"return build_url(base_id=get_base_id(), table_id='{table.id}', record_id=self.id, view_id={table.name_pascal()}ViewNameIdMapping[view])",
+                3,
+            )
+            write.line_indented("else:", 2)
+            write.line_indented(f"return build_url(base_id=get_base_id(), table_id='{table.id}', record_id=self.id)", 3)
             write.line_empty()
 
             if formulas:
@@ -686,7 +702,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_empty()
         write.line("from .types import TableName")
         write.line("from ..static.airtable_table import AirtableTable, TableType")
-        write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config")
+        write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config, build_url")
         write.line("from ..static.schema_types import BaseSchema")
         write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
         write.endregion()
@@ -718,10 +734,16 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("set_airtable_config(self.base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
+
         write.line_indented("def table(self, table_name: TableName) -> AirtableTable:")
         write.docstring("Get a table by its Airtable name.", 2)
         write.line_indented("from .types import TableNamePropertyMapping", 2)
         write.line_indented("return getattr(self, TableNamePropertyMapping[table_name])", 2)
+        write.line_empty()
+
+        write.line_indented("def url(self) -> str:")
+        write.docstring("Get the URL for the Airtable base.", 2)
+        write.line_indented("return build_url(base_id=self.base_id)", 2)
         write.line_empty()
 
         for table in base.tables:
