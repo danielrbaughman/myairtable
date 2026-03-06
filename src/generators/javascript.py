@@ -683,6 +683,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.docstring("Airtable base wrapper", 0)
         write.line("class Airtable {")
         schema_json = json.dumps(base.to_dict())
+        write.line_indented("baseId;")
         write.line_indented(f"static schema = {schema_json};")
         write.line_empty()
         for table in base.tables:
@@ -691,7 +692,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_empty()
         # Constructor
         write.line_indented("constructor(options = {}) {")
-        write.line_indented("const _baseId = options.baseId || getBaseId();", 2)
+        write.line_indented("this.baseId = options.baseId || getBaseId();", 2)
         write.line_indented("const _options = {", 2)
         write.line_indented("apiKey: options.apiKey ?? getApiKey(),", 3)
         write.line_indented("apiVersion: options.apiVersion,", 3)
@@ -700,9 +701,9 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("noRetryIfRateLimited: options.noRetryIfRateLimited ?? false,", 3)
         write.line_indented("requestTimeout: options.requestTimeout,", 3)
         write.line_indented("};", 2)
-        write.line_indented("setAirtableConfig(_baseId, _options);", 2)
+        write.line_indented("setAirtableConfig(this.baseId, _options);", 2)
         for table in base.tables:
-            write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(_baseId, _options);", 2)
+            write.line_indented(f"this.{table.name_camel()} = new {table.name_pascal()}Table(this.baseId, _options);", 2)
         write.line_indented("}")
         write.line_empty()
         write.docstring("Get a table by its Airtable name.", 1)

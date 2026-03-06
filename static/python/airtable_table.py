@@ -26,6 +26,7 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
 
     api_key: str
     base_id: str
+    id: str
 
     _dict_cls: type[DictType]
     _create_cls: type[CreateDictType]
@@ -58,6 +59,7 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
     ) -> "AirtableTable[DictType, CreateDictType, UpdateDictType, ORMType, ViewType, FieldType]":
         instance = cls()
         instance._table = table
+        instance.id = table.id
         instance._dict_cls = dict_cls
         instance._create_cls = create_cls
         instance._update_cls = update_cls

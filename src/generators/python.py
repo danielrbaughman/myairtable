@@ -702,20 +702,20 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented(f"schema: BaseSchema = {schema_repr}")
         write.line_empty()
         write.line_indented("_api: Api")
-        write.line_indented("_base_id: str")
+        write.line_indented("base_id: str")
         write.line_indented("_tables: dict[TableName, AirtableTable] = {}")
         write.line_empty()
         write.line_indented(
             'def __init__(self, api_key: str | None = None, base_id: str | None = None, endpoint_url: str = "https://api.airtable.com"):'
         )
-        write.line_indented("self._base_id: str = base_id or get_base_id()", 2)
-        write.line_indented("if not self._base_id:", 2)
+        write.line_indented("self.base_id: str = base_id or get_base_id()", 2)
+        write.line_indented("if not self.base_id:", 2)
         write.line_indented('raise ValueError("Base ID must be provided.")', 3)
         write.line_indented("api_key: str = api_key or get_api_key()", 2)
         write.line_indented("if not api_key:", 2)
         write.line_indented('raise ValueError("API key must be provided.")', 3)
         write.line_indented("# Register config so ORM models can look it up", 2)
-        write.line_indented("set_airtable_config(self._base_id, api_key, endpoint_url)", 2)
+        write.line_indented("set_airtable_config(self.base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
         write.line_indented("def table(self, table_name: TableName) -> AirtableTable:")
@@ -730,7 +730,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
             write.line_indented(f'"""`{table.name}` ({table.id})"""', 2)
             write.line_indented(f"if '{table.name}' not in self._tables:", 2)
             write.line_indented(
-                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self._base_id, "{table.name}"))', 3
+                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.name}"))', 3
             )
             write.line_indented(f'return self._tables["{table.name}"]', 2)
             write.line_empty()

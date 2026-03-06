@@ -58,6 +58,7 @@ export class AirtableTable<
 > {
 	/** Underlying Airtable.js Table instance */
 	public _table: Table<FldSt>;
+	public id: string;
 	/** Base ID */
 	public readonly baseId: string;
 	public _options: AirtableOptions = {};
@@ -81,6 +82,7 @@ export class AirtableTable<
 		this.baseId = baseIdSchema.parse(baseId);
 		this._options = options;
 		this._table = new Airtable(options).base(this.baseId).table(tableNameOrId);
+		this.id = this._table.id;
 		this.recordCtor = recordCtor;
 		this.viewNameToIdMap = viewNameToIdMap;
 		this.fieldNameToIdMap = fieldNameToIdMap;
