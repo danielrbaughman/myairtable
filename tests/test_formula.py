@@ -124,26 +124,27 @@ class TestTextField:
 
     # equals() tests - all 4 combinations of case_sensitive and trim
     def test_equals_case_sensitive_no_trim(self):
-        """Default: case_sensitive=True, trim=False uses LOWER."""
+        """Default: case_sensitive=True, trim=False uses direct comparison."""
         field = TextField("Name")
         result = field.equals("John", case_sensitive=True, trim=False)
         result_str = str(result)
-        assert "LOWER(" in result_str
+        assert "LOWER(" not in result_str
         assert "Name" in result_str
 
     def test_equals_case_sensitive_with_trim(self):
-        """case_sensitive=True, trim=True uses LOWER and TRIM."""
+        """case_sensitive=True, trim=True uses TRIM but not LOWER."""
         field = TextField("Name")
         result = field.equals("John", case_sensitive=True, trim=True)
         result_str = str(result)
-        assert "LOWER(" in result_str
+        assert "LOWER(" not in result_str
         assert "TRIM(" in result_str
 
     def test_equals_case_insensitive_no_trim(self):
-        """case_sensitive=False, trim=False uses direct comparison."""
+        """case_sensitive=False, trim=False uses LOWER."""
         field = TextField("Name")
         result = field.equals("John", case_sensitive=False, trim=False)
         result_str = str(result)
+        assert "LOWER(" in result_str
         assert "Name" in result_str
 
     def test_equals_case_insensitive_with_trim(self):
@@ -621,11 +622,11 @@ class TestDateField:
 
     # on_or_after() tests
     def test_on_or_after_without_date(self):
-        """on_or_after() returns DateComparison with >=."""
+        """on_or_after() returns DateComparison with <=."""
         field = DateField("Created")
         result = field.on_or_after()
         assert isinstance(result, DateComparison)
-        assert result.compare == ">="
+        assert result.compare == "<="
 
     def test_on_or_after_with_date(self):
         """on_or_after(date) returns formula."""
@@ -641,11 +642,11 @@ class TestDateField:
 
     # on_or_before() tests
     def test_on_or_before_without_date(self):
-        """on_or_before() returns DateComparison with <=."""
+        """on_or_before() returns DateComparison with >=."""
         field = DateField("Created")
         result = field.on_or_before()
         assert isinstance(result, DateComparison)
-        assert result.compare == "<="
+        assert result.compare == ">="
 
     def test_on_or_before_with_date(self):
         """on_or_before(date) returns formula."""
@@ -917,7 +918,7 @@ class TestComplexFormulas:
         assert "AND(" in formula
         assert "DATETIME_DIFF" in formula
         assert "days" in formula
-        assert ">=7" in formula
+        assert "<=7" in formula
         assert "'Active'" in formula
 
     def test_multiselect_complex_conditions(self):

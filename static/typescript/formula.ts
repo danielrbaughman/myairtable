@@ -571,7 +571,7 @@ export class DateField extends Field {
 	onOrAfter(): DateComparison;
 	onOrAfter(date: Date | string): string;
 	onOrAfter(date?: Date | string): DateComparison | string {
-		const dateComparison = new DateComparison(this.nameOrId, ">=");
+		const dateComparison = new DateComparison(this.nameOrId, "<=");
 		if (date === undefined) {
 			return dateComparison;
 		}
@@ -587,7 +587,7 @@ export class DateField extends Field {
 	onOrBefore(): DateComparison;
 	onOrBefore(date: Date | string): string;
 	onOrBefore(date?: Date | string): DateComparison | string {
-		const dateComparison = new DateComparison(this.nameOrId, "<=");
+		const dateComparison = new DateComparison(this.nameOrId, ">=");
 		if (date === undefined) {
 			return dateComparison;
 		}

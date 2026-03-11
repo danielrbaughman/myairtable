@@ -914,7 +914,7 @@ describe("Complex Formula Integration", () => {
 			expect(result).toContain("AND(");
 			expect(result).toContain("DATETIME_DIFF");
 			expect(result).toContain("days");
-			expect(result).toContain(">=7");
+			expect(result).toContain("<=7");
 			expect(result).toContain('"Active"');
 		});
 	});

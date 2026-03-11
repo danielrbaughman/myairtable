@@ -558,7 +558,7 @@ class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	onOrAfter(date) {
-		const dateComparison = new DateComparison(this.nameOrId, ">=");
+		const dateComparison = new DateComparison(this.nameOrId, "<=");
 		if (date === undefined) {
 			return dateComparison;
 		}
@@ -572,7 +572,7 @@ class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	onOrBefore(date) {
-		const dateComparison = new DateComparison(this.nameOrId, "<=");
+		const dateComparison = new DateComparison(this.nameOrId, ">=");
 		if (date === undefined) {
 			return dateComparison;
 		}

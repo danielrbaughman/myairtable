@@ -64,16 +64,14 @@ class TextField(Field):
         """
         if case_sensitive:
             if trim:
-                formula = str(F.LOWER(F.TRIM(self))) + " = " + str(F.LOWER(F.TRIM(value)))
+                return F.EQ(F.TRIM(self), F.TRIM(value))
             else:
-                formula = str(F.LOWER(self)) + " = " + str(F.LOWER(value))
+                return F.EQ(self, value)
         else:
             if trim:
-                formula = str(F.TRIM(self)) + " = " + str(F.TRIM(value))
+                return F.EQ(F.LOWER(F.TRIM(self)), F.LOWER(F.TRIM(value)))
             else:
-                formula = str(self) + " = " + str(value)
-
-        return F.Formula(formula)
+                return F.EQ(F.LOWER(self), F.LOWER(value))
 
     def phone_equals(self, value: str) -> F.Formula:
         """
@@ -476,7 +474,7 @@ class DateField(Field):
         Returns:
             DateComparison | str: A DateComparison object if no date is provided, otherwise the result of the comparison as a string.
         """
-        date_comparison = DateComparison(name=self.value, compare=">=")
+        date_comparison = DateComparison(name=self.value, compare="<=")
         if date is None:
             return date_comparison
 
@@ -503,7 +501,7 @@ class DateField(Field):
             DateComparison | str: If no date is provided, returns a DateComparison object configured for 'on or before' comparison.
                 If a date is provided, returns the result of the comparison as a string.
         """
-        date_comparison = DateComparison(name=self.value, compare="<=")
+        date_comparison = DateComparison(name=self.value, compare=">=")
         if date is None:
             return date_comparison
 

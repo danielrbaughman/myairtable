@@ -643,10 +643,10 @@ describe("DateField", () => {
 	});
 
 	describe("onOrAfter", () => {
-		it("without date returns DateComparison with >=", () => {
+		it("without date returns DateComparison with <=", () => {
 			const field = new DateField("Created");
 			const result = field.onOrAfter();
-			expect(result).toHaveProperty("compare", ">=");
+			expect(result).toHaveProperty("compare", "<=");
 		});
 
 		it("with date returns formula", () => {
@@ -657,10 +657,10 @@ describe("DateField", () => {
 	});
 
 	describe("onOrBefore", () => {
-		it("without date returns DateComparison with <=", () => {
+		it("without date returns DateComparison with >=", () => {
 			const field = new DateField("Created");
 			const result = field.onOrBefore();
-			expect(result).toHaveProperty("compare", "<=");
+			expect(result).toHaveProperty("compare", ">=");
 		});
 
 		it("with date returns formula", () => {
@@ -761,7 +761,7 @@ describe("DateComparison", () => {
 	it("stores comparison operator", () => {
 		const field = new DateField("Created");
 		const comparison = field.onOrAfter();
-		expect(comparison.compare).toBe(">=");
+		expect(comparison.compare).toBe("<=");
 	});
 });
 
@@ -880,7 +880,7 @@ describe("Complex Formula Integration", () => {
 			expect(result).toContain("AND(");
 			expect(result).toContain("DATETIME_DIFF");
 			expect(result).toContain("days");
-			expect(result).toContain(">=7");
+			expect(result).toContain("<=7");
 			expect(result).toContain('"Active"');
 		});
 	});
