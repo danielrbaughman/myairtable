@@ -379,13 +379,6 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
                 'import { recordIdSchema, AirtableAttachmentSchema, AirtableCollaboratorSchema, AirtableButtonSchema, SpecialNumberSchema, ErrorValueSchema } from "../../static/special-types";'
             )
 
-            # Import select option constants from types
-            select_fields = table.select_fields()
-            if len(select_fields) > 0:
-                write.line("import {")
-                for field in select_fields:
-                    write.line_indented(f"{field.options_name()}s,")
-                write.line(f'}} from "../types/{table.name_camel()}";')
             write.line_empty()
 
             table_name = table.name_pascal()

@@ -84,6 +84,8 @@ GENERIC_TO_TYPESCRIPT: dict[GenericType, str] = {
 }
 
 GENERIC_TO_ZOD: dict[GenericType, str] = {
+    GenericType.SINGLE_SELECT: "z.string()",
+    GenericType.MULTIPLE_SELECT: "z.string()",  # list wrapping handled in render_type
     GenericType.STRING: "z.string()",
     GenericType.INTEGER: "z.number()",  # No .int() - JS doesn't distinguish, and computed fields can produce floats
     GenericType.FLOAT: "z.number()",
@@ -325,17 +327,25 @@ def render_type(
 
     # Compute base type
     if generic_type == GenericType.SINGLE_SELECT:
-        options_name = resolved.options_name if resolved else field.options_name()
-        if options_name:
-            base_type = config.enum_fmt.format(options_name)
+        # If the type_map has an entry (e.g. Zod uses z.string()), use it directly
+        if generic_type in config.type_map:
+            base_type = config.type_map[generic_type]
         else:
-            base_type = config.unknown
+            options_name = resolved.options_name if resolved else field.options_name()
+            if options_name:
+                base_type = config.enum_fmt.format(options_name)
+            else:
+                base_type = config.unknown
     elif generic_type == GenericType.MULTIPLE_SELECT:
-        options_name = resolved.options_name if resolved else field.options_name()
-        if options_name:
-            enum_type = config.enum_fmt.format(options_name)
-            return config.list_fmt.format(enum_type)  # Always a list
-        return config.unknown
+        # If the type_map has an entry (e.g. Zod uses z.string()), use it directly
+        if generic_type in config.type_map:
+            return config.list_fmt.format(config.type_map[generic_type])  # Always a list
+        else:
+            options_name = resolved.options_name if resolved else field.options_name()
+            if options_name:
+                enum_type = config.enum_fmt.format(options_name)
+                return config.list_fmt.format(enum_type)  # Always a list
+            return config.unknown
     else:
         base_type = config.type_map.get(generic_type, config.unknown)
 
