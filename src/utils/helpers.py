@@ -128,13 +128,14 @@ def deduplicate_names(names: list[str]) -> list[str]:
     return result
 
 
-def copy_static_files(output_folder: Path, type: str):
+def copy_static_files(output_folder: Path, type: str, exclude: list[str] | None = None):
     """Copy static template files to output folder. Uses optimized copytree."""
     source = Path(f"./static/{type}")
     destination = output_folder / "static"
 
     if source.exists():
-        shutil.copytree(source, destination, dirs_exist_ok=True)
+        ignore = shutil.ignore_patterns(*exclude) if exclude else None
+        shutil.copytree(source, destination, dirs_exist_ok=True, ignore=ignore)
 
 
 def reset_folder(folder: Path | str, preserve: list[str] | None = None) -> Path:

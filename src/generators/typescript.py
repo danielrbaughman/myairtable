@@ -94,7 +94,9 @@ class WriteToTypeScriptFile(WriteToFile):
 
 
 # region MAIN
-def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, zod: bool = True) -> None:
+def generate_typescript(
+    base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True, zod: bool = True
+) -> None:
     print("Generating TypeScript code")
     for table in base.tables:
         table.detect_duplicate_property_names()
@@ -103,7 +105,8 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
     reset_folder(output_folder / Paths.STATIC)
 
     with timer.timer("TypeScript: copy_static_files"):
-        copy_static_files(output_folder, "typescript")
+        exclude = ["airtable-runtime.ts"] if not runtime else None
+        copy_static_files(output_folder, "typescript", exclude=exclude)
         if verbose:
             print("[dim] - TypeScript static files copied.[/]")
 
@@ -131,7 +134,7 @@ def generate_typescript(base: Base, output_folder: Path, formulas: bool = True, 
 
     if wrappers:
         with timer.timer("TypeScript: write_models"):
-            write_models(base, output_folder, formulas=formulas, zod=zod)
+            write_models(base, output_folder, formulas=formulas, runtime=runtime, zod=zod)
             if verbose:
                 print("[dim] - TypeScript models generated.[/]")
 
@@ -407,7 +410,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
 
 
 # region MODELS
-def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bool = True) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, zod: bool = True) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     # Write individual table model files
@@ -456,16 +459,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
 
             # Pre-transpile formula fields and add AirtableRuntime import if any succeed
             formula_field_ids = table.formula_field_ids()
-            linked_record_field_ids = table.linked_record_field_ids()
-            single_linked_record_field_ids = table.single_linked_record_field_ids()
-            field_name_map = {f.id: f.name_camel() for f in table.fields}
-            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
-            transpiled_formulas = transpile_table_formulas(
-                raw_formulas, "typescript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
-            )
-            has_any_formula = any(f.is_formula() for f in table.fields)
-            if has_any_formula:
-                write.line('import { AirtableRuntime as F } from "../../static/airtable-runtime";')
+            if runtime:
+                linked_record_field_ids = table.linked_record_field_ids()
+                single_linked_record_field_ids = table.single_linked_record_field_ids()
+                field_name_map = {f.id: f.name_camel() for f in table.fields}
+                raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+                transpiled_formulas = transpile_table_formulas(
+                    raw_formulas, "typescript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
+                )
+                has_any_formula = any(f.is_formula() for f in table.fields)
+                if has_any_formula:
+                    write.line('import { AirtableRuntime as F } from "../../static/airtable-runtime";')
+            else:
+                transpiled_formulas = {}
             write.line_empty()
 
             # Table Model
@@ -557,7 +563,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, zod: bo
                             f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
                             1,
                         )
-                elif field.is_formula():
+                elif field.is_formula() and runtime:
                     # Formula field -> computed property that checks evaluateFormulasAtRuntime
                     write.docstring(docstring)
                     write.line_indented(f"public get {field_name}(): {field_type} | undefined {{", 1)

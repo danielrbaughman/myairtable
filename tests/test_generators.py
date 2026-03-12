@@ -359,7 +359,7 @@ class TestPythonFormulaFunctions:
         base = make_test_base(fields_spec, formula_map=formula_map)
         output_folder = tmp_path / "py_output"
         output_folder.mkdir()
-        write_models(base, output_folder, formulas=False, package_prefix="")
+        write_models(base, output_folder, formulas=False, runtime=True, package_prefix="")
         model_path = output_folder / "dynamic" / "models" / "test_table.py"
         return model_path.read_text()
 

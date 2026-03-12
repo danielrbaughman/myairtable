@@ -72,6 +72,7 @@ def py(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
@@ -95,6 +96,7 @@ def py(
             output_folder=folder_path,
             formulas=formulas,
             wrappers=wrappers,
+            runtime=runtime,
             package_prefix=package_prefix,
         )
 
@@ -109,6 +111,7 @@ def ts(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
 ):
     """Generate types and models in TypeScript"""
@@ -121,7 +124,7 @@ def ts(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("TypeScript generation"):
-        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, zod=zod)
+        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, zod=zod)
 
 
 @app.command()
@@ -132,6 +135,7 @@ def js(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
@@ -147,7 +151,7 @@ def js(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("JavaScript generation"):
-        generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, zod=zod)
+        generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, zod=zod)
 
     timer.summary()
 
@@ -259,6 +263,7 @@ def all(
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
+    runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
@@ -298,18 +303,19 @@ def all(
                 output_folder=py_folder_path,
                 formulas=formulas,
                 wrappers=wrappers,
+                runtime=runtime,
                 package_prefix=py_package_prefix,
             )
 
     if ts_folder:
         with timer.timer("TypeScript generation"):
             ts_folder_path = reset_folder(ts_folder)
-            generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers)
+            generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
 
     if js_folder:
         with timer.timer("JavaScript generation"):
             js_folder_path = reset_folder(js_folder)
-            generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers)
+            generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
 
     if md_folder:
         with timer.timer("Markdown generation"):

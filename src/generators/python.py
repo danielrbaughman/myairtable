@@ -117,7 +117,7 @@ class WriteToPythonFile(WriteToFile):
 
 
 # region MAIN
-def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: bool, package_prefix: str) -> None:
+def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: bool, runtime: bool, package_prefix: str) -> None:
     print("Generating Python code")
     for table in base.tables:
         table.detect_duplicate_property_names()
@@ -125,7 +125,8 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
-    copy_static_files(output_folder, "python")
+    exclude = ["airtable_runtime.py"] if not runtime else None
+    copy_static_files(output_folder, "python", exclude=exclude)
     if verbose:
         print("[dim] - Python static files copied.[/]")
 
@@ -139,7 +140,7 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
             print("[dim] - Python dicts generated.[/]")
 
     with timer.timer("Python: write_models"):
-        write_models(base, output_folder, formulas=formulas, package_prefix=package_prefix)
+        write_models(base, output_folder, formulas=formulas, runtime=runtime, package_prefix=package_prefix)
         if verbose:
             print("[dim] - Python models generated.[/]")
 
@@ -454,7 +455,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
 )
 
 
-def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix: str) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool, package_prefix: str) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
@@ -473,7 +474,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
             write.line("from ...static.special_types import AirtableAttachment, RecordId")
             # Check if this table has any transpilable formula fields (pre-scan)
             _has_formulas = any(field.is_formula() and field.options and field.options.formula for field in table.fields)
-            if _has_formulas:
+            if runtime and _has_formulas:
                 write.line("from ...static.airtable_runtime import AirtableRuntime as F")
                 write.line("import urllib.parse")
                 write.line("import math")
@@ -531,22 +532,26 @@ def write_models(base: Base, output_folder: Path, formulas: bool, package_prefix
                 write.line_indented(f"o: {table.name_pascal()}Options = {table.name_pascal()}Options()")
                 write.line_empty()
 
-            write.line_indented("evaluate_formulas_at_runtime: bool = False")
+            if runtime:
+                write.line_indented("evaluate_formulas_at_runtime: bool = False")
             write.line_empty()
 
             # Pre-transpile formula fields
             formula_field_ids = table.formula_field_ids()
-            field_name_map = {f.id: f.name_snake() for f in table.fields}
-            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
-            transpiled_formulas = transpile_table_formulas(raw_formulas, "python", field_name_map, formula_field_ids)
+            if runtime:
+                field_name_map = {f.id: f.name_snake() for f in table.fields}
+                raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "python", field_name_map, formula_field_ids)
+            else:
+                transpiled_formulas = {}
 
             # properties
             for field in table.fields:
                 field_name = field.name_snake()
                 pyairtable_type = pyairtable_orm_type(field, base, output_folder, package_prefix=package_prefix)
 
-                if field.is_formula():
-                    # Formula field -> hidden ORM descriptor + computed property
+                if field.is_formula() and runtime:
+                    # Formula field -> hidden ORM descriptor + computed property with runtime evaluation
                     # 1. Hidden ORM descriptor with _orm_ prefix for pyairtable deserialization
                     write.line_indented(f"_orm_{field_name}: {pyairtable_type}")
                     # 2. Public computed property
