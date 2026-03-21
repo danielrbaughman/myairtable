@@ -56,6 +56,7 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         calculated_field_ids: list[str],
         view_name_id_mapping: "dict[ViewType, str]",
         field_names: list[str],
+        cache_seconds: int = 0,
     ) -> "AirtableTable[DictType, CreateDictType, UpdateDictType, ORMType, ViewType, FieldType]":
         instance = cls()
         instance._table = table
@@ -70,6 +71,8 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         instance._calculated_field_ids = calculated_field_ids
         instance._view_name_id_mapping = view_name_id_mapping
         instance._field_names = field_names
+        instance._cache_seconds = cache_seconds
+        instance._cache = {}
 
         instance.dict = DictTable[DictType, CreateDictType, UpdateDictType, ViewType, FieldType].from_table(
             table,
@@ -80,9 +83,15 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
             calculated_field_ids,
             view_name_id_mapping,
             field_names,
+            cache_seconds=cache_seconds,
         )
 
         return instance
+
+    def invalidate_cache(self) -> None:
+        """Clears the cache for both ORM and Dict tables."""
+        super().invalidate_cache()
+        self.dict.invalidate_cache()
 
     def url(self, view: ViewType | None = None) -> str:
         """Get the URL for the Airtable table, with optional view."""

@@ -834,6 +834,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("  endpointUrl: options?.endpointUrl,", 3)
         write.line_indented("  noRetryIfRateLimited: options?.noRetryIfRateLimited ?? false,", 3)
         write.line_indented("  requestTimeout: options?.requestTimeout,", 3)
+        write.line_indented("  cacheSeconds: options?.cacheSeconds,", 3)
         write.line_indented("};", 2)
         write.line_indented("setAirtableConfig(this.baseId, _options);", 2)
         for table in base.tables:
@@ -851,6 +852,12 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.docstring("Get the URL for the Airtable base.", 1)
         write.line_indented("public url(): string {")
         write.line_indented("return buildUrl(this.baseId);", 2)
+        write.line_indented("}")
+        write.line_empty()
+        write.docstring("Invalidates the cache for all tables.", 1)
+        write.line_indented("public invalidateCache(): void {")
+        for table in base.tables:
+            write.line_indented(f"this.{table.name_camel()}.invalidateCache();", 2)
         write.line_indented("}")
         write.line("}")
 

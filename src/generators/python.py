@@ -619,7 +619,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             )
             write.line_indented(table_doc_string(table))
             write.line_indented("@classmethod")
-            write.line_indented("def from_table(cls, table: Table):")
+            write.line_indented("def from_table(cls, table: Table, cache_seconds: int = 0):")
             write.line_indented("cls = super().from_table(", 2)
             write.line_indented("table,", 3)
             write.line_indented(f"{table.name_pascal()}RecordDict,", 3)
@@ -630,6 +630,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f"{table.name_pascal()}CalculatedFieldIds,", 3)
             write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,", 3)
             write.line_indented(f"{table.name_pascal()}Fields,", 3)
+            write.line_indented("cache_seconds=cache_seconds,", 3)
             write.line_indented(")", 2)
             write.line_indented("return cls", 2)
             write.endregion()
@@ -727,7 +728,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("_tables: dict[TableName, AirtableTable] = {}")
         write.line_empty()
         write.line_indented(
-            'def __init__(self, api_key: str | None = None, base_id: str | None = None, endpoint_url: str = "https://api.airtable.com"):'
+            'def __init__(self, api_key: str | None = None, base_id: str | None = None, endpoint_url: str = "https://api.airtable.com", cache_seconds: int = 0):'
         )
         write.line_indented("self.base_id: str = base_id or get_base_id()", 2)
         write.line_indented("if not self.base_id:", 2)
@@ -737,6 +738,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented('raise ValueError("API key must be provided.")', 3)
         write.line_indented("# Register config so ORM models can look it up", 2)
         write.line_indented("set_airtable_config(self.base_id, api_key, endpoint_url)", 2)
+        write.line_indented("self._cache_seconds: int = cache_seconds", 2)
         write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
         write.line_empty()
 
@@ -751,13 +753,20 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("return build_url(base_id=self.base_id)", 2)
         write.line_empty()
 
+        write.line_indented("def invalidate_cache(self) -> None:")
+        write.docstring("Invalidates the cache for all tables.", 2)
+        write.line_indented("for table in self._tables.values():", 2)
+        write.line_indented("table.invalidate_cache()", 3)
+        write.line_empty()
+
         for table in base.tables:
             write.line_indented("@property")
             write.line_indented(f"def {table.name_snake()}(self) -> {table.name_pascal()}Table:")
             write.line_indented(f'"""`{table.name}` ({table.id})"""', 2)
             write.line_indented(f"if '{table.name}' not in self._tables:", 2)
             write.line_indented(
-                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.name}"))', 3
+                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.name}"), cache_seconds=self._cache_seconds)',
+                3,
             )
             write.line_indented(f'return self._tables["{table.name}"]', 2)
             write.line_empty()

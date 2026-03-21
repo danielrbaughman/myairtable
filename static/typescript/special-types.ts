@@ -20,6 +20,7 @@ export const ErrorValueSchema = z.object({ error: z.string() });
 
 export interface ExtendedAirtableOptions extends AirtableOptions {
 	baseId?: string;
+	cacheSeconds?: number;
 }
 
 export const AirtableThumbnailSchema = z.object({

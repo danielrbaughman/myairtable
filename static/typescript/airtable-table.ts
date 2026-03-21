@@ -69,6 +69,8 @@ export class AirtableTable<
 	private fieldNameToIdMap: Record<string, string>;
 	private fieldIdToNameMap: Record<string, string>;
 	private writableFieldIds: string[];
+	private cacheSeconds: number;
+	private _cache: Map<string, { value: any; expiresAt: number }> = new Map();
 
 	constructor(
 		baseId: string,
@@ -89,6 +91,7 @@ export class AirtableTable<
 		this.fieldNameToIdMap = fieldNameToIdMap;
 		this.fieldIdToNameMap = fieldIdToNameMap;
 		this.writableFieldIds = writableFieldIds;
+		this.cacheSeconds = (options as any).cacheSeconds ?? 0;
 	}
 
 	public getViewId(viewName: Vw): string {
@@ -199,6 +202,15 @@ export class AirtableTable<
 		recordIdOrIdsOrOptions?: string | string[] | QueryOptions<Vw, Fld>,
 		options?: FetchOptions<Fld>,
 	): Promise<any> {
+		// Cache check
+		const cacheKey = this.cacheSeconds > 0 ? JSON.stringify([recordIdOrIdsOrOptions, options]) : "";
+		if (this.cacheSeconds > 0) {
+			const hit = this._cache.get(cacheKey);
+			if (hit && Date.now() < hit.expiresAt) return hit.value;
+		}
+
+		let result: any;
+
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
 			validateRecordIds(recordIdOrIdsOrOptions);
@@ -222,11 +234,8 @@ export class AirtableTable<
 				if (records.length === 0) {
 					throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
 				}
-				return this.convertGetResult(records[0], returnAs);
+				result = this.convertGetResult(records[0], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
@@ -257,11 +266,8 @@ export class AirtableTable<
 
 			try {
 				const records = await this._table.select(selectOptions).all();
-				return this.convertGetResults([...records], returnAs);
+				result = this.convertGetResults([...records], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
@@ -288,14 +294,17 @@ export class AirtableTable<
 
 			try {
 				const records = await this._table.select(selectOptions).all();
-				return this.convertGetResults([...records], returnAs);
+				result = this.convertGetResults([...records], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
+
+		// Cache store
+		if (this.cacheSeconds > 0) {
+			this._cache.set(cacheKey, { value: result, expiresAt: Date.now() + this.cacheSeconds * 1000 });
+		}
+		return result;
 	}
 
 	//#endregion
@@ -317,6 +326,7 @@ export class AirtableTable<
 	public async create(
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
@@ -410,6 +420,7 @@ export class AirtableTable<
 	public async update(
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
@@ -503,6 +514,7 @@ export class AirtableTable<
 	public async upsert(
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
@@ -553,6 +565,7 @@ export class AirtableTable<
 	/** Delete multiple records */
 	public async delete(recordIds: string[]): Promise<void>;
 	public async delete(recordIdOrIds: string | string[]): Promise<void> {
+		this.invalidateCache();
 		if (Array.isArray(recordIdOrIds)) {
 			validateRecordIds(recordIdOrIds);
 			for (let i = 0; i < recordIdOrIds.length; i += 10) {
@@ -582,6 +595,11 @@ export class AirtableTable<
 	//#endregion
 
 	//#region HELPERS
+
+	/** Clears the cache for this table. */
+	public invalidateCache(): void {
+		this._cache.clear();
+	}
 
 	/** Convert a single get result based on returnAs */
 	private convertGetResult(

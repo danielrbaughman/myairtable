@@ -11,6 +11,8 @@ class AirtableTable {
 	/** Base ID */
 	baseId;
 	_options = {};
+	cacheSeconds = 0;
+	_cache = new Map();
 
 	recordCtor;
 	viewNameToIdMap = {};
@@ -37,6 +39,7 @@ class AirtableTable {
 		this.fieldNameToIdMap = fieldNameToIdMap;
 		this.fieldIdToNameMap = fieldIdToNameMap;
 		this.writableFieldIds = writableFieldIds;
+		this.cacheSeconds = options?.cacheSeconds ?? 0;
 	}
 
 	getViewId(viewName) {
@@ -67,6 +70,15 @@ class AirtableTable {
 	 *   - `onlyWritableFields` — Return only writable fields from the API. Intended for use in making Airtable.js's `.save()` method work correctly.
 	 */
 	async get(recordIdOrIdsOrOptions, options) {
+		// Cache check
+		const cacheKey = this.cacheSeconds > 0 ? JSON.stringify([recordIdOrIdsOrOptions, options]) : "";
+		if (this.cacheSeconds > 0) {
+			const hit = this._cache.get(cacheKey);
+			if (hit && Date.now() < hit.expiresAt) return hit.value;
+		}
+
+		let result;
+
 		// Single record by ID
 		if (typeof recordIdOrIdsOrOptions === "string") {
 			validateRecordIds(recordIdOrIdsOrOptions);
@@ -90,11 +102,8 @@ class AirtableTable {
 				if (records.length === 0) {
 					throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
 				}
-				return this.convertGetResult(records[0], returnAs);
+				result = this.convertGetResult(records[0], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
@@ -124,11 +133,8 @@ class AirtableTable {
 
 			try {
 				const records = await this._table.select(selectOptions).all();
-				return this.convertGetResults([...records], returnAs);
+				result = this.convertGetResults([...records], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
@@ -155,14 +161,17 @@ class AirtableTable {
 
 			try {
 				const records = await this._table.select(selectOptions).all();
-				return this.convertGetResults([...records], returnAs);
+				result = this.convertGetResults([...records], returnAs);
 			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
 				throw new Error(String(error));
 			}
 		}
+
+		// Cache store
+		if (this.cacheSeconds > 0) {
+			this._cache.set(cacheKey, { value: result, expiresAt: Date.now() + this.cacheSeconds * 1000 });
+		}
+		return result;
 	}
 
 	//#endregion
@@ -174,6 +183,7 @@ class AirtableTable {
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
 	 */
 	async create(recordOrRecords) {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
@@ -255,6 +265,7 @@ class AirtableTable {
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
 	 */
 	async update(recordOrRecords) {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
@@ -336,6 +347,7 @@ class AirtableTable {
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
 	 */
 	async upsert(recordOrRecords) {
+		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
@@ -384,6 +396,7 @@ class AirtableTable {
 	 * @param {string|string[]} recordIdOrIds - Single ID or array of IDs
 	 */
 	async delete(recordIdOrIds) {
+		this.invalidateCache();
 		if (Array.isArray(recordIdOrIds)) {
 			validateRecordIds(recordIdOrIds);
 			// Delete in batches of 10 (Airtable API limit)
@@ -414,6 +427,11 @@ class AirtableTable {
 	//#endregion
 
 	//#region HELPERS
+
+	/** Clears the cache for this table. */
+	invalidateCache() {
+		this._cache.clear();
+	}
 
 	/** Convert a single get result based on returnAs */
 	convertGetResult(record, returnAs) {

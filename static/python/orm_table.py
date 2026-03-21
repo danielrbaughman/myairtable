@@ -1,4 +1,6 @@
-from typing import Generic, Optional, overload
+import json
+import time
+from typing import Any, Generic, Optional, overload
 
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
@@ -20,6 +22,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     _view_name_id_mapping: dict[ViewType, str]
     _field_names: list[str]
 
+    _cache_seconds: int = 0
+    _cache: dict[str, tuple[Any, float]] = {}
+
     @classmethod
     def from_table(
         cls,
@@ -29,6 +34,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         calculated_field_ids: list[str],
         view_name_id_mapping: "dict[ViewType, str]",
         field_names: list[str],
+        cache_seconds: int = 0,
     ) -> "ORMTable[ORMType, ViewType, FieldType]":
         instance = cls()
         instance._table = table
@@ -37,12 +43,21 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         instance._calculated_field_ids = calculated_field_ids
         instance._view_name_id_mapping = view_name_id_mapping
         instance._field_names = field_names
+        instance._cache_seconds = cache_seconds
+        instance._cache = {}
         return instance
 
     def get_view_id(self, view: ViewType) -> str:
         """Resolves an Airtable view name to the corresponding ID, if available."""
         id = self._view_name_id_mapping.get(view, view)
         return id if id else view
+
+    def invalidate_cache(self) -> None:
+        """Clears the cache for this table."""
+        self._cache.clear()
+
+    def _cache_key(self, *args: Any) -> str:
+        return json.dumps(args, default=str)
 
     @overload
     def get(
@@ -136,6 +151,17 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         max_records: int | None = None,
         **options,
     ) -> ORMType | list[ORMType]:
+        # Cache check
+        if self._cache_seconds > 0:
+            cache_key = self._cache_key(
+                record_id, record_ids, str(formula), view, use_field_ids, page_size, fields, sort, offset, time_zone, user_locale
+            )
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                value, expires_at = cached
+                if time.monotonic() < expires_at:
+                    return value
+
         if fields is not None:
             validate_keys(fields, self._field_names)
 
@@ -175,7 +201,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 )
             record_dict: DictType = sanitize_record_dict(record_dict)
             record_orm: ORMType = self._orm_cls.from_record(record_dict)
-            return record_orm
+            result = record_orm
         elif record_ids and len(record_ids) > 0:
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
@@ -194,7 +220,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             )
             record_dicts: list[DictType] = [sanitize_record_dict(r) for r in record_dicts]
             record_orms: list[ORMType] = [self._orm_cls.from_record(r) for r in record_dicts]
-            return record_orms
+            result = record_orms
         else:
             if page_size > 100:
                 raise ValueError("Page size cannot exceed 100.")
@@ -213,7 +239,12 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             )
             record_dicts: list[DictType] = [sanitize_record_dict(r) for r in record_dicts]
             record_orms: list[ORMType] = [self._orm_cls.from_record(r) for r in record_dicts]
-            return record_orms
+            result = record_orms
+
+        # Cache store
+        if self._cache_seconds > 0:
+            self._cache[cache_key] = (result, time.monotonic() + self._cache_seconds)
+        return result
 
     @overload
     def create(self, record: ORMType) -> ORMType:
@@ -240,6 +271,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
     ) -> ORMType | list[ORMType]:
+        self.invalidate_cache()
         if isinstance(record, list):
             if len(record) == 0:
                 return []
@@ -287,6 +319,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
     ) -> ORMType | list[ORMType]:
+        self.invalidate_cache()
         if isinstance(record, list):
             if len(record) == 0:
                 return []
@@ -370,6 +403,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record_id: str = "",
         record_ids: list[str] = [],
     ) -> None:
+        self.invalidate_cache()
         if record:
             record.delete()
         elif record_id:
