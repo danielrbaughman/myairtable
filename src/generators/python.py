@@ -753,6 +753,16 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("return build_url(base_id=self.base_id)", 2)
         write.line_empty()
 
+        write.line_indented("def get_schema(self) -> BaseSchema:")
+        write.docstring("Fetch a live version of the schema from Airtable's metadata API.", 2)
+        write.line_indented("import json", 2)
+        write.line_indented("import urllib.request", 2)
+        write.line_indented('url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables"', 2)
+        write.line_indented('req = urllib.request.Request(url, headers={"Authorization": f"Bearer {get_api_key(self.base_id)}"})', 2)
+        write.line_indented("with urllib.request.urlopen(req) as resp:", 2)
+        write.line_indented("return json.loads(resp.read())", 3)
+        write.line_empty()
+
         write.line_indented("def invalidate_cache(self) -> None:")
         write.docstring("Invalidates the cache for all tables.", 2)
         write.line_indented("for table in self._tables.values():", 2)
