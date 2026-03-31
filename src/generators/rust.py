@@ -93,43 +93,12 @@ _RUST_KEYWORDS = frozenset(
     }
 )
 
-# Static types from the runtime crate that may appear in field types
-_STATIC_TYPES = frozenset(
-    {
-        "RecordId",
-        "Attachment",
-        "Collaborator",
-        "AirtableButton",
-        "VecOrValue",
-    }
-)
-
 
 def _rust_ident(name: str) -> str:
     """Ensure a name is a valid Rust identifier, using r# prefix for keywords."""
     if name in _RUST_KEYWORDS:
         return f"r#{name}"
     return name
-
-
-def _collect_static_imports(table: Table) -> set[str]:
-    """Collect static type imports needed by a table's fields."""
-    imports: set[str] = set()
-    for field in table.fields:
-        rust_type = field.rust_type()
-        for type_name in _STATIC_TYPES:
-            if type_name in rust_type:
-                imports.add(type_name)
-    return imports
-
-
-def _collect_option_imports(table: Table) -> set[str]:
-    """Collect option enum imports needed by a table's fields."""
-    imports: set[str] = set()
-    for field in table.select_fields():
-        if field.select_options():
-            imports.add(field.options_name())
-    return imports
 
 
 def _deduplicate_variants(variants: list[str]) -> list[str]:
@@ -315,67 +284,47 @@ def write_options(base: Base, output_folder: Path) -> None:
 
 
 def write_models(base: Base, output_folder: Path) -> None:
-    """Generate Rust structs for table records."""
+    """Generate Rust field constant structs for table records."""
     models_dir = create_dynamic_subdir(output_folder, "models")
 
     for table in base.tables:
         mod_name = table.name_snake()
+        fields_name = f"{table.name_pascal()}Fields"
 
         with WriteToRustFile(path=models_dir / f"{mod_name}.rs") as write:
-            # Imports
-            write.use_decl("serde::{Deserialize, Serialize}")
-            # Collect needed static types
-            static_imports = _collect_static_imports(table)
-            if static_imports:
-                write.use_decl(f"crate::types::{{{', '.join(sorted(static_imports))}}}")
-            # Import option enums if needed
-            option_imports = _collect_option_imports(table)
-            if option_imports:
-                write.use_decl(f"crate::options::{{{', '.join(sorted(option_imports))}}}")
+            # All fields — field name and field ID constants
+            write.doc_comment(f"Field constants for `{sanitize_string(table.name)}`")
+            write.line(f"pub struct {fields_name};")
             write.line_empty()
 
-            # Struct
-            fields_name = f"{table.name_pascal()}Fields"
-            write.doc_comment(f"Record fields for `{sanitize_string(table.name)}`")
-            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
-            write.line(f"pub struct {fields_name} {{")
-
+            write.line(f"impl {fields_name} {{")
             for field in table.fields:
-                field_name = _rust_ident(field.name_snake())
-                rust_type = field.rust_type()
-
-                write.property_docstring(field, table)
-                write.serde_rename(field.id, indent=1)
-                write.line_indented("#[serde(default)]", indent=1)
-                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
-                write.pub_field_optional(field_name, rust_type)
-
+                const_name = field.name_snake().upper()
+                escaped_name = sanitize_string(field.name)
+                write.doc_comment(f"`{escaped_name}`", indent=1)
+                write.line_indented(f'pub const {const_name}: &\'static str = "{escaped_name}";')
+                write.doc_comment(f"`{escaped_name}` (field ID)", indent=1)
+                write.line_indented(f'pub const {const_name}_ID: &\'static str = "{field.id}";')
             write.line("}")
             write.line_empty()
 
-            # Create/Update struct — writable fields only
+            # Writable fields only — for create/update
             writable_fields = [f for f in table.fields if not f.is_computed()]
             create_name = f"Create{table.name_pascal()}Fields"
 
-            write.doc_comment(f"Writable fields for creating/updating `{sanitize_string(table.name)}` records.")
-            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
-            write.line(f"pub struct {create_name} {{")
-
-            for field in writable_fields:
-                field_name = _rust_ident(field.name_snake())
-                rust_type = field.rust_type()
-
-                write.serde_rename(field.id, indent=1)
-                write.line_indented("#[serde(default)]", indent=1)
-                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
-                write.pub_field_optional(field_name, rust_type)
-
-            write.line("}")
+            write.doc_comment(f"Writable field constants for `{sanitize_string(table.name)}`")
+            write.line(f"pub struct {create_name};")
             write.line_empty()
 
-            # Update is an alias for Create
-            write.doc_comment(f"Alias for `{create_name}`.")
-            write.line(f"pub type Update{table.name_pascal()}Fields = {create_name};")
+            write.line(f"impl {create_name} {{")
+            for field in writable_fields:
+                const_name = field.name_snake().upper()
+                escaped_name = sanitize_string(field.name)
+                write.doc_comment(f"`{escaped_name}`", indent=1)
+                write.line_indented(f'pub const {const_name}: &\'static str = "{escaped_name}";')
+                write.doc_comment(f"`{escaped_name}` (field ID)", indent=1)
+                write.line_indented(f'pub const {const_name}_ID: &\'static str = "{field.id}";')
+            write.line("}")
             write.line_empty()
 
     # Write mod.rs
@@ -394,8 +343,6 @@ def write_tables(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         mod_name = table.name_snake()
         struct_name = table.name_pascal() + "Table"
-        fields_name = table.name_pascal() + "Fields"
-        create_name = f"Create{fields_name}"
 
         with WriteToRustFile(path=tables_dir / f"{mod_name}.rs") as write:
             write.use_decl("std::sync::Arc")
@@ -403,8 +350,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.use_decl("crate::error::AirtableError")
             write.use_decl("crate::client::AirtableClient")
             write.use_decl("crate::pagination::PaginatedResponse")
-            write.use_decl("crate::types::{Record, RecordId}")
-            write.use_decl(f"crate::models::{{{fields_name}, {create_name}}}")
+            write.use_decl("crate::types::{Fields, Record, RecordId}")
             write.line_empty()
 
             write.doc_comment(f"Table wrapper for `{sanitize_string(table.name)}`")
@@ -423,48 +369,52 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             # list()
-            write.doc_comment("List records from this table.", indent=1)
-            write.line_indented(f"pub async fn list(&self, offset: Option<&str>) -> Result<PaginatedResponse<{fields_name}>, AirtableError> {{")
-            write.line_indented("self.client.list_records(Self::TABLE_ID, offset).await", 2)
+            write.doc_comment("List records. Set `use_field_ids` to control whether keys are field IDs or names.", indent=1)
+            write.line_indented(
+                "pub async fn list(&self, use_field_ids: bool, offset: Option<&str>) -> Result<PaginatedResponse<Fields>, AirtableError> {"
+            )
+            write.line_indented("self.client.list_records(Self::TABLE_ID, use_field_ids, offset).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # get()
             write.doc_comment("Get a single record by ID.", indent=1)
-            write.line_indented(f"pub async fn get(&self, record_id: &RecordId) -> Result<Record<{fields_name}>, AirtableError> {{")
-            write.line_indented("self.client.get_record(Self::TABLE_ID, record_id).await", 2)
+            write.line_indented("pub async fn get(&self, record_id: &RecordId, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {")
+            write.line_indented("self.client.get_record(Self::TABLE_ID, record_id, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create()
             write.doc_comment("Create a new record.", indent=1)
-            write.line_indented(f"pub async fn create(&self, fields: &{create_name}) -> Result<Record<{fields_name}>, AirtableError> {{")
-            write.line_indented("self.client.create_record(Self::TABLE_ID, fields).await", 2)
+            write.line_indented("pub async fn create(&self, fields: &Fields, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {")
+            write.line_indented("self.client.create_record(Self::TABLE_ID, fields, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create_many()
             write.doc_comment("Create multiple records (batched in groups of 10).", indent=1)
-            write.line_indented(f"pub async fn create_many(&self, records: &[{create_name}]) -> Result<Vec<Record<{fields_name}>>, AirtableError> {{")
-            write.line_indented("self.client.create_records(Self::TABLE_ID, records).await", 2)
+            write.line_indented(
+                "pub async fn create_many(&self, records: &[Fields], use_field_ids: bool) -> Result<Vec<Record<Fields>>, AirtableError> {"
+            )
+            write.line_indented("self.client.create_records(Self::TABLE_ID, records, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # update()
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                f"pub async fn update(&self, record_id: &RecordId, fields: &{create_name}) -> Result<Record<{fields_name}>, AirtableError> {{"
+                "pub async fn update(&self, record_id: &RecordId, fields: &Fields, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {"
             )
-            write.line_indented("self.client.update_record(Self::TABLE_ID, record_id, fields).await", 2)
+            write.line_indented("self.client.update_record(Self::TABLE_ID, record_id, fields, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # update_many()
             write.doc_comment("Update multiple records (batched in groups of 10).", indent=1)
             write.line_indented(
-                f"pub async fn update_many(&self, records: &[(&RecordId, &{create_name})]) -> Result<Vec<Record<{fields_name}>>, AirtableError> {{"
+                "pub async fn update_many(&self, records: &[(&RecordId, &Fields)], use_field_ids: bool) -> Result<Vec<Record<Fields>>, AirtableError> {"
             )
-            write.line_indented("self.client.update_records(Self::TABLE_ID, records).await", 2)
+            write.line_indented("self.client.update_records(Self::TABLE_ID, records, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
@@ -566,7 +516,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # to avoid ambiguity when model and option modules share table names)
         for table in base.tables:
             pascal = table.name_pascal()
-            write.use_decl(f"models::{{{pascal}Fields, Create{pascal}Fields, Update{pascal}Fields}}", public=True)
+            write.use_decl(f"models::{{{pascal}Fields, Create{pascal}Fields}}", public=True)
         for table in base.tables:
             if table.select_fields():
                 write.use_decl(f"options::{_rust_ident(table.name_snake())}::*", public=True)
