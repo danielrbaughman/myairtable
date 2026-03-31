@@ -398,6 +398,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
         create_name = f"Create{model_name}"
 
         with WriteToRustFile(path=tables_dir / f"{mod_name}.rs") as write:
+            write.use_decl("std::sync::Arc")
+            write.line_empty()
             write.use_decl("crate::error::AirtableError")
             write.use_decl("crate::client::AirtableClient")
             write.use_decl("crate::pagination::PaginatedResponse")
@@ -406,25 +408,18 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             write.doc_comment(f"Table wrapper for `{sanitize_string(table.name)}`")
-            write.line(f"pub struct {struct_name}<'a> {{")
-            write.line_indented("client: &'a AirtableClient,")
+            write.line(f"pub struct {struct_name} {{")
+            write.line_indented("pub(crate) client: Arc<AirtableClient>,")
             write.line("}")
             write.line_empty()
 
-            write.line(f"impl<'a> {struct_name}<'a> {{")
+            write.line(f"impl {struct_name} {{")
 
             # TABLE_ID and TABLE_NAME
             write.doc_comment("Airtable table ID.", indent=1)
             write.line_indented(f'pub const TABLE_ID: &\'static str = "{table.id}";')
             write.doc_comment("Airtable table name.", indent=1)
             write.line_indented(f'pub const TABLE_NAME: &\'static str = "{sanitize_string(table.name)}";')
-            write.line_empty()
-
-            # new()
-            write.doc_comment("Create a new table wrapper.", indent=1)
-            write.line_indented("pub fn new(client: &'a AirtableClient) -> Self {")
-            write.line_indented("Self { client }", 2)
-            write.line_indented("}")
             write.line_empty()
 
             # list()
@@ -504,6 +499,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
 
     # Write the main Airtable struct
     with WriteToRustFile(path=dynamic_dir / "airtable.rs") as write:
+        write.use_decl("std::sync::Arc")
+        write.line_empty()
         write.use_decl("crate::client::AirtableClient")
         for table in base.tables:
             write.use_decl(f"crate::tables::{table.name_pascal()}Table")
@@ -511,7 +508,11 @@ def write_lib(base: Base, output_folder: Path) -> None:
 
         write.doc_comment("Main entry point for the Airtable base.")
         write.line("pub struct Airtable {")
-        write.line_indented("client: AirtableClient,")
+        for table in base.tables:
+            table_snake = table.name_snake()
+            table_pascal = table.name_pascal()
+            write.doc_comment(f"`{sanitize_string(table.name)}`", indent=1)
+            write.pub_field(_rust_ident(table_snake), f"{table_pascal}Table")
         write.line("}")
         write.line_empty()
 
@@ -520,19 +521,14 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # new()
         write.doc_comment("Create a new Airtable instance.", indent=1)
         write.line_indented("pub fn new(api_key: &str, base_id: &str) -> Self {")
-        write.line_indented("Self { client: AirtableClient::new(api_key, base_id) }", 2)
-        write.line_indented("}")
-        write.line_empty()
-
-        # Per-table accessors
+        write.line_indented("let client = Arc::new(AirtableClient::new(api_key, base_id));", 2)
+        write.line_indented("Self {", 2)
         for table in base.tables:
             table_snake = table.name_snake()
             table_pascal = table.name_pascal()
-            write.doc_comment(f"Access the `{sanitize_string(table.name)}` table.", indent=1)
-            write.line_indented(f"pub fn {_rust_ident(table_snake)}(&self) -> {table_pascal}Table<'_> {{")
-            write.line_indented(f"{table_pascal}Table::new(&self.client)", 2)
-            write.line_indented("}")
-            write.line_empty()
+            write.line_indented(f"{_rust_ident(table_snake)}: {table_pascal}Table {{ client: Arc::clone(&client) }},", 3)
+        write.line_indented("}", 2)
+        write.line_indented("}")
 
         write.line("}")
         write.line_empty()
