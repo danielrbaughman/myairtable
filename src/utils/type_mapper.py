@@ -109,7 +109,7 @@ GENERIC_TO_RUST: dict[GenericType, str] = {
     GenericType.BOOLEAN: "bool",
     GenericType.DATETIME: "String",  # ISO 8601 strings
     GenericType.DURATION: "i64",  # Milliseconds
-    GenericType.RECORD_ID: "RecordId",  # type alias for String
+    GenericType.RECORD_ID: "Vec<RecordId>",  # API always returns arrays, even for single-link fields
     GenericType.ATTACHMENT: "Attachment",
     GenericType.COLLABORATOR: "Collaborator",
     GenericType.BUTTON: "AirtableButton",
