@@ -335,9 +335,10 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             # Struct
+            fields_name = f"{table.name_pascal()}Fields"
             write.doc_comment(f"Record fields for `{sanitize_string(table.name)}`")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
-            write.line(f"pub struct {table.name_pascal()} {{")
+            write.line(f"pub struct {fields_name} {{")
 
             for field in table.fields:
                 field_name = _rust_ident(field.name_snake())
@@ -354,7 +355,7 @@ def write_models(base: Base, output_folder: Path) -> None:
 
             # Create/Update struct — writable fields only
             writable_fields = [f for f in table.fields if not f.is_computed()]
-            create_name = f"Create{table.name_pascal()}"
+            create_name = f"Create{table.name_pascal()}Fields"
 
             write.doc_comment(f"Writable fields for creating/updating `{sanitize_string(table.name)}` records.")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
@@ -374,7 +375,7 @@ def write_models(base: Base, output_folder: Path) -> None:
 
             # Update is an alias for Create
             write.doc_comment(f"Alias for `{create_name}`.")
-            write.line(f"pub type Update{table.name_pascal()} = {create_name};")
+            write.line(f"pub type Update{table.name_pascal()}Fields = {create_name};")
             write.line_empty()
 
     # Write mod.rs
@@ -393,9 +394,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         mod_name = table.name_snake()
         struct_name = table.name_pascal() + "Table"
-        model_name = table.name_pascal()
-
-        create_name = f"Create{model_name}"
+        fields_name = table.name_pascal() + "Fields"
+        create_name = f"Create{fields_name}"
 
         with WriteToRustFile(path=tables_dir / f"{mod_name}.rs") as write:
             write.use_decl("std::sync::Arc")
@@ -404,7 +404,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.use_decl("crate::client::AirtableClient")
             write.use_decl("crate::pagination::PaginatedResponse")
             write.use_decl("crate::types::{Record, RecordId}")
-            write.use_decl(f"crate::models::{{{model_name}, {create_name}}}")
+            write.use_decl(f"crate::models::{{{fields_name}, {create_name}}}")
             write.line_empty()
 
             write.doc_comment(f"Table wrapper for `{sanitize_string(table.name)}`")
@@ -424,28 +424,28 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
             # list()
             write.doc_comment("List records from this table.", indent=1)
-            write.line_indented(f"pub async fn list(&self, offset: Option<&str>) -> Result<PaginatedResponse<{model_name}>, AirtableError> {{")
+            write.line_indented(f"pub async fn list(&self, offset: Option<&str>) -> Result<PaginatedResponse<{fields_name}>, AirtableError> {{")
             write.line_indented("self.client.list_records(Self::TABLE_ID, offset).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # get()
             write.doc_comment("Get a single record by ID.", indent=1)
-            write.line_indented(f"pub async fn get(&self, record_id: &RecordId) -> Result<Record<{model_name}>, AirtableError> {{")
+            write.line_indented(f"pub async fn get(&self, record_id: &RecordId) -> Result<Record<{fields_name}>, AirtableError> {{")
             write.line_indented("self.client.get_record(Self::TABLE_ID, record_id).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create()
             write.doc_comment("Create a new record.", indent=1)
-            write.line_indented(f"pub async fn create(&self, fields: &{create_name}) -> Result<Record<{model_name}>, AirtableError> {{")
+            write.line_indented(f"pub async fn create(&self, fields: &{create_name}) -> Result<Record<{fields_name}>, AirtableError> {{")
             write.line_indented("self.client.create_record(Self::TABLE_ID, fields).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create_many()
             write.doc_comment("Create multiple records (batched in groups of 10).", indent=1)
-            write.line_indented(f"pub async fn create_many(&self, records: &[{create_name}]) -> Result<Vec<Record<{model_name}>>, AirtableError> {{")
+            write.line_indented(f"pub async fn create_many(&self, records: &[{create_name}]) -> Result<Vec<Record<{fields_name}>>, AirtableError> {{")
             write.line_indented("self.client.create_records(Self::TABLE_ID, records).await", 2)
             write.line_indented("}")
             write.line_empty()
@@ -453,7 +453,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # update()
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                f"pub async fn update(&self, record_id: &RecordId, fields: &{create_name}) -> Result<Record<{model_name}>, AirtableError> {{"
+                f"pub async fn update(&self, record_id: &RecordId, fields: &{create_name}) -> Result<Record<{fields_name}>, AirtableError> {{"
             )
             write.line_indented("self.client.update_record(Self::TABLE_ID, record_id, fields).await", 2)
             write.line_indented("}")
@@ -462,7 +462,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # update_many()
             write.doc_comment("Update multiple records (batched in groups of 10).", indent=1)
             write.line_indented(
-                f"pub async fn update_many(&self, records: &[(&RecordId, &{create_name})]) -> Result<Vec<Record<{model_name}>>, AirtableError> {{"
+                f"pub async fn update_many(&self, records: &[(&RecordId, &{create_name})]) -> Result<Vec<Record<{fields_name}>>, AirtableError> {{"
             )
             write.line_indented("self.client.update_records(Self::TABLE_ID, records).await", 2)
             write.line_indented("}")
@@ -566,7 +566,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # to avoid ambiguity when model and option modules share table names)
         for table in base.tables:
             pascal = table.name_pascal()
-            write.use_decl(f"models::{{{pascal}, Create{pascal}, Update{pascal}}}", public=True)
+            write.use_decl(f"models::{{{pascal}Fields, Create{pascal}Fields, Update{pascal}Fields}}", public=True)
         for table in base.tables:
             if table.select_fields():
                 write.use_decl(f"options::{_rust_ident(table.name_snake())}::*", public=True)
