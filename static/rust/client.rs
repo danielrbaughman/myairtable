@@ -32,10 +32,7 @@ impl AirtableClient {
     }
 
     fn table_url(&self, table_id: &str) -> String {
-        format!(
-            "https://api.airtable.com/v0/{}/{}",
-            self.base_id, table_id
-        )
+        format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }
 
     /// List records from a table.
