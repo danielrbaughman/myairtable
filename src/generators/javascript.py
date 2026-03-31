@@ -408,7 +408,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # Requires
             write.region("REQUIRES")
             write.require_statement(["AirtableModel"], "../../static/airtable-model")
-            write.require_statement(["LinkedRecord", "LinkedRecords"], "../../static/linked-record")
+            write.require_statement(["LinkedRecord", "LinkedRecords", "wrapLinkedRecordProxy"], "../../static/linked-record")
             write.require_statement(["getOptions", "getBaseId", "buildUrl"], "../../static/helpers")
 
             # Require field mappings from types
@@ -496,7 +496,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     linked_file = linked_table.name_camel() if linked_table else ""
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => require("./{linked_file}").{linked_record_type}.fromId(id, config) }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => require("./{linked_file}").{linked_record_type}.fromId(id, config), linkedModelClass: require("./{linked_file}").{linked_record_type} }},',
                         2,
                     )
                 elif field_type == "Attachment[]":
@@ -536,12 +536,18 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     write.line_indented(f'return this._fields["{field.name_camel()}"];', 2)
                     write.line_indented("}")
                 else:
+                    field_type = field.typescript_type()
                     write.docstring(docstring)
                     write.line_indented(f'get {field.name_camel()}() {{ return this._fields["{field.name_camel()}"]; }}')
                     if not field.is_computed():
-                        write.line_indented(
-                            f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
-                        )
+                        if field_type == "RecordId" and not field.is_computed():
+                            write.line_indented(f"set {field.name_camel()}(value) {{ this._setLinkedField('{field.name_camel()}', value); }}")
+                        elif field_type == "RecordId[]" and not field.is_computed():
+                            write.line_indented(f"set {field.name_camel()}(value) {{ this._setLinkedRecordsField('{field.name_camel()}', value); }}")
+                        else:
+                            write.line_indented(
+                                f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
+                            )
             write.line_empty()
 
             # Constructor

@@ -4,7 +4,7 @@ import { AirtableOptions, Record as ATRecord, Attachment, FieldSet, RecordData }
 import * as z from "zod";
 import { CreateRecordData, IRecord, RecordId, recordIdSchema } from "./special-types";
 import { getBaseId, getOptions } from "./helpers";
-import { LinkedRecord, LinkedRecords } from "./linked-record";
+import { LinkedRecord, LinkedRecords, wrapLinkedRecordProxy } from "./linked-record";
 
 export type FieldType = "generic" | "linkedRecord" | "linkedRecords" | "attachment";
 
@@ -15,6 +15,7 @@ export interface FieldDescriptor {
 	isComputed: boolean;
 	fieldType: FieldType;
 	linkedModelFromId?: (id: any, config?: AirtableOptions & { baseId: string }) => any;
+	linkedModelClass?: any;
 }
 
 export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
@@ -34,6 +35,10 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 
 	/** Field descriptors - must be defined by subclasses */
 	protected static fieldDescriptors: FieldDescriptor[] = [];
+
+	public static getFieldDescriptor(propertyName: string): FieldDescriptor | undefined {
+		return this.fieldDescriptors.find((d) => d.propertyName === propertyName);
+	}
 
 	// Field storage
 	protected _fields: Record<string, unknown> = {};
@@ -337,13 +342,15 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		if (desc.fieldType === "linkedRecord") {
 			// Airtable API always returns arrays for link fields; unwrap to single ID
 			const singleId = Array.isArray(value) ? value[0] : value;
-			return new LinkedRecord(
+			const lr = new LinkedRecord(
 				singleId as RecordId,
 				desc.linkedModelFromId!,
 				() => this.markDirty(desc.propertyName),
 				this.__configBaseId,
 				this.__configOptions,
+				desc.linkedModelClass,
 			);
+			return wrapLinkedRecordProxy(lr);
 		} else {
 			return new LinkedRecords(
 				value as RecordId[],
@@ -353,6 +360,51 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 				this.__configOptions,
 			);
 		}
+	}
+
+	protected _setLinkedField(propertyName: string, value: unknown): void {
+		const desc = this.getFieldDescriptors().find((d) => d.propertyName === propertyName);
+		if (!desc) return;
+
+		if (value instanceof LinkedRecord) {
+			this._fields[propertyName] = value;
+		} else if (value instanceof AirtableModel) {
+			const lr = this._createLinkedField(desc, value.id);
+			(lr as LinkedRecord<any>).set(value);
+			this._fields[propertyName] = lr;
+		} else if (typeof value === "string") {
+			this._fields[propertyName] = this._createLinkedField(desc, value);
+		} else if (value === undefined || value === null) {
+			this._fields[propertyName] = this._createLinkedField(desc, undefined);
+		} else {
+			this._fields[propertyName] = value;
+		}
+		this.markDirty(propertyName);
+	}
+
+	protected _setLinkedRecordsField(propertyName: string, value: unknown): void {
+		const desc = this.getFieldDescriptors().find((d) => d.propertyName === propertyName);
+		if (!desc) return;
+
+		if (value instanceof LinkedRecords) {
+			this._fields[propertyName] = value;
+		} else if (Array.isArray(value)) {
+			if (value.length === 0) {
+				this._fields[propertyName] = this._createLinkedField(desc, []);
+			} else if (value[0] instanceof AirtableModel) {
+				const ids = value.map((v: AirtableModel<any, any, any>) => v.id);
+				const lr = this._createLinkedField(desc, ids) as LinkedRecords<any>;
+				lr.set(value);
+				this._fields[propertyName] = lr;
+			} else {
+				this._fields[propertyName] = this._createLinkedField(desc, value);
+			}
+		} else if (value === undefined || value === null) {
+			this._fields[propertyName] = this._createLinkedField(desc, undefined);
+		} else {
+			this._fields[propertyName] = value;
+		}
+		this.markDirty(propertyName);
 	}
 
 	protected initializeFields(data: Record<string, unknown>): void {

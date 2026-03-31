@@ -1,6 +1,6 @@
 const { recordIdSchema } = require("./special-types");
 const { getBaseId, getOptions } = require("./helpers");
-const { LinkedRecord, LinkedRecords } = require("./linked-record");
+const { LinkedRecord, LinkedRecords, wrapLinkedRecordProxy } = require("./linked-record");
 
 class AirtableModel {
 	// Base properties
@@ -18,6 +18,10 @@ class AirtableModel {
 
 	/** Field descriptors - must be defined by subclasses */
 	static fieldDescriptors = [];
+
+	static getFieldDescriptor(propertyName) {
+		return this.fieldDescriptors.find((d) => d.propertyName === propertyName);
+	}
 
 	// Field storage
 	_fields = {};
@@ -308,13 +312,15 @@ class AirtableModel {
 		if (desc.fieldType === "linkedRecord") {
 			// Airtable API always returns arrays for link fields; unwrap to single ID
 			const singleId = Array.isArray(value) ? value[0] : value;
-			return new LinkedRecord(
+			const lr = new LinkedRecord(
 				singleId,
 				desc.linkedModelFromId,
 				() => this.markDirty(desc.propertyName),
 				this.__configBaseId,
 				this.__configOptions,
+				desc.linkedModelClass,
 			);
+			return wrapLinkedRecordProxy(lr);
 		} else {
 			return new LinkedRecords(
 				value,
@@ -324,6 +330,51 @@ class AirtableModel {
 				this.__configOptions,
 			);
 		}
+	}
+
+	_setLinkedField(propertyName, value) {
+		const desc = this.getFieldDescriptors().find((d) => d.propertyName === propertyName);
+		if (!desc) return;
+
+		if (value instanceof LinkedRecord) {
+			this._fields[propertyName] = value;
+		} else if (value instanceof AirtableModel) {
+			const lr = this._createLinkedField(desc, value.id);
+			lr.set(value);
+			this._fields[propertyName] = lr;
+		} else if (typeof value === "string") {
+			this._fields[propertyName] = this._createLinkedField(desc, value);
+		} else if (value === undefined || value === null) {
+			this._fields[propertyName] = this._createLinkedField(desc, undefined);
+		} else {
+			this._fields[propertyName] = value;
+		}
+		this.markDirty(propertyName);
+	}
+
+	_setLinkedRecordsField(propertyName, value) {
+		const desc = this.getFieldDescriptors().find((d) => d.propertyName === propertyName);
+		if (!desc) return;
+
+		if (value instanceof LinkedRecords) {
+			this._fields[propertyName] = value;
+		} else if (Array.isArray(value)) {
+			if (value.length === 0) {
+				this._fields[propertyName] = this._createLinkedField(desc, []);
+			} else if (value[0] instanceof AirtableModel) {
+				const ids = value.map((v) => v.id);
+				const lr = this._createLinkedField(desc, ids);
+				lr.set(value);
+				this._fields[propertyName] = lr;
+			} else {
+				this._fields[propertyName] = this._createLinkedField(desc, value);
+			}
+		} else if (value === undefined || value === null) {
+			this._fields[propertyName] = this._createLinkedField(desc, undefined);
+		} else {
+			this._fields[propertyName] = value;
+		}
+		this.markDirty(propertyName);
 	}
 
 	initializeFields(data) {

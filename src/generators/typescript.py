@@ -416,7 +416,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
             write.line('import { AirtableModel, FieldDescriptor } from "../../static/airtable-model";')
             write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
-            write.line('import { LinkedRecord, LinkedRecords } from "../../static/linked-record";')
+            write.line('import { LinkedRecord, LinkedRecords, ChainableLinkedRecord } from "../../static/linked-record";')
             write.line('import { buildUrl } from "../../static/helpers";')
 
             # Import types for this table
@@ -503,7 +503,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     linked_record_type = field.get_linked_model_name()
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config) }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config), linkedModelClass: {linked_record_type} as any }},',
                         2,
                     )
                 elif field_type == "Attachment[]":
@@ -539,11 +539,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     if field_type == "RecordId":
                         write.docstring(docstring)
                         write.line_indented(
-                            f'public get {field_name}(): LinkedRecord<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecord<{linked_record_type}>; }}',
+                            f'public get {field_name}(): ChainableLinkedRecord<{linked_record_type}> {{ return this._fields["{field_name}"] as ChainableLinkedRecord<{linked_record_type}>; }}',
                             1,
                         )
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecord<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
+                            f"public set {field_name}(value: {linked_record_type} | LinkedRecord<{linked_record_type}> | RecordId | undefined) {{ this._setLinkedField('{field_name}', value); }}",
                             1,
                         )
                     elif field_type == "RecordId[]":
@@ -553,7 +553,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                             1,
                         )
                         write.line_indented(
-                            f"public set {field_name}(value: LinkedRecords<{linked_record_type}> | undefined) {{ this._fields[\"{field_name}\"] = value!; this.markDirty('{field_name}'); }}",
+                            f"public set {field_name}(value: {linked_record_type}[] | LinkedRecords<{linked_record_type}> | RecordId[] | undefined) {{ this._setLinkedRecordsField('{field_name}', value); }}",
                             1,
                         )
                 elif field.is_formula() and runtime:
@@ -602,23 +602,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             if zod:
                 write.line_indented("this.initializeFields(data);", 2)
             else:
-                for field in table.fields:
-                    field_name = field.name_camel()
-                    field_type = field.typescript_type()
-                    if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
-                        linked_record_type = field.get_linked_model_name()
-                        if field_type == "RecordId":
-                            write.line_indented(
-                                f"this._fields[\"{field_name}\"] = new LinkedRecord<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                                2,
-                            )
-                        elif field_type == "RecordId[]":
-                            write.line_indented(
-                                f"this._fields[\"{field_name}\"] = new LinkedRecords<{linked_record_type}>({prefix}{field_name}, {linked_record_type}.fromId, () => this.markDirty('{field_name}'), this.__configBaseId, this.__configOptions);",
-                                2,
-                            )
-                    else:
-                        write.line_indented(f'this._fields["{field_name}"] = {prefix}{field_name};', 2)
+                # Build data object from destructured params and use initializeFields
+                field_names = [field.name_camel() for field in table.fields]
+                fields_obj = ", ".join(field_names)
+                write.line_indented(f"this.initializeFields({{ {fields_obj} }});", 2)
             write.line_indented(
                 f"this.record = new Record<{table_name}FieldSet>(new {table_name}Table(this.getInstanceBaseId(), this.getInstanceOptions())._table, this.id, {{}});",
                 2,
