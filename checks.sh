@@ -21,4 +21,5 @@ yarn format
 
 # Rust
 cargo check
+cargo test
 cargo fmt
