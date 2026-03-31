@@ -7,6 +7,8 @@ uv run ty check
 uv run pytest
 uv run ruff format
 
+cargo check
+
 if ! command -v nvm &> /dev/null; then
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
