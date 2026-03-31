@@ -206,7 +206,7 @@ class WriteToRustFile(WriteToFile):
         formula = field.formula(sanitized=True, condense=True)
         if formula:
             lines = [base_info, ""]
-            lines.append("```")
+            lines.append("```text")
             for line in field.formula(sanitized=True, format=True).splitlines():
                 lines.append(line)
             lines.append("```")
@@ -352,6 +352,31 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line("}")
             write.line_empty()
 
+            # Create/Update struct — writable fields only
+            writable_fields = [f for f in table.fields if not f.is_computed()]
+            create_name = f"Create{table.name_pascal()}"
+
+            write.doc_comment(f"Writable fields for creating/updating `{sanitize_string(table.name)}` records.")
+            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
+            write.line(f"pub struct {create_name} {{")
+
+            for field in writable_fields:
+                field_name = _rust_ident(field.name_snake())
+                rust_type = field.rust_type()
+
+                write.serde_rename(field.id, indent=1)
+                write.line_indented("#[serde(default)]", indent=1)
+                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
+                write.pub_field_optional(field_name, rust_type)
+
+            write.line("}")
+            write.line_empty()
+
+            # Update is an alias for Create
+            write.doc_comment(f"Alias for `{create_name}`.")
+            write.line(f"pub type Update{table.name_pascal()} = {create_name};")
+            write.line_empty()
+
     # Write mod.rs
     with WriteToRustFile(path=models_dir / "mod.rs") as write:
         for table in base.tables:
@@ -370,12 +395,14 @@ def write_tables(base: Base, output_folder: Path) -> None:
         struct_name = table.name_pascal() + "Table"
         model_name = table.name_pascal()
 
+        create_name = f"Create{model_name}"
+
         with WriteToRustFile(path=tables_dir / f"{mod_name}.rs") as write:
             write.use_decl("crate::error::AirtableError")
             write.use_decl("crate::client::AirtableClient")
             write.use_decl("crate::pagination::PaginatedResponse")
             write.use_decl("crate::types::{Record, RecordId}")
-            write.use_decl(f"crate::models::{model_name}")
+            write.use_decl(f"crate::models::{{{model_name}, {create_name}}}")
             write.line_empty()
 
             write.doc_comment(f"Table wrapper for `{sanitize_string(table.name)}`")
@@ -416,17 +443,33 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
             # create()
             write.doc_comment("Create a new record.", indent=1)
-            write.line_indented(f"pub async fn create(&self, fields: &{model_name}) -> Result<Record<{model_name}>, AirtableError> {{")
+            write.line_indented(f"pub async fn create(&self, fields: &{create_name}) -> Result<Record<{model_name}>, AirtableError> {{")
             write.line_indented("self.client.create_record(Self::TABLE_ID, fields).await", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # create_many()
+            write.doc_comment("Create multiple records (batched in groups of 10).", indent=1)
+            write.line_indented(f"pub async fn create_many(&self, records: &[{create_name}]) -> Result<Vec<Record<{model_name}>>, AirtableError> {{")
+            write.line_indented("self.client.create_records(Self::TABLE_ID, records).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # update()
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                f"pub async fn update(&self, record_id: &RecordId, fields: &{model_name}) -> Result<Record<{model_name}>, AirtableError> {{"
+                f"pub async fn update(&self, record_id: &RecordId, fields: &{create_name}) -> Result<Record<{model_name}>, AirtableError> {{"
             )
             write.line_indented("self.client.update_record(Self::TABLE_ID, record_id, fields).await", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # update_many()
+            write.doc_comment("Update multiple records (batched in groups of 10).", indent=1)
+            write.line_indented(
+                f"pub async fn update_many(&self, records: &[(&RecordId, &{create_name})]) -> Result<Vec<Record<{model_name}>>, AirtableError> {{"
+            )
+            write.line_indented("self.client.update_records(Self::TABLE_ID, records).await", 2)
             write.line_indented("}")
             write.line_empty()
 
@@ -434,6 +477,13 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.doc_comment("Delete a record.", indent=1)
             write.line_indented("pub async fn delete(&self, record_id: &RecordId) -> Result<(), AirtableError> {")
             write.line_indented("self.client.delete_record(Self::TABLE_ID, record_id).await", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # delete_many()
+            write.doc_comment("Delete multiple records (batched in groups of 10).", indent=1)
+            write.line_indented("pub async fn delete_many(&self, record_ids: &[RecordId]) -> Result<(), AirtableError> {")
+            write.line_indented("self.client.delete_records(Self::TABLE_ID, record_ids).await", 2)
             write.line_indented("}")
 
             write.line("}")
@@ -510,11 +560,20 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("airtable")
         write.line_empty()
 
-        # Re-exports
+        # Re-exports for convenience
         write.use_decl("airtable::Airtable", public=True)
         write.use_decl("client::AirtableClient", public=True)
         write.use_decl("error::AirtableError", public=True)
+        write.use_decl("pagination::PaginatedResponse", public=True)
         write.use_decl("types::*", public=True)
+        # Re-export all models and options (individual types, not module globs,
+        # to avoid ambiguity when model and option modules share table names)
+        for table in base.tables:
+            pascal = table.name_pascal()
+            write.use_decl(f"models::{{{pascal}, Create{pascal}, Update{pascal}}}", public=True)
+        for table in base.tables:
+            if table.select_fields():
+                write.use_decl(f"options::{_rust_ident(table.name_snake())}::*", public=True)
 
 
 # endregion
