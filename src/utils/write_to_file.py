@@ -13,7 +13,7 @@ class WriteToFile(BaseModel):
 
     path: Path
     lines: list[str] = []
-    language: Literal["python", "typescript", "javascript", "markdown", "mermaid"]
+    language: Literal["python", "typescript", "javascript", "markdown", "mermaid", "rust"]
 
     def __enter__(self):
         return self
@@ -30,7 +30,7 @@ class WriteToFile(BaseModel):
                         "# Auto-generated file. Do not edit directly.\n"
                         "# ==========================================\n\n"
                     )
-                case "typescript" | "javascript":
+                case "typescript" | "javascript" | "rust":
                     header: str = (
                         "// ==========================================\n"
                         "// Auto-generated file. Do not edit directly.\n"

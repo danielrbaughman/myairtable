@@ -102,6 +102,23 @@ GENERIC_TO_ZOD: dict[GenericType, str] = {
     GenericType.UNKNOWN: "z.any()",
 }
 
+GENERIC_TO_RUST: dict[GenericType, str] = {
+    GenericType.STRING: "String",
+    GenericType.INTEGER: "i64",
+    GenericType.FLOAT: "f64",
+    GenericType.BOOLEAN: "bool",
+    GenericType.DATETIME: "String",  # ISO 8601 strings
+    GenericType.DURATION: "i64",  # Milliseconds
+    GenericType.RECORD_ID: "RecordId",  # type alias for String
+    GenericType.ATTACHMENT: "Attachment",
+    GenericType.COLLABORATOR: "Collaborator",
+    GenericType.BUTTON: "AirtableButton",
+    GenericType.LIST_OF_RECORD_IDS: "Vec<RecordId>",
+    GenericType.LIST_OF_ATTACHMENTS: "Vec<Attachment>",
+    GenericType.LIST_OF_COLLABORATORS: "Vec<Collaborator>",
+    GenericType.UNKNOWN: "serde_json::Value",
+}
+
 # endregion
 
 
@@ -144,12 +161,14 @@ def map_types(base: Base) -> None:
             # Calculate generic type once
             resolved = map_type(field)
 
-            # Render both types from the same generic type
+            # Render all types from the same generic type
             py_type = render_type(field, "python", resolved=resolved)
             ts_type = render_type(field, "typescript", resolved=resolved)
+            rust_type = render_type(field, "rust", resolved=resolved)
 
             field._python_type = py_type
             field._typescript_type = ts_type
+            field._rust_type = rust_type
 
             # Handle disambiguation for union types (list vs single value)
             if "|" in py_type and field.is_valid():
@@ -159,6 +178,7 @@ def map_types(base: Base) -> None:
                     is_list = csv_python_type.startswith("list[")
                     field._python_type = render_type(field, "python", is_list=is_list)
                     field._typescript_type = render_type(field, "typescript", is_list=is_list)
+                    field._rust_type = render_type(field, "rust", is_list=is_list)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -259,7 +279,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-Language = Literal["python", "typescript", "zod"]
+Language = Literal["python", "typescript", "zod", "rust"]
 
 
 @dataclass(frozen=True)
@@ -295,6 +315,13 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         enum_fmt="z.enum({0}s)",
         computed_union_fmt="z.union([{0}, SpecialNumberSchema, ErrorValueSchema, z.array(z.union([{0}, SpecialNumberSchema, ErrorValueSchema]).nullable())])",
     ),
+    "rust": LanguageConfig(
+        type_map=GENERIC_TO_RUST,
+        unknown="serde_json::Value",
+        list_fmt="Vec<{0}>",
+        union_fmt="VecOrValue<{0}>",
+        enum_fmt="{0}",
+    ),
 }
 
 
@@ -306,6 +333,8 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return base_type.endswith("[]")
         case "zod":
             return base_type.startswith("z.array(")
+        case "rust":
+            return base_type.startswith("Vec<")
         case _:
             return False
 
@@ -418,6 +447,20 @@ def map_zod_type(field: Field) -> str:
 
     field._zod_type = zod_type
     return zod_type
+
+
+@timer.timed("map_rust_type")
+def map_rust_type(field: Field) -> str:
+    """Calculate the Rust type for a field."""
+
+    if field._rust_type is not None:
+        return field._rust_type
+
+    resolved: ResolvedType = map_type(field)
+    rust_type: str = render_type(field, "rust", resolved=resolved)
+
+    field._rust_type = rust_type
+    return rust_type
 
 
 # endregion
@@ -596,6 +639,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     """Apply disambiguated types to a field."""
     field._python_type = render_type(field, "python", is_list=is_list)
     field._typescript_type = render_type(field, "typescript", is_list=is_list)
+    field._rust_type = render_type(field, "rust", is_list=is_list)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:
