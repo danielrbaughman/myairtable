@@ -374,25 +374,27 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.use_decl("serde::{Deserialize, Serialize}")
             static_imports = _collect_static_imports(table)
             static_imports.add("RecordId")
-            static_imports.add("OrmModel")
             write.use_decl(f"crate::types::{{{', '.join(sorted(static_imports))}}}")
+            write.use_decl("crate::airtable_model::{ModelMeta, OrmModel}")
             option_imports = _collect_option_imports(table)
             if option_imports:
                 write.use_decl(f"crate::options::{{{', '.join(sorted(option_imports))}}}")
             write.line_empty()
 
-            # Model struct — id, created_time, and all fields
+            # Model struct — id, created_time, internal state, and all fields
             write.doc_comment(f"ORM model for `{sanitize_string(table.name)}`")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
             write.line(f"pub struct {model_name} {{")
 
-            # Record metadata
-            write.line_indented("#[serde(default)]")
-            write.line_indented("#[serde(skip_serializing)]")
+            # Record metadata (not serialized)
+            write.line_indented("#[serde(skip)]")
             write.pub_field_optional("id", "RecordId")
-            write.line_indented("#[serde(default)]")
-            write.line_indented("#[serde(skip_serializing)]")
+            write.line_indented("#[serde(skip)]")
             write.pub_field_optional("created_time", "String")
+
+            # Internal state (not serialized)
+            write.line_indented("#[serde(skip)]")
+            write.line_indented("pub _meta: ModelMeta,")
 
             # Field properties
             for field in table.fields:
@@ -408,12 +410,26 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line("}")
             write.line_empty()
 
-            # OrmModel impl
-            write.line(f"impl OrmModel for {model_name} {{")
-            write.line_indented("fn set_record_meta(&mut self, id: RecordId, created_time: Option<String>) {")
-            write.line_indented("self.id = Some(id);", 2)
-            write.line_indented("self.created_time = created_time;", 2)
+            # from_id helper
+            write.line(f"impl {model_name} {{")
+            write.doc_comment("Create a model from just a record ID (for later fetch).", indent=1)
+            write.line_indented("pub fn from_id(client: std::sync::Arc<crate::client::AirtableClient>, table_id: &'static str, id: &str) -> Self {")
+            write.line_indented("let mut model = Self::default();", 2)
+            write.line_indented("model.id = Some(id.to_string());", 2)
+            write.line_indented("model._meta.client = Some(client);", 2)
+            write.line_indented("model._meta.table_id = Some(table_id);", 2)
+            write.line_indented("model", 2)
             write.line_indented("}")
+            write.line("}")
+            write.line_empty()
+
+            # OrmModel trait impl
+            write.line(f"impl OrmModel for {model_name} {{")
+            write.line_indented("fn meta(&self) -> &ModelMeta { &self._meta }")
+            write.line_indented("fn meta_mut(&mut self) -> &mut ModelMeta { &mut self._meta }")
+            write.line_indented("fn get_id(&self) -> &Option<RecordId> { &self.id }")
+            write.line_indented("fn set_id(&mut self, id: Option<RecordId>) { self.id = id; }")
+            write.line_indented("fn set_created_time(&mut self, ct: Option<String>) { self.created_time = ct; }")
             write.line("}")
             write.line_empty()
 
@@ -507,6 +523,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("client")
         write.line('#[path = "../static/struct_table.rs"]')
         write.mod_decl("table")
+        write.line('#[path = "../static/airtable_model.rs"]')
+        write.mod_decl("airtable_model")
         write.line('#[path = "../static/orm_table.rs"]')
         write.mod_decl("orm_table")
         write.line_empty()
@@ -523,6 +541,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.use_decl("airtable::Airtable", public=True)
         write.use_decl("client::AirtableClient", public=True)
         write.use_decl("error::AirtableError", public=True)
+        write.use_decl("airtable_model::{ModelMeta, OrmModel}", public=True)
         write.use_decl("orm_table::OrmTable", public=True)
         write.use_decl("pagination::PaginatedResponse", public=True)
         write.use_decl("table::StructTable", public=True)

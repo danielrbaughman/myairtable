@@ -7,6 +7,7 @@ use crate::pagination::PaginatedResponse;
 use crate::types::{ListParams, Record, RecordId};
 
 /// Airtable API client.
+#[derive(Debug)]
 pub struct AirtableClient {
     client: Client,
     base_id: String,

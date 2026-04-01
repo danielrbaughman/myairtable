@@ -189,11 +189,6 @@ pub struct Record {
     pub created_time: Option<String>,
 }
 
-/// Trait for ORM models that can absorb record metadata (id, created_time).
-pub trait OrmModel: Sized {
-    fn set_record_meta(&mut self, id: RecordId, created_time: Option<String>);
-}
-
 /// An Airtable attachment object.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Attachment {

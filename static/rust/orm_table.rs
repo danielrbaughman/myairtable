@@ -4,9 +4,10 @@ use std::sync::Arc;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::airtable_model::OrmModel;
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
-use crate::types::{Fields, ListParams, OrmModel, Record, RecordId};
+use crate::types::{ListParams, Record, RecordId};
 
 /// A table accessor for typed ORM model access.
 pub struct OrmTable<T, C> {
@@ -41,11 +42,12 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.table_name
     }
 
-    /// Convert a Record (dict layer) into a typed ORM model.
+    /// Convert a Record (dict layer) into a typed ORM model with client attached.
     fn record_to_model(&self, record: Record) -> Result<T, AirtableError> {
         let fields_json = serde_json::to_value(&record.fields)?;
         let mut model: T = serde_json::from_value(fields_json)?;
         model.set_record_meta(record.id, record.created_time);
+        model.set_client(self.client.clone(), self.table_id);
         Ok(model)
     }
 
