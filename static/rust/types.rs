@@ -57,11 +57,11 @@ impl std::ops::DerefMut for Fields {
     }
 }
 
-/// An Airtable record wrapper.
+/// An Airtable record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Record<T> {
+pub struct Record {
     pub id: RecordId,
-    pub fields: T,
+    pub fields: Fields,
     #[serde(rename = "createdTime")]
     pub created_time: Option<String>,
 }

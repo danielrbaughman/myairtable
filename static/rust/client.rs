@@ -1,11 +1,10 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::error::AirtableError;
 use crate::pagination::PaginatedResponse;
-use crate::types::RecordId;
+use crate::types::{Record, RecordId};
 
 /// Airtable API client.
 pub struct AirtableClient {
@@ -36,12 +35,12 @@ impl AirtableClient {
     }
 
     /// List records from a table.
-    pub async fn list_records<T: DeserializeOwned>(
+    pub async fn list_records(
         &self,
         table_id: &str,
         use_field_ids: bool,
         offset: Option<&str>,
-    ) -> Result<PaginatedResponse<T>, AirtableError> {
+    ) -> Result<PaginatedResponse, AirtableError> {
         let mut url = if use_field_ids {
             format!("{}?returnFieldsByFieldId=true", self.table_url(table_id))
         } else {
@@ -69,12 +68,12 @@ impl AirtableClient {
     }
 
     /// Get a single record by ID.
-    pub async fn get_record<T: DeserializeOwned>(
+    pub async fn get_record(
         &self,
         table_id: &str,
         record_id: &RecordId,
         use_field_ids: bool,
-    ) -> Result<crate::types::Record<T>, AirtableError> {
+    ) -> Result<Record, AirtableError> {
         let url = if use_field_ids {
             format!(
                 "{}/{}?returnFieldsByFieldId=true",
@@ -102,12 +101,12 @@ impl AirtableClient {
     }
 
     /// Create a record.
-    pub async fn create_record<T: DeserializeOwned, U: Serialize>(
+    pub async fn create_record<U: Serialize>(
         &self,
         table_id: &str,
         fields: &U,
         use_field_ids: bool,
-    ) -> Result<crate::types::Record<T>, AirtableError> {
+    ) -> Result<Record, AirtableError> {
         let url = self.table_url(table_id);
         let mut body = serde_json::json!({ "fields": fields });
         if use_field_ids {
@@ -132,13 +131,13 @@ impl AirtableClient {
     }
 
     /// Update a record.
-    pub async fn update_record<T: DeserializeOwned, U: Serialize>(
+    pub async fn update_record<U: Serialize>(
         &self,
         table_id: &str,
         record_id: &RecordId,
         fields: &U,
         use_field_ids: bool,
-    ) -> Result<crate::types::Record<T>, AirtableError> {
+    ) -> Result<Record, AirtableError> {
         let url = format!("{}/{}", self.table_url(table_id), record_id);
         let mut body = serde_json::json!({ "fields": fields });
         if use_field_ids {
@@ -187,12 +186,12 @@ impl AirtableClient {
     }
 
     /// Create multiple records in batches of 10 (Airtable API limit).
-    pub async fn create_records<T: DeserializeOwned, U: Serialize>(
+    pub async fn create_records<U: Serialize>(
         &self,
         table_id: &str,
         records: &[U],
         use_field_ids: bool,
-    ) -> Result<Vec<crate::types::Record<T>>, AirtableError> {
+    ) -> Result<Vec<Record>, AirtableError> {
         let url = self.table_url(table_id);
         let mut results = Vec::with_capacity(records.len());
 
@@ -232,12 +231,12 @@ impl AirtableClient {
     }
 
     /// Update multiple records in batches of 10 (Airtable API limit).
-    pub async fn update_records<T: DeserializeOwned, U: Serialize>(
+    pub async fn update_records<U: Serialize>(
         &self,
         table_id: &str,
         records: &[(&RecordId, &U)],
         use_field_ids: bool,
-    ) -> Result<Vec<crate::types::Record<T>>, AirtableError> {
+    ) -> Result<Vec<Record>, AirtableError> {
         let url = self.table_url(table_id);
         let mut results = Vec::with_capacity(records.len());
 

@@ -204,10 +204,10 @@ def generate_rust(base: Base, output_folder: Path) -> None:
         if verbose:
             print("[dim] - Rust options generated.[/]")
 
-    with timer.timer("Rust: write_models"):
-        write_models(base, output_folder)
+    with timer.timer("Rust: write_field_types"):
+        write_field_types(base, output_folder)
         if verbose:
-            print("[dim] - Rust models generated.[/]")
+            print("[dim] - Rust field types generated.[/]")
 
     with timer.timer("Rust: write_tables"):
         write_tables(base, output_folder)
@@ -283,15 +283,15 @@ def write_options(base: Base, output_folder: Path) -> None:
                 write.use_decl(f"{_rust_ident(mod_name)}::*", public=True)
 
 
-def write_models(base: Base, output_folder: Path) -> None:
+def write_field_types(base: Base, output_folder: Path) -> None:
     """Generate Rust field constant structs for table records."""
-    models_dir = create_dynamic_subdir(output_folder, "models")
+    types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
 
     for table in base.tables:
         mod_name = table.name_snake()
         fields_name = f"{table.name_pascal()}Fields"
 
-        with WriteToRustFile(path=models_dir / f"{mod_name}.rs") as write:
+        with WriteToRustFile(path=types_dir / f"{mod_name}.rs") as write:
             # All fields — field name and field ID constants
             write.doc_comment(f"Field constants for `{sanitize_string(table.name)}`")
             write.line(f"pub struct {fields_name};")
@@ -328,7 +328,7 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
     # Write mod.rs
-    with WriteToRustFile(path=models_dir / "mod.rs") as write:
+    with WriteToRustFile(path=types_dir / "mod.rs") as write:
         for table in base.tables:
             write.mod_decl(table.name_snake())
         write.line_empty()
@@ -370,32 +370,28 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
             # list()
             write.doc_comment("List records. Set `use_field_ids` to control whether keys are field IDs or names.", indent=1)
-            write.line_indented(
-                "pub async fn list(&self, use_field_ids: bool, offset: Option<&str>) -> Result<PaginatedResponse<Fields>, AirtableError> {"
-            )
+            write.line_indented("pub async fn list(&self, use_field_ids: bool, offset: Option<&str>) -> Result<PaginatedResponse, AirtableError> {")
             write.line_indented("self.client.list_records(Self::TABLE_ID, use_field_ids, offset).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # get()
             write.doc_comment("Get a single record by ID.", indent=1)
-            write.line_indented("pub async fn get(&self, record_id: &RecordId, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {")
+            write.line_indented("pub async fn get(&self, record_id: &RecordId, use_field_ids: bool) -> Result<Record, AirtableError> {")
             write.line_indented("self.client.get_record(Self::TABLE_ID, record_id, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create()
             write.doc_comment("Create a new record.", indent=1)
-            write.line_indented("pub async fn create(&self, fields: &Fields, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {")
+            write.line_indented("pub async fn create(&self, fields: &Fields, use_field_ids: bool) -> Result<Record, AirtableError> {")
             write.line_indented("self.client.create_record(Self::TABLE_ID, fields, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
 
             # create_many()
             write.doc_comment("Create multiple records (batched in groups of 10).", indent=1)
-            write.line_indented(
-                "pub async fn create_many(&self, records: &[Fields], use_field_ids: bool) -> Result<Vec<Record<Fields>>, AirtableError> {"
-            )
+            write.line_indented("pub async fn create_many(&self, records: &[Fields], use_field_ids: bool) -> Result<Vec<Record>, AirtableError> {")
             write.line_indented("self.client.create_records(Self::TABLE_ID, records, use_field_ids).await", 2)
             write.line_indented("}")
             write.line_empty()
@@ -403,7 +399,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # update()
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                "pub async fn update(&self, record_id: &RecordId, fields: &Fields, use_field_ids: bool) -> Result<Record<Fields>, AirtableError> {"
+                "pub async fn update(&self, record_id: &RecordId, fields: &Fields, use_field_ids: bool) -> Result<Record, AirtableError> {"
             )
             write.line_indented("self.client.update_record(Self::TABLE_ID, record_id, fields, use_field_ids).await", 2)
             write.line_indented("}")
@@ -412,7 +408,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # update_many()
             write.doc_comment("Update multiple records (batched in groups of 10).", indent=1)
             write.line_indented(
-                "pub async fn update_many(&self, records: &[(&RecordId, &Fields)], use_field_ids: bool) -> Result<Vec<Record<Fields>>, AirtableError> {"
+                "pub async fn update_many(&self, records: &[(&RecordId, &Fields)], use_field_ids: bool) -> Result<Vec<Record>, AirtableError> {"
             )
             write.line_indented("self.client.update_records(Self::TABLE_ID, records, use_field_ids).await", 2)
             write.line_indented("}")
@@ -500,7 +496,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.line_empty()
 
         # Generated dynamic modules
-        write.mod_decl("models")
+        write.line('#[path = "types/mod.rs"]')
+        write.mod_decl("field_types")
         write.mod_decl("options")
         write.mod_decl("tables")
         write.mod_decl("airtable")
@@ -512,11 +509,10 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.use_decl("error::AirtableError", public=True)
         write.use_decl("pagination::PaginatedResponse", public=True)
         write.use_decl("types::*", public=True)
-        # Re-export all models and options (individual types, not module globs,
-        # to avoid ambiguity when model and option modules share table names)
+        # Re-export field type constants
         for table in base.tables:
             pascal = table.name_pascal()
-            write.use_decl(f"models::{{{pascal}Fields, Create{pascal}Fields}}", public=True)
+            write.use_decl(f"field_types::{{{pascal}Fields, Create{pascal}Fields}}", public=True)
         for table in base.tables:
             if table.select_fields():
                 write.use_decl(f"options::{_rust_ident(table.name_snake())}::*", public=True)
