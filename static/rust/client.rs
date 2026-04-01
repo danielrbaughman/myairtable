@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::error::AirtableError;
 use crate::pagination::PaginatedResponse;
-use crate::types::{Record, RecordId};
+use crate::types::{ListParams, Record, RecordId};
 
 /// Airtable API client.
 pub struct AirtableClient {
@@ -38,22 +38,18 @@ impl AirtableClient {
     pub async fn list_records(
         &self,
         table_id: &str,
-        use_field_ids: bool,
-        offset: Option<&str>,
+        params: &ListParams,
     ) -> Result<PaginatedResponse, AirtableError> {
-        let mut url = if use_field_ids {
-            format!("{}?returnFieldsByFieldId=true", self.table_url(table_id))
-        } else {
-            self.table_url(table_id)
-        };
-        if let Some(offset) = offset {
-            let sep = if url.contains('?') { '&' } else { '?' };
-            url = format!("{url}{sep}offset={offset}");
+        let mut query_params = params.to_query_params();
+        if params.use_field_ids {
+            query_params.push(("returnFieldsByFieldId".to_string(), "true".to_string()));
         }
 
+        let url = self.table_url(table_id);
         let response = self
             .client
             .get(&url)
+            .query(&query_params)
             .headers(self.headers.clone())
             .send()
             .await?;
