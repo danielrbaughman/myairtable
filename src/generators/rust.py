@@ -101,6 +101,30 @@ def _rust_ident(name: str) -> str:
     return name
 
 
+# Static types from the runtime crate that may appear in ORM model field types
+_STATIC_TYPES = frozenset({"RecordId", "Attachment", "Collaborator", "AirtableButton", "VecOrValue"})
+
+
+def _collect_static_imports(table: Table) -> set[str]:
+    """Collect static type imports needed by a table's fields."""
+    imports: set[str] = set()
+    for field in table.fields:
+        rust_type = field.rust_type()
+        for type_name in _STATIC_TYPES:
+            if type_name in rust_type:
+                imports.add(type_name)
+    return imports
+
+
+def _collect_option_imports(table: Table) -> set[str]:
+    """Collect option enum imports needed by a table's fields."""
+    imports: set[str] = set()
+    for field in table.select_fields():
+        if field.select_options():
+            imports.add(field.options_name())
+    return imports
+
+
 def _deduplicate_variants(variants: list[str]) -> list[str]:
     """Ensure all variant names are unique by appending V2, V3, etc."""
     counts: dict[str, int] = {}
@@ -208,6 +232,11 @@ def generate_rust(base: Base, output_folder: Path) -> None:
         write_field_types(base, output_folder)
         if verbose:
             print("[dim] - Rust field types generated.[/]")
+
+    with timer.timer("Rust: write_models"):
+        write_models(base, output_folder)
+        if verbose:
+            print("[dim] - Rust ORM models generated.[/]")
 
     with timer.timer("Rust: write_lib"):
         write_lib(base, output_folder)
@@ -331,6 +360,91 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
 
 
+def write_models(base: Base, output_folder: Path) -> None:
+    """Generate Rust ORM model structs for table records."""
+    models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
+
+    for table in base.tables:
+        mod_name = table.name_snake()
+        model_name = f"{table.name_pascal()}Model"
+        create_name = f"Create{table.name_pascal()}Model"
+
+        with WriteToRustFile(path=models_dir / f"{mod_name}.rs") as write:
+            # Imports
+            write.use_decl("serde::{Deserialize, Serialize}")
+            static_imports = _collect_static_imports(table)
+            static_imports.add("RecordId")
+            static_imports.add("OrmModel")
+            write.use_decl(f"crate::types::{{{', '.join(sorted(static_imports))}}}")
+            option_imports = _collect_option_imports(table)
+            if option_imports:
+                write.use_decl(f"crate::options::{{{', '.join(sorted(option_imports))}}}")
+            write.line_empty()
+
+            # Model struct — id, created_time, and all fields
+            write.doc_comment(f"ORM model for `{sanitize_string(table.name)}`")
+            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
+            write.line(f"pub struct {model_name} {{")
+
+            # Record metadata
+            write.line_indented("#[serde(default)]")
+            write.line_indented("#[serde(skip_serializing)]")
+            write.pub_field_optional("id", "RecordId")
+            write.line_indented("#[serde(default)]")
+            write.line_indented("#[serde(skip_serializing)]")
+            write.pub_field_optional("created_time", "String")
+
+            # Field properties
+            for field in table.fields:
+                field_name = _rust_ident(field.name_snake())
+                rust_type = field.rust_type()
+
+                write.property_docstring(field, table)
+                write.serde_rename(field.id, indent=1)
+                write.line_indented("#[serde(default)]", indent=1)
+                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
+                write.pub_field_optional(field_name, rust_type)
+
+            write.line("}")
+            write.line_empty()
+
+            # OrmModel impl
+            write.line(f"impl OrmModel for {model_name} {{")
+            write.line_indented("fn set_record_meta(&mut self, id: RecordId, created_time: Option<String>) {")
+            write.line_indented("self.id = Some(id);", 2)
+            write.line_indented("self.created_time = created_time;", 2)
+            write.line_indented("}")
+            write.line("}")
+            write.line_empty()
+
+            # Create model — writable fields only
+            writable_fields = [f for f in table.fields if not f.is_computed()]
+
+            write.doc_comment(f"Writable fields for creating/updating `{sanitize_string(table.name)}` records.")
+            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
+            write.line(f"pub struct {create_name} {{")
+
+            for field in writable_fields:
+                field_name = _rust_ident(field.name_snake())
+                rust_type = field.rust_type()
+
+                write.serde_rename(field.id, indent=1)
+                write.line_indented("#[serde(default)]", indent=1)
+                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
+                write.pub_field_optional(field_name, rust_type)
+
+            write.line("}")
+            write.line_empty()
+
+    # Write mod.rs
+    with WriteToRustFile(path=models_dir / "mod.rs") as write:
+        for table in base.tables:
+            write.mod_decl(table.name_snake())
+        write.line_empty()
+        for table in base.tables:
+            write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
+
+
 def write_lib(base: Base, output_folder: Path) -> None:
     """Generate the main lib.rs that re-exports all modules."""
     dynamic_dir = output_folder / Paths.DYNAMIC
@@ -340,14 +454,22 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.use_decl("std::sync::Arc")
         write.line_empty()
         write.use_decl("crate::client::AirtableClient")
+        write.use_decl("crate::orm_table::OrmTable")
         write.use_decl("crate::table::StructTable")
+        for table in base.tables:
+            pascal = table.name_pascal()
+            write.use_decl(f"crate::models::{{{pascal}Model, Create{pascal}Model}}")
         write.line_empty()
 
         write.doc_comment("Main entry point for the Airtable base.")
         write.line("pub struct Airtable {")
         for table in base.tables:
-            write.doc_comment(f"`{sanitize_string(table.name)}`", indent=1)
+            escaped_name = sanitize_string(table.name)
+            pascal = table.name_pascal()
+            write.doc_comment(f"`{escaped_name}` (dict)", indent=1)
             write.pub_field(_rust_ident(table.name_snake()), "StructTable")
+            write.doc_comment(f"`{escaped_name}` (ORM)", indent=1)
+            write.pub_field(f"{_rust_ident(table.name_snake())}_orm", f"OrmTable<{pascal}Model, Create{pascal}Model>")
         write.line("}")
         write.line_empty()
 
@@ -360,7 +482,9 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.line_indented("Self {", 2)
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
-            write.line_indented(f'{_rust_ident(table.name_snake())}: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
+            snake = _rust_ident(table.name_snake())
+            write.line_indented(f'{snake}: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
+            write.line_indented(f'{snake}_orm: OrmTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
         write.line_indented("}", 2)
         write.line_indented("}")
 
@@ -383,12 +507,15 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("client")
         write.line('#[path = "../static/struct_table.rs"]')
         write.mod_decl("table")
+        write.line('#[path = "../static/orm_table.rs"]')
+        write.mod_decl("orm_table")
         write.line_empty()
 
         # Generated dynamic modules
         write.line('#[path = "types/mod.rs"]')
         write.mod_decl("field_types")
         write.mod_decl("options")
+        write.mod_decl("models")
         write.mod_decl("airtable")
         write.line_empty()
 
@@ -396,6 +523,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.use_decl("airtable::Airtable", public=True)
         write.use_decl("client::AirtableClient", public=True)
         write.use_decl("error::AirtableError", public=True)
+        write.use_decl("orm_table::OrmTable", public=True)
         write.use_decl("pagination::PaginatedResponse", public=True)
         write.use_decl("table::StructTable", public=True)
         write.use_decl("types::*", public=True)
@@ -403,6 +531,11 @@ def write_lib(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             pascal = table.name_pascal()
             write.use_decl(f"field_types::{{{pascal}Fields, Create{pascal}Fields}}", public=True)
+        # Re-export ORM model types
+        for table in base.tables:
+            pascal = table.name_pascal()
+            write.use_decl(f"models::{{{pascal}Model, Create{pascal}Model}}", public=True)
+        # Re-export option enums
         for table in base.tables:
             if table.select_fields():
                 write.use_decl(f"options::{_rust_ident(table.name_snake())}::*", public=True)
