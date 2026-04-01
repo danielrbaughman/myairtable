@@ -73,6 +73,20 @@ class TextField(Field):
             else:
                 return F.EQ(F.LOWER(self), F.LOWER(value))
 
+    def equals_any(self, values: list[str], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """
+        Checks if the field equals any of the provided values, with options for case sensitivity and trimming whitespace.
+
+        Args:
+            values (list[str]): A list of string values to compare against the field.
+            case_sensitive (bool, optional): Whether the comparison should be case-sensitive. Defaults to True.
+            trim (bool, optional): Whether to trim whitespace from the field and values before comparison. Defaults to False.
+
+        Returns:
+            F.Formula: An Airtable formula that evaluates to True if the field equals any of the provided values according to the specified options.
+        """
+        return OR(*[self.equals(value, case_sensitive=case_sensitive, trim=trim) for value in values])
+
     def phone_equals(self, value: str) -> F.Formula:
         """
         Compares two phone numbers after normalizing the values

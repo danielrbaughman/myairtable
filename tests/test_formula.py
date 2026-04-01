@@ -266,6 +266,37 @@ class TestTextField:
         result_str = str(result)
         assert "AND(" in result_str
 
+    # equals_any tests
+    def test_equals_any_empty_array(self):
+        """equals_any with empty array raises ValueError (pyairtable requires at least one component)."""
+        field = TextField("Tags")
+        with pytest.raises(ValueError, match="requires at least one component"):
+            field.equals_any([])
+
+    def test_equals_any_single_value(self):
+        """equals_any with single value."""
+        field = TextField("Tags")
+        result = field.equals_any(["tag1"])
+        assert "Tags" in str(result)
+
+    def test_equals_any_multiple_values(self):
+        """equals_any with multiple values produces OR."""
+        field = TextField("Tags")
+        result = field.equals_any(["tag1", "tag2"])
+        assert "OR(" in str(result)
+
+    def test_equals_any_case_insensitive(self):
+        """equals_any with case_sensitive=False uses LOWER."""
+        field = TextField("Tags")
+        result = field.equals_any(["tag1"], case_sensitive=False)
+        assert "LOWER(" in str(result)
+
+    def test_equals_any_with_trim(self):
+        """equals_any with trim=True uses TRIM."""
+        field = TextField("Tags")
+        result = field.equals_any(["tag1"], trim=True)
+        assert "TRIM(" in str(result)
+
     # not_contains tests
     def test_not_contains_basic(self):
         """not_contains returns FIND = 0 formula."""
