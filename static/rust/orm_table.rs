@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::airtable_model::OrmModel;
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
-use crate::types::{ListParams, Record, RecordId};
+use crate::types::{AirtableQuery, Record, RecordId};
 
 /// A table accessor for typed ORM model access.
 pub struct OrmTable<T, C> {
@@ -63,7 +63,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
     /// Get multiple records.
     pub async fn get_many(
         &self,
-        params: &ListParams,
+        params: &AirtableQuery,
     ) -> Result<(Vec<T>, Option<String>), AirtableError> {
         let mut list_params = params.clone();
         list_params.use_field_ids = true;

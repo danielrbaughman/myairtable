@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::error::AirtableError;
 use crate::pagination::PaginatedResponse;
-use crate::types::{ListParams, Record, RecordId};
+use crate::types::{AirtableQuery, Record, RecordId};
 
 /// Airtable API client.
 #[derive(Debug)]
@@ -39,7 +39,7 @@ impl AirtableClient {
     pub async fn list_records(
         &self,
         table_id: &str,
-        params: &ListParams,
+        params: &AirtableQuery,
     ) -> Result<PaginatedResponse, AirtableError> {
         let mut query_params = params.to_query_params();
         if params.use_field_ids {

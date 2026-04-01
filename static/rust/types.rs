@@ -66,7 +66,7 @@ pub enum SortDirection {
 
 /// Parameters for listing records.
 #[derive(Debug, Clone)]
-pub struct ListParams {
+pub struct AirtableQuery {
     pub use_field_ids: bool,
     pub formula: Option<String>,
     pub view: Option<String>,
@@ -77,7 +77,7 @@ pub struct ListParams {
     pub offset: Option<String>,
 }
 
-impl Default for ListParams {
+impl Default for AirtableQuery {
     fn default() -> Self {
         Self {
             use_field_ids: true,
@@ -92,7 +92,7 @@ impl Default for ListParams {
     }
 }
 
-impl ListParams {
+impl AirtableQuery {
     pub fn new() -> Self {
         Self::default()
     }

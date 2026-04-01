@@ -316,6 +316,10 @@ def write_field_types(base: Base, output_folder: Path) -> None:
         fields_name = f"{table.name_pascal()}Fields"
 
         with WriteToRustFile(path=types_dir / f"{mod_name}.rs") as write:
+            if table.views:
+                write.use_decl("serde::{Deserialize, Serialize}")
+                write.line_empty()
+
             # All fields — field name and field ID constants
             write.doc_comment(f"Field constants for `{sanitize_string(table.name)}`")
             write.line(f"pub struct {fields_name};")
@@ -331,6 +335,33 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_indented(f'pub const {const_name}_ID: &\'static str = "{field.id}";')
             write.line("}")
             write.line_empty()
+
+            # View enum — variants map to view IDs via serde
+            if table.views:
+                view_name = f"{table.name_pascal()}View"
+                write.doc_comment(f"Views for `{sanitize_string(table.name)}`")
+                write.derive("Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize")
+                write.line(f"pub enum {view_name} {{")
+                for view in table.views:
+                    variant = to_pascal(view.name.replace(" ", "_").lower())
+                    escaped = sanitize_string(view.name)
+                    write.doc_comment(f"`{escaped}` ({view.type})", indent=1)
+                    write.serde_rename(view.id, indent=1)
+                    write.line_indented(f"{variant},")
+                write.line("}")
+                write.line_empty()
+
+                # Into<String> so the enum can be passed directly to .view()
+                write.line(f"impl From<{view_name}> for String {{")
+                write.line_indented(f"fn from(v: {view_name}) -> String {{")
+                write.line_indented("match v {", 2)
+                for view in table.views:
+                    variant = to_pascal(view.name.replace(" ", "_").lower())
+                    write.line_indented(f'{view_name}::{variant} => "{view.id}".to_string(),', 3)
+                write.line_indented("}", 2)
+                write.line_indented("}")
+                write.line("}")
+                write.line_empty()
 
             # Writable fields only — for create/update
             writable_fields = [f for f in table.fields if not f.is_computed()]
@@ -549,7 +580,10 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # Re-export field type constants
         for table in base.tables:
             pascal = table.name_pascal()
-            write.use_decl(f"field_types::{{{pascal}Fields, Create{pascal}Fields}}", public=True)
+            exports = [f"{pascal}Fields", f"Create{pascal}Fields"]
+            if table.views:
+                exports.append(f"{pascal}View")
+            write.use_decl(f"field_types::{{{', '.join(exports)}}}", public=True)
         # Re-export ORM model types
         for table in base.tables:
             pascal = table.name_pascal()

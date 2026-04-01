@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
 use crate::pagination::PaginatedResponse;
-use crate::types::{Fields, ListParams, Record, RecordId};
+use crate::types::{AirtableQuery, Fields, Record, RecordId};
 
 /// A table accessor for dict-style (field ID / field name) record access.
 pub struct StructTable {
@@ -48,7 +48,10 @@ impl StructTable {
     }
 
     /// Get multiple records.
-    pub async fn get_many(&self, params: &ListParams) -> Result<PaginatedResponse, AirtableError> {
+    pub async fn get_many(
+        &self,
+        params: &AirtableQuery,
+    ) -> Result<PaginatedResponse, AirtableError> {
         self.client.list_records(self.table_id, params).await
     }
 
