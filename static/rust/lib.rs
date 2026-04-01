@@ -1,6 +1,7 @@
 mod airtable_model;
 mod client;
 mod error;
+pub mod formula;
 mod orm_table;
 mod pagination;
 mod struct_table;

@@ -7,6 +7,14 @@ publish = false
 [lib]
 path = "static/rust/lib.rs"
 
+[[test]]
+name = "test_rust_static"
+path = "tests/test_rust_static.rs"
+
+[[test]]
+name = "test_formula"
+path = "tests/test_formula.rs"
+
 [dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

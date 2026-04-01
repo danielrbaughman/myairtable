@@ -238,6 +238,11 @@ def generate_rust(base: Base, output_folder: Path) -> None:
         if verbose:
             print("[dim] - Rust ORM models generated.[/]")
 
+    with timer.timer("Rust: write_formulas"):
+        write_formula_helpers(base, output_folder)
+        if verbose:
+            print("[dim] - Rust formula helpers generated.[/]")
+
     with timer.timer("Rust: write_lib"):
         write_lib(base, output_folder)
         if verbose:
@@ -441,8 +446,11 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line("}")
             write.line_empty()
 
-            # from_id helper
+            # F constant and from_id helper
+            formulas_name = f"{table.name_pascal()}Formulas"
             write.line(f"impl {model_name} {{")
+            write.doc_comment("Formula builder for this table.", indent=1)
+            write.line_indented(f"pub const F: crate::formulas::{formulas_name} = crate::formulas::{formulas_name}::new();")
             write.doc_comment("Create a model from just a record ID (for later fetch).", indent=1)
             write.line_indented("pub fn from_id(client: std::sync::Arc<crate::client::AirtableClient>, table_id: &'static str, id: &str) -> Self {")
             write.line_indented("let mut model = Self::default();", 2)
@@ -485,6 +493,67 @@ def write_models(base: Base, output_folder: Path) -> None:
 
     # Write mod.rs
     with WriteToRustFile(path=models_dir / "mod.rs") as write:
+        for table in base.tables:
+            write.mod_decl(table.name_snake())
+        write.line_empty()
+        for table in base.tables:
+            write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
+
+
+# Maps formula_class() return values to Rust formula types
+_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
+
+
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate Rust formula builder structs per table."""
+    formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
+
+    for table in base.tables:
+        mod_name = table.name_snake()
+        formulas_name = f"{table.name_pascal()}Formulas"
+
+        with WriteToRustFile(path=formulas_dir / f"{mod_name}.rs") as write:
+            write.use_decl("crate::formula::*")
+            write.line_empty()
+
+            write.doc_comment(f"Formula builder for `{sanitize_string(table.name)}`")
+            write.line(f"pub struct {formulas_name} {{")
+            write.doc_comment("Record ID formula.", indent=1)
+            write.pub_field("id", "FormulaId")
+            for field in table.fields:
+                property_name = field.name_snake()
+                formula_class = field.formula_class()
+                rust_formula_type = _FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
+                write.pub_field(_rust_ident(property_name), rust_formula_type)
+            write.line("}")
+            write.line_empty()
+
+            # Const constructor
+            write.line(f"impl {formulas_name} {{")
+            write.line_indented("pub const fn new() -> Self {")
+            write.line_indented("Self {", 2)
+            write.line_indented("id: FormulaId,", 3)
+            for field in table.fields:
+                property_name = field.name_snake()
+                formula_class = field.formula_class()
+                rust_formula_type = _FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.line_indented(f'{_rust_ident(property_name)}: {rust_formula_type}::new("{field.id}"),', 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line("}")
+            write.line_empty()
+
+    # Write mod.rs
+    with WriteToRustFile(path=formulas_dir / "mod.rs") as write:
         for table in base.tables:
             write.mod_decl(table.name_snake())
         write.line_empty()
@@ -558,6 +627,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("airtable_model")
         write.line('#[path = "../static/orm_table.rs"]')
         write.mod_decl("orm_table")
+        write.line('#[path = "../static/formula.rs"]')
+        write.line("pub mod formula;")
         write.line_empty()
 
         # Generated dynamic modules
@@ -565,6 +636,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("field_types")
         write.mod_decl("options")
         write.mod_decl("models")
+        write.mod_decl("formulas")
         write.mod_decl("airtable")
         write.line_empty()
 
@@ -588,6 +660,10 @@ def write_lib(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             pascal = table.name_pascal()
             write.use_decl(f"models::{{{pascal}Model, Create{pascal}Model}}", public=True)
+        # Re-export formula helpers
+        for table in base.tables:
+            pascal = table.name_pascal()
+            write.use_decl(f"formulas::{pascal}Formulas", public=True)
         # Re-export option enums
         for table in base.tables:
             if table.select_fields():
