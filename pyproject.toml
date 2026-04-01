@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
 	"dateparser>=1.2.2",
 	"dotenv>=0.9.9",
+	"fastmcp>=3.2.0",
 	"httpx>=0.28.1",
 	"mermaid-cli>=0.1.2",
 	"pyairtable>=3.2.0",
