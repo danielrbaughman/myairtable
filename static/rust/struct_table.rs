@@ -36,19 +36,8 @@ impl StructTable {
         self.table_name
     }
 
-    /// List records.
-    pub async fn list(
-        &self,
-        use_field_ids: bool,
-        offset: Option<&str>,
-    ) -> Result<PaginatedResponse, AirtableError> {
-        self.client
-            .list_records(self.table_id, use_field_ids, offset)
-            .await
-    }
-
     /// Get a single record by ID.
-    pub async fn get(
+    pub async fn get_one(
         &self,
         record_id: &RecordId,
         use_field_ids: bool,
@@ -58,8 +47,19 @@ impl StructTable {
             .await
     }
 
+    /// Get multiple records.
+    pub async fn get_many(
+        &self,
+        use_field_ids: bool,
+        offset: Option<&str>,
+    ) -> Result<PaginatedResponse, AirtableError> {
+        self.client
+            .list_records(self.table_id, use_field_ids, offset)
+            .await
+    }
+
     /// Create a new record.
-    pub async fn create(
+    pub async fn create_one(
         &self,
         fields: &Fields,
         use_field_ids: bool,
@@ -81,7 +81,7 @@ impl StructTable {
     }
 
     /// Update an existing record.
-    pub async fn update(
+    pub async fn update_one(
         &self,
         record_id: &RecordId,
         fields: &Fields,
@@ -104,7 +104,7 @@ impl StructTable {
     }
 
     /// Delete a record.
-    pub async fn delete(&self, record_id: &RecordId) -> Result<(), AirtableError> {
+    pub async fn delete_one(&self, record_id: &RecordId) -> Result<(), AirtableError> {
         self.client.delete_record(self.table_id, record_id).await
     }
 
