@@ -120,6 +120,32 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
 
+    /// Upsert a single model. Creates if no ID, updates if ID exists.
+    pub async fn upsert(&self, model: &mut T) -> Result<(), AirtableError> {
+        let fields = model.to_save_json();
+        let record = if model.is_new() {
+            self.client
+                .create_record(self.table_id, &fields, true)
+                .await?
+        } else {
+            let id = model.get_id().as_ref().expect("Record has no ID");
+            self.client
+                .update_record(self.table_id, id, &fields, true)
+                .await?
+        };
+        let mut result = self.record_to_model(record)?;
+        // Preserve client/table_id from the input model
+        let meta = model.meta_mut();
+        let client = meta.client.take();
+        let table_id = meta.table_id.take();
+        *model = result;
+        let meta = model.meta_mut();
+        meta.client = client;
+        meta.table_id = table_id;
+        model.take_snapshot();
+        Ok(())
+    }
+
     /// Delete a record.
     pub async fn delete_one(&self, record_id: &RecordId) -> Result<(), AirtableError> {
         self.client.delete_record(self.table_id, record_id).await

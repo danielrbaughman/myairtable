@@ -105,6 +105,27 @@ impl StructTable {
             .await
     }
 
+    /// Upsert a single record. Creates if record_id is None, updates if Some.
+    pub async fn upsert_one(
+        &self,
+        record_id: Option<&RecordId>,
+        fields: &Fields,
+        use_field_ids: bool,
+    ) -> Result<Record, AirtableError> {
+        match record_id {
+            Some(id) => {
+                self.client
+                    .update_record(self.table_id, id, fields, use_field_ids)
+                    .await
+            }
+            None => {
+                self.client
+                    .create_record(self.table_id, fields, use_field_ids)
+                    .await
+            }
+        }
+    }
+
     /// Delete a record.
     pub async fn delete_one(&self, record_id: &RecordId) -> Result<(), AirtableError> {
         self.client.delete_record(self.table_id, record_id).await
