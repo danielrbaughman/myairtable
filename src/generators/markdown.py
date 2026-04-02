@@ -75,6 +75,9 @@ class WriteToMarkdownFile(WriteToFile):
         self.line(text)
         self.line("</div>")
 
+    def obsidian_transclusion(self, path: str):
+        self.line(f"![[{path}]]")
+
 
 # region MAIN
 def generate_markdown(
@@ -94,12 +97,11 @@ def generate_markdown(
         fields_folder = output_folder / Paths.DOCS / "fields" / table.name_snake()
         fields_folder.mkdir(parents=True, exist_ok=True)
 
-    # Create diagrams directory for SVG files
-    diagrams_dir: Path | None = None
+    # Create diagrams directory for .mmd and SVG files
+    diagrams_dir = output_folder / Paths.DOCS / "diagrams"
+    diagrams_dir.mkdir(parents=True, exist_ok=True)
     svg_cache_dir: Path | None = None
     if svg_enabled:
-        diagrams_dir = output_folder / Paths.DOCS / "diagrams"
-        diagrams_dir.mkdir(parents=True, exist_ok=True)
         svg_cache_dir = output_folder / ".svg_cache"
         svg_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -129,7 +131,7 @@ def generate_markdown(
             print("[dim] - Function SVGs generated.[/]")
 
     with timer.timer("Markdown: write_index"):
-        write_index(base, output_folder)
+        write_index(base, output_folder, diagrams_dir)
         if verbose:
             print("[dim] - Markdown index generated.[/]")
 
@@ -272,7 +274,10 @@ def write_fields(
                                     else:
                                         svg_tasks.append((field.id, mermaid_code))
                                 write.line(f"[Open in Mermaid Live]({mermaid_live_url(mermaid_code)})")
-                                write.code_block(mermaid_code, language="mermaid")
+                                if diagrams_dir:
+                                    mmd_path = diagrams_dir / f"{field.id}.mmd"
+                                    mmd_path.write_text(mermaid_code)
+                                    write.obsidian_transclusion(f"diagrams/{field.id}.mmd")
                                 write.line_empty()
 
                         with timer.timer("Markdown: write_field: formula: field links"):
@@ -318,7 +323,7 @@ def write_svgs(
                 svg_path.write_text(svg_content)
 
 
-def write_index(base: Base, output_folder: Path) -> None:
+def write_index(base: Base, output_folder: Path, diagrams_dir: Path) -> None:
     with WriteToMarkdownFile(path=output_folder / Paths.DOCS / "index.md") as write:
         write.line(f"*Last Updated:* {datetime.now().strftime('%Y-%m-%d')}")
         write.line_empty()
@@ -330,5 +335,7 @@ def write_index(base: Base, output_folder: Path) -> None:
         write.header(f"Tables ({len(base.tables)})", level=5)
         for table in base.tables:
             write.list_item(f"[{table.name}](tables/{table.name_snake()}.md)")
-        write.code_block(mermaid_base(base), language="mermaid")
+        mmd_path = diagrams_dir / "base.mmd"
+        mmd_path.write_text(mermaid_base(base))
+        write.obsidian_transclusion("diagrams/base.mmd")
         write.line_empty()
