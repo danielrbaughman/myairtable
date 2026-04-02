@@ -340,7 +340,7 @@ class AirtableModel {
 			this._fields[propertyName] = value;
 		} else if (value instanceof AirtableModel) {
 			const lr = this._createLinkedField(desc, value.id);
-			lr.set(value);
+			lr._assign(value);
 			this._fields[propertyName] = lr;
 		} else if (typeof value === "string") {
 			this._fields[propertyName] = this._createLinkedField(desc, value);
@@ -364,7 +364,7 @@ class AirtableModel {
 			} else if (value[0] instanceof AirtableModel) {
 				const ids = value.map((v) => v.id);
 				const lr = this._createLinkedField(desc, ids);
-				lr.set(value);
+				lr._assign(value);
 				this._fields[propertyName] = lr;
 			} else {
 				this._fields[propertyName] = this._createLinkedField(desc, value);
