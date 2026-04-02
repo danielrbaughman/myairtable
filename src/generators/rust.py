@@ -356,14 +356,21 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line("}")
                 write.line_empty()
 
-                # Into<String> so the enum can be passed directly to .view()
-                write.line(f"impl From<{view_name}> for String {{")
-                write.line_indented(f"fn from(v: {view_name}) -> String {{")
-                write.line_indented("match v {", 2)
+                # AsRef<str> so the enum resolves to its view ID string
+                write.line(f"impl AsRef<str> for {view_name} {{")
+                write.line_indented("fn as_ref(&self) -> &str {")
+                write.line_indented("match self {", 2)
                 for view in table.views:
                     variant = to_pascal(view.name.replace(" ", "_").lower())
-                    write.line_indented(f'{view_name}::{variant} => "{view.id}".to_string(),', 3)
+                    write.line_indented(f'Self::{variant} => "{view.id}",', 3)
                 write.line_indented("}", 2)
+                write.line_indented("}")
+                write.line("}")
+                write.line_empty()
+
+                write.line(f"impl From<{view_name}> for String {{")
+                write.line_indented(f"fn from(v: {view_name}) -> String {{")
+                write.line_indented("v.as_ref().to_string()", 2)
                 write.line_indented("}")
                 write.line("}")
                 write.line_empty()
@@ -446,8 +453,11 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line("}")
             write.line_empty()
 
-            # F constant and from_id helper
+            # F constant, from_id, url
             formulas_name = f"{table.name_pascal()}Formulas"
+            has_url_field = any(field.name_snake() == "url" for field in table.fields)
+            url_method_name = "record_url" if has_url_field else "url"
+
             write.line(f"impl {model_name} {{")
             write.doc_comment("Formula builder for this table.", indent=1)
             write.line_indented(f"pub const F: crate::formulas::{formulas_name} = crate::formulas::{formulas_name}::new();")
@@ -458,6 +468,13 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_indented("model._meta.client = Some(client);", 2)
             write.line_indented("model._meta.table_id = Some(table_id);", 2)
             write.line_indented("model", 2)
+            write.line_indented("}")
+            write.line_empty()
+            write.doc_comment("Get the Airtable web URL for this record.", indent=1)
+            write.line_indented(f"pub fn {url_method_name}(&self, view_id: impl AsRef<str>) -> String {{")
+            write.line_indented('let base_id = self._meta.client.as_ref().map(|c| c.base_id()).unwrap_or("");', 2)
+            write.line_indented('let record_id = self.id.as_deref().unwrap_or("");', 2)
+            write.line_indented(f'crate::types::build_url(base_id, "{table.id}", view_id.as_ref(), record_id)', 2)
             write.line_indented("}")
             write.line("}")
             write.line_empty()
@@ -577,8 +594,12 @@ def write_lib(base: Base, output_folder: Path) -> None:
             write.use_decl(f"crate::models::{{{pascal}Model, Create{pascal}Model}}")
         write.line_empty()
 
+        write.use_decl("crate::types::build_url")
+        write.line_empty()
+
         write.doc_comment("Main entry point for the Airtable base.")
         write.line("pub struct Airtable {")
+        write.line_indented("base_id: String,")
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
             pascal = table.name_pascal()
@@ -596,12 +617,20 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.line_indented("pub fn new(api_key: &str, base_id: &str) -> Self {")
         write.line_indented("let client = Arc::new(AirtableClient::new(api_key, base_id));", 2)
         write.line_indented("Self {", 2)
+        write.line_indented("base_id: base_id.to_string(),", 3)
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
             snake = _rust_ident(table.name_snake())
             write.line_indented(f'{snake}: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
             write.line_indented(f'{snake}_orm: OrmTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
         write.line_indented("}", 2)
+        write.line_indented("}")
+        write.line_empty()
+
+        # url()
+        write.doc_comment("Get the Airtable web URL for this base.", indent=1)
+        write.line_indented("pub fn url(&self) -> String {")
+        write.line_indented('build_url(&self.base_id, "", "", "")', 2)
         write.line_indented("}")
 
         write.line("}")

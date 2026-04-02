@@ -36,6 +36,11 @@ impl StructTable {
         self.table_name
     }
 
+    /// Get the Airtable web URL for this table.
+    pub fn url(&self) -> String {
+        crate::types::build_url(self.client.base_id(), self.table_id, "", "")
+    }
+
     /// Get a single record by ID.
     pub async fn get_one(
         &self,

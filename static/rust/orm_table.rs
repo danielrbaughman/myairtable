@@ -42,6 +42,11 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.table_name
     }
 
+    /// Get the Airtable web URL for this table.
+    pub fn url(&self) -> String {
+        crate::types::build_url(self.client.base_id(), self.table_id, "", "")
+    }
+
     /// Convert a Record (dict layer) into a typed ORM model with client attached.
     fn record_to_model(&self, record: Record) -> Result<T, AirtableError> {
         let fields_json = serde_json::to_value(&record.fields)?;

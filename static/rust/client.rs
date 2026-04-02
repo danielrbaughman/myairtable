@@ -31,6 +31,11 @@ impl AirtableClient {
         }
     }
 
+    /// The base ID this client is configured for.
+    pub fn base_id(&self) -> &str {
+        &self.base_id
+    }
+
     fn table_url(&self, table_id: &str) -> String {
         format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }

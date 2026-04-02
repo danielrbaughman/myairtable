@@ -189,6 +189,30 @@ pub struct Record {
     pub created_time: Option<String>,
 }
 
+/// Build an Airtable web UI URL.
+pub fn build_url(base_id: &str, table_id: &str, view_id: &str, record_id: &str) -> String {
+    let mut url = "https://airtable.com".to_string();
+    if base_id.is_empty() {
+        return url;
+    }
+    url.push('/');
+    url.push_str(base_id);
+    if table_id.is_empty() {
+        return url;
+    }
+    url.push('/');
+    url.push_str(table_id);
+    if !view_id.is_empty() {
+        url.push('/');
+        url.push_str(view_id);
+    }
+    if !record_id.is_empty() {
+        url.push('/');
+        url.push_str(record_id);
+    }
+    url
+}
+
 /// An Airtable attachment object.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Attachment {
