@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
-use crate::types::{Record, RecordId};
+use crate::types::{Fields, Record, RecordId};
 
 /// Shared internal state for ORM models.
 #[derive(Debug, Clone, Default)]
@@ -28,6 +28,9 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
 
     /// Set the model's id field.
     fn set_id(&mut self, id: Option<RecordId>);
+
+    /// Get a reference to the model's created_time field.
+    fn get_created_time(&self) -> &Option<String>;
 
     /// Set the model's created_time field.
     fn set_created_time(&mut self, created_time: Option<String>);
@@ -55,6 +58,22 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
     fn take_snapshot(&mut self) {
         let snap = serde_json::to_value(&*self).unwrap_or_default();
         self.meta_mut().snapshot = Some(snap);
+    }
+
+    /// Serialize the model's field values to a JSON object. Keys are field IDs.
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or_default()
+    }
+
+    /// Convert the model to a Record (dict layer type).
+    fn to_record(&self) -> Record {
+        let fields_json = serde_json::to_value(self).unwrap_or_default();
+        let fields: Fields = serde_json::from_value(fields_json).unwrap_or_default();
+        Record {
+            id: self.get_id().clone().unwrap_or_default(),
+            fields,
+            created_time: self.get_created_time().clone(),
+        }
     }
 
     /// Build a JSON value with only changed fields (for update) or all set fields (for create).

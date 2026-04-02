@@ -522,6 +522,7 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_indented("fn meta_mut(&mut self) -> &mut ModelMeta { &mut self._meta }")
             write.line_indented("fn get_id(&self) -> &Option<RecordId> { &self.id }")
             write.line_indented("fn set_id(&mut self, id: Option<RecordId>) { self.id = id; }")
+            write.line_indented("fn get_created_time(&self) -> &Option<String> { &self.created_time }")
             write.line_indented("fn set_created_time(&mut self, ct: Option<String>) { self.created_time = ct; }")
             write.line("}")
             write.line_empty()
