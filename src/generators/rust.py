@@ -302,6 +302,37 @@ def write_options(base: Base, output_folder: Path) -> None:
                 write.line("}")
                 write.line_empty()
 
+            # Options struct — provides const arrays of valid options per field
+            options_name = f"{table.name_pascal()}Options"
+            write.doc_comment(f"Select field options for `{sanitize_string(table.name)}`")
+            write.line(f"pub struct {options_name} {{")
+            for field in select_fields:
+                choices = field.select_options()
+                if not choices:
+                    continue
+                enum_name = field.options_name()
+                write.doc_comment(f"Valid options for `{sanitize_string(field.name)}`", indent=1)
+                write.pub_field(_rust_ident(field.name_snake()), f"&'static [{enum_name}]")
+            write.line("}")
+            write.line_empty()
+
+            write.line(f"impl {options_name} {{")
+            write.line_indented("pub const fn new() -> Self {")
+            write.line_indented("Self {", 2)
+            for field in select_fields:
+                choices = field.select_options()
+                if not choices:
+                    continue
+                enum_name = field.options_name()
+                raw_variants = [_choice_to_variant(c) for c in choices]
+                variants = _deduplicate_variants(raw_variants)
+                variant_list = ", ".join(f"{enum_name}::{v}" for v in variants)
+                write.line_indented(f"{_rust_ident(field.name_snake())}: &[{variant_list}],", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line("}")
+            write.line_empty()
+
     # Write mod.rs
     with WriteToRustFile(path=options_dir / "mod.rs") as write:
         for mod_name in sorted(mod_names):
@@ -461,6 +492,12 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line(f"impl {model_name} {{")
             write.doc_comment("Formula builder for this table.", indent=1)
             write.line_indented(f"pub const F: crate::formulas::{formulas_name} = crate::formulas::{formulas_name}::new();")
+            if table.select_fields():
+                options_struct = f"{table.name_pascal()}Options"
+                write.doc_comment("Select field options for this table.", indent=1)
+                write.line_indented(
+                    f"pub const O: crate::options::{_rust_ident(table.name_snake())}::{options_struct} = crate::options::{_rust_ident(table.name_snake())}::{options_struct}::new();"
+                )
             write.doc_comment("Create a model from just a record ID (for later fetch).", indent=1)
             write.line_indented("pub fn from_id(client: std::sync::Arc<crate::client::AirtableClient>, table_id: &'static str, id: &str) -> Self {")
             write.line_indented("let mut model = Self::default();", 2)
