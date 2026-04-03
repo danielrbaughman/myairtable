@@ -620,31 +620,86 @@ def write_lib(base: Base, output_folder: Path) -> None:
     """Generate the main lib.rs that re-exports all modules."""
     dynamic_dir = output_folder / Paths.DYNAMIC
 
-    # Write the main Airtable struct
+    # Write per-table wrapper structs and the main Airtable struct
     with WriteToRustFile(path=dynamic_dir / "airtable.rs") as write:
         write.use_decl("std::sync::Arc")
         write.line_empty()
         write.use_decl("crate::client::AirtableClient")
+        write.use_decl("crate::error::AirtableError")
         write.use_decl("crate::orm_table::OrmTable")
         write.use_decl("crate::table::StructTable")
+        write.use_decl("crate::types::{AirtableQuery, RecordId, build_url}")
+        write.use_decl("crate::airtable_model::OrmModel")
         for table in base.tables:
             pascal = table.name_pascal()
             write.use_decl(f"crate::models::{{{pascal}Model, Create{pascal}Model}}")
         write.line_empty()
 
-        write.use_decl("crate::types::build_url")
-        write.line_empty()
+        # Per-table wrapper structs
+        for table in base.tables:
+            pascal = table.name_pascal()
+            table_struct = f"{pascal}Table"
+            model = f"{pascal}Model"
+            create = f"Create{pascal}Model"
 
+            write.doc_comment(f"Table accessor for `{sanitize_string(table.name)}`. ORM by default, `.dict` for raw records.")
+            write.line(f"pub struct {table_struct} {{")
+            write.doc_comment("Raw record (dict) access.", indent=1)
+            write.pub_field("dict", "StructTable")
+            write.line_indented(f"orm: OrmTable<{model}, {create}>,")
+            write.line("}")
+            write.line_empty()
+
+            write.line(f"impl {table_struct} {{")
+
+            # Delegated ORM methods
+            write.doc_comment("Get a single record by ID.", indent=1)
+            write.line_indented(
+                f"pub async fn get_one(&self, record_id: &RecordId) -> Result<{model}, AirtableError> {{ self.orm.get_one(record_id).await }}"
+            )
+            write.doc_comment("Get multiple records.", indent=1)
+            write.line_indented(
+                f"pub async fn get_many(&self, params: &AirtableQuery) -> Result<(Vec<{model}>, Option<String>), AirtableError> {{ self.orm.get_many(params).await }}"
+            )
+            write.doc_comment("Create a new record.", indent=1)
+            write.line_indented(
+                f"pub async fn create_one(&self, fields: &{create}) -> Result<{model}, AirtableError> {{ self.orm.create_one(fields).await }}"
+            )
+            write.doc_comment("Create multiple records.", indent=1)
+            write.line_indented(
+                f"pub async fn create_many(&self, records: &[{create}]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(records).await }}"
+            )
+            write.doc_comment("Update an existing record.", indent=1)
+            write.line_indented(
+                f"pub async fn update_one(&self, record_id: &RecordId, fields: &{create}) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, fields).await }}"
+            )
+            write.doc_comment("Update multiple records.", indent=1)
+            write.line_indented(
+                f"pub async fn update_many(&self, records: &[(&RecordId, &{create})]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records).await }}"
+            )
+            write.doc_comment("Upsert a model. Creates if no ID, updates if ID exists.", indent=1)
+            write.line_indented(f"pub async fn upsert(&self, model: &mut {model}) -> Result<(), AirtableError> {{ self.orm.upsert(model).await }}")
+            write.doc_comment("Delete a record.", indent=1)
+            write.line_indented(
+                "pub async fn delete_one(&self, record_id: &RecordId) -> Result<(), AirtableError> { self.orm.delete_one(record_id).await }"
+            )
+            write.doc_comment("Delete multiple records.", indent=1)
+            write.line_indented(
+                "pub async fn delete_many(&self, record_ids: &[RecordId]) -> Result<(), AirtableError> { self.orm.delete_many(record_ids).await }"
+            )
+            write.doc_comment("Get the Airtable web URL for this table.", indent=1)
+            write.line_indented("pub fn url(&self) -> String { self.orm.url() }")
+
+            write.line("}")
+            write.line_empty()
+
+        # Main Airtable struct
         write.doc_comment("Main entry point for the Airtable base.")
         write.line("pub struct Airtable {")
         write.line_indented("base_id: String,")
         for table in base.tables:
-            escaped_name = sanitize_string(table.name)
-            pascal = table.name_pascal()
-            write.doc_comment(f"`{escaped_name}` (dict)", indent=1)
-            write.pub_field(_rust_ident(table.name_snake()), "StructTable")
-            write.doc_comment(f"`{escaped_name}` (ORM)", indent=1)
-            write.pub_field(f"{_rust_ident(table.name_snake())}_orm", f"OrmTable<{pascal}Model, Create{pascal}Model>")
+            write.doc_comment(f"`{sanitize_string(table.name)}`", indent=1)
+            write.pub_field(_rust_ident(table.name_snake()), f"{table.name_pascal()}Table")
         write.line("}")
         write.line_empty()
 
@@ -659,8 +714,10 @@ def write_lib(base: Base, output_folder: Path) -> None:
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
             snake = _rust_ident(table.name_snake())
-            write.line_indented(f'{snake}: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
-            write.line_indented(f'{snake}_orm: OrmTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 3)
+            write.line_indented(f"{snake}: {table.name_pascal()}Table {{", 3)
+            write.line_indented(f'dict: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 4)
+            write.line_indented(f'orm: OrmTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 4)
+            write.line_indented("},", 3)
         write.line_indented("}", 2)
         write.line_indented("}")
         write.line_empty()
@@ -709,6 +766,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
 
         # Re-exports for convenience
         write.use_decl("airtable::Airtable", public=True)
+        for table in base.tables:
+            write.use_decl(f"airtable::{table.name_pascal()}Table", public=True)
         write.use_decl("client::AirtableClient", public=True)
         write.use_decl("error::AirtableError", public=True)
         write.use_decl("airtable_model::{ModelMeta, OrmModel}", public=True)
