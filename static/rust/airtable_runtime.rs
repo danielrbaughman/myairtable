@@ -1,5 +1,6 @@
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
+use regex::Regex;
 use serde_json::Value;
 
 // =============================================================================
@@ -290,6 +291,12 @@ pub fn MOD(v: &Value, divisor: &Value) -> Value {
 #[allow(non_snake_case)]
 pub fn ABS(v: &Value) -> Value {
     to_value(N(v).abs())
+}
+
+/// Euler's number raised to a power.
+#[allow(non_snake_case)]
+pub fn EXP(v: &Value) -> Value {
+    to_value(N(v).exp())
 }
 
 /// Square root.
@@ -768,6 +775,52 @@ pub fn TIMESTR(date: &Value) -> Value {
     match D(date) {
         Some(dt) => Value::String(dt.format("%H:%M:%S").to_string()),
         None => Value::String(String::new()),
+    }
+}
+
+/// Parse a date string and return as ISO string.
+#[allow(non_snake_case)]
+pub fn DATETIME_PARSE(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => date_to_iso(&dt),
+        None => Value::Null,
+    }
+}
+
+/// Regex extract first match. Returns null if no match.
+#[allow(non_snake_case)]
+pub fn REGEX_EXTRACT(text: &Value, pattern: &Value) -> Value {
+    let t = S(text);
+    let p = S(pattern);
+    match Regex::new(&p) {
+        Ok(re) => match re.find(&t) {
+            Some(m) => Value::String(m.as_str().to_string()),
+            None => Value::Null,
+        },
+        Err(_) => Value::Null,
+    }
+}
+
+/// Regex match test. Returns true if pattern matches.
+#[allow(non_snake_case)]
+pub fn REGEX_MATCH(text: &Value, pattern: &Value) -> Value {
+    let t = S(text);
+    let p = S(pattern);
+    match Regex::new(&p) {
+        Ok(re) => Value::Bool(re.is_match(&t)),
+        Err(_) => Value::Bool(false),
+    }
+}
+
+/// Regex replace all matches.
+#[allow(non_snake_case)]
+pub fn REGEX_REPLACE(text: &Value, pattern: &Value, replacement: &Value) -> Value {
+    let t = S(text);
+    let p = S(pattern);
+    let r = S(replacement);
+    match Regex::new(&p) {
+        Ok(re) => Value::String(re.replace_all(&t, r.as_str()).to_string()),
+        Err(_) => Value::String(t),
     }
 }
 

@@ -928,3 +928,53 @@ fn arrayflatten_already_flat() {
 fn arrayflatten_non_array() {
     assert_eq!(ARRAYFLATTEN(&json!(5)), json!([5]));
 }
+
+// =============================================================================
+// Regex Functions
+// =============================================================================
+
+#[test]
+fn regex_extract_basic() {
+    assert_eq!(
+        REGEX_EXTRACT(&json!("Hello"), &json!("[aeiou]")),
+        json!("e")
+    );
+}
+
+#[test]
+fn regex_extract_no_match() {
+    assert_eq!(REGEX_EXTRACT(&json!("xyz"), &json!("[aeiou]")), json!(null));
+}
+
+#[test]
+fn regex_match_true() {
+    assert_eq!(REGEX_MATCH(&json!("Hello"), &json!("^.e")), json!(true));
+}
+
+#[test]
+fn regex_match_false() {
+    assert_eq!(REGEX_MATCH(&json!("Hello"), &json!("^z")), json!(false));
+}
+
+#[test]
+fn regex_replace_basic() {
+    assert_eq!(
+        REGEX_REPLACE(&json!("Hello"), &json!("[aeiou]"), &json!("*")),
+        json!("H*ll*")
+    );
+}
+
+#[test]
+fn exp_basic() {
+    // e^1 ≈ 2.718...
+    let result = N(&EXP(&json!(1)));
+    assert!((result - std::f64::consts::E).abs() < 0.0001);
+}
+
+#[test]
+fn datetime_parse_basic() {
+    assert_eq!(
+        DATETIME_PARSE(&json!("2024-01-15")),
+        json!("2024-01-15T00:00:00.000Z")
+    );
+}

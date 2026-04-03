@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic.alias_generators import to_pascal
 from rich import print
 
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
 from ..utils.helpers import (
@@ -443,6 +444,12 @@ def write_models(base: Base, output_folder: Path) -> None:
         model_name = f"{table.name_pascal()}Model"
         create_name = f"Create{table.name_pascal()}Model"
 
+        # Pre-transpile formula fields for this table
+        formula_field_ids = table.formula_field_ids()
+        field_name_map = {f.id: _rust_ident(f.name_snake()) for f in table.fields}
+        raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+        transpiled_formulas = transpile_table_formulas(raw_formulas, "rust", field_name_map, formula_field_ids) if raw_formulas else {}
+
         with WriteToRustFile(path=models_dir / f"{mod_name}.rs") as write:
             # Imports
             write.use_decl("serde::{Deserialize, Serialize}")
@@ -453,6 +460,9 @@ def write_models(base: Base, output_folder: Path) -> None:
             option_imports = _collect_option_imports(table)
             if option_imports:
                 write.use_decl(f"crate::options::{{{', '.join(sorted(option_imports))}}}")
+            if transpiled_formulas:
+                write.use_decl("crate::airtable_runtime as F")
+                write.use_decl("serde_json::{json, Value}")
             write.line_empty()
 
             # Model struct — id, created_time, internal state, and all fields
@@ -513,6 +523,23 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_indented('let record_id = self.id.as_deref().unwrap_or("");', 2)
             write.line_indented(f'crate::types::build_url(base_id, "{table.id}", view_id.as_ref(), record_id)', 2)
             write.line_indented("}")
+
+            # Runtime formula evaluation methods
+            for field in table.fields:
+                if field.id not in transpiled_formulas:
+                    continue
+                field_name = _rust_ident(field.name_snake())
+                formula_code = transpiled_formulas[field.id]
+                raw_formula = raw_formulas.get(field.id, "")
+                write.line_empty()
+                # Truncate long formulas in doc comment (avoid multi-line raw formula in Rust doc)
+                formula_preview = sanitize_string(raw_formula).replace("\n", " ")[:80]
+                write.doc_comment(f"Evaluate formula: `{formula_preview}...`", indent=1)
+                write.line_indented("#[allow(unused_parens)]")
+                write.line_indented(f"pub fn evaluate_{field_name}(&self) -> Value {{")
+                write.line_indented(f"{formula_code}", 2)
+                write.line_indented("}")
+
             write.line("}")
             write.line_empty()
 
@@ -772,6 +799,8 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("orm_table")
         write.line('#[path = "../static/formula.rs"]')
         write.line("pub mod formula;")
+        write.line('#[path = "../static/airtable_runtime.rs"]')
+        write.line("pub mod airtable_runtime;")
         write.line_empty()
 
         # Generated dynamic modules
