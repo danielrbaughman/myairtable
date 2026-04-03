@@ -729,7 +729,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # Main Airtable struct
         write.doc_comment("Main entry point for the Airtable base.")
         write.line("pub struct Airtable {")
-        write.line_indented("base_id: String,")
+        write.line_indented("client: Arc<AirtableClient>,")
         for table in base.tables:
             write.doc_comment(f"`{sanitize_string(table.name)}`", indent=1)
             write.pub_field(_rust_ident(table.name_snake()), f"{table.name_pascal()}Table")
@@ -750,7 +750,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.line_indented("pub fn with_cache(api_key: &str, base_id: &str, cache_seconds: u64) -> Self {")
         write.line_indented("let client = Arc::new(AirtableClient::new(api_key, base_id));", 2)
         write.line_indented("let mut instance = Self {", 2)
-        write.line_indented("base_id: base_id.to_string(),", 3)
+        write.line_indented("client: Arc::clone(&client),", 3)
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
             snake = _rust_ident(table.name_snake())
@@ -771,7 +771,13 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # url()
         write.doc_comment("Get the Airtable web URL for this base.", indent=1)
         write.line_indented("pub fn url(&self) -> String {")
-        write.line_indented('build_url(&self.base_id, "", "", "")', 2)
+        write.line_indented('build_url(self.client.base_id(), "", "", "")', 2)
+        write.line_indented("}")
+        write.line_empty()
+
+        write.doc_comment("Fetch a live version of the schema from Airtable's metadata API.", indent=1)
+        write.line_indented("pub async fn get_schema(&self) -> Result<serde_json::Value, AirtableError> {")
+        write.line_indented("self.client.get_schema().await", 2)
         write.line_indented("}")
 
         write.line("}")

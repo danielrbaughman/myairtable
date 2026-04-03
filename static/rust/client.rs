@@ -40,6 +40,26 @@ impl AirtableClient {
         format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }
 
+    /// Fetch the base schema from Airtable's metadata API.
+    pub async fn get_schema(&self) -> Result<serde_json::Value, AirtableError> {
+        let url = format!(
+            "https://api.airtable.com/v0/meta/bases/{}/tables",
+            self.base_id
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .headers(self.headers.clone())
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AirtableError::Api { status, body });
+        }
+        Ok(resp.json().await?)
+    }
+
     /// List records from a table.
     pub async fn list_records(
         &self,
