@@ -3,6 +3,7 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
@@ -93,7 +94,7 @@ class WriteToJavaScriptFile(WriteToFile):
 
 # region MAIN
 def generate_javascript(
-    base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True, zod: bool = True
+    base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True, flatten: bool = False, zod: bool = True
 ) -> None:
     print("Generating JavaScript code")
     for table in base.tables:
@@ -132,7 +133,7 @@ def generate_javascript(
 
     if wrappers:
         with timer.timer("JavaScript: write_models"):
-            write_models(base, output_folder, formulas=formulas, runtime=runtime, zod=zod)
+            write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, zod=zod)
             if verbose:
                 print("[dim] - JavaScript models generated.[/]")
 
@@ -399,7 +400,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
 
 
 # region MODELS
-def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, zod: bool = True) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False, zod: bool = True) -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     # Write individual table model files
@@ -447,6 +448,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 single_linked_record_field_ids = table.single_linked_record_field_ids()
                 field_name_map = {f.id: f.name_camel() for f in table.fields}
                 raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+                if flatten and raw_formulas:
+                    formula_map_tuple = table.base.get_formula_field_map_tuple()
+                    raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
                 transpiled_formulas = transpile_table_formulas(
                     raw_formulas, "javascript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
                 )

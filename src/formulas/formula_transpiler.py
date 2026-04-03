@@ -998,6 +998,19 @@ def _contains_untranspilable(node: ASTNode) -> bool:
 # region Public API
 
 
+def formula_is_transpilable(formula: str) -> bool:
+    """Check if a formula string can be transpiled (contains no untranspilable functions)."""
+    if not formula or not formula.strip():
+        return True
+    try:
+        tokens = tokenize_formula(formula)
+        parser = FormulaParser(tokens)
+        ast = parser.parse()
+        return not _contains_untranspilable(ast)
+    except Exception:
+        return False
+
+
 def transpile_formula(
     formula: str,
     language: Language,

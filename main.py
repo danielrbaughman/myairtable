@@ -74,6 +74,7 @@ def py(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
+    flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
@@ -98,6 +99,7 @@ def py(
             formulas=formulas,
             wrappers=wrappers,
             runtime=runtime,
+            flatten=flatten,
             package_prefix=package_prefix,
         )
 
@@ -113,6 +115,7 @@ def ts(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
+    flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
 ):
     """Generate types and models in TypeScript"""
@@ -125,7 +128,7 @@ def ts(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("TypeScript generation"):
-        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, zod=zod)
+        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
 
 
 @app.command()
@@ -137,6 +140,7 @@ def js(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
+    flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
@@ -152,7 +156,7 @@ def js(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("JavaScript generation"):
-        generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, zod=zod)
+        generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
 
     timer.summary()
 
@@ -166,6 +170,7 @@ def rs(
     formulas: Annotated[bool, Option(help="Include formula-helper types in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper types for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
+    flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate types and models in Rust"""
@@ -180,7 +185,7 @@ def rs(
         with timer.timer("CSV generation"):
             generate_csv(base=base, folder=csv_folder_path, fresh=True)
     with timer.timer("Rust generation"):
-        generate_rust(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
+        generate_rust(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     timer.summary()
 
@@ -294,6 +299,7 @@ def all(
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
+    flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
@@ -334,23 +340,24 @@ def all(
                 formulas=formulas,
                 wrappers=wrappers,
                 runtime=runtime,
+                flatten=flatten,
                 package_prefix=py_package_prefix,
             )
 
     if ts_folder:
         with timer.timer("TypeScript generation"):
             ts_folder_path = reset_folder(ts_folder)
-            generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
+            generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if js_folder:
         with timer.timer("JavaScript generation"):
             js_folder_path = reset_folder(js_folder)
-            generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
+            generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if rs_folder:
         with timer.timer("Rust generation"):
             rs_folder_path = reset_folder(rs_folder)
-            generate_rust(base=base, output_folder=rs_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime)
+            generate_rust(base=base, output_folder=rs_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if md_folder:
         with timer.timer("Markdown generation"):

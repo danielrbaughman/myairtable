@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic.alias_generators import to_pascal
 from rich import print
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
@@ -211,7 +212,7 @@ class WriteToRustFile(WriteToFile):
 
 
 # region MAIN
-def generate_rust(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True) -> None:
+def generate_rust(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True, flatten: bool = False) -> None:
     """Generate Rust code from Airtable base metadata."""
     print("Generating Rust code")
     for table in base.tables:
@@ -240,7 +241,7 @@ def generate_rust(base: Base, output_folder: Path, formulas: bool = True, wrappe
             print("[dim] - Rust field types generated.[/]")
 
     with timer.timer("Rust: write_models"):
-        write_models(base, output_folder, formulas=formulas, runtime=runtime)
+        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
         if verbose:
             print("[dim] - Rust ORM models generated.[/]")
 
@@ -441,7 +442,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
 
 
-def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
     """Generate Rust ORM model structs for table records."""
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
@@ -454,6 +455,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         formula_field_ids = table.formula_field_ids()
         field_name_map = {f.id: _rust_ident(f.name_snake()) for f in table.fields}
         raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+        if flatten and raw_formulas:
+            formula_map_tuple = table.base.get_formula_field_map_tuple()
+            raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
         transpiled_formulas = transpile_table_formulas(raw_formulas, "rust", field_name_map, formula_field_ids) if raw_formulas else {}
 
         with WriteToRustFile(path=models_dir / f"{mod_name}.rs") as write:
