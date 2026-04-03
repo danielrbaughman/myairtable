@@ -1,3 +1,5 @@
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc, Weekday};
+use chrono_tz::Tz;
 use serde_json::Value;
 
 // =============================================================================
@@ -534,4 +536,484 @@ pub fn ENCODE_URL_COMPONENT(text: &Value) -> Value {
         }
     }
     Value::String(encoded)
+}
+
+// =============================================================================
+// Date/Time Functions
+// =============================================================================
+
+/// Coerce a value to DateTime<Utc>. null→None, number→Unix timestamp, string→ISO parse.
+#[allow(non_snake_case)]
+pub fn D(v: &Value) -> Option<DateTime<Utc>> {
+    match v {
+        Value::Null => None,
+        Value::Number(n) => {
+            let ts = n.as_f64()?;
+            DateTime::from_timestamp(ts as i64, 0)
+        }
+        Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return None;
+            }
+            // Try full ISO 8601 with timezone
+            if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                return Some(dt.with_timezone(&Utc));
+            }
+            // Try "YYYY-MM-DDTHH:MM:SS" without timezone (assume UTC)
+            if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+                return Some(ndt.and_utc());
+            }
+            // Try date-only "YYYY-MM-DD"
+            if let Ok(nd) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+                return nd.and_hms_opt(0, 0, 0).map(|ndt| ndt.and_utc());
+            }
+            None
+        }
+        Value::Array(arr) => arr.first().and_then(D),
+        _ => None,
+    }
+}
+
+fn date_to_iso(dt: &DateTime<Utc>) -> Value {
+    Value::String(dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+}
+
+fn parse_unit(v: Option<&Value>) -> String {
+    v.map(|u| S(u).to_lowercase())
+        .unwrap_or_else(|| "days".to_string())
+}
+
+/// Clamp day to valid range for given year/month.
+fn clamp_day(year: i32, month: u32, day: u32) -> u32 {
+    let max_day = NaiveDate::from_ymd_opt(year, month + 1, 1)
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap())
+        .pred_opt()
+        .unwrap()
+        .day();
+    day.min(max_day)
+}
+
+/// Today's date as "YYYY-MM-DD".
+#[allow(non_snake_case)]
+pub fn TODAY() -> Value {
+    Value::String(Utc::now().format("%Y-%m-%d").to_string())
+}
+
+/// Current datetime as ISO string.
+#[allow(non_snake_case)]
+pub fn NOW() -> Value {
+    date_to_iso(&Utc::now())
+}
+
+/// Add count units to a date.
+#[allow(non_snake_case)]
+pub fn DATEADD(date: &Value, count: &Value, unit: &Value) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return Value::Null,
+    };
+    let c = N(count) as i64;
+    let u = S(unit).to_lowercase();
+
+    let result = match u.as_str() {
+        "years" => {
+            let new_year = dt.year() + c as i32;
+            let day = clamp_day(new_year, dt.month(), dt.day());
+            dt.with_year(new_year)
+                .and_then(|d| d.with_day(day))
+                .unwrap_or(dt)
+        }
+        "months" => {
+            let total_months = (dt.year() as i64) * 12 + (dt.month() as i64 - 1) + c;
+            let new_year = (total_months.div_euclid(12)) as i32;
+            let new_month = (total_months.rem_euclid(12) + 1) as u32;
+            let day = clamp_day(new_year, new_month, dt.day());
+            NaiveDate::from_ymd_opt(new_year, new_month, day)
+                .and_then(|nd| nd.and_hms_opt(dt.hour(), dt.minute(), dt.second()))
+                .map(|ndt| ndt.and_utc())
+                .unwrap_or(dt)
+        }
+        "weeks" => dt + Duration::weeks(c),
+        "days" => dt + Duration::days(c),
+        "hours" => dt + Duration::hours(c),
+        "minutes" => dt + Duration::minutes(c),
+        "seconds" => dt + Duration::seconds(c),
+        "milliseconds" => dt + Duration::milliseconds(c),
+        _ => dt,
+    };
+    date_to_iso(&result)
+}
+
+/// Difference between two dates in the given unit.
+#[allow(non_snake_case)]
+pub fn DATETIME_DIFF(date1: &Value, date2: &Value, unit: Option<&Value>) -> Value {
+    let d1 = match D(date1) {
+        Some(d) => d,
+        None => return to_value(0.0),
+    };
+    let d2 = match D(date2) {
+        Some(d) => d,
+        None => return to_value(0.0),
+    };
+    let u = parse_unit(unit);
+    let diff = d1 - d2;
+
+    let result = match u.as_str() {
+        "milliseconds" => diff.num_milliseconds() as f64,
+        "seconds" => diff.num_seconds() as f64,
+        "minutes" => (diff.num_seconds() / 60) as f64,
+        "hours" => (diff.num_seconds() / 3600) as f64,
+        "days" => diff.num_days() as f64,
+        "weeks" => (diff.num_days() / 7) as f64,
+        "months" => ((d1.year() - d2.year()) * 12 + (d1.month() as i32 - d2.month() as i32)) as f64,
+        "years" => (d1.year() - d2.year()) as f64,
+        _ => diff.num_days() as f64,
+    };
+    to_value(result)
+}
+
+/// Format a date using Moment.js-style tokens.
+#[allow(non_snake_case)]
+pub fn DATETIME_FORMAT(date: &Value, fmt: Option<&Value>) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return Value::String(String::new()),
+    };
+    match fmt {
+        None => date_to_iso(&dt),
+        Some(f) => {
+            let fmt_str = S(f);
+            let mut result = String::new();
+            let chars: Vec<char> = fmt_str.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                if i + 4 <= chars.len() && &fmt_str[i..i + 4] == "YYYY" {
+                    result.push_str(&format!("{:04}", dt.year()));
+                    i += 4;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "YY" {
+                    result.push_str(&format!("{:02}", dt.year() % 100));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "MM" {
+                    result.push_str(&format!("{:02}", dt.month()));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "DD" {
+                    result.push_str(&format!("{:02}", dt.day()));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "HH" {
+                    result.push_str(&format!("{:02}", dt.hour()));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "hh" {
+                    let h = dt.hour() % 12;
+                    result.push_str(&format!("{:02}", if h == 0 { 12 } else { h }));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "mm" {
+                    result.push_str(&format!("{:02}", dt.minute()));
+                    i += 2;
+                } else if i + 2 <= chars.len() && &fmt_str[i..i + 2] == "ss" {
+                    result.push_str(&format!("{:02}", dt.second()));
+                    i += 2;
+                } else if chars[i] == 'A' {
+                    result.push_str(if dt.hour() < 12 { "AM" } else { "PM" });
+                    i += 1;
+                } else if chars[i] == 'a' {
+                    result.push_str(if dt.hour() < 12 { "am" } else { "pm" });
+                    i += 1;
+                } else {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            }
+            Value::String(result)
+        }
+    }
+}
+
+/// Date portion "YYYY-MM-DD".
+#[allow(non_snake_case)]
+pub fn DATESTR(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => Value::String(dt.format("%Y-%m-%d").to_string()),
+        None => Value::String(String::new()),
+    }
+}
+
+/// Time portion "HH:MM:SS".
+#[allow(non_snake_case)]
+pub fn TIMESTR(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => Value::String(dt.format("%H:%M:%S").to_string()),
+        None => Value::String(String::new()),
+    }
+}
+
+/// Convert a date to a different timezone.
+#[allow(non_snake_case)]
+pub fn SET_TIMEZONE(date: &Value, tz: &Value) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return Value::Null,
+    };
+    let tz_str = S(tz);
+    let timezone: Tz = match tz_str.parse() {
+        Ok(t) => t,
+        Err(_) => return Value::Null,
+    };
+    let local = dt.with_timezone(&timezone);
+    // Reconstruct as UTC with the local time values (matching Python/TS behavior)
+    let ndt = NaiveDate::from_ymd_opt(local.year(), local.month(), local.day())
+        .and_then(|nd| nd.and_hms_opt(local.hour(), local.minute(), local.second()))
+        .map(|ndt| ndt.and_utc());
+    match ndt {
+        Some(dt) => date_to_iso(&dt),
+        None => Value::Null,
+    }
+}
+
+/// Extract year.
+#[allow(non_snake_case)]
+pub fn YEAR(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.year() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Extract month (1-12).
+#[allow(non_snake_case)]
+pub fn MONTH(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.month() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Extract day of month.
+#[allow(non_snake_case)]
+pub fn DAY(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.day() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Extract hour (0-23).
+#[allow(non_snake_case)]
+pub fn HOUR(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.hour() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Extract minute (0-59).
+#[allow(non_snake_case)]
+pub fn MINUTE(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.minute() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Extract second (0-59).
+#[allow(non_snake_case)]
+pub fn SECOND(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => to_value(dt.second() as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Day of week: 0=Sunday, 1=Monday, ..., 6=Saturday.
+#[allow(non_snake_case)]
+pub fn WEEKDAY(date: &Value) -> Value {
+    match D(date) {
+        Some(dt) => {
+            let dow = dt.weekday().num_days_from_sunday();
+            to_value(dow as f64)
+        }
+        None => to_value(0.0),
+    }
+}
+
+/// Week number of the year.
+#[allow(non_snake_case)]
+pub fn WEEKNUM(date: &Value, start_day: Option<&Value>) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return to_value(0.0),
+    };
+
+    let start_dow = match start_day {
+        Some(v) => match S(v).to_lowercase().as_str() {
+            "monday" => Weekday::Mon,
+            "tuesday" => Weekday::Tue,
+            "wednesday" => Weekday::Wed,
+            "thursday" => Weekday::Thu,
+            "friday" => Weekday::Fri,
+            "saturday" => Weekday::Sat,
+            _ => Weekday::Sun,
+        },
+        None => Weekday::Sun,
+    };
+
+    let jan1 = NaiveDate::from_ymd_opt(dt.year(), 1, 1).unwrap();
+    let day_of_year = dt.ordinal0() as i32;
+    let jan1_dow = jan1.weekday().num_days_from_sunday() as i32;
+    let start_offset = start_dow.num_days_from_sunday() as i32;
+    let adjusted = day_of_year + ((jan1_dow - start_offset + 7) % 7);
+    to_value((adjusted / 7 + 1) as f64)
+}
+
+fn human_duration(d1: DateTime<Utc>, d2: DateTime<Utc>) -> String {
+    let diff = if d1 > d2 { d1 - d2 } else { d2 - d1 };
+    let total_secs = diff.num_seconds().unsigned_abs();
+    let total_mins = total_secs / 60;
+    let total_hours = total_mins / 60;
+    let total_days = total_hours / 24;
+
+    let years = total_days / 365;
+    if years > 0 {
+        return if years == 1 {
+            "1 year".to_string()
+        } else {
+            format!("{} years", years)
+        };
+    }
+    let months = total_days / 30;
+    if months > 0 {
+        return if months == 1 {
+            "1 month".to_string()
+        } else {
+            format!("{} months", months)
+        };
+    }
+    if total_days > 0 {
+        return if total_days == 1 {
+            "1 day".to_string()
+        } else {
+            format!("{} days", total_days)
+        };
+    }
+    if total_hours > 0 {
+        return if total_hours == 1 {
+            "1 hour".to_string()
+        } else {
+            format!("{} hours", total_hours)
+        };
+    }
+    if total_mins > 0 {
+        return if total_mins == 1 {
+            "1 minute".to_string()
+        } else {
+            format!("{} minutes", total_mins)
+        };
+    }
+    if total_secs == 1 {
+        "1 second".to_string()
+    } else {
+        format!("{} seconds", total_secs)
+    }
+}
+
+/// Time elapsed from date until now. With unit returns number, without returns human-readable string.
+#[allow(non_snake_case)]
+pub fn TONOW(date: &Value, unit: Option<&Value>) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return Value::Null,
+    };
+    let now = Utc::now();
+    match unit {
+        Some(_) => DATETIME_DIFF(&date_to_iso(&now), &date_to_iso(&dt), unit),
+        None => Value::String(human_duration(now, dt)),
+    }
+}
+
+/// Time from now until date. With unit returns number, without returns human-readable string.
+#[allow(non_snake_case)]
+pub fn FROMNOW(date: &Value, unit: Option<&Value>) -> Value {
+    let dt = match D(date) {
+        Some(d) => d,
+        None => return Value::Null,
+    };
+    let now = Utc::now();
+    match unit {
+        Some(_) => DATETIME_DIFF(&date_to_iso(&dt), &date_to_iso(&now), unit),
+        None => Value::String(human_duration(dt, now)),
+    }
+}
+
+/// Check if two dates are the same at the given unit granularity.
+#[allow(non_snake_case)]
+pub fn IS_SAME(date1: &Value, date2: &Value, unit: Option<&Value>) -> Value {
+    let default = Value::String("days".to_string());
+    let u = unit.unwrap_or(&default);
+    let diff = DATETIME_DIFF(date1, date2, Some(u));
+    Value::Bool(diff == serde_json::json!(0))
+}
+
+/// Check if date1 is before date2.
+#[allow(non_snake_case)]
+pub fn IS_BEFORE(date1: &Value, date2: &Value, unit: Option<&Value>) -> Value {
+    let default = Value::String("days".to_string());
+    let u = unit.unwrap_or(&default);
+    let diff = DATETIME_DIFF(date1, date2, Some(u));
+    Value::Bool(N(&diff) < 0.0)
+}
+
+/// Check if date1 is after date2.
+#[allow(non_snake_case)]
+pub fn IS_AFTER(date1: &Value, date2: &Value, unit: Option<&Value>) -> Value {
+    let default = Value::String("days".to_string());
+    let u = unit.unwrap_or(&default);
+    let diff = DATETIME_DIFF(date1, date2, Some(u));
+    Value::Bool(N(&diff) > 0.0)
+}
+
+/// Add workdays (skip Saturday and Sunday).
+#[allow(non_snake_case)]
+pub fn WORKDAY(start: &Value, num_days: &Value) -> Value {
+    let mut dt = match D(start) {
+        Some(d) => d,
+        None => return Value::Null,
+    };
+    let mut remaining = N(num_days) as i64;
+    let direction = if remaining >= 0 { 1 } else { -1 };
+    remaining = remaining.abs();
+
+    while remaining > 0 {
+        dt = dt + Duration::days(direction);
+        let wd = dt.weekday();
+        if wd != Weekday::Sat && wd != Weekday::Sun {
+            remaining -= 1;
+        }
+    }
+    date_to_iso(&dt)
+}
+
+/// Count workdays between two dates.
+#[allow(non_snake_case)]
+pub fn WORKDAY_DIFF(start: &Value, end: &Value) -> Value {
+    let d1 = match D(start) {
+        Some(d) => d,
+        None => return to_value(0.0),
+    };
+    let d2 = match D(end) {
+        Some(d) => d,
+        None => return to_value(0.0),
+    };
+
+    let mut count = 0i64;
+    let mut current = d1;
+    let direction = if d2 >= d1 { 1 } else { -1 };
+
+    while (direction == 1 && current < d2) || (direction == -1 && current > d2) {
+        let wd = current.weekday();
+        if wd != Weekday::Sat && wd != Weekday::Sun {
+            count += 1;
+        }
+        current = current + Duration::days(direction);
+    }
+    to_value((count * direction) as f64)
 }

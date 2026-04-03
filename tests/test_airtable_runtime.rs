@@ -517,3 +517,336 @@ fn encode_url_component_basic() {
 fn encode_url_component_special() {
     assert_eq!(ENCODE_URL_COMPONENT(&json!("a&b=c")), json!("a%26b%3Dc"));
 }
+
+// =============================================================================
+// Date/Time Functions
+// =============================================================================
+
+#[test]
+fn d_iso_string() {
+    let dt = D(&json!("2024-01-15T12:00:00Z"));
+    assert!(dt.is_some());
+    assert_eq!(dt.unwrap().to_rfc3339(), "2024-01-15T12:00:00+00:00");
+}
+
+#[test]
+fn d_date_only() {
+    let dt = D(&json!("2024-01-15"));
+    assert!(dt.is_some());
+    assert_eq!(dt.unwrap().to_rfc3339(), "2024-01-15T00:00:00+00:00");
+}
+
+#[test]
+fn d_timestamp() {
+    let dt = D(&json!(1705312800));
+    assert!(dt.is_some());
+}
+
+#[test]
+fn d_null() {
+    assert!(D(&json!(null)).is_none());
+}
+
+#[test]
+fn d_empty_string() {
+    assert!(D(&json!("")).is_none());
+}
+
+#[test]
+fn dateadd_days() {
+    assert_eq!(
+        DATEADD(&json!("2024-01-15T00:00:00Z"), &json!(5), &json!("days")),
+        json!("2024-01-20T00:00:00.000Z")
+    );
+}
+
+#[test]
+fn dateadd_months_clamp() {
+    // Jan 31 + 1 month = Feb 29 (2024 is leap year)
+    assert_eq!(
+        DATEADD(&json!("2024-01-31T00:00:00Z"), &json!(1), &json!("months")),
+        json!("2024-02-29T00:00:00.000Z")
+    );
+}
+
+#[test]
+fn dateadd_years() {
+    assert_eq!(
+        DATEADD(&json!("2024-01-15T00:00:00Z"), &json!(1), &json!("years")),
+        json!("2025-01-15T00:00:00.000Z")
+    );
+}
+
+#[test]
+fn dateadd_hours() {
+    assert_eq!(
+        DATEADD(&json!("2024-01-15T12:00:00Z"), &json!(3), &json!("hours")),
+        json!("2024-01-15T15:00:00.000Z")
+    );
+}
+
+#[test]
+fn dateadd_null() {
+    assert_eq!(
+        DATEADD(&json!(null), &json!(5), &json!("days")),
+        json!(null)
+    );
+}
+
+#[test]
+fn datetime_diff_days() {
+    assert_eq!(
+        DATETIME_DIFF(
+            &json!("2024-01-20T00:00:00Z"),
+            &json!("2024-01-15T00:00:00Z"),
+            Some(&json!("days"))
+        ),
+        json!(5)
+    );
+}
+
+#[test]
+fn datetime_diff_hours() {
+    assert_eq!(
+        DATETIME_DIFF(
+            &json!("2024-01-15T15:00:00Z"),
+            &json!("2024-01-15T12:00:00Z"),
+            Some(&json!("hours"))
+        ),
+        json!(3)
+    );
+}
+
+#[test]
+fn datetime_diff_months() {
+    assert_eq!(
+        DATETIME_DIFF(
+            &json!("2024-03-15T00:00:00Z"),
+            &json!("2024-01-15T00:00:00Z"),
+            Some(&json!("months"))
+        ),
+        json!(2)
+    );
+}
+
+#[test]
+fn datetime_diff_default_days() {
+    assert_eq!(
+        DATETIME_DIFF(
+            &json!("2024-01-20T00:00:00Z"),
+            &json!("2024-01-15T00:00:00Z"),
+            None
+        ),
+        json!(5)
+    );
+}
+
+#[test]
+fn datetime_diff_null() {
+    assert_eq!(
+        DATETIME_DIFF(
+            &json!(null),
+            &json!("2024-01-15T00:00:00Z"),
+            Some(&json!("days"))
+        ),
+        json!(0)
+    );
+}
+
+#[test]
+fn datetime_format_default() {
+    let result = DATETIME_FORMAT(&json!("2024-01-15T14:30:00Z"), None);
+    assert_eq!(result, json!("2024-01-15T14:30:00.000Z"));
+}
+
+#[test]
+fn datetime_format_custom_date() {
+    assert_eq!(
+        DATETIME_FORMAT(&json!("2024-01-15T14:30:00Z"), Some(&json!("YYYY-MM-DD"))),
+        json!("2024-01-15")
+    );
+}
+
+#[test]
+fn datetime_format_time() {
+    assert_eq!(
+        DATETIME_FORMAT(&json!("2024-01-15T14:30:00Z"), Some(&json!("HH:mm"))),
+        json!("14:30")
+    );
+}
+
+#[test]
+fn datetime_format_12h() {
+    assert_eq!(
+        DATETIME_FORMAT(&json!("2024-01-15T14:30:00Z"), Some(&json!("hh:mm A"))),
+        json!("02:30 PM")
+    );
+}
+
+#[test]
+fn datestr_basic() {
+    assert_eq!(DATESTR(&json!("2024-01-15T14:30:00Z")), json!("2024-01-15"));
+}
+
+#[test]
+fn timestr_basic() {
+    assert_eq!(TIMESTR(&json!("2024-01-15T14:30:00Z")), json!("14:30:00"));
+}
+
+#[test]
+fn datestr_null() {
+    assert_eq!(DATESTR(&json!(null)), json!(""));
+}
+
+#[test]
+fn year_basic() {
+    assert_eq!(YEAR(&json!("2024-01-15T00:00:00Z")), json!(2024));
+}
+
+#[test]
+fn month_basic() {
+    assert_eq!(MONTH(&json!("2024-01-15T00:00:00Z")), json!(1));
+}
+
+#[test]
+fn day_basic() {
+    assert_eq!(DAY(&json!("2024-01-15T00:00:00Z")), json!(15));
+}
+
+#[test]
+fn hour_basic() {
+    assert_eq!(HOUR(&json!("2024-01-15T14:30:00Z")), json!(14));
+}
+
+#[test]
+fn minute_basic() {
+    assert_eq!(MINUTE(&json!("2024-01-15T14:30:00Z")), json!(30));
+}
+
+#[test]
+fn second_basic() {
+    assert_eq!(SECOND(&json!("2024-01-15T14:30:45Z")), json!(45));
+}
+
+#[test]
+fn weekday_sunday() {
+    // 2024-01-14 is a Sunday
+    assert_eq!(WEEKDAY(&json!("2024-01-14T00:00:00Z")), json!(0));
+}
+
+#[test]
+fn weekday_monday() {
+    // 2024-01-15 is a Monday
+    assert_eq!(WEEKDAY(&json!("2024-01-15T00:00:00Z")), json!(1));
+}
+
+#[test]
+fn weekday_saturday() {
+    // 2024-01-20 is a Saturday
+    assert_eq!(WEEKDAY(&json!("2024-01-20T00:00:00Z")), json!(6));
+}
+
+#[test]
+fn weeknum_basic() {
+    let result = WEEKNUM(&json!("2024-01-15T00:00:00Z"), None);
+    // Jan 15 2024 is in week 3 (Sunday start)
+    assert_eq!(result, json!(3));
+}
+
+#[test]
+fn is_same_true() {
+    assert_eq!(
+        IS_SAME(
+            &json!("2024-01-15T00:00:00Z"),
+            &json!("2024-01-15T23:59:59Z"),
+            Some(&json!("days"))
+        ),
+        json!(true)
+    );
+}
+
+#[test]
+fn is_same_false() {
+    assert_eq!(
+        IS_SAME(
+            &json!("2024-01-15T00:00:00Z"),
+            &json!("2024-01-16T00:00:00Z"),
+            Some(&json!("days"))
+        ),
+        json!(false)
+    );
+}
+
+#[test]
+fn is_before_true() {
+    assert_eq!(
+        IS_BEFORE(
+            &json!("2024-01-15T00:00:00Z"),
+            &json!("2024-01-16T00:00:00Z"),
+            Some(&json!("days"))
+        ),
+        json!(true)
+    );
+}
+
+#[test]
+fn is_after_true() {
+    assert_eq!(
+        IS_AFTER(
+            &json!("2024-01-16T00:00:00Z"),
+            &json!("2024-01-15T00:00:00Z"),
+            Some(&json!("days"))
+        ),
+        json!(true)
+    );
+}
+
+#[test]
+fn workday_basic() {
+    // Mon Jan 15 + 5 workdays = Mon Jan 22
+    assert_eq!(
+        WORKDAY(&json!("2024-01-15T00:00:00Z"), &json!(5)),
+        json!("2024-01-22T00:00:00.000Z")
+    );
+}
+
+#[test]
+fn workday_skip_weekend() {
+    // Fri Jan 19 + 1 workday = Mon Jan 22
+    assert_eq!(
+        WORKDAY(&json!("2024-01-19T00:00:00Z"), &json!(1)),
+        json!("2024-01-22T00:00:00.000Z")
+    );
+}
+
+#[test]
+fn workday_null() {
+    assert_eq!(WORKDAY(&json!(null), &json!(5)), json!(null));
+}
+
+#[test]
+fn workday_diff_basic() {
+    // Mon Jan 15 to Mon Jan 22 = 5 workdays
+    assert_eq!(
+        WORKDAY_DIFF(
+            &json!("2024-01-15T00:00:00Z"),
+            &json!("2024-01-22T00:00:00Z")
+        ),
+        json!(5)
+    );
+}
+
+#[test]
+fn workday_diff_null() {
+    assert_eq!(
+        WORKDAY_DIFF(&json!(null), &json!("2024-01-15T00:00:00Z")),
+        json!(0)
+    );
+}
+
+#[test]
+fn set_timezone_basic() {
+    // UTC 12:00 → America/New_York (UTC-5 in January) = 07:00
+    let result = SET_TIMEZONE(&json!("2024-01-15T12:00:00Z"), &json!("America/New_York"));
+    assert_eq!(result, json!("2024-01-15T07:00:00.000Z"));
+}
