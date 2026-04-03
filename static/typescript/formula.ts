@@ -352,18 +352,10 @@ export class SingleSelectField<T extends string> extends TextField {
 	override notEquals(value: T): string {
 		return super.notEquals(value);
 	}
-}
 
-/** Multi-Select comparison formulas */
-export class MultiSelectField<T extends string> extends SingleSelectField<T> {
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
 	containsOption(value: T, caseSensitive: boolean = true, trim: boolean = false): string {
 		return this.contains(value, caseSensitive, trim);
-	}
-
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsAllOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
-		return this.containsAll(values, caseSensitive, trim);
 	}
 
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
@@ -379,6 +371,14 @@ export class MultiSelectField<T extends string> extends SingleSelectField<T> {
 	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
 	notContainsOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
 		return AND(...values.map((value) => this.notContains(value, caseSensitive, trim)));
+	}
+}
+
+/** Multi-Select comparison formulas */
+export class MultiSelectField<T extends string> extends SingleSelectField<T> {
+	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
+	containsAllOptions(values: T[], caseSensitive: boolean = true, trim: boolean = false): string {
+		return this.containsAll(values, caseSensitive, trim);
 	}
 }
 

@@ -306,17 +306,9 @@ class SingleSelectField(TextField, Generic[SelectOptions]):
     def ne(self, value: SelectOptions) -> F.Formula:
         return super().ne(value)
 
-
-class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions]):
-    """Multi-Select comparison formulas"""
-
     def contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
         return self.contains(value, case_sensitive=case_sensitive, trim=trim)
-
-    def contains_all_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
-        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
-        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)
 
     def contains_any_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
@@ -329,6 +321,14 @@ class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions])
     def not_contains_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
         return AND(*[self.not_contains(value, case_sensitive=case_sensitive, trim=trim) for value in values])
+
+
+class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions]):
+    """Multi-Select comparison formulas"""
+
+    def contains_all_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+        """WARNING: May return false positives if the option you're searching for is a substring of another option."""
+        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)
 
 
 class NumberField(Field):
