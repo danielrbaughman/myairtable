@@ -1,4 +1,5 @@
 mod airtable_model;
+pub mod airtable_runtime;
 mod client;
 mod error;
 pub mod formula;
