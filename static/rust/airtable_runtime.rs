@@ -91,6 +91,12 @@ pub fn AN(args: &[Value]) -> Vec<f64> {
     A(args).iter().map(|v| N(v)).collect()
 }
 
+/// Flatten one level, then coerce each to String.
+#[allow(non_snake_case)]
+pub fn AS(args: &[Value]) -> Vec<String> {
+    A(args).iter().map(|v| S(v)).collect()
+}
+
 fn to_value(f: f64) -> Value {
     if f.is_nan() || f.is_infinite() {
         Value::Null
@@ -401,11 +407,21 @@ pub fn MID(text: &Value, start: &Value, count: &Value) -> Value {
 pub fn FIND(needle: &Value, haystack: &Value, start: Option<&Value>) -> Value {
     let n = S(needle);
     let h = S(haystack);
-    let offset = start
+    let char_offset = start
         .map(|s| (N(s) as usize).saturating_sub(1))
         .unwrap_or(0);
-    match h[offset.min(h.len())..].find(&*n) {
-        Some(pos) => to_value((offset + pos + 1) as f64),
+    // Convert char offset to byte offset for safe slicing
+    let byte_offset = h
+        .char_indices()
+        .nth(char_offset)
+        .map(|(i, _)| i)
+        .unwrap_or(h.len());
+    match h[byte_offset..].find(&*n) {
+        Some(byte_pos) => {
+            // Convert byte position back to char position
+            let char_pos = h[..byte_offset + byte_pos].chars().count();
+            to_value((char_pos + 1) as f64)
+        }
         None => to_value(0.0),
     }
 }
@@ -415,11 +431,19 @@ pub fn FIND(needle: &Value, haystack: &Value, start: Option<&Value>) -> Value {
 pub fn SEARCH(needle: &Value, haystack: &Value, start: Option<&Value>) -> Value {
     let n = S(needle).to_lowercase();
     let h = S(haystack).to_lowercase();
-    let offset = start
+    let char_offset = start
         .map(|s| (N(s) as usize).saturating_sub(1))
         .unwrap_or(0);
-    match h[offset.min(h.len())..].find(&*n) {
-        Some(pos) => to_value((offset + pos + 1) as f64),
+    let byte_offset = h
+        .char_indices()
+        .nth(char_offset)
+        .map(|(i, _)| i)
+        .unwrap_or(h.len());
+    match h[byte_offset..].find(&*n) {
+        Some(byte_pos) => {
+            let char_pos = h[..byte_offset + byte_pos].chars().count();
+            to_value((char_pos + 1) as f64)
+        }
         None => to_value(0.0),
     }
 }
@@ -992,7 +1016,7 @@ pub fn WORKDAY(start: &Value, num_days: &Value) -> Value {
     date_to_iso(&dt)
 }
 
-/// Count workdays between two dates.
+/// Count workdays between two dates (includes start day if it's a workday).
 #[allow(non_snake_case)]
 pub fn WORKDAY_DIFF(start: &Value, end: &Value) -> Value {
     let d1 = match D(start) {
@@ -1008,14 +1032,19 @@ pub fn WORKDAY_DIFF(start: &Value, end: &Value) -> Value {
     let mut current = d1;
     let direction = if d2 >= d1 { 1 } else { -1 };
 
+    // Include start day if it's a workday
+    if current.weekday() != Weekday::Sat && current.weekday() != Weekday::Sun {
+        count += direction;
+    }
+
     while (direction == 1 && current < d2) || (direction == -1 && current > d2) {
+        current = current + Duration::days(direction);
         let wd = current.weekday();
         if wd != Weekday::Sat && wd != Weekday::Sun {
-            count += 1;
+            count += direction;
         }
-        current = current + Duration::days(direction);
     }
-    to_value((count * direction) as f64)
+    to_value(count as f64)
 }
 
 // =============================================================================

@@ -99,6 +99,12 @@ fn an_coerces_to_numbers() {
     assert_eq!(result, vec![1.0, 5.0, 0.0]);
 }
 
+#[test]
+fn as_coerces_to_strings() {
+    let result = AS(&[json!(1), json!("hello"), json!(null)]);
+    assert_eq!(result, vec!["1", "hello", ""]);
+}
+
 // =============================================================================
 // Math Functions
 // =============================================================================
@@ -398,6 +404,13 @@ fn find_with_start() {
         FIND(&json!("l"), &json!("hello"), Some(&json!(4))),
         json!(4)
     );
+}
+
+#[test]
+fn find_unicode() {
+    // "café" has multi-byte '��' — FIND should use char positions, not byte positions
+    assert_eq!(FIND(&json!("f"), &json!("café"), None), json!(3));
+    assert_eq!(FIND(&json!("é"), &json!("café"), Some(&json!(4))), json!(4));
 }
 
 #[test]
@@ -826,13 +839,13 @@ fn workday_null() {
 
 #[test]
 fn workday_diff_basic() {
-    // Mon Jan 15 to Mon Jan 22 = 5 workdays
+    // Mon Jan 15 to Mon Jan 22 = 6 workdays (includes start day)
     assert_eq!(
         WORKDAY_DIFF(
             &json!("2024-01-15T00:00:00Z"),
             &json!("2024-01-22T00:00:00Z")
         ),
-        json!(5)
+        json!(6)
     );
 }
 
