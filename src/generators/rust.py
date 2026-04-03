@@ -659,7 +659,7 @@ def write_lib(base: Base, output_folder: Path) -> None:
             )
             write.doc_comment("Get multiple records.", indent=1)
             write.line_indented(
-                f"pub async fn get_many(&self, params: &AirtableQuery) -> Result<(Vec<{model}>, Option<String>), AirtableError> {{ self.orm.get_many(params).await }}"
+                f"pub async fn get_many(&self, params: &AirtableQuery) -> Result<Vec<{model}>, AirtableError> {{ self.orm.get_many(params).await }}"
             )
             write.doc_comment("Create a new record.", indent=1)
             write.line_indented(

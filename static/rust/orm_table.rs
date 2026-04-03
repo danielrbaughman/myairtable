@@ -65,23 +65,27 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.record_to_model(record)
     }
 
-    /// Get multiple records.
-    pub async fn get_many(
-        &self,
-        params: &AirtableQuery,
-    ) -> Result<(Vec<T>, Option<String>), AirtableError> {
+    /// Get all records matching the query, automatically paginating.
+    pub async fn get_many(&self, params: &AirtableQuery) -> Result<Vec<T>, AirtableError> {
+        let mut all_models = Vec::new();
         let mut list_params = params.clone();
         list_params.use_field_ids = true;
-        let page = self
-            .client
-            .list_records(self.table_id, &list_params)
-            .await?;
-        let models: Result<Vec<T>, _> = page
-            .records
-            .into_iter()
-            .map(|r| self.record_to_model(r))
-            .collect();
-        Ok((models?, page.offset))
+
+        loop {
+            let page = self
+                .client
+                .list_records(self.table_id, &list_params)
+                .await?;
+            for record in page.records {
+                all_models.push(self.record_to_model(record)?);
+            }
+            match page.offset {
+                Some(offset) => list_params.offset = Some(offset),
+                None => break,
+            }
+        }
+
+        Ok(all_models)
     }
 
     /// Create a new record.

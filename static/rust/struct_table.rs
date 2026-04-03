@@ -52,12 +52,24 @@ impl StructTable {
             .await
     }
 
-    /// Get multiple records.
-    pub async fn get_many(
-        &self,
-        params: &AirtableQuery,
-    ) -> Result<PaginatedResponse, AirtableError> {
-        self.client.list_records(self.table_id, params).await
+    /// Get all records matching the query, automatically paginating.
+    pub async fn get_many(&self, params: &AirtableQuery) -> Result<Vec<Record>, AirtableError> {
+        let mut all_records = Vec::new();
+        let mut list_params = params.clone();
+
+        loop {
+            let page = self
+                .client
+                .list_records(self.table_id, &list_params)
+                .await?;
+            all_records.extend(page.records);
+            match page.offset {
+                Some(offset) => list_params.offset = Some(offset),
+                None => break,
+            }
+        }
+
+        Ok(all_records)
     }
 
     /// Create a new record.
