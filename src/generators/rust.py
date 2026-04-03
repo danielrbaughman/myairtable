@@ -211,7 +211,7 @@ class WriteToRustFile(WriteToFile):
 
 
 # region MAIN
-def generate_rust(base: Base, output_folder: Path) -> None:
+def generate_rust(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True) -> None:
     """Generate Rust code from Airtable base metadata."""
     print("Generating Rust code")
     for table in base.tables:
@@ -220,8 +220,12 @@ def generate_rust(base: Base, output_folder: Path) -> None:
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
+    exclude_static = []
+    if not runtime:
+        exclude_static.append("airtable_runtime.rs")
+
     with timer.timer("Rust: copy_static_files"):
-        copy_static_files(output_folder, "rust")
+        copy_static_files(output_folder, "rust", exclude=exclude_static or None)
         if verbose:
             print("[dim] - Rust static files copied.[/]")
 
@@ -236,17 +240,18 @@ def generate_rust(base: Base, output_folder: Path) -> None:
             print("[dim] - Rust field types generated.[/]")
 
     with timer.timer("Rust: write_models"):
-        write_models(base, output_folder)
+        write_models(base, output_folder, formulas=formulas, runtime=runtime)
         if verbose:
             print("[dim] - Rust ORM models generated.[/]")
 
-    with timer.timer("Rust: write_formulas"):
-        write_formula_helpers(base, output_folder)
-        if verbose:
-            print("[dim] - Rust formula helpers generated.[/]")
+    if formulas:
+        with timer.timer("Rust: write_formulas"):
+            write_formula_helpers(base, output_folder)
+            if verbose:
+                print("[dim] - Rust formula helpers generated.[/]")
 
     with timer.timer("Rust: write_lib"):
-        write_lib(base, output_folder)
+        write_lib(base, output_folder, formulas=formulas, wrappers=wrappers, runtime=runtime)
         if verbose:
             print("[dim] - Rust lib.rs generated.[/]")
 
@@ -436,7 +441,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
 
 
-def write_models(base: Base, output_folder: Path) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True) -> None:
     """Generate Rust ORM model structs for table records."""
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
@@ -461,7 +466,7 @@ def write_models(base: Base, output_folder: Path) -> None:
             option_imports = _collect_option_imports(table)
             if option_imports:
                 write.use_decl(f"crate::options::{{{', '.join(sorted(option_imports))}}}")
-            if transpiled_formulas:
+            if runtime and transpiled_formulas:
                 write.use_decl("crate::airtable_runtime as F")
                 write.use_decl("serde_json::{json, Value}")
             write.line_empty()
@@ -501,8 +506,9 @@ def write_models(base: Base, output_folder: Path) -> None:
             url_method_name = "record_url" if has_url_field else "url"
 
             write.line(f"impl {model_name} {{")
-            write.doc_comment("Formula builder for this table.", indent=1)
-            write.line_indented(f"pub const F: crate::formulas::{formulas_name} = crate::formulas::{formulas_name}::new();")
+            if formulas:
+                write.doc_comment("Formula builder for this table.", indent=1)
+                write.line_indented(f"pub const F: crate::formulas::{formulas_name} = crate::formulas::{formulas_name}::new();")
             if table.select_fields():
                 options_struct = f"{table.name_pascal()}Options"
                 write.doc_comment("Select field options for this table.", indent=1)
@@ -527,7 +533,7 @@ def write_models(base: Base, output_folder: Path) -> None:
 
             # Runtime formula evaluation methods
             for field in table.fields:
-                if field.id not in transpiled_formulas:
+                if not runtime or field.id not in transpiled_formulas:
                     continue
                 field_name = _rust_ident(field.name_snake())
                 formula_code = transpiled_formulas[field.id]
@@ -644,7 +650,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.use_decl(f"{_rust_ident(table.name_snake())}::*", public=True)
 
 
-def write_lib(base: Base, output_folder: Path) -> None:
+def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: bool = True, runtime: bool = True) -> None:
     """Generate the main lib.rs that re-exports all modules."""
     dynamic_dir = output_folder / Paths.DYNAMIC
 
@@ -813,10 +819,12 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("airtable_model")
         write.line('#[path = "../static/orm_table.rs"]')
         write.mod_decl("orm_table")
-        write.line('#[path = "../static/formula.rs"]')
-        write.line("pub mod formula;")
-        write.line('#[path = "../static/airtable_runtime.rs"]')
-        write.line("pub mod airtable_runtime;")
+        if formulas:
+            write.line('#[path = "../static/formula.rs"]')
+            write.line("pub mod formula;")
+        if runtime:
+            write.line('#[path = "../static/airtable_runtime.rs"]')
+            write.line("pub mod airtable_runtime;")
         write.line_empty()
 
         # Generated dynamic modules
@@ -824,14 +832,17 @@ def write_lib(base: Base, output_folder: Path) -> None:
         write.mod_decl("field_types")
         write.mod_decl("options")
         write.mod_decl("models")
-        write.mod_decl("formulas")
-        write.mod_decl("airtable")
+        if formulas:
+            write.mod_decl("formulas")
+        if wrappers:
+            write.mod_decl("airtable")
         write.line_empty()
 
         # Re-exports for convenience
-        write.use_decl("airtable::Airtable", public=True)
-        for table in base.tables:
-            write.use_decl(f"airtable::{table.name_pascal()}Table", public=True)
+        if wrappers:
+            write.use_decl("airtable::Airtable", public=True)
+            for table in base.tables:
+                write.use_decl(f"airtable::{table.name_pascal()}Table", public=True)
         write.use_decl("client::AirtableClient", public=True)
         write.use_decl("error::AirtableError", public=True)
         write.use_decl("airtable_model::{ModelMeta, OrmModel}", public=True)
@@ -851,9 +862,10 @@ def write_lib(base: Base, output_folder: Path) -> None:
             pascal = table.name_pascal()
             write.use_decl(f"models::{{{pascal}Model, Create{pascal}Model}}", public=True)
         # Re-export formula helpers
-        for table in base.tables:
-            pascal = table.name_pascal()
-            write.use_decl(f"formulas::{pascal}Formulas", public=True)
+        if formulas:
+            for table in base.tables:
+                pascal = table.name_pascal()
+                write.use_decl(f"formulas::{pascal}Formulas", public=True)
         # Re-export option enums
         for table in base.tables:
             if table.select_fields():
