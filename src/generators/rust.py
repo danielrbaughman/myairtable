@@ -689,6 +689,12 @@ def write_lib(base: Base, output_folder: Path) -> None:
             )
             write.doc_comment("Get the Airtable web URL for this table.", indent=1)
             write.line_indented("pub fn url(&self) -> String { self.orm.url() }")
+            write.doc_comment("Set cache TTL in seconds for both ORM and dict layers. 0 = disabled.", indent=1)
+            write.line_indented(
+                "pub fn set_cache_seconds(&mut self, seconds: u64) { self.orm.set_cache_seconds(seconds); self.dict.set_cache_seconds(seconds); }"
+            )
+            write.doc_comment("Clear the response cache for both ORM and dict layers.", indent=1)
+            write.line_indented("pub fn invalidate_cache(&self) { self.orm.invalidate_cache(); self.dict.invalidate_cache(); }")
 
             write.line("}")
             write.line_empty()
@@ -708,8 +714,15 @@ def write_lib(base: Base, output_folder: Path) -> None:
         # new()
         write.doc_comment("Create a new Airtable instance.", indent=1)
         write.line_indented("pub fn new(api_key: &str, base_id: &str) -> Self {")
+        write.line_indented("Self::with_cache(api_key, base_id, 0)", 2)
+        write.line_indented("}")
+        write.line_empty()
+
+        # with_cache()
+        write.doc_comment("Create a new Airtable instance with response caching.", indent=1)
+        write.line_indented("pub fn with_cache(api_key: &str, base_id: &str, cache_seconds: u64) -> Self {")
         write.line_indented("let client = Arc::new(AirtableClient::new(api_key, base_id));", 2)
-        write.line_indented("Self {", 2)
+        write.line_indented("let mut instance = Self {", 2)
         write.line_indented("base_id: base_id.to_string(),", 3)
         for table in base.tables:
             escaped_name = sanitize_string(table.name)
@@ -718,7 +731,13 @@ def write_lib(base: Base, output_folder: Path) -> None:
             write.line_indented(f'dict: StructTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 4)
             write.line_indented(f'orm: OrmTable::new(Arc::clone(&client), "{table.id}", "{escaped_name}"),', 4)
             write.line_indented("},", 3)
+        write.line_indented("};", 2)
+        write.line_indented("if cache_seconds > 0 {", 2)
+        for table in base.tables:
+            snake = _rust_ident(table.name_snake())
+            write.line_indented(f"instance.{snake}.set_cache_seconds(cache_seconds);", 3)
         write.line_indented("}", 2)
+        write.line_indented("instance", 2)
         write.line_indented("}")
         write.line_empty()
 

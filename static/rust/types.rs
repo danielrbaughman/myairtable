@@ -58,14 +58,14 @@ impl std::ops::DerefMut for Fields {
 }
 
 /// Sort direction for list queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum SortDirection {
     Asc,
     Desc,
 }
 
 /// Parameters for listing records.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AirtableQuery {
     pub use_field_ids: bool,
     pub formula: Option<String>,
