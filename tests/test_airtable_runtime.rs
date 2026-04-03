@@ -344,3 +344,176 @@ fn is_truthy_tests() {
     assert!(is_truthy(&json!("hello")));
     assert!(is_truthy(&json!([1])));
 }
+
+// =============================================================================
+// String Functions
+// =============================================================================
+
+#[test]
+fn left_basic() {
+    assert_eq!(LEFT(&json!("hello"), &json!(3)), json!("hel"));
+}
+#[test]
+fn left_zero() {
+    assert_eq!(LEFT(&json!("hello"), &json!(0)), json!(""));
+}
+#[test]
+fn left_exceeds() {
+    assert_eq!(LEFT(&json!("hi"), &json!(5)), json!("hi"));
+}
+
+#[test]
+fn right_basic() {
+    assert_eq!(RIGHT(&json!("hello"), &json!(3)), json!("llo"));
+}
+#[test]
+fn right_exceeds() {
+    assert_eq!(RIGHT(&json!("hi"), &json!(5)), json!("hi"));
+}
+
+#[test]
+fn mid_basic() {
+    assert_eq!(MID(&json!("hello"), &json!(2), &json!(3)), json!("ell"));
+}
+#[test]
+fn mid_start_one() {
+    assert_eq!(MID(&json!("hello"), &json!(1), &json!(2)), json!("he"));
+}
+
+#[test]
+fn find_basic() {
+    assert_eq!(FIND(&json!("ll"), &json!("hello"), None), json!(3));
+}
+#[test]
+fn find_not_found() {
+    assert_eq!(FIND(&json!("xyz"), &json!("hello"), None), json!(0));
+}
+#[test]
+fn find_case_sensitive() {
+    assert_eq!(FIND(&json!("LL"), &json!("hello"), None), json!(0));
+}
+#[test]
+fn find_with_start() {
+    assert_eq!(
+        FIND(&json!("l"), &json!("hello"), Some(&json!(4))),
+        json!(4)
+    );
+}
+
+#[test]
+fn search_case_insensitive() {
+    assert_eq!(SEARCH(&json!("LL"), &json!("hello"), None), json!(3));
+}
+#[test]
+fn search_with_start() {
+    assert_eq!(
+        SEARCH(&json!("l"), &json!("hello"), Some(&json!(4))),
+        json!(4)
+    );
+}
+
+#[test]
+fn substitute_all() {
+    assert_eq!(
+        SUBSTITUTE(&json!("aaa"), &json!("a"), &json!("b"), None),
+        json!("bbb")
+    );
+}
+#[test]
+fn substitute_nth() {
+    assert_eq!(
+        SUBSTITUTE(&json!("aaa"), &json!("a"), &json!("b"), Some(&json!(2))),
+        json!("aba")
+    );
+}
+#[test]
+fn substitute_empty_old() {
+    assert_eq!(
+        SUBSTITUTE(&json!("hello"), &json!(""), &json!("x"), None),
+        json!("hello")
+    );
+}
+
+#[test]
+fn replace_basic() {
+    assert_eq!(
+        REPLACE(&json!("hello"), &json!(2), &json!(3), &json!("XY")),
+        json!("hXYo")
+    );
+}
+
+#[test]
+fn t_string() {
+    assert_eq!(T(&json!("hello")), json!("hello"));
+}
+#[test]
+fn t_number() {
+    assert_eq!(T(&json!(42)), json!(""));
+}
+#[test]
+fn t_null() {
+    assert_eq!(T(&json!(null)), json!(""));
+}
+
+#[test]
+fn lower_basic() {
+    assert_eq!(LOWER(&json!("Hello")), json!("hello"));
+}
+#[test]
+fn upper_basic() {
+    assert_eq!(UPPER(&json!("hello")), json!("HELLO"));
+}
+
+#[test]
+fn trim_basic() {
+    assert_eq!(TRIM(&json!("  hello  ")), json!("hello"));
+}
+#[test]
+fn trim_no_extra() {
+    assert_eq!(TRIM(&json!("hello")), json!("hello"));
+}
+
+#[test]
+fn len_basic() {
+    assert_eq!(LEN(&json!("hello")), json!(5));
+}
+#[test]
+fn len_empty() {
+    assert_eq!(LEN(&json!("")), json!(0));
+}
+
+#[test]
+fn rept_basic() {
+    assert_eq!(REPT(&json!("ab"), &json!(3)), json!("ababab"));
+}
+#[test]
+fn rept_zero() {
+    assert_eq!(REPT(&json!("ab"), &json!(0)), json!(""));
+}
+
+#[test]
+fn concatenate_basic() {
+    assert_eq!(
+        CONCATENATE(&[json!("a"), json!("b"), json!("c")]),
+        json!("abc")
+    );
+}
+#[test]
+fn concatenate_with_numbers() {
+    assert_eq!(
+        CONCATENATE(&[json!("count: "), json!(5)]),
+        json!("count: 5")
+    );
+}
+
+#[test]
+fn encode_url_component_basic() {
+    assert_eq!(
+        ENCODE_URL_COMPONENT(&json!("hello world")),
+        json!("hello%20world")
+    );
+}
+#[test]
+fn encode_url_component_special() {
+    assert_eq!(ENCODE_URL_COMPONENT(&json!("a&b=c")), json!("a%26b%3Dc"));
+}

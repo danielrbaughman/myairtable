@@ -362,3 +362,176 @@ pub fn is_truthy(v: &Value) -> bool {
         Value::Object(_) => true,
     }
 }
+
+// =============================================================================
+// String Functions
+// =============================================================================
+
+/// Return the first `count` characters.
+#[allow(non_snake_case)]
+pub fn LEFT(text: &Value, count: &Value) -> Value {
+    let s = S(text);
+    let n = N(count) as usize;
+    Value::String(s.chars().take(n).collect())
+}
+
+/// Return the last `count` characters.
+#[allow(non_snake_case)]
+pub fn RIGHT(text: &Value, count: &Value) -> Value {
+    let s = S(text);
+    let n = N(count) as usize;
+    let len = s.chars().count();
+    let skip = len.saturating_sub(n);
+    Value::String(s.chars().skip(skip).collect())
+}
+
+/// Return `count` characters starting at 1-indexed `start`.
+#[allow(non_snake_case)]
+pub fn MID(text: &Value, start: &Value, count: &Value) -> Value {
+    let s = S(text);
+    let start_idx = (N(start) as usize).saturating_sub(1);
+    let len = N(count) as usize;
+    Value::String(s.chars().skip(start_idx).take(len).collect())
+}
+
+/// Case-sensitive search. Returns 1-indexed position or 0 if not found.
+#[allow(non_snake_case)]
+pub fn FIND(needle: &Value, haystack: &Value, start: Option<&Value>) -> Value {
+    let n = S(needle);
+    let h = S(haystack);
+    let offset = start
+        .map(|s| (N(s) as usize).saturating_sub(1))
+        .unwrap_or(0);
+    match h[offset.min(h.len())..].find(&*n) {
+        Some(pos) => to_value((offset + pos + 1) as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Case-insensitive search. Returns 1-indexed position or 0 if not found.
+#[allow(non_snake_case)]
+pub fn SEARCH(needle: &Value, haystack: &Value, start: Option<&Value>) -> Value {
+    let n = S(needle).to_lowercase();
+    let h = S(haystack).to_lowercase();
+    let offset = start
+        .map(|s| (N(s) as usize).saturating_sub(1))
+        .unwrap_or(0);
+    match h[offset.min(h.len())..].find(&*n) {
+        Some(pos) => to_value((offset + pos + 1) as f64),
+        None => to_value(0.0),
+    }
+}
+
+/// Replace occurrences of `old` with `new_str`. If `index` is provided, only replace the Nth (1-based).
+#[allow(non_snake_case)]
+pub fn SUBSTITUTE(text: &Value, old: &Value, new_str: &Value, index: Option<&Value>) -> Value {
+    let s = S(text);
+    let old_s = S(old);
+    let new_s = S(new_str);
+
+    if old_s.is_empty() {
+        return Value::String(s);
+    }
+
+    match index {
+        None => Value::String(s.replace(&old_s, &new_s)),
+        Some(idx) => {
+            let target = N(idx) as usize;
+            let mut count = 0usize;
+            let mut result = String::new();
+            let mut remaining = s.as_str();
+            while let Some(pos) = remaining.find(&*old_s) {
+                count += 1;
+                if count == target {
+                    result.push_str(&remaining[..pos]);
+                    result.push_str(&new_s);
+                    result.push_str(&remaining[pos + old_s.len()..]);
+                    return Value::String(result);
+                }
+                result.push_str(&remaining[..pos + old_s.len()]);
+                remaining = &remaining[pos + old_s.len()..];
+            }
+            result.push_str(remaining);
+            Value::String(result)
+        }
+    }
+}
+
+/// Replace `count` characters at 1-indexed `start` with `replacement`.
+#[allow(non_snake_case)]
+pub fn REPLACE(text: &Value, start: &Value, count: &Value, replacement: &Value) -> Value {
+    let s = S(text);
+    let start_idx = (N(start) as usize).saturating_sub(1);
+    let len = N(count) as usize;
+    let repl = S(replacement);
+
+    let before: String = s.chars().take(start_idx).collect();
+    let after: String = s.chars().skip(start_idx + len).collect();
+    Value::String(format!("{}{}{}", before, repl, after))
+}
+
+/// Return value only if it's a string, otherwise empty string.
+#[allow(non_snake_case)]
+pub fn T(v: &Value) -> Value {
+    match v {
+        Value::String(s) => Value::String(s.clone()),
+        _ => Value::String(String::new()),
+    }
+}
+
+/// Lowercase.
+#[allow(non_snake_case)]
+pub fn LOWER(text: &Value) -> Value {
+    Value::String(S(text).to_lowercase())
+}
+
+/// Uppercase.
+#[allow(non_snake_case)]
+pub fn UPPER(text: &Value) -> Value {
+    Value::String(S(text).to_uppercase())
+}
+
+/// Strip leading and trailing whitespace.
+#[allow(non_snake_case)]
+pub fn TRIM(text: &Value) -> Value {
+    Value::String(S(text).trim().to_string())
+}
+
+/// String length (character count).
+#[allow(non_snake_case)]
+pub fn LEN(text: &Value) -> Value {
+    to_value(S(text).chars().count() as f64)
+}
+
+/// Repeat string `count` times.
+#[allow(non_snake_case)]
+pub fn REPT(text: &Value, count: &Value) -> Value {
+    let s = S(text);
+    let n = N(count) as usize;
+    Value::String(s.repeat(n))
+}
+
+/// Concatenate all values as strings.
+#[allow(non_snake_case)]
+pub fn CONCATENATE(args: &[Value]) -> Value {
+    let result: String = args.iter().map(|v| S(v)).collect();
+    Value::String(result)
+}
+
+/// URL-encode a string.
+#[allow(non_snake_case)]
+pub fn ENCODE_URL_COMPONENT(text: &Value) -> Value {
+    let s = S(text);
+    let mut encoded = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    Value::String(encoded)
+}
