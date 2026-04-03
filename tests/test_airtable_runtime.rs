@@ -850,3 +850,68 @@ fn set_timezone_basic() {
     let result = SET_TIMEZONE(&json!("2024-01-15T12:00:00Z"), &json!("America/New_York"));
     assert_eq!(result, json!("2024-01-15T07:00:00.000Z"));
 }
+
+// =============================================================================
+// Array Functions
+// =============================================================================
+
+#[test]
+fn arrayjoin_default_separator() {
+    assert_eq!(ARRAYJOIN(&json!(["a", "b", "c"]), None), json!("a, b, c"));
+}
+
+#[test]
+fn arrayjoin_custom_separator() {
+    assert_eq!(
+        ARRAYJOIN(&json!(["a", "b"]), Some(&json!("-"))),
+        json!("a-b")
+    );
+}
+
+#[test]
+fn arrayjoin_non_array() {
+    assert_eq!(ARRAYJOIN(&json!("hello"), None), json!("hello"));
+}
+
+#[test]
+fn arrayunique_basic() {
+    assert_eq!(ARRAYUNIQUE(&json!([1, 2, 2, 3])), json!([1, 2, 3]));
+}
+
+#[test]
+fn arrayunique_preserves_order() {
+    assert_eq!(ARRAYUNIQUE(&json!([3, 1, 2, 1, 3])), json!([3, 1, 2]));
+}
+
+#[test]
+fn arraycompact_basic() {
+    assert_eq!(ARRAYCOMPACT(&json!([1, null, "", 2])), json!([1, 2]));
+}
+
+#[test]
+fn arraycompact_keeps_zero() {
+    assert_eq!(
+        ARRAYCOMPACT(&json!([0, null, false, ""])),
+        json!([0, false])
+    );
+}
+
+#[test]
+fn arraycompact_null_input() {
+    assert_eq!(ARRAYCOMPACT(&json!(null)), json!([]));
+}
+
+#[test]
+fn arrayflatten_basic() {
+    assert_eq!(ARRAYFLATTEN(&json!([1, [2, [3, 4]]])), json!([1, 2, 3, 4]));
+}
+
+#[test]
+fn arrayflatten_already_flat() {
+    assert_eq!(ARRAYFLATTEN(&json!([1, 2, 3])), json!([1, 2, 3]));
+}
+
+#[test]
+fn arrayflatten_non_array() {
+    assert_eq!(ARRAYFLATTEN(&json!(5)), json!([5]));
+}

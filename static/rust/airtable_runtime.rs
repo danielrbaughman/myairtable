@@ -1017,3 +1017,78 @@ pub fn WORKDAY_DIFF(start: &Value, end: &Value) -> Value {
     }
     to_value((count * direction) as f64)
 }
+
+// =============================================================================
+// Array Functions
+// =============================================================================
+
+/// Join array elements into a string with separator (default ", ").
+#[allow(non_snake_case)]
+pub fn ARRAYJOIN(arr: &Value, separator: Option<&Value>) -> Value {
+    let sep = separator.map(|v| S(v)).unwrap_or_else(|| ", ".to_string());
+    match arr {
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().map(|v| S(v)).collect();
+            Value::String(parts.join(&sep))
+        }
+        _ => Value::String(S(arr)),
+    }
+}
+
+/// Remove duplicate values, preserving order.
+#[allow(non_snake_case)]
+pub fn ARRAYUNIQUE(arr: &Value) -> Value {
+    match arr {
+        Value::Array(items) => {
+            let mut seen = Vec::new();
+            for v in items {
+                if !seen.contains(v) {
+                    seen.push(v.clone());
+                }
+            }
+            Value::Array(seen)
+        }
+        _ => Value::Array(vec![arr.clone()]),
+    }
+}
+
+/// Remove null and empty string values.
+#[allow(non_snake_case)]
+pub fn ARRAYCOMPACT(arr: &Value) -> Value {
+    match arr {
+        Value::Array(items) => {
+            let filtered: Vec<Value> = items
+                .iter()
+                .filter(|v| !v.is_null() && *v != &Value::String(String::new()))
+                .cloned()
+                .collect();
+            Value::Array(filtered)
+        }
+        Value::Null => Value::Array(vec![]),
+        _ => Value::Array(vec![arr.clone()]),
+    }
+}
+
+/// Recursively flatten nested arrays.
+#[allow(non_snake_case)]
+pub fn ARRAYFLATTEN(arr: &Value) -> Value {
+    fn flatten_recursive(v: &Value, out: &mut Vec<Value>) {
+        match v {
+            Value::Array(items) => {
+                for item in items {
+                    flatten_recursive(item, out);
+                }
+            }
+            _ => out.push(v.clone()),
+        }
+    }
+
+    match arr {
+        Value::Array(_) => {
+            let mut result = Vec::new();
+            flatten_recursive(arr, &mut result);
+            Value::Array(result)
+        }
+        _ => Value::Array(vec![arr.clone()]),
+    }
+}
