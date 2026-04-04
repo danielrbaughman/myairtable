@@ -109,3 +109,76 @@ def flatten_formula(
     if visited is None:
         visited = frozenset()
     return _flatten_cached(formula, current_field_id, formula_mapping, visited)
+
+
+def flatten_formula_for_transpilation(
+    formula: str,
+    current_field_id: str,
+    formula_map_tuple: tuple[tuple[str, str], ...],
+) -> str:
+    """Flatten a formula as much as possible while keeping it transpilable.
+
+    Expands field references greedily, but when a nested formula's fully-flattened
+    expansion contains untranspilable functions (LAST_MODIFIED_TIME, CREATED_TIME),
+    that specific reference is kept as {fldXXX} instead of being inlined.
+
+    Args:
+        formula: The formula string to flatten.
+        current_field_id: ID of the field being flattened (for cycle detection).
+        formula_map_tuple: Full formula map as tuple of (field_id, formula) pairs.
+    """
+    return _flatten_for_transpilation(formula, current_field_id, formula_map_tuple, frozenset())
+
+
+@lru_cache(maxsize=1024)
+def _flatten_for_transpilation(
+    formula: str,
+    current_field_id: str,
+    formula_mapping: tuple[tuple[str, str], ...],
+    visited: frozenset[str],
+) -> str:
+    """Cached implementation of transpilation-aware flattening.
+
+    Like _flatten_cached, but checks each expansion: if a nested formula's fully-flattened
+    form contains untranspilable functions, the reference is preserved as {fldXXX}.
+    """
+    from .formula_transpiler import formula_is_transpilable
+
+    formula_map = dict(formula_mapping)
+    tokens = tokenize_formula(formula)
+    result_parts: list[str] = []
+
+    for token in tokens:
+        if token.type != TokenType.FIELD_REF:
+            result_parts.append(token.value)
+            continue
+
+        field_id = token.value[1:-1]
+
+        if not FIELD_REF_PATTERN.match(field_id):
+            result_parts.append(token.value)
+            continue
+
+        if field_id in visited:
+            result_parts.append(token.value)
+            continue
+
+        nested_formula = formula_map.get(field_id)
+        if not nested_formula:
+            result_parts.append(token.value)
+            continue
+
+        # Check if the field's own formula directly contains untranspilable functions.
+        # If so, keep as {fldXXX}. If not, expand and let recursion handle sub-references.
+        if not formula_is_transpilable(nested_formula):
+            result_parts.append(token.value)
+            continue
+
+        new_visited = visited | {field_id}
+        flattened = _flatten_for_transpilation(nested_formula, field_id, formula_mapping, new_visited)
+        if flattened:
+            result_parts.append(f"({flattened})")
+        else:
+            result_parts.append(token.value)
+
+    return "".join(result_parts)

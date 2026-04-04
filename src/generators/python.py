@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
 from ..utils import timer
@@ -117,7 +118,9 @@ class WriteToPythonFile(WriteToFile):
 
 
 # region MAIN
-def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: bool, runtime: bool, package_prefix: str) -> None:
+def generate_python(
+    base: Base, output_folder: Path, formulas: bool, wrappers: bool, runtime: bool, flatten: bool = False, package_prefix: str = ""
+) -> None:
     print("Generating Python code")
     for table in base.tables:
         table.detect_duplicate_property_names()
@@ -140,7 +143,7 @@ def generate_python(base: Base, output_folder: Path, formulas: bool, wrappers: b
             print("[dim] - Python dicts generated.[/]")
 
     with timer.timer("Python: write_models"):
-        write_models(base, output_folder, formulas=formulas, runtime=runtime, package_prefix=package_prefix)
+        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, package_prefix=package_prefix)
         if verbose:
             print("[dim] - Python models generated.[/]")
 
@@ -455,7 +458,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
 )
 
 
-def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool, package_prefix: str) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool, flatten: bool = False, package_prefix: str = "") -> None:
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
@@ -541,6 +544,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
             if runtime:
                 field_name_map = {f.id: f.name_snake() for f in table.fields}
                 raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+                if flatten and raw_formulas:
+                    formula_map_tuple = table.base.get_formula_field_map_tuple()
+                    raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
                 transpiled_formulas = transpile_table_formulas(raw_formulas, "python", field_name_map, formula_field_ids)
             else:
                 transpiled_formulas = {}

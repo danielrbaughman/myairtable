@@ -1,0 +1,29 @@
+[package]
+name = "myairtable-static"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "static/rust/lib.rs"
+
+[[test]]
+name = "test_rust_static"
+path = "tests/test_rust_static.rs"
+
+[[test]]
+name = "test_formula"
+path = "tests/test_formula.rs"
+
+[[test]]
+name = "test_airtable_runtime"
+path = "tests/test_airtable_runtime.rs"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+regex = "1"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
