@@ -100,13 +100,43 @@ def sanitize_leading_trailing_characters(text: str) -> str:
     return text
 
 
+PYTHON_BUILTINS = {
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "type",
+    "int",
+    "float",
+    "str",
+    "bool",
+    "bytes",
+    "object",
+    "map",
+    "filter",
+    "range",
+    "zip",
+    "len",
+    "print",
+    "input",
+    "open",
+    "format",
+    "hash",
+    "iter",
+    "next",
+    "super",
+}
+
+
 def sanitize_reserved_names(text: str) -> str:
-    """Some names are reserved by the pyairtable library and cannot be used as property names."""
+    """Some names are reserved by the pyairtable library or Python builtins and cannot be used as property names."""
 
     if text == "id":
         text = "identifier"
     if text == "created_time":
         text = "created_at_time"
+    if text in PYTHON_BUILTINS:
+        text = f"{text}_"
 
     return text
 

@@ -181,6 +181,7 @@ class Named(BaseModel):
             text = self._custom_property_name(key=custom_key)
             if text:
                 text = text.replace(" ", "_")
+                text = sanitize_reserved_names(text)
                 return text
 
         text = self.name

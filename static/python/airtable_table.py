@@ -41,11 +41,11 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
     _view_name_id_mapping: dict[ViewType, str]
     _field_names: list[str]
 
-    dict: DictTable[DictType, CreateDictType, UpdateDictType, ViewType, FieldType]
+    dict: DictTable[DictType, UpdateDictType, CreateDictType, ViewType, FieldType]
     """A table that returns typed RecordDicts."""
 
     @classmethod
-    def from_table(
+    def from_table(  # ty: ignore
         cls,
         table: Table,
         dict_cls: type[DictType],
@@ -74,11 +74,11 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
         instance._cache_seconds = cache_seconds
         instance._cache = {}
 
-        instance.dict = DictTable[DictType, CreateDictType, UpdateDictType, ViewType, FieldType].from_table(
+        instance.dict = DictTable[DictType, UpdateDictType, CreateDictType, ViewType, FieldType].from_table(
             table,
             dict_cls,
-            instance._create_cls,
             instance._update_cls,
+            instance._create_cls,
             calculated_field_names,
             calculated_field_ids,
             view_name_id_mapping,

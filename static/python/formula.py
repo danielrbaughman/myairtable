@@ -14,7 +14,7 @@ class ID:
         """RECORD_ID()='id'"""
         return F.EQ(F.RECORD_ID(), id)
 
-    def __eq__(self, id: str) -> F.Formula:
+    def __eq__(self, id: str) -> F.Formula:  # ty: ignore
         return self.equals(id)
 
     @staticmethod
@@ -28,22 +28,22 @@ class ID:
 
 
 class Field(F.Field):
-    def __eq__(self, value: Any) -> F.Comparison:
+    def __eq__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().eq(value)
 
-    def __ne__(self, value: Any) -> F.Comparison:
+    def __ne__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().ne(value)
 
-    def __lt__(self, value: Any) -> F.Comparison:
+    def __lt__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().lt(value)
 
-    def __le__(self, value: Any) -> F.Comparison:
+    def __le__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().lte(value)
 
-    def __gt__(self, value: Any) -> F.Comparison:
+    def __gt__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().gt(value)
 
-    def __ge__(self, value: Any) -> F.Comparison:
+    def __ge__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().gte(value)
 
     def empty(self) -> F.Formula:
@@ -92,7 +92,7 @@ class TextField(Field):
         Compares two phone numbers after normalizing the values
         """
 
-        def normalize(s: str) -> str:
+        def normalize(s: Any) -> str:
             f = F.TRIM(s)
             f = F.SUBSTITUTE(f, " ", "")
             f = F.SUBSTITUTE(f, "-", "")
@@ -294,16 +294,16 @@ SelectOptions = TypeVar("SelectOptions", bound=str)
 class SingleSelectField(TextField, Generic[SelectOptions]):
     """Select comparison formulas"""
 
-    def equals(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
+    def equals(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:  # ty: ignore
         """
         Slightly redundant with `.eq`, but adds options for case sensitivity and trimming whitespace.
         """
         return super().equals(value, case_sensitive=case_sensitive, trim=trim)
 
-    def eq(self, value: SelectOptions) -> F.Formula:
+    def eq(self, value: SelectOptions) -> F.Formula:  # ty: ignore
         return super().eq(value)
 
-    def ne(self, value: SelectOptions) -> F.Formula:
+    def ne(self, value: SelectOptions) -> F.Formula:  # ty: ignore
         return super().ne(value)
 
     def contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
@@ -312,7 +312,7 @@ class SingleSelectField(TextField, Generic[SelectOptions]):
 
     def contains_any_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
-        return self.contains_any(values, case_sensitive=case_sensitive, trim=trim)
+        return self.contains_any(values, case_sensitive=case_sensitive, trim=trim)  # ty: ignore[invalid-argument-type]
 
     def not_contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
@@ -328,7 +328,7 @@ class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions])
 
     def contains_all_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
-        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)
+        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)  # ty: ignore[invalid-argument-type]
 
 
 class NumberField(Field):
@@ -351,7 +351,7 @@ class NumberField(Field):
 class BooleanField(Field):
     """Boolean comparison formulas"""
 
-    def eq(self, value: bool) -> F.Formula:
+    def eq(self, value: bool) -> F.Formula:  # ty: ignore
         """{field}=TRUE()|FALSE()"""
         return F.EQ(self, F.TRUE() if value else F.FALSE())
 
@@ -469,8 +469,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __eq__(self, date: str | datetime) -> F.Formula:
-        return self.on(date)
+    def __eq__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.on(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def on_or_after(self) -> DateComparison: ...
@@ -495,8 +495,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ge__(self, date: str | datetime) -> str:
-        return self.on_or_after(date)
+    def __ge__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.on_or_after(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def on_or_before(self) -> DateComparison: ...
@@ -522,8 +522,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __le__(self, date: str | datetime) -> str:
-        return self.on_or_before(date)
+    def __le__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.on_or_before(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def after(self) -> DateComparison: ...
@@ -549,8 +549,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __gt__(self, date: str | datetime) -> F.Formula:
-        return self.after(date)
+    def __gt__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.after(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def before(self) -> DateComparison: ...
@@ -575,8 +575,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __lt__(self, date: str | datetime) -> F.Formula:
-        return self.before(date)
+    def __lt__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.before(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def not_on(self) -> DateComparison: ...
@@ -602,8 +602,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ne__(self, date: str | datetime) -> F.Formula:
-        return self.not_on(date)
+    def __ne__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+        return self.not_on(date)  # ty: ignore[invalid-return-type]
 
     def between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> F.Formula:
         """

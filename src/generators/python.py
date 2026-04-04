@@ -413,9 +413,9 @@ def write_dicts(base: Base, output_folder: Path) -> None:
                 write.line(f"class {table.name_pascal()}{suffix}({parent}):")
                 write.line_indented(record_doc_string(table.name, id=has_id, created_time=has_created_time, use_field_ids=use_field_ids))
                 if use_field_ids:
-                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict")
+                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict  # ty: ignore[invalid-typed-dict-field]")
                 else:
-                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]")
+                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]  # ty: ignore[invalid-typed-dict-field]")
                 write.line_empty()
                 write.line_empty()
 
@@ -513,7 +513,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
 
             # to_record_dict
             write.line_indented(f"def to_record_dict(self, only_writable: bool = False) -> {table.name_pascal()}RecordDict:")
-            write.line_indented("return self.to_record(only_writable)", 2)
+            write.line_indented("return self.to_record(only_writable)  # ty: ignore[invalid-return-type]", 2)
             write.line_empty()
 
             # url
@@ -625,17 +625,17 @@ def write_tables(base: Base, output_folder: Path) -> None:
             )
             write.line_indented(table_doc_string(table))
             write.line_indented("@classmethod")
-            write.line_indented("def from_table(cls, table: Table, cache_seconds: int = 0):")
+            write.line_indented("def from_table(cls, table: Table, cache_seconds: int = 0):  # ty: ignore")
             write.line_indented("cls = super().from_table(", 2)
             write.line_indented("table,", 3)
-            write.line_indented(f"{table.name_pascal()}RecordDict,", 3)
-            write.line_indented(f"{table.name_pascal()}CreateRecordDict,", 3)
-            write.line_indented(f"{table.name_pascal()}UpdateRecordDict,", 3)
-            write.line_indented(f"{table.name_model()},", 3)
+            write.line_indented(f"{table.name_pascal()}RecordDict,  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_pascal()}CreateRecordDict,  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_pascal()}UpdateRecordDict,  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_model()},  # ty: ignore[invalid-argument-type]", 3)
             write.line_indented(f"{table.name_pascal()}CalculatedFields,", 3)
             write.line_indented(f"{table.name_pascal()}CalculatedFieldIds,", 3)
-            write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,", 3)
-            write.line_indented(f"{table.name_pascal()}Fields,", 3)
+            write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_pascal()}Fields,  # ty: ignore[invalid-argument-type]", 3)
             write.line_indented("cache_seconds=cache_seconds,", 3)
             write.line_indented(")", 2)
             write.line_indented("return cls", 2)
@@ -784,7 +784,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
                 f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.name}"), cache_seconds=self._cache_seconds)',
                 3,
             )
-            write.line_indented(f'return self._tables["{table.name}"]', 2)
+            write.line_indented(f'return self._tables["{table.name}"]  # ty: ignore[invalid-return-type]', 2)
             write.line_empty()
         write.endregion()
 
@@ -943,10 +943,10 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
             return f"SelectField = SelectField({params})"
         case "multipleSelects":
             if field.id in field.base.select_fields_ids():
-                return f"list[{field.options_name()}] = MultipleSelectField({params}) # type: ignore"
+                return f"list[{field.options_name()}] = MultipleSelectField({params}) # ty: ignore"
             return f"MultipleSelectField = MultipleSelectField({params})"
         case "lookup" | "multipleLookupValues":
-            return f"LookupField = LookupField[{field.python_type()}]({params})"
+            return f"LookupField[{field.python_type()}] = LookupField({params})"
         case "multipleRecordLinks":
             if field.options and field.options.linked_table_id:
                 table_id: str = field.options.linked_table_id
@@ -956,8 +956,8 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
                         break
                 prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
                 if field.options.prefers_single_record_link:
-                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
-                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # type: ignore'
+                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # ty: ignore'
+                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # ty: ignore'
             print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
         case _:
             pass

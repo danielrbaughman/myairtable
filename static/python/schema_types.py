@@ -1,4 +1,4 @@
-from typing import Any, Literal, Optional, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 FieldTypeSchema = Literal[
     "singleLineText",
@@ -52,13 +52,14 @@ class FieldSchema(TypedDict, total=False):
     id: str
     name: str
     type: FieldTypeSchema
-    description: Optional[str]
-    options: Optional[dict[str, Any]]
+    description: str | None
+    options: dict[str, Any] | None
 
 
 class TableSchema(TypedDict):
     id: str
     name: str
+    description: NotRequired[str | None]
     primaryFieldId: str
     fields: list[FieldSchema]
     views: list[ViewSchema]

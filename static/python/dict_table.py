@@ -189,7 +189,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record_id) > 0 and isinstance(record_id[0], str):
                 record_ids = record_id
-                record_id = None  # type: ignore
+                record_id = None  # ty: ignore
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -208,7 +208,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     user_locale=user_locale,
                     **options,
                 )
-                record: RecordDict = record_dicts[0] if record_dicts else RecordDict()
+                record: RecordDict = record_dicts[0] if record_dicts else {"id": "", "createdTime": "", "fields": {}}
             else:
                 record: RecordDict = self._table.get(
                     record_id,
@@ -220,7 +220,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     user_locale=user_locale,
                     **options,
                 )
-            record: DictType = sanitize_record_dict(record)
+            record = sanitize_record_dict(record)  # ty: ignore[invalid-assignment]
             result = record
         elif record_ids and len(record_ids) > 0:
             if page_size > 100:
@@ -238,7 +238,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records: list[DictType] = [sanitize_record_dict(r) for r in records]
+            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
             result = records
         else:
             if page_size > 100:
@@ -256,13 +256,13 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records: list[DictType] = [sanitize_record_dict(r) for r in records]
+            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
             result = records
 
         # Cache store
         if self._cache_seconds > 0:
             self._cache[cache_key] = (result, time.monotonic() + self._cache_seconds)
-        return result
+        return result  # ty: ignore[invalid-return-type]
 
     @overload
     def create(
@@ -312,7 +312,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # type: ignore
+                record = None  # ty: ignore
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -322,14 +322,14 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
             records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
-            records = [sanitize_record_dict(r) for r in records]
+            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[not-iterable, invalid-argument-type]
             return records
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # type: ignore
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
             record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
-            record = sanitize_record_dict(record)
+            record = sanitize_record_dict(record)  # ty: ignore[invalid-argument-type]
             return record
 
     @overload
@@ -380,7 +380,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # type: ignore
+                record = None  # ty: ignore
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -395,19 +395,19 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 use_field_ids=use_field_ids,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]
+            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[not-iterable, invalid-argument-type]
             return records
         else:
             if record is None:
                 raise ValueError("Record to update cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # type: ignore
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
             record = self._table.update(
                 record_id=record["id"],
                 fields=record["fields"],
                 use_field_ids=use_field_ids,
                 **options,
             )
-            record = sanitize_record_dict(record)
+            record = sanitize_record_dict(record)  # ty: ignore[invalid-argument-type]
             return record
 
     @overload
