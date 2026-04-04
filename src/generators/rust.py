@@ -377,6 +377,55 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_indented(f'pub const {const_name}: &\'static str = "{escaped_name}";')
                 write.doc_comment(f"`{escaped_name}` (field ID)", indent=1)
                 write.line_indented(f'pub const {const_name}_ID: &\'static str = "{field.id}";')
+            write.line_empty()
+
+            # Lookup: field name → field ID
+            write.doc_comment("Look up a field ID by its Airtable field name.", indent=1)
+            write.line_indented("pub fn id_by_name(name: &str) -> Option<&'static str> {")
+            write.line_indented("match name {", 2)
+            for field in table.fields:
+                escaped_name = sanitize_string(field.name).replace("\\", "\\\\").replace('"', '\\"')
+                write.line_indented(f'"{escaped_name}" => Some("{field.id}"),', 3)
+            write.line_indented("_ => None,", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # Lookup: field ID → field name
+            write.doc_comment("Look up an Airtable field name by its field ID.", indent=1)
+            write.line_indented("pub fn name_by_id(id: &str) -> Option<&'static str> {")
+            write.line_indented("match id {", 2)
+            for field in table.fields:
+                escaped_name = sanitize_string(field.name).replace("\\", "\\\\").replace('"', '\\"')
+                write.line_indented(f'"{field.id}" => Some("{escaped_name}"),', 3)
+            write.line_indented("_ => None,", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # Lookup: field ID → property name
+            write.doc_comment("Look up a Rust property name by field ID.", indent=1)
+            write.line_indented("pub fn property_by_id(id: &str) -> Option<&'static str> {")
+            write.line_indented("match id {", 2)
+            for field in table.fields:
+                prop = _rust_ident(field.name_snake())
+                write.line_indented(f'"{field.id}" => Some("{prop}"),', 3)
+            write.line_indented("_ => None,", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # Lookup: property name → field ID
+            write.doc_comment("Look up a field ID by Rust property name.", indent=1)
+            write.line_indented("pub fn id_by_property(property: &str) -> Option<&'static str> {")
+            write.line_indented("match property {", 2)
+            for field in table.fields:
+                prop = _rust_ident(field.name_snake())
+                write.line_indented(f'"{prop}" => Some("{field.id}"),', 3)
+            write.line_indented("_ => None,", 3)
+            write.line_indented("}", 2)
+            write.line_indented("}")
+
             write.line("}")
             write.line_empty()
 
