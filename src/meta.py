@@ -747,7 +747,7 @@ class Field(Named):
         return []
 
     def options_name(self) -> str:
-        return f"{self.table.name_pascal()}{self.name_pascal()}Option"
+        return f"{self.table.name_pascal()}{self.name_pascal().rstrip('_')}Option"
 
     def formula_class(self) -> str:
         """Returns the appropriate myAirtable formula type for a given Airtable field."""

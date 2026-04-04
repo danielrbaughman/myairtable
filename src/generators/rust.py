@@ -30,6 +30,7 @@ def _choice_to_variant(choice: str) -> str:
         return "Empty"
     # to_pascal expects snake_case input
     text = text.replace(" ", "_").lower()
+    text = re.sub(r"_+", "_", text)  # collapse consecutive underscores
     text = text.lstrip("_").rstrip("_")
     if not text:
         return "Empty"
@@ -881,6 +882,8 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
 
     # Write dynamic lib.rs
     with WriteToRustFile(path=dynamic_dir / "lib.rs") as write:
+        write.line("#![allow(unused_imports)]")
+        write.line_empty()
         write.doc_comment("Auto-generated Airtable SDK.")
         write.line_empty()
 
