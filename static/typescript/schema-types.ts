@@ -55,6 +55,7 @@ export interface FieldSchema {
 export interface TableSchema {
 	id: string;
 	name: string;
+	description?: string;
 	primaryFieldId: string;
 	fields: FieldSchema[];
 	views: ViewSchema[];

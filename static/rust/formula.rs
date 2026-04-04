@@ -45,22 +45,6 @@ pub fn XOR(args: &[&str]) -> String {
 // Helpers
 // =============================================================================
 
-fn wrap_case(value: &str, case_sensitive: bool) -> String {
-    if case_sensitive {
-        value.to_string()
-    } else {
-        format!("LOWER({value})")
-    }
-}
-
-fn wrap_trim(value: &str, trim: bool) -> String {
-    if trim {
-        format!("TRIM({value})")
-    } else {
-        value.to_string()
-    }
-}
-
 fn wrap_field(field: &str, case_sensitive: bool, trim: bool) -> String {
     let mut v = field.to_string();
     if trim {

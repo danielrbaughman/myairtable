@@ -153,12 +153,10 @@ class WriteToRustFile(WriteToFile):
         self.line_empty()
 
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a /// doc comment."""
-        if isinstance(text, list):
-            for line in text:
-                self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
-        else:
-            self.line_indented(f"/// {text.replace(chr(13), '')}", indent)
+        """Write a /// doc comment. Strips bare carriage returns that Airtable descriptions may contain."""
+        lines = text if isinstance(text, list) else [text]
+        for line in lines:
+            self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
 
     def derive(self, *traits: str, indent: int = 0):
         """Write a #[derive(...)] attribute."""
