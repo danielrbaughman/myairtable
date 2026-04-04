@@ -156,9 +156,9 @@ class WriteToRustFile(WriteToFile):
         """Write a /// doc comment."""
         if isinstance(text, list):
             for line in text:
-                self.line_indented(f"/// {line}", indent)
+                self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
         else:
-            self.line_indented(f"/// {text}", indent)
+            self.line_indented(f"/// {text.replace(chr(13), '')}", indent)
 
     def derive(self, *traits: str, indent: int = 0):
         """Write a #[derive(...)] attribute."""
@@ -432,11 +432,11 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             # View enum — variants map to view IDs via serde
             if table.views:
                 view_name = f"{table.name_pascal()}View"
+                view_variants = _deduplicate_variants([_choice_to_variant(v.name) for v in table.views])
                 write.doc_comment(f"Views for `{sanitize_string(table.name)}`")
                 write.derive("Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize")
                 write.line(f"pub enum {view_name} {{")
-                for view in table.views:
-                    variant = to_pascal(view.name.replace(" ", "_").lower())
+                for view, variant in zip(table.views, view_variants):
                     escaped = sanitize_string(view.name)
                     write.doc_comment(f"`{escaped}` ({view.type})", indent=1)
                     write.serde_rename(view.id, indent=1)
@@ -448,8 +448,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line(f"impl AsRef<str> for {view_name} {{")
                 write.line_indented("fn as_ref(&self) -> &str {")
                 write.line_indented("match self {", 2)
-                for view in table.views:
-                    variant = to_pascal(view.name.replace(" ", "_").lower())
+                for view, variant in zip(table.views, view_variants):
                     write.line_indented(f'Self::{variant} => "{view.id}",', 3)
                 write.line_indented("}", 2)
                 write.line_indented("}")

@@ -282,11 +282,20 @@ class CodeEmitter:
         self._self = "self" if language in ("python", "rust") else "this"
         self._runtime = "F"
 
+    @staticmethod
+    def _normalize_number(value: str) -> str:
+        """Ensure a numeric string has a leading zero (e.g. '.05' -> '0.05')."""
+        v = value.lstrip("-")
+        if v.startswith("."):
+            return f"-0{v}" if value.startswith("-") else f"0{v}"
+        return value
+
     def emit(self, node: ASTNode) -> str:
         if isinstance(node, NumberLiteral):
+            value = self._normalize_number(node.value)
             if self.language == "rust":
-                return f"json!({node.value})"
-            return node.value
+                return f"json!({value})"
+            return value
 
         if isinstance(node, StringLiteral):
             if self.language == "rust":
@@ -762,7 +771,8 @@ class CodeEmitter:
 
     def _emit_fn_datetime_parse(self, node: FunctionCall) -> str | None:
         if self.language == "rust":
-            return None  # Fall through — D() returns Option, not Value
+            # Rust DATETIME_PARSE only takes 1 arg (ignores format string)
+            return f"{self._runtime}::DATETIME_PARSE(&{self.emit(node.args[0])})"
         return f"{self._runtime}.D({self.emit(node.args[0])})"
 
     _JS_DATE_GETTERS: dict[str, str] = {
@@ -884,9 +894,10 @@ class CodeEmitter:
     def _emit_num(self, node: ASTNode) -> str:
         """Emit node in numeric context. Literals pass through; arithmetic recurses; others get F.N()."""
         if isinstance(node, NumberLiteral):
+            value = self._normalize_number(node.value)
             if self.language == "rust":
-                return f"{node.value}_f64"
-            return node.value
+                return f"{value}_f64"
+            return value
         if isinstance(node, BinaryOp) and node.op in ("+", "-", "*", "/"):
             left = self._emit_num(node.left)
             right = self._emit_num(node.right)

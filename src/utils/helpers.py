@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Compile regex patterns once at module level for performance
 _MULTI_SPACE_PATTERN = re.compile(r" {2,}")
-_CHARS_TO_SPACE_PATTERN = re.compile(r"[()[\]{}<>'`|\\.:,]")
+_CHARS_TO_SPACE_PATTERN = re.compile(r"[()[\]{}<>'\"`|\\.:,]")
 _MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_\[\]#|<>!{}()+\-.])")
 
 # Multi-character replacements (order matters for some)
