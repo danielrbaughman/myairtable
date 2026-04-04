@@ -3,8 +3,8 @@ const { recordIdSchema } = require("./special-types");
 // Properties that should pass through the Proxy without interception
 const PASSTHROUGH_PROPS = new Set([
 	"id",
-	"get",
-	"set",
+	"_resolve",
+	"_assign",
 	"then",
 	"_id",
 	"record",
@@ -21,7 +21,7 @@ const PASSTHROUGH_PROPS = new Set([
 ]);
 
 /**
- * A reference to a linked Airtable record, providing methods to get and set the linked record.
+ * A reference to a linked Airtable record.
  * Supports implicit thenable syntax: `await job.deal` fetches the linked record.
  * Supports chaining: `await job.deal.companies` fetches the deal, then its companies.
  */
@@ -52,12 +52,8 @@ class LinkedRecord {
 		this.onDirty?.();
 	}
 
-	/**
-	 * Retrieves the linked record. Caches the result for future calls.
-	 *
-	 * @param fetch - If `true`, forces a fetch of the record data even if it is already loaded. Defaults to `false`.
-	 */
-	async get(fetch = false) {
+	/** @internal Retrieves the linked record. Caches the result for future calls. */
+	async _resolve(fetch = false) {
 		if (!this._id) return undefined;
 		if (this.record === undefined || fetch) {
 			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
@@ -67,19 +63,13 @@ class LinkedRecord {
 		return this.record;
 	}
 
-	/**
-	 * Makes LinkedRecord thenable: `await linkedRecord` calls `.get()`.
-	 */
+	/** Makes LinkedRecord thenable: `await linkedRecord` resolves the linked record. */
 	then(onfulfilled, onrejected) {
-		return this.get().then(onfulfilled, onrejected);
+		return this._resolve().then(onfulfilled, onrejected);
 	}
 
-	/**
-	 * Sets the linked record value and updates the associated ID.
-	 *
-	 * @param value - The new record to link.
-	 */
-	set(value) {
+	/** @internal Sets the linked record value and updates the associated ID. */
+	_assign(value) {
 		if (!value) {
 			this.record = undefined;
 			this._id = undefined;
@@ -92,8 +82,8 @@ class LinkedRecord {
 }
 
 /**
- * A reference to linked Airtable records, providing methods to get and set the linked records.
- * Supports implicit thenable syntax: `await linkedRecords` calls `.get()`.
+ * A reference to linked Airtable records.
+ * Supports implicit thenable syntax: `await linkedRecords` resolves the linked records.
  */
 class LinkedRecords {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
@@ -120,12 +110,8 @@ class LinkedRecords {
 		this.onDirty?.();
 	}
 
-	/**
-	 * Retrieves the linked records. Caches the result for future calls.
-	 *
-	 * @param fetch - If `true`, forces a fresh fetch of the records even if they are already loaded. Defaults to `false`.
-	 */
-	async get(fetch = false) {
+	/** @internal Retrieves the linked records. Caches the result for future calls. */
+	async _resolve(fetch = false) {
 		if (this.records === undefined || fetch) {
 			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
 			this.records = this._ids?.map((id) => this.modelCtor(id, config)) ?? [];
@@ -134,19 +120,13 @@ class LinkedRecords {
 		return this.records;
 	}
 
-	/**
-	 * Makes LinkedRecords thenable: `await linkedRecords` calls `.get()`.
-	 */
+	/** Makes LinkedRecords thenable: `await linkedRecords` resolves the linked records. */
 	then(onfulfilled, onrejected) {
-		return this.get().then(onfulfilled, onrejected);
+		return this._resolve().then(onfulfilled, onrejected);
 	}
 
-	/**
-	 * Sets the linked record values and updates the associated IDs.
-	 *
-	 * @param values - The new records to link.
-	 */
-	set(values) {
+	/** @internal Sets the linked record values and updates the associated IDs. */
+	_assign(values) {
 		if (!values || values.length === 0) {
 			this.records = undefined;
 			this._ids = undefined;
@@ -186,7 +166,7 @@ function wrapLinkedRecordProxy(lr) {
 
 			const desc = modelClass.getFieldDescriptor?.(prop);
 			if (desc && (desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords")) {
-				return createChainLink(() => target.get(), prop, desc);
+				return createChainLink(() => target._resolve(), prop, desc);
 			}
 
 			return Reflect.get(target, prop, receiver);
@@ -207,7 +187,7 @@ function createChainLink(parentResolver, fieldName, desc) {
 			return desc.fieldType === "linkedRecords" ? [] : undefined;
 		}
 		if (field instanceof LinkedRecord || field instanceof LinkedRecords) {
-			return field.get();
+			return field._resolve();
 		}
 		return field;
 	});
@@ -239,7 +219,7 @@ function createChainablePromise(promise, modelClass) {
 						return desc.fieldType === "linkedRecords" ? [] : undefined;
 					}
 					if (field instanceof LinkedRecord || field instanceof LinkedRecords) {
-						return field.get();
+						return field._resolve();
 					}
 					return field;
 				});

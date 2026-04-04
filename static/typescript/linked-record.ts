@@ -5,8 +5,8 @@ import { RecordId, recordIdSchema } from "./special-types";
 // Properties that should pass through the Proxy without interception
 const PASSTHROUGH_PROPS = new Set<string | symbol>([
 	"id",
-	"get",
-	"set",
+	"_resolve",
+	"_assign",
 	"then",
 	"_id",
 	"record",
@@ -23,7 +23,7 @@ const PASSTHROUGH_PROPS = new Set<string | symbol>([
 ]);
 
 /**
- * A reference to a linked Airtable record, providing methods to get and set the linked record.
+ * A reference to a linked Airtable record.
  * Supports implicit thenable syntax: `await job.deal` fetches the linked record.
  * Supports chaining: `await job.deal.companies` fetches the deal, then its companies.
  */
@@ -64,12 +64,8 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 		this.onDirty?.();
 	}
 
-	/**
-	 * Retrieves the linked record. Caches the result for future calls.
-	 *
-	 * @param fetch - If `true`, forces a fetch of the record data even if it is already loaded. Defaults to `false`.
-	 */
-	public async get(fetch: boolean = false): Promise<Mdl | undefined> {
+	/** @internal Retrieves the linked record. Caches the result for future calls. */
+	public async _resolve(fetch: boolean = false): Promise<Mdl | undefined> {
 		if (!this._id) return undefined;
 		if (this.record === undefined || fetch) {
 			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
@@ -79,22 +75,16 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 		return this.record;
 	}
 
-	/**
-	 * Makes LinkedRecord thenable: `await linkedRecord` calls `.get()`.
-	 */
+	/** Makes LinkedRecord thenable: `await linkedRecord` resolves the linked record. */
 	public then<TResult1 = Mdl | undefined, TResult2 = never>(
 		onfulfilled?: ((value: Mdl | undefined) => TResult1 | PromiseLike<TResult1>) | null,
 		onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
 	): PromiseLike<TResult1 | TResult2> {
-		return this.get().then(onfulfilled, onrejected);
+		return this._resolve().then(onfulfilled, onrejected);
 	}
 
-	/**
-	 * Sets the linked record value and updates the associated ID.
-	 *
-	 * @param value - The new record to link.
-	 */
-	public set(value: Mdl): void {
+	/** @internal Sets the linked record value and updates the associated ID. */
+	public _assign(value: Mdl): void {
 		if (!value) {
 			this.record = undefined;
 			this._id = undefined;
@@ -107,8 +97,8 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 }
 
 /**
- * A reference to linked Airtable records, providing methods to get and set the linked records.
- * Supports implicit thenable syntax: `await linkedRecords` calls `.get()`.
+ * A reference to linked Airtable records.
+ * Supports implicit thenable syntax: `await linkedRecords` resolves the linked records.
  */
 export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof FieldSet>> {
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
@@ -144,12 +134,8 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 		this.onDirty?.();
 	}
 
-	/**
-	 * Retrieves the linked records. Caches the result for future calls.
-	 *
-	 * @param fetch - If `true`, forces a fresh fetch of the records even if they are already loaded. Defaults to `false`.
-	 */
-	public async get(fetch: boolean = false): Promise<Mdl[]> {
+	/** @internal Retrieves the linked records. Caches the result for future calls. */
+	public async _resolve(fetch: boolean = false): Promise<Mdl[]> {
 		if (this.records === undefined || fetch) {
 			const config = this.__configBaseId ? { baseId: this.__configBaseId, ...this.__configOptions } : undefined;
 			this.records = this.ids?.map((id) => this.modelCtor!(id, config)) ?? [];
@@ -158,22 +144,16 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 		return this.records;
 	}
 
-	/**
-	 * Makes LinkedRecords thenable: `await linkedRecords` calls `.get()`.
-	 */
+	/** Makes LinkedRecords thenable: `await linkedRecords` resolves the linked records. */
 	public then<TResult1 = Mdl[], TResult2 = never>(
 		onfulfilled?: ((value: Mdl[]) => TResult1 | PromiseLike<TResult1>) | null,
 		onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
 	): PromiseLike<TResult1 | TResult2> {
-		return this.get().then(onfulfilled, onrejected);
+		return this._resolve().then(onfulfilled, onrejected);
 	}
 
-	/**
-	 * Sets the linked record values and updates the associated IDs.
-	 *
-	 * @param values - The new records to link.
-	 */
-	public set(values: Mdl[]): void {
+	/** @internal Sets the linked record values and updates the associated IDs. */
+	public _assign(values: Mdl[]): void {
 		if (!values || values.length === 0) {
 			this.records = undefined;
 			this._ids = undefined;
@@ -216,7 +196,7 @@ export function wrapLinkedRecordProxy<Mdl extends AirtableModel<FieldSet, unknow
 
 			const desc: FieldDescriptor | undefined = modelClass.getFieldDescriptor?.(prop as string);
 			if (desc && (desc.fieldType === "linkedRecord" || desc.fieldType === "linkedRecords")) {
-				return createChainLink(() => target.get(), prop as string, desc);
+				return createChainLink(() => target._resolve(), prop as string, desc);
 			}
 
 			return Reflect.get(target, prop, receiver);
@@ -238,7 +218,7 @@ function createChainLink(parentResolver: () => Promise<any>, fieldName: string, 
 			return desc.fieldType === "linkedRecords" ? [] : undefined;
 		}
 		if (field instanceof LinkedRecord || field instanceof LinkedRecords) {
-			return field.get();
+			return field._resolve();
 		}
 		return field;
 	});
@@ -271,7 +251,7 @@ function createChainablePromise(promise: Promise<any>, modelClass: any): any {
 						return desc.fieldType === "linkedRecords" ? [] : undefined;
 					}
 					if (field instanceof LinkedRecord || field instanceof LinkedRecords) {
-						return field.get();
+						return field._resolve();
 					}
 					return field;
 				});

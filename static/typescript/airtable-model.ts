@@ -370,7 +370,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			this._fields[propertyName] = value;
 		} else if (value instanceof AirtableModel) {
 			const lr = this._createLinkedField(desc, value.id);
-			(lr as LinkedRecord<any>).set(value);
+			(lr as LinkedRecord<any>)._assign(value);
 			this._fields[propertyName] = lr;
 		} else if (typeof value === "string") {
 			this._fields[propertyName] = this._createLinkedField(desc, value);
@@ -394,7 +394,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			} else if (value[0] instanceof AirtableModel) {
 				const ids = value.map((v: AirtableModel<any, any, any>) => v.id);
 				const lr = this._createLinkedField(desc, ids) as LinkedRecords<any>;
-				lr.set(value);
+				lr._assign(value);
 				this._fields[propertyName] = lr;
 			} else {
 				this._fields[propertyName] = this._createLinkedField(desc, value);

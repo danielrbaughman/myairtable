@@ -317,6 +317,37 @@ describe("TextField", () => {
 		});
 	});
 
+	describe("equalsAny", () => {
+		it("returns OR() for empty array", () => {
+			const field = new TextField("Tags");
+			expect(field.equalsAny([])).toBe("OR()");
+		});
+
+		it("returns single equals for one value", () => {
+			const field = new TextField("Tags");
+			const result = field.equalsAny(["tag1"]);
+			expect(result).toContain('{Tags}="tag1"');
+		});
+
+		it("returns OR for multiple values", () => {
+			const field = new TextField("Tags");
+			const result = field.equalsAny(["tag1", "tag2"]);
+			expect(result).toContain("OR(");
+		});
+
+		it("respects caseSensitive=false", () => {
+			const field = new TextField("Tags");
+			const result = field.equalsAny(["tag1"], false);
+			expect(result).toContain("LOWER(");
+		});
+
+		it("respects trim=true", () => {
+			const field = new TextField("Tags");
+			const result = field.equalsAny(["tag1"], true, true);
+			expect(result).toContain("TRIM(");
+		});
+	});
+
 	describe("notContains", () => {
 		it("returns FIND = 0", () => {
 			const field = new TextField("Description");

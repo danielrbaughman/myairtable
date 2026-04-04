@@ -159,6 +159,10 @@ class TextField extends Field {
 		}
 	}
 
+	equalsAny(values, caseSensitive = true, trim = false) {
+		return OR(...values.map((value) => this.equals(value, caseSensitive, trim)));
+	}
+
 	phoneEquals(value) {
 		StringSchema.parse(value);
 		function normalize(s) {

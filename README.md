@@ -134,3 +134,28 @@ AIRTABLE_BASE_ID=app1234567890
 ```
 
 5. Run `uv run main.py --help` to see all commands
+
+## MCP Server
+
+myAirtable includes an MCP server that exposes read-only tools for Airtable schema introspection and analysis.
+
+### Setup
+
+Add the following to your MCP client config (e.g. `claude_desktop_config.json` for Claude Desktop, or `.claude/settings.json` for Claude Code):
+
+```json
+{
+	"mcpServers": {
+		"myairtable": {
+			"command": "uv",
+			"args": ["run", "--directory", "/path/to/myairtable", "python", "mcp_server.py"],
+			"env": {
+				"AIRTABLE_API_KEY": "your_airtable_api_key_here",
+				"AIRTABLE_BASE_ID": "app1234567890"
+			}
+		}
+	}
+}
+```
+
+If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
