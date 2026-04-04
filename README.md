@@ -10,10 +10,11 @@ Languages supported:
 - Python (via [pyAirtable](https://pyairtable.readthedocs.io/en/stable/))
 - TypeScript (via [airtable.js](https://github.com/Airtable/airtable.js))
 - JavaScript (via [airtable.js](https://github.com/Airtable/airtable.js))
+- Rust (via a custom-built client)
 
 ## Features
 
-The following examples are in Python, but all features are suppported in every language. See notes in each section for language-specific differences.
+The following examples are in Python, but most features are suppported in every language. See notes in each section for language-specific differences.
 
 ### ORM Models
 
@@ -37,6 +38,8 @@ name = contact.name
 
 > [!NOTE]
 > For JavaScript & TypeScript, the ORM models are custom to myAirtable, rather than drawn from Airtable.js, though they use Airtable.js under-the-hood, and contain methods for conversion to/from Airtable.js's "Record" class.
+>
+> For Rust, 100% of the code is custom to myAirtable. Convenient linked-record traversal like that in Python and TS/JS is not implemented in Rust; they are just string ids here.
 
 ### Formula Builders
 
@@ -57,7 +60,7 @@ Airtable().contacts.get(formula=formula)
 ```
 
 > [!NOTE]
-> For JavaScript & TypeScript, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same.
+> For JavaScript, TypeScript, and Rust, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same.
 
 ### Table/CRUD Wrappers
 
@@ -104,6 +107,16 @@ myAirtable also includes support for generating documentation for your Airtable 
   - A "flattened" version of the formula. If the formulas references anoher formula (etc), the whole thing is shown.
   - A formatted and syntax-colored version of the formula, for easy readability.
   - A [Mermaid](https://mermaid.ai) representation of the formula.
+
+### Extra Goodies (because I can't stop coding...)
+
+- All the types: just about everything fromt the schema has a constant/dict/type for convenience. Want an array of the options for a select field? How about a map between field ids and names? Or perhaps a union type representing all table names? It's all in there.
+- Convenience functions to:
+  - build an Airtable URL for base/table/view/record
+  - get the schema, either static (the one used to build the code) or live (from Airtable's API)
+- Optional caching
+- Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation.
+- MCP Server: Allows agents to analyze your Airtable schema
 
 ## Getting Started
 

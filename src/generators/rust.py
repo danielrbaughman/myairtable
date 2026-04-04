@@ -525,7 +525,18 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_empty()
 
             # Model struct — id, created_time, internal state, and all fields
-            write.doc_comment(f"ORM model for `{sanitize_string(table.name)}`")
+            table_snake = _rust_ident(table.name_snake())
+            write.doc_comment(f"ORM model for `{sanitize_string(table.name)}`.")
+            write.line("///")
+            write.line("/// # Example")
+            write.line("///")
+            write.line("/// ```ignore")
+            write.line(f'/// let record = airtable.{table_snake}.get_one("rec123").await?;')
+            write.line('/// println!("{:?}", record);')
+            write.line("///")
+            write.line(f"/// let new = {create_name} {{ ..Default::default() }};")
+            write.line(f"/// let created = airtable.{table_snake}.create_one(&new).await?;")
+            write.line("/// ```")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
             write.line(f"pub struct {model_name} {{")
 
@@ -729,7 +740,18 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             model = f"{pascal}Model"
             create = f"Create{pascal}Model"
 
+            snake = _rust_ident(table.name_snake())
             write.doc_comment(f"Table accessor for `{sanitize_string(table.name)}`. ORM by default, `.dict` for raw records.")
+            write.line("///")
+            write.line("/// # Example")
+            write.line("///")
+            write.line("/// ```ignore")
+            write.line("/// // ORM access (typed models)")
+            write.line(f'/// let record = airtable.{snake}.get_one("rec123").await?;')
+            write.line("///")
+            write.line("/// // Dict access (raw JSON fields)")
+            write.line(f'/// let record = airtable.{snake}.dict.get_one("rec123", true).await?;')
+            write.line("/// ```")
             write.line(f"pub struct {table_struct} {{")
             write.doc_comment("Raw record (dict) access.", indent=1)
             write.pub_field("dict", "StructTable")
@@ -787,7 +809,15 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             write.line_empty()
 
         # Main Airtable struct
+        first_table = _rust_ident(base.tables[0].name_snake()) if base.tables else "table"
         write.doc_comment("Main entry point for the Airtable base.")
+        write.line("///")
+        write.line("/// # Example")
+        write.line("///")
+        write.line("/// ```ignore")
+        write.line('/// let airtable = Airtable::new("api_key", "base_id");')
+        write.line(f"/// let records = airtable.{first_table}.get_many(&AirtableQuery::new()).await?;")
+        write.line("/// ```")
         write.line("pub struct Airtable {")
         write.line_indented("client: Arc<AirtableClient>,")
         for table in base.tables:
