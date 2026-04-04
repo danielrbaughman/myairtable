@@ -413,9 +413,9 @@ def write_dicts(base: Base, output_folder: Path) -> None:
                 write.line(f"class {table.name_pascal()}{suffix}({parent}):")
                 write.line_indented(record_doc_string(table.name, id=has_id, created_time=has_created_time, use_field_ids=use_field_ids))
                 if use_field_ids:
-                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict  # ty: ignore[invalid-typed-dict-field]")
+                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict  # ty: ignore")
                 else:
-                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]  # ty: ignore[invalid-typed-dict-field]")
+                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]  # ty: ignore")
                 write.line_empty()
                 write.line_empty()
 
