@@ -350,32 +350,7 @@ class SingleSelectField extends TextField {
 }
 
 /** Multi-Select comparison formulas */
-class MultiSelectField extends SingleSelectField {
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsOption(value, caseSensitive = true, trim = false) {
-		return this.contains(value, caseSensitive, trim);
-	}
-
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsAllOptions(values, caseSensitive = true, trim = false) {
-		return this.containsAll(values, caseSensitive, trim);
-	}
-
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	containsAnyOptions(values, caseSensitive = true, trim = false) {
-		return this.containsAny(values, caseSensitive, trim);
-	}
-
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	notContainsOption(value, caseSensitive = true, trim = false) {
-		return this.notContains(value, caseSensitive, trim);
-	}
-
-	/** WARNING: May return false positives if the option you're searching for is a substring of another option. */
-	notContainsOptions(values, caseSensitive = true, trim = false) {
-		return AND(...values.map((value) => this.notContains(value, caseSensitive, trim)));
-	}
-}
+class MultiSelectField extends SingleSelectField {}
 
 // region NUMBER
 /** Number comparison formulas */

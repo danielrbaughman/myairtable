@@ -265,7 +265,7 @@ fn single_select_empty() {
 #[test]
 fn multi_select_contains_option() {
     let f = FormulaMultiSelectField::new("fld123");
-    let result = f.contains_option("Option 1", false, true);
+    let result = f.contains("Option 1", false, true);
     assert!(result.contains("FIND("));
     assert!(result.contains(">0"));
 }
@@ -273,30 +273,22 @@ fn multi_select_contains_option() {
 #[test]
 fn multi_select_contains_any_options() {
     let f = FormulaMultiSelectField::new("fld123");
-    let result = f.contains_any_options(&["A", "B"], false, true);
+    let result = f.contains_any(&["A", "B"], false, true);
     assert!(result.starts_with("OR("));
 }
 
 #[test]
 fn multi_select_contains_all_options() {
     let f = FormulaMultiSelectField::new("fld123");
-    let result = f.contains_all_options(&["A", "B"], false, true);
+    let result = f.contains_all(&["A", "B"], false, true);
     assert!(result.starts_with("AND("));
 }
 
 #[test]
 fn multi_select_not_contains_option() {
     let f = FormulaMultiSelectField::new("fld123");
-    let result = f.not_contains_option("A", false, true);
+    let result = f.not_contains("A", false, true);
     assert!(result.starts_with("NOT("));
-}
-
-#[test]
-fn multi_select_not_contains_options() {
-    let f = FormulaMultiSelectField::new("fld123");
-    let result = f.not_contains_options(&["A", "B"], false, true);
-    assert!(result.starts_with("AND("));
-    assert!(result.contains("NOT("));
 }
 
 // =============================================================================

@@ -282,51 +282,6 @@ impl FormulaMultiSelectField {
     pub const fn new(field_id: &'static str) -> Self {
         Self { field_id }
     }
-
-    /// Contains a specific option.
-    pub fn contains_option(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        FormulaTextOps::contains(self, value, case_sensitive, trim)
-    }
-
-    /// Contains any of the given options.
-    pub fn contains_any_options(
-        &self,
-        values: &[&str],
-        case_sensitive: bool,
-        trim: bool,
-    ) -> String {
-        FormulaTextOps::contains_any(self, values, case_sensitive, trim)
-    }
-
-    /// Contains all of the given options.
-    pub fn contains_all_options(
-        &self,
-        values: &[&str],
-        case_sensitive: bool,
-        trim: bool,
-    ) -> String {
-        FormulaTextOps::contains_all(self, values, case_sensitive, trim)
-    }
-
-    /// Does not contain a specific option.
-    pub fn not_contains_option(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        FormulaTextOps::not_contains(self, value, case_sensitive, trim)
-    }
-
-    /// Does not contain any of the given options.
-    pub fn not_contains_options(
-        &self,
-        values: &[&str],
-        case_sensitive: bool,
-        trim: bool,
-    ) -> String {
-        let parts: Vec<String> = values
-            .iter()
-            .map(|v| FormulaTextOps::not_contains(self, v, case_sensitive, trim))
-            .collect();
-        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
-        AND(&refs)
-    }
 }
 
 impl FormulaField for FormulaMultiSelectField {

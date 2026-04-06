@@ -459,13 +459,13 @@ describe("MultiSelectField", () => {
 	describe("containsOption", () => {
 		it("uses contains with default params", () => {
 			const field = new MultiSelectField("Tags");
-			const result = field.containsOption("Option1");
+			const result = field.contains("Option1");
 			expect(result).toContain("FIND(");
 		});
 
 		it("respects caseSensitive flag", () => {
 			const field = new MultiSelectField("Tags");
-			const result = field.containsOption("Option1", false, false);
+			const result = field.contains("Option1", false, false);
 			expect(result).toContain("LOWER(");
 		});
 	});
@@ -473,7 +473,7 @@ describe("MultiSelectField", () => {
 	describe("containsAllOptions", () => {
 		it("produces AND formula", () => {
 			const field = new MultiSelectField("Tags");
-			const result = field.containsAllOptions(["A", "B"]);
+			const result = field.containsAll(["A", "B"]);
 			expect(result).toContain("AND(");
 		});
 	});
@@ -481,7 +481,7 @@ describe("MultiSelectField", () => {
 	describe("containsAnyOptions", () => {
 		it("produces OR formula", () => {
 			const field = new MultiSelectField("Tags");
-			const result = field.containsAnyOptions(["A", "B"]);
+			const result = field.containsAny(["A", "B"]);
 			expect(result).toContain("OR(");
 		});
 	});
@@ -489,16 +489,8 @@ describe("MultiSelectField", () => {
 	describe("notContainsOption", () => {
 		it("uses notContains", () => {
 			const field = new MultiSelectField("Tags");
-			const result = field.notContainsOption("Option1");
+			const result = field.notContains("Option1");
 			expect(result).toContain("NOT");
-		});
-	});
-
-	describe("notContainsOptions", () => {
-		it("produces AND of negations", () => {
-			const field = new MultiSelectField("Tags");
-			const result = field.notContainsOptions(["A", "B"]);
-			expect(result).toContain("AND(");
 		});
 	});
 });
@@ -913,20 +905,6 @@ describe("Complex Formula Integration", () => {
 			expect(result).toContain("days");
 			expect(result).toContain("<=7");
 			expect(result).toContain('"Active"');
-		});
-	});
-
-	describe("MultiSelect complex conditions", () => {
-		it("combines contains_all with NOT contains", () => {
-			const tags = new MultiSelectField("Tags");
-
-			const result = AND(tags.containsAllOptions(["urgent", "reviewed"]), NOT(tags.containsOption("archived")));
-
-			expect(result).toContain("AND(");
-			expect(result).toContain("NOT(");
-			expect(result).toContain("urgent");
-			expect(result).toContain("reviewed");
-			expect(result).toContain("archived");
 		});
 	});
 
