@@ -37,9 +37,9 @@ name = contact.name
 ```
 
 > [!NOTE]
-> For JavaScript & TypeScript, the ORM models are custom to myAirtable, rather than drawn from Airtable.js, though they use Airtable.js under-the-hood, and contain methods for conversion to/from Airtable.js's "Record" class.
+> For JavaScript & TypeScript, the ORM models are custom to myAirtable, though they still use the Airtable.js client for save/delete, and contain methods for conversion to/from Airtable.js's "Record" class. Also, they use [Zod](https://zod.dev) validation under-the-hood.
 >
-> For Rust, 100% of the code is custom to myAirtable. Convenient linked-record traversal like that in Python and TS/JS is not implemented in Rust; they are just string ids here.
+> For Rust, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in Rust.
 
 ### Formula Builders
 

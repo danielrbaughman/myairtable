@@ -94,10 +94,12 @@ export class AirtableTable<
 		this.cacheSeconds = (options as any).cacheSeconds ?? 0;
 	}
 
+	/** Gets the view ID for a given view name. */
 	public getViewId(viewName: Vw): string {
 		return this.viewNameToIdMap[viewName] || viewName;
 	}
 
+	/** Gets the Airtable web URL for this table, optionally for a specific view. */
 	public url(view?: Vw): string {
 		if (view) {
 			return buildUrl(this.baseId, this.id, this.getViewId(view));

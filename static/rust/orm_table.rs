@@ -111,7 +111,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.record_to_model(record)
     }
 
-    /// Get all records matching the query, automatically paginating.
+    /// Get all records matching the query.
     pub async fn get_many(&self, params: &AirtableQuery) -> Result<Vec<T>, AirtableError> {
         let cache_key = format!(
             "get_many:{}",
@@ -158,7 +158,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.record_to_model(record)
     }
 
-    /// Create multiple records (batched in groups of 10).
+    /// Create multiple records.
     pub async fn create_many(&self, records: &[C]) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
         let raw = self
@@ -178,7 +178,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.record_to_model(record)
     }
 
-    /// Update multiple records (batched in groups of 10).
+    /// Update multiple records.
     pub async fn update_many(&self, records: &[(&RecordId, &C)]) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
         let raw = self
@@ -188,7 +188,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
 
-    /// Upsert a single model. Creates if no ID, updates if ID exists.
+    /// Upsert a single record. Creates if no ID, updates if ID exists.
     pub async fn upsert(&self, model: &mut T) -> Result<(), AirtableError> {
         self.invalidate_cache();
         let fields = model.to_save_json();
@@ -220,7 +220,7 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
         self.client.delete_record(self.table_id, record_id).await
     }
 
-    /// Delete multiple records (batched in groups of 10).
+    /// Delete multiple records.
     pub async fn delete_many(&self, record_ids: &[RecordId]) -> Result<(), AirtableError> {
         self.invalidate_cache();
         self.client.delete_records(self.table_id, record_ids).await

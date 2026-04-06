@@ -22,8 +22,8 @@ const PASSTHROUGH_PROPS = new Set([
 
 /**
  * A reference to a linked Airtable record.
- * Supports implicit thenable syntax: `await job.deal` fetches the linked record.
- * Supports chaining: `await job.deal.companies` fetches the deal, then its companies.
+ * Supports implicit thenable syntax: `await child.parent` fetches the linked record.
+ * Supports chaining: `await child.parent.grandparent` fetches the parent, then its grandparent.
  */
 class LinkedRecord {
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */

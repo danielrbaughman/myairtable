@@ -4,7 +4,7 @@
  * All operators route through this class for correct Airtable semantics:
  * - BLANK() is null (treated as 0 in numeric context, "" in string context)
  * - Division by zero returns NaN (Airtable shows #ERROR!)
- * - Type coercion follows Airtable rules, not JavaScript rules
+ * - Type coercion follows Airtable rules, not TypeScript rules
  */
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class

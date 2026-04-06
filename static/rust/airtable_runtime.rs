@@ -1,3 +1,9 @@
+/// AirtableRuntime: Implements Airtable formula functions and operators in Rust.
+///
+/// All operators route through this module for correct Airtable semantics:
+/// - BLANK() is None (treated as 0 in numeric context, "" in string context)
+/// - Division by zero returns NaN (Airtable shows #ERROR!)
+/// - Type coercion follows Airtable rules, not Rust rules
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
 use regex::Regex;

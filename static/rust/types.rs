@@ -97,36 +97,43 @@ impl AirtableQuery {
         Self::default()
     }
 
+    /// Return fields by field ID instead of name.
     pub fn use_field_ids(mut self, use_field_ids: bool) -> Self {
         self.use_field_ids = use_field_ids;
         self
     }
 
+    /// Filter records by a formula.
     pub fn formula(mut self, formula: impl Into<String>) -> Self {
         self.formula = Some(formula.into());
         self
     }
 
+    /// Filter records by a view.
     pub fn view(mut self, view: impl Into<String>) -> Self {
         self.view = Some(view.into());
         self
     }
 
+    /// Specify which fields to return.
     pub fn fields(mut self, fields: Vec<String>) -> Self {
         self.fields = Some(fields);
         self
     }
 
+    /// Limit the total number of records returned.
     pub fn max_records(mut self, n: usize) -> Self {
         self.max_records = Some(n);
         self
     }
 
+    /// Set the page size for the query.
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = Some(n);
         self
     }
 
+    /// Add a sort field and direction.
     pub fn sort(mut self, field: impl Into<String>, direction: SortDirection) -> Self {
         self.sort
             .get_or_insert_with(Vec::new)
@@ -134,6 +141,7 @@ impl AirtableQuery {
         self
     }
 
+    /// Set the offset for the query.
     pub fn offset(mut self, offset: impl Into<String>) -> Self {
         self.offset = Some(offset.into());
         self

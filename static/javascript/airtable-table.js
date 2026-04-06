@@ -42,10 +42,12 @@ class AirtableTable {
 		this.cacheSeconds = options?.cacheSeconds ?? 0;
 	}
 
+	/** Get view ID by name */
 	getViewId(viewName) {
 		return this.viewNameToIdMap[viewName] || viewName;
 	}
 
+	/** Gets the Airtable web URL for this table, optionally for a specific view. */
 	url(view) {
 		if (view) {
 			return buildUrl(this.baseId, this.id, this.getViewId(view));
