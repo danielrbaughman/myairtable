@@ -69,6 +69,134 @@ fn wrap_value_str(value: &str, case_sensitive: bool, trim: bool) -> String {
 }
 
 // =============================================================================
+// Traits
+// =============================================================================
+
+/// Base trait for all formula field types.
+/// Provides field reference and empty/not-empty checks.
+pub trait FormulaField {
+    fn field_id(&self) -> &str;
+
+    fn field(&self) -> String {
+        format!("{{{}}}", self.field_id())
+    }
+
+    fn empty(&self) -> String {
+        format!("{}=BLANK()", self.field())
+    }
+
+    fn not_empty(&self) -> String {
+        format!("{}!=BLANK()", self.field())
+    }
+}
+
+/// Text operations: equals, contains, starts_with, ends_with, regex, phone.
+pub trait FormulaTextOps: FormulaField {
+    /// Exact equality.
+    fn equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("{f}={v}")
+    }
+
+    /// Equals any of the given values.
+    fn equals_any(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
+        let parts: Vec<String> = values
+            .iter()
+            .map(|v| self.equals(v, case_sensitive, trim))
+            .collect();
+        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+        OR(&refs)
+    }
+
+    /// Not equal.
+    fn not_equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("{f}!={v}")
+    }
+
+    /// Contains substring.
+    fn contains(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("FIND({v},{f})>0")
+    }
+
+    /// Contains any of the given values.
+    fn contains_any(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
+        let parts: Vec<String> = values
+            .iter()
+            .map(|v| self.contains(v, case_sensitive, trim))
+            .collect();
+        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+        OR(&refs)
+    }
+
+    /// Contains all of the given values.
+    fn contains_all(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
+        let parts: Vec<String> = values
+            .iter()
+            .map(|v| self.contains(v, case_sensitive, trim))
+            .collect();
+        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+        AND(&refs)
+    }
+
+    /// Does not contain substring.
+    fn not_contains(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        NOT(&self.contains(value, case_sensitive, trim))
+    }
+
+    /// Starts with the given value.
+    fn starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("FIND({v},{f})=1")
+    }
+
+    /// Does not start with the given value.
+    fn not_starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("FIND({v},{f})!=1")
+    }
+
+    /// Ends with the given value.
+    fn ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("FIND({v},{f})=LEN({f})-LEN({v})+1")
+    }
+
+    /// Does not end with the given value.
+    fn not_ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
+        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let v = wrap_value_str(value, case_sensitive, trim);
+        format!("FIND({v},{f})!=LEN({f})-LEN({v})+1")
+    }
+
+    /// Phone number equality (normalizes by removing spaces, dashes, parentheses, +, .).
+    fn phone_equals(&self, value: &str) -> String {
+        let normalized: String = value
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '-' | '(' | ')' | '+' | '.'))
+            .collect();
+        let f = self.field();
+        let strip = |s: &str| -> String {
+            format!("SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({s},\" \",\"\"),\"-\",\"\"),\"(\",\"\"),\")\",\"\"),\"+\",\"\"),\".\",\"\")")
+        };
+        format!("{}=\"{normalized}\"", strip(&f))
+    }
+
+    /// Regex match.
+    fn regex_match(&self, pattern: &str) -> String {
+        let escaped = pattern.replace('"', "\\\"");
+        format!("REGEX_MATCH({},\"{escaped}\")", self.field())
+    }
+}
+
+// =============================================================================
 // Record ID
 // =============================================================================
 
@@ -110,124 +238,15 @@ impl FormulaTextField {
     pub const fn new(field_id: &'static str) -> Self {
         Self { field_id }
     }
+}
 
-    fn field(&self) -> String {
-        format!("{{{}}}", self.field_id)
-    }
-
-    /// Exact equality. `case_sensitive`: true by default in TS/PY. `trim`: false by default.
-    pub fn equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("{f}={v}")
-    }
-
-    /// Equals any of the given values.
-    pub fn equals_any(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
-        let parts: Vec<String> = values
-            .iter()
-            .map(|v| self.equals(v, case_sensitive, trim))
-            .collect();
-        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
-        OR(&refs)
-    }
-
-    /// Not equal.
-    pub fn not_equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("{f}!={v}")
-    }
-
-    /// Contains substring. TS/PY defaults: `case_sensitive=false`, `trim=true`.
-    pub fn contains(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("FIND({v},{f})>0")
-    }
-
-    /// Contains any of the given values.
-    pub fn contains_any(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
-        let parts: Vec<String> = values
-            .iter()
-            .map(|v| self.contains(v, case_sensitive, trim))
-            .collect();
-        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
-        OR(&refs)
-    }
-
-    /// Contains all of the given values.
-    pub fn contains_all(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
-        let parts: Vec<String> = values
-            .iter()
-            .map(|v| self.contains(v, case_sensitive, trim))
-            .collect();
-        let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
-        AND(&refs)
-    }
-
-    /// Does not contain substring.
-    pub fn not_contains(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        NOT(&self.contains(value, case_sensitive, trim))
-    }
-
-    /// Starts with the given value. TS/PY defaults: `case_sensitive=false`, `trim=true`.
-    pub fn starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("FIND({v},{f})=1")
-    }
-
-    /// Does not start with the given value.
-    pub fn not_starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("FIND({v},{f})!=1")
-    }
-
-    /// Ends with the given value. TS/PY defaults: `case_sensitive=false`, `trim=true`.
-    pub fn ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("FIND({v},{f})=LEN({f})-LEN({v})+1")
-    }
-
-    /// Does not end with the given value.
-    pub fn not_ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
-        let v = wrap_value_str(value, case_sensitive, trim);
-        format!("FIND({v},{f})!=LEN({f})-LEN({v})+1")
-    }
-
-    /// Phone number equality (normalizes by removing spaces, dashes, parentheses, +, .).
-    pub fn phone_equals(&self, value: &str) -> String {
-        let normalized: String = value
-            .chars()
-            .filter(|c| !matches!(c, ' ' | '-' | '(' | ')' | '+' | '.'))
-            .collect();
-        let f = self.field();
-        let strip = |s: &str| -> String {
-            format!("SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({s},\" \",\"\"),\"-\",\"\"),\"(\",\"\"),\")\",\"\"),\"+\",\"\"),\".\",\"\")")
-        };
-        format!("{}=\"{normalized}\"", strip(&f))
-    }
-
-    /// Regex match.
-    pub fn regex_match(&self, pattern: &str) -> String {
-        let escaped = pattern.replace('"', "\\\"");
-        format!("REGEX_MATCH({},\"{escaped}\")", self.field())
-    }
-
-    /// Field is empty/blank.
-    pub fn empty(&self) -> String {
-        format!("{}=BLANK()", self.field())
-    }
-
-    /// Field is not empty.
-    pub fn not_empty(&self) -> String {
-        format!("{}!=BLANK()", self.field())
+impl FormulaField for FormulaTextField {
+    fn field_id(&self) -> &str {
+        self.field_id
     }
 }
+
+impl FormulaTextOps for FormulaTextField {}
 
 // =============================================================================
 // Select Fields
@@ -243,36 +262,15 @@ impl FormulaSingleSelectField {
     pub const fn new(field_id: &'static str) -> Self {
         Self { field_id }
     }
+}
 
-    fn text(&self) -> FormulaTextField {
-        FormulaTextField::new(self.field_id)
-    }
-
-    /// Exact equality.
-    pub fn equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        self.text().equals(value, case_sensitive, trim)
-    }
-
-    /// Equals any of the given values.
-    pub fn equals_any(&self, values: &[&str], case_sensitive: bool, trim: bool) -> String {
-        self.text().equals_any(values, case_sensitive, trim)
-    }
-
-    /// Not equal.
-    pub fn not_equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        self.text().not_equals(value, case_sensitive, trim)
-    }
-
-    /// Field is empty/blank.
-    pub fn empty(&self) -> String {
-        self.text().empty()
-    }
-
-    /// Field is not empty.
-    pub fn not_empty(&self) -> String {
-        self.text().not_empty()
+impl FormulaField for FormulaSingleSelectField {
+    fn field_id(&self) -> &str {
+        self.field_id
     }
 }
+
+impl FormulaTextOps for FormulaSingleSelectField {}
 
 /// Formula builder for multi-select fields.
 #[derive(Debug, Clone, Copy)]
@@ -285,13 +283,9 @@ impl FormulaMultiSelectField {
         Self { field_id }
     }
 
-    fn text(&self) -> FormulaTextField {
-        FormulaTextField::new(self.field_id)
-    }
-
     /// Contains a specific option.
     pub fn contains_option(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        self.text().contains(value, case_sensitive, trim)
+        FormulaTextOps::contains(self, value, case_sensitive, trim)
     }
 
     /// Contains any of the given options.
@@ -301,7 +295,7 @@ impl FormulaMultiSelectField {
         case_sensitive: bool,
         trim: bool,
     ) -> String {
-        self.text().contains_any(values, case_sensitive, trim)
+        FormulaTextOps::contains_any(self, values, case_sensitive, trim)
     }
 
     /// Contains all of the given options.
@@ -311,12 +305,12 @@ impl FormulaMultiSelectField {
         case_sensitive: bool,
         trim: bool,
     ) -> String {
-        self.text().contains_all(values, case_sensitive, trim)
+        FormulaTextOps::contains_all(self, values, case_sensitive, trim)
     }
 
     /// Does not contain a specific option.
     pub fn not_contains_option(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        self.text().not_contains(value, case_sensitive, trim)
+        FormulaTextOps::not_contains(self, value, case_sensitive, trim)
     }
 
     /// Does not contain any of the given options.
@@ -328,27 +322,20 @@ impl FormulaMultiSelectField {
     ) -> String {
         let parts: Vec<String> = values
             .iter()
-            .map(|v| self.text().not_contains(v, case_sensitive, trim))
+            .map(|v| FormulaTextOps::not_contains(self, v, case_sensitive, trim))
             .collect();
         let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
         AND(&refs)
     }
+}
 
-    /// Exact equality (single value).
-    pub fn equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        self.text().equals(value, case_sensitive, trim)
-    }
-
-    /// Field is empty/blank.
-    pub fn empty(&self) -> String {
-        self.text().empty()
-    }
-
-    /// Field is not empty.
-    pub fn not_empty(&self) -> String {
-        self.text().not_empty()
+impl FormulaField for FormulaMultiSelectField {
+    fn field_id(&self) -> &str {
+        self.field_id
     }
 }
+
+impl FormulaTextOps for FormulaMultiSelectField {}
 
 // =============================================================================
 // Number Field
@@ -363,10 +350,6 @@ pub struct FormulaNumberField {
 impl FormulaNumberField {
     pub const fn new(field_id: &'static str) -> Self {
         Self { field_id }
-    }
-
-    fn field(&self) -> String {
-        format!("{{{}}}", self.field_id)
     }
 
     /// Equal to value.
@@ -417,6 +400,12 @@ impl FormulaNumberField {
     }
 }
 
+impl FormulaField for FormulaNumberField {
+    fn field_id(&self) -> &str {
+        self.field_id
+    }
+}
+
 // =============================================================================
 // Boolean Field
 // =============================================================================
@@ -430,10 +419,6 @@ pub struct FormulaBooleanField {
 impl FormulaBooleanField {
     pub const fn new(field_id: &'static str) -> Self {
         Self { field_id }
-    }
-
-    fn field(&self) -> String {
-        format!("{{{}}}", self.field_id)
     }
 
     /// Equal to boolean value.
@@ -453,6 +438,12 @@ impl FormulaBooleanField {
     /// Field is unchecked/false.
     pub fn is_false(&self) -> String {
         format!("{}=FALSE()", self.field())
+    }
+}
+
+impl FormulaField for FormulaBooleanField {
+    fn field_id(&self) -> &str {
+        self.field_id
     }
 }
 
@@ -560,10 +551,6 @@ impl FormulaDateField {
         Self { field_id }
     }
 
-    fn field(&self) -> String {
-        format!("{{{}}}", self.field_id)
-    }
-
     fn comparison(&self, op: &'static str) -> FormulaDateComparison {
         FormulaDateComparison {
             field_id: self.field_id,
@@ -639,15 +626,11 @@ impl FormulaDateField {
             AND(&[&self.after(start), &self.before(end)])
         }
     }
+}
 
-    /// Field is empty/blank.
-    pub fn empty(&self) -> String {
-        format!("{}=BLANK()", self.field())
-    }
-
-    /// Field is not empty.
-    pub fn not_empty(&self) -> String {
-        format!("{}!=BLANK()", self.field())
+impl FormulaField for FormulaDateField {
+    fn field_id(&self) -> &str {
+        self.field_id
     }
 }
 
@@ -666,22 +649,24 @@ impl FormulaAttachmentsField {
         Self { field_id }
     }
 
-    fn field(&self) -> String {
-        format!("{{{}}}", self.field_id)
-    }
-
-    /// Has attachments.
-    pub fn not_empty(&self) -> String {
-        format!("LEN({})>0", self.field())
-    }
-
-    /// Has no attachments.
-    pub fn empty(&self) -> String {
-        format!("LEN({})=0", self.field())
-    }
-
     /// Has exactly N attachments.
     pub fn count(&self, n: usize) -> String {
         format!("LEN({})={n}", self.field())
+    }
+}
+
+impl FormulaField for FormulaAttachmentsField {
+    fn field_id(&self) -> &str {
+        self.field_id
+    }
+
+    /// Has no attachments.
+    fn empty(&self) -> String {
+        format!("LEN({})=0", self.field())
+    }
+
+    /// Has attachments.
+    fn not_empty(&self) -> String {
+        format!("LEN({})>0", self.field())
     }
 }

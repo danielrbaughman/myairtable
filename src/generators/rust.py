@@ -946,6 +946,7 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             write.use_decl(f"models::{{{pascal}Model, Create{pascal}Model}}", public=True)
         # Re-export formula helpers
         if formulas:
+            write.use_decl("formula::{FormulaField, FormulaTextOps}", public=True)
             for table in base.tables:
                 pascal = table.name_pascal()
                 write.use_decl(f"formulas::{pascal}Formulas", public=True)
