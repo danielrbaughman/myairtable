@@ -53,8 +53,14 @@ class WriteToHtmlFile(WriteToFile):
         self.line(f'  <script src="{root}search-index.js"></script>')
         self.line("</head>")
         self.line("<body>")
+        # Apply saved theme (or system preference) before any content renders to avoid flash
+        self.line(
+            "<script>(function(){var t=localStorage.getItem('theme');"
+            "if(t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme:dark)').matches))"
+            "document.body.classList.add('dark-mode');})()</script>"
+        )
         self.line('<div class="page">')
-        # Header bar with breadcrumbs and search
+        # Header bar with breadcrumbs, search, and theme toggle
         self.line('<div class="page-header">')
         if self._breadcrumbs:
             self.line('<nav class="breadcrumbs">')
@@ -65,6 +71,7 @@ class WriteToHtmlFile(WriteToFile):
             parts.append(_esc(self._breadcrumbs[-1][0]))
             self.line("  " + '<span class="separator">/</span>'.join(parts))
             self.line("</nav>")
+        self.line('<button class="theme-toggle" title="Toggle dark mode">&#9790;</button>')
         self.line(f'<div class="global-search" data-root="{root}">')
         self.line('  <input type="text" class="global-search-input" placeholder="Search tables and fields...">')
         self.line('  <div class="global-search-results"></div>')
@@ -74,6 +81,16 @@ class WriteToHtmlFile(WriteToFile):
     def document_end(self):
         self.line("</div>")
         self.line("<script>")
+        # Theme toggle
+        self.line("document.querySelectorAll('.theme-toggle').forEach(function(btn){")
+        self.line("  btn.textContent=document.body.classList.contains('dark-mode')?'\\u2600':'\\u263E';")
+        self.line("  btn.addEventListener('click',function(){")
+        self.line("    document.body.classList.toggle('dark-mode');")
+        self.line("    var dark=document.body.classList.contains('dark-mode');")
+        self.line("    localStorage.setItem('theme',dark?'dark':'light');")
+        self.line("    btn.textContent=dark?'\\u2600':'\\u263E';")
+        self.line("  });")
+        self.line("});")
         # Copy-to-clipboard
         self.line("document.addEventListener('click',function(e){")
         self.line("  var el=e.target.closest('.copyable');")

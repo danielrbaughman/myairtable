@@ -20,6 +20,33 @@
 	--color-tag-text: #4338ca;
 }
 
+body.dark-mode {
+	--color-bg: #161616;
+	--color-text: #d4d4d4;
+	--color-text-secondary: #8a8a8a;
+	--color-border: #333;
+	--color-link: #6ea8fe;
+	--color-link-hover: #9ec5fe;
+	--color-code-bg: #1e1e1e;
+	--color-table-header: #1c1c1c;
+	--color-table-stripe: #1a1a1a;
+	--color-note-bg: #1a2332;
+	--color-note-border: #3b82f6;
+	--color-warning-bg: #2a1f0e;
+	--color-warning-border: #f59e0b;
+	--color-tip-bg: #0f2318;
+	--color-tip-border: #10b981;
+	--color-tag-bg: #2a2a2a;
+	--color-tag-text: #b0b0b0;
+}
+
+body.dark-mode input,
+body.dark-mode select {
+	background: var(--color-code-bg);
+	color: var(--color-text);
+	border-color: var(--color-border);
+}
+
 /* Reset & Base */
 *,
 *::before,
@@ -51,6 +78,24 @@ body {
 	margin-bottom: 24px;
 	padding-bottom: 12px;
 	border-bottom: 1px solid var(--color-border);
+}
+
+/* Theme toggle */
+.theme-toggle {
+	background: none;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	padding: 4px 8px;
+	cursor: pointer;
+	font-size: 1rem;
+	line-height: 1;
+	color: var(--color-text-secondary);
+	flex-shrink: 0;
+	margin-left: auto;
+}
+
+.theme-toggle:hover {
+	background: var(--color-table-header);
 }
 
 /* Breadcrumbs */
