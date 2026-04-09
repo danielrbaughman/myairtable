@@ -1,0 +1,461 @@
+/* myAirtable - Static Documentation Stylesheet */
+
+:root {
+	--color-bg: #ffffff;
+	--color-text: #1a1a1a;
+	--color-text-secondary: #555;
+	--color-border: #e0e0e0;
+	--color-link: #0066cc;
+	--color-link-hover: #004499;
+	--color-code-bg: #f5f5f5;
+	--color-table-header: #f8f8f8;
+	--color-table-stripe: #fafafa;
+	--color-note-bg: #e8f4fd;
+	--color-note-border: #3b82f6;
+	--color-warning-bg: #fef3c7;
+	--color-warning-border: #f59e0b;
+	--color-tip-bg: #ecfdf5;
+	--color-tip-border: #10b981;
+	--color-tag-bg: #eef2ff;
+	--color-tag-text: #4338ca;
+}
+
+/* Reset & Base */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	color: var(--color-text);
+	background: var(--color-bg);
+	line-height: 1.6;
+	margin: 0;
+	padding: 0;
+}
+
+/* Layout */
+.page {
+	margin: 0 auto;
+	padding: 24px 32px;
+}
+
+/* Breadcrumbs */
+.breadcrumbs {
+	font-size: 0.85rem;
+	color: var(--color-text-secondary);
+	margin-bottom: 24px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.breadcrumbs a {
+	color: var(--color-link);
+	text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+	text-decoration: underline;
+}
+
+.breadcrumbs .separator {
+	margin: 0 6px;
+	color: var(--color-border);
+}
+
+/* Typography */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	margin-top: 1.5em;
+	margin-bottom: 0.5em;
+	line-height: 1.3;
+}
+
+h1 {
+	font-size: 1.75rem;
+	margin-top: 0;
+}
+h2 {
+	font-size: 1.4rem;
+}
+h3 {
+	font-size: 1.2rem;
+}
+h4 {
+	font-size: 1.05rem;
+}
+h5 {
+	font-size: 0.95rem;
+	color: var(--color-text-secondary);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+h6 {
+	font-size: 0.85rem;
+	color: var(--color-text-secondary);
+}
+
+a {
+	color: var(--color-link);
+	text-decoration: none;
+}
+
+a:hover {
+	color: var(--color-link-hover);
+	text-decoration: underline;
+}
+
+p {
+	margin: 0.5em 0;
+}
+
+/* Lists */
+ul.field-list {
+	list-style: none;
+	padding-left: 0;
+}
+
+ul.field-list li {
+	padding: 4px 0;
+}
+
+ul.metadata {
+	list-style: none;
+	padding-left: 0;
+	margin: 8px 0 16px 0;
+}
+
+ul.metadata li {
+	padding: 2px 0;
+	font-size: 0.9rem;
+}
+
+ul.metadata li strong {
+	color: var(--color-text-secondary);
+	font-weight: 600;
+}
+
+/* Tables */
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 12px 0;
+	font-size: 0.9rem;
+}
+
+thead {
+	background: var(--color-table-header);
+}
+
+th,
+td {
+	text-align: left;
+	padding: 8px 12px;
+	border: 1px solid var(--color-border);
+}
+
+th {
+	font-weight: 600;
+	font-size: 0.85rem;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	color: var(--color-text-secondary);
+}
+
+tbody tr:nth-child(even) {
+	background: var(--color-table-stripe);
+}
+
+/* Interactive table controls */
+.interactive-controls {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+	margin-top: 8px;
+	flex-wrap: wrap;
+}
+
+.interactive-search {
+	padding: 6px 10px;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	font-size: 0.85rem;
+	flex: 1;
+	min-width: 180px;
+}
+
+.interactive-search:focus {
+	outline: none;
+	border-color: var(--color-link);
+}
+
+.interactive-filter {
+	padding: 6px 10px;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	font-size: 0.85rem;
+	background: var(--color-bg);
+}
+
+table.interactive th {
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+	padding-right: 20px;
+}
+
+table.interactive th::after {
+	content: "\2195";
+	position: absolute;
+	right: 6px;
+	opacity: 0.3;
+	font-size: 0.75em;
+}
+
+table.interactive th.sort-asc::after {
+	content: "\25B2";
+	opacity: 0.7;
+}
+
+table.interactive th.sort-desc::after {
+	content: "\25BC";
+	opacity: 0.7;
+}
+
+/* Code blocks */
+pre {
+	background: var(--color-code-bg);
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	padding: 12px 16px;
+	overflow-x: auto;
+	font-size: 0.85rem;
+	line-height: 1.5;
+}
+
+code {
+	font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+	font-size: 0.85em;
+}
+
+/* Inline code */
+:not(pre) > code {
+	background: var(--color-code-bg);
+	padding: 2px 5px;
+	border-radius: 3px;
+	border: 1px solid var(--color-border);
+}
+
+/* Formula display */
+.formula-display {
+	font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+	white-space: pre-wrap;
+	padding: 12px 16px;
+	background: var(--color-code-bg);
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	overflow-x: auto;
+	font-size: 0.85rem;
+	line-height: 1.5;
+	margin: 8px 0;
+}
+
+/* Callouts */
+.callout {
+	padding: 12px 16px;
+	border-left: 4px solid;
+	border-radius: 0 4px 4px 0;
+	margin: 12px 0;
+	font-size: 0.9rem;
+}
+
+.callout-title {
+	font-weight: 600;
+	margin-bottom: 4px;
+	font-size: 0.85rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.callout-note {
+	background: var(--color-note-bg);
+	border-color: var(--color-note-border);
+}
+
+.callout-warning {
+	background: var(--color-warning-bg);
+	border-color: var(--color-warning-border);
+}
+
+.callout-tip {
+	background: var(--color-tip-bg);
+	border-color: var(--color-tip-border);
+}
+
+/* Blockquote */
+blockquote {
+	margin: 12px 0;
+	padding: 8px 16px;
+	border-left: 3px solid var(--color-border);
+	color: var(--color-text-secondary);
+}
+
+/* Collapsible sections */
+details {
+	margin: 12px 0;
+	/* border: 1px solid var(--color-border); */
+	/* border-radius: 4px; */
+}
+
+summary {
+	cursor: pointer;
+	padding: 8px 12px;
+	background: var(--color-table-header);
+	border-radius: 4px;
+	list-style: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+summary::-webkit-details-marker {
+	display: none;
+}
+
+summary::before {
+	content: "\25B6";
+	font-size: 0.65em;
+	transition: transform 0.15s;
+}
+
+details[open] > summary::before {
+	transform: rotate(90deg);
+}
+
+details[open] > summary {
+	border-radius: 4px 4px 0 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+summary > h1,
+summary > h2,
+summary > h3,
+summary > h4,
+summary > h5,
+summary > h6 {
+	display: inline;
+	margin: 0;
+	font-size: inherit;
+}
+
+details > :not(summary) {
+	margin-left: 12px;
+	margin-right: 12px;
+}
+
+/* Separator */
+hr {
+	border: none;
+	border-top: 1px solid var(--color-border);
+	margin: 16px 0;
+}
+
+/* Tags (for field types) */
+.tag {
+	display: inline-block;
+	background: var(--color-tag-bg);
+	color: var(--color-tag-text);
+	font-size: 0.8rem;
+	padding: 2px 8px;
+	border-radius: 12px;
+	font-weight: 500;
+}
+
+/* Click-to-copy */
+.copyable {
+	cursor: pointer;
+	position: relative;
+}
+
+.copyable::after {
+	content: "Click to copy";
+	position: absolute;
+	bottom: calc(100% + 6px);
+	left: 50%;
+	transform: translateX(-50%);
+	background: #333;
+	color: #fff;
+	font-size: 0.7rem;
+	padding: 3px 8px;
+	border-radius: 4px;
+	white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.15s;
+}
+
+.copyable:hover::after {
+	opacity: 1;
+}
+
+.copyable.copied::after {
+	content: "Copied!";
+	opacity: 1;
+}
+
+/* Block-level copyable (raw formula) */
+pre.copyable-block {
+	overflow: visible;
+}
+
+pre.copyable-block code {
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+pre.copyable-block::after {
+	bottom: auto;
+	top: -8px;
+	left: auto;
+	right: 0;
+	transform: none;
+}
+
+/* Diagrams */
+.diagram {
+	max-width: 100%;
+	height: auto;
+	margin: 12px 0;
+}
+
+/* Field list on table pages */
+.field-entry {
+	padding: 8px 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.field-entry:last-child {
+	border-bottom: none;
+}
+
+/* Responsive */
+@media (max-width: 720px) {
+	.page {
+		padding: 16px;
+	}
+
+	table {
+		font-size: 0.8rem;
+	}
+
+	th,
+	td {
+		padding: 6px 8px;
+	}
+}

@@ -7,6 +7,7 @@ from rich import print
 from typer import Argument, Option, Typer
 
 from src.generators.csv import generate_csv
+from src.generators.html import generate_html
 from src.generators.javascript import generate_javascript
 from src.generators.markdown import generate_markdown
 from src.generators.python import generate_python
@@ -234,6 +235,48 @@ def md(
 
 @app.command()
 @verbose()
+def html(
+    folder: Annotated[str, Argument(help="Path to the output folder")],
+    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
+    svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
+    reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache")] = False,
+    format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability.")] = True,
+    flatten_formulas: Annotated[
+        bool, Option("--flatten-formulas/--no-flatten-formulas", help="Show flattened formulas with nested references expanded.")
+    ] = True,
+    mermaid_formulas: Annotated[
+        bool, Option("--mermaid-formulas/--no-mermaid-formulas", help="Generate Mermaid diagrams for formula fields.")
+    ] = True,
+):
+    """Generate HTML documentation for the base. Deployable as a static site."""
+    setup_benchmark(benchmark)
+    start = datetime.datetime.now()
+
+    preserve = None if reset_svg_cache else [".svg_cache"]
+    folder_path = reset_folder(Path(folder), preserve=preserve)
+
+    base = Base()
+
+    with timer.timer("Type calculation"):
+        map_types(base)
+
+    with timer.timer("HTML generation"):
+        generate_html(
+            base=base,
+            output_folder=folder_path,
+            svg_enabled=svg,
+            format_formulas=format_formulas,
+            flatten_formulas=flatten_formulas,
+            mermaid_formulas=mermaid_formulas,
+        )
+
+    timer.summary()
+    end = datetime.datetime.now()
+    print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
+
+
+@app.command()
+@verbose()
 def invalid():
     """Check for invalid fields"""
     base = Base()
@@ -295,6 +338,7 @@ def all(
     js_folder: Annotated[str, Option(help="Path to the JavaScript output folder")] = "",
     rs_folder: Annotated[str, Option(help="Path to the Rust output folder")] = "",
     md_folder: Annotated[str, Option(help="Path to the Markdown output folder")] = "",
+    html_folder: Annotated[str, Option(help="Path to the HTML output folder")] = "",
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
     formulas: Annotated[bool, Option(help="Include formula-helper classes in the output.")] = True,
     wrappers: Annotated[bool, Option(help="Include wrapper classes for tables and base in the output.")] = True,
@@ -302,17 +346,15 @@ def all(
     flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
     benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
-    svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in markdown.")] = True,
-    reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache when regenerating markdown.")] = False,
-    format_formulas: Annotated[
-        bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability in markdown.")
-    ] = True,
-    flatten_formulas: Annotated[bool, Option("--flatten-formulas/--no-flatten-formulas", help="Show flattened formulas in markdown.")] = True,
+    svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in docs.")] = True,
+    reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache when regenerating docs.")] = False,
+    format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability in docs.")] = True,
+    flatten_formulas: Annotated[bool, Option("--flatten-formulas/--no-flatten-formulas", help="Show flattened formulas in docs.")] = True,
     mermaid_formulas: Annotated[
-        bool, Option("--mermaid-formulas/--no-mermaid-formulas", help="Generate Mermaid diagrams for formula fields in markdown.")
+        bool, Option("--mermaid-formulas/--no-mermaid-formulas", help="Generate Mermaid diagrams for formula fields in docs.")
     ] = True,
 ):
-    """Generate json, CSV, Python, TypeScript, and/or JavaScript code."""
+    """Generate json, CSV, Python, TypeScript, JavaScript, and/or HTML code."""
     setup_benchmark(benchmark)
 
     csv_folder_path = create_folder(csv_folder) if csv_folder else None
@@ -366,6 +408,19 @@ def all(
             generate_markdown(
                 base=base,
                 output_folder=md_folder_path,
+                svg_enabled=svg,
+                format_formulas=format_formulas,
+                flatten_formulas=flatten_formulas,
+                mermaid_formulas=mermaid_formulas,
+            )
+
+    if html_folder:
+        with timer.timer("HTML generation"):
+            preserve = None if reset_svg_cache else [".svg_cache"]
+            html_folder_path = reset_folder(html_folder, preserve=preserve)
+            generate_html(
+                base=base,
+                output_folder=html_folder_path,
                 svg_enabled=svg,
                 format_formulas=format_formulas,
                 flatten_formulas=flatten_formulas,
