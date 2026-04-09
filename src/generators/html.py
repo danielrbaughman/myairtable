@@ -218,6 +218,16 @@ class WriteToHtmlFile(WriteToFile):
         self.line("  });")
         self.line("  container.querySelector('.diagram-reset').addEventListener('click',reset);")
         self.line("});")
+        # Anchor link copy
+        self.line("document.addEventListener('click',function(e){")
+        self.line("  var a=e.target.closest('.anchor-link');")
+        self.line("  if(!a)return;")
+        self.line("  e.preventDefault();")
+        self.line("  var url=location.href.split('#')[0]+a.getAttribute('href');")
+        self.line("  navigator.clipboard.writeText(url);")
+        self.line("  a.textContent='Copied!';")
+        self.line("  setTimeout(function(){a.textContent='#'},1500);")
+        self.line("});")
         # Keyboard shortcut: / to focus search
         self.line("document.addEventListener('keydown',function(e){")
         self.line("  if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){")
@@ -285,11 +295,21 @@ class WriteToHtmlFile(WriteToFile):
         """Header where content is already HTML (e.g. contains links or tags)."""
         self.line(f"<h{level}>{html_content}</h{level}>")
 
+    @staticmethod
+    def _slugify(text: str) -> str:
+        """Convert title to a URL-friendly anchor id."""
+        import re
+
+        slug = text.lower().strip()
+        slug = re.sub(r"[^a-z0-9]+", "-", slug)
+        return slug.strip("-")
+
     def section_start(self, title: str, level: int = 5, open: bool = True):
         """Start a collapsible section using <details>/<summary>."""
         open_attr = " open" if open else ""
-        self.line(f"<details{open_attr}>")
-        self.line(f"  <summary><h{level}>{_esc(title)}</h{level}></summary>")
+        slug = self._slugify(title)
+        self.line(f'<details{open_attr} id="{slug}">')
+        self.line(f'  <summary><h{level}>{_esc(title)}</h{level}><a class="anchor-link" href="#{slug}" title="Copy link to section">#</a></summary>')
 
     def section_end(self):
         self.line("</details>")

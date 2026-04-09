@@ -460,6 +460,24 @@ summary > h6 {
 	font-size: inherit;
 }
 
+.anchor-link {
+	color: var(--color-text-secondary);
+	text-decoration: none;
+	font-size: 0.85em;
+	margin-left: 8px;
+	opacity: 0.3;
+	transition: opacity 0.15s;
+}
+
+summary:hover .anchor-link {
+	opacity: 0.7;
+}
+
+.anchor-link:hover {
+	opacity: 1;
+	color: var(--color-link);
+}
+
 details > :not(summary) {
 	margin-left: 12px;
 	margin-right: 12px;
