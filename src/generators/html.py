@@ -218,6 +218,14 @@ class WriteToHtmlFile(WriteToFile):
         self.line("  });")
         self.line("  container.querySelector('.diagram-reset').addEventListener('click',reset);")
         self.line("});")
+        # Keyboard shortcut: / to focus search
+        self.line("document.addEventListener('keydown',function(e){")
+        self.line("  if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){")
+        self.line("    e.preventDefault();")
+        self.line("    var input=document.querySelector('.global-search-input');")
+        self.line("    if(input)input.focus();")
+        self.line("  }")
+        self.line("});")
         # Global search autocomplete
         self.line("document.querySelectorAll('.global-search').forEach(function(wrap){")
         self.line("  var input=wrap.querySelector('.global-search-input');")
