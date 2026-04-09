@@ -259,7 +259,8 @@ class WriteToHtmlFile(WriteToFile):
         self.line("    var matches=SEARCH_INDEX.filter(function(it){")
         self.line("      return it.name.toLowerCase().indexOf(q)>=0")
         self.line("        ||(it.table&&it.table.toLowerCase().indexOf(q)>=0)")
-        self.line("        ||it.kind.toLowerCase().indexOf(q)>=0;")
+        self.line("        ||it.kind.toLowerCase().indexOf(q)>=0")
+        self.line("        ||(it.desc&&it.desc.toLowerCase().indexOf(q)>=0);")
         self.line("    }).slice(0,15);")
         self.line("    render(matches);")
         self.line("  });")
@@ -854,13 +855,14 @@ def write_search_index(base: Base, html_root: Path) -> None:
     for table in base.tables:
         entries.append({"name": table.name, "kind": "table", "url": f"tables/{table.name_snake()}.html"})
         for field in table.fields:
-            entries.append(
-                {
-                    "name": field.name,
-                    "kind": field.type,
-                    "table": table.name,
-                    "url": f"fields/{table.name_snake()}/{field.name_snake()}.html",
-                }
-            )
+            entry: dict[str, str] = {
+                "name": field.name,
+                "kind": field.type,
+                "table": table.name,
+                "url": f"fields/{table.name_snake()}/{field.name_snake()}.html",
+            }
+            if field.description:
+                entry["desc"] = field.description
+            entries.append(entry)
     js_content = f"var SEARCH_INDEX={json.dumps(entries, separators=(',', ':'))};\n"
     (html_root / "search-index.js").write_text(js_content)
