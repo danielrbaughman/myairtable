@@ -475,12 +475,76 @@ hr {
 /* Tags (for field types) */
 .tag {
 	display: inline-block;
-	background: var(--color-tag-bg);
-	color: var(--color-tag-text);
 	font-size: 0.8rem;
 	padding: 2px 8px;
 	border-radius: 12px;
 	font-weight: 500;
+}
+
+.tag-text {
+	background: #f0f0f0;
+	color: #444;
+}
+.tag-computed {
+	background: #fde8e8;
+	color: #991b1b;
+}
+.tag-link {
+	background: #ede9fe;
+	color: #5b21b6;
+}
+.tag-date {
+	background: #dbeafe;
+	color: #1e40af;
+}
+.tag-select {
+	background: #d1fae5;
+	color: #065f46;
+}
+.tag-attachment {
+	background: #fef3c7;
+	color: #92400e;
+}
+.tag-collab {
+	background: #fce7f3;
+	color: #9d174d;
+}
+.tag-numeric {
+	background: #e0e7ff;
+	color: #3730a3;
+}
+
+body.dark-mode .tag-text {
+	background: #2a2a2a;
+	color: #b0b0b0;
+}
+body.dark-mode .tag-computed {
+	background: #3b1111;
+	color: #fca5a5;
+}
+body.dark-mode .tag-link {
+	background: #2e1065;
+	color: #c4b5fd;
+}
+body.dark-mode .tag-date {
+	background: #172554;
+	color: #93c5fd;
+}
+body.dark-mode .tag-select {
+	background: #052e16;
+	color: #6ee7b7;
+}
+body.dark-mode .tag-attachment {
+	background: #2a1f0e;
+	color: #fcd34d;
+}
+body.dark-mode .tag-collab {
+	background: #4a0e2b;
+	color: #f9a8d4;
+}
+body.dark-mode .tag-numeric {
+	background: #1e1b4b;
+	color: #a5b4fc;
 }
 
 /* Click-to-copy */

@@ -33,6 +33,41 @@ def _link(text: str, href: str) -> str:
     return f'<a href="{_esc(href)}">{text}</a>'
 
 
+# Field type -> CSS modifier for colored tags
+_TYPE_CATEGORIES: dict[str, str] = {
+    "formula": "computed",
+    "rollup": "computed",
+    "lookup": "computed",
+    "multipleLookupValues": "computed",
+    "count": "computed",
+    "multipleRecordLinks": "link",
+    "date": "date",
+    "dateTime": "date",
+    "createdTime": "date",
+    "lastModifiedTime": "date",
+    "duration": "date",
+    "singleSelect": "select",
+    "multipleSelects": "select",
+    "checkbox": "select",
+    "multipleAttachments": "attachment",
+    "singleCollaborator": "collab",
+    "multipleCollaborators": "collab",
+    "createdBy": "collab",
+    "lastModifiedBy": "collab",
+    "number": "numeric",
+    "percent": "numeric",
+    "rating": "numeric",
+    "currency": "numeric",
+    "autoNumber": "numeric",
+}
+
+
+def _field_type_tag(field_type: str) -> str:
+    """Return a <span class="tag tag-{category}"> for a field type."""
+    cat = _TYPE_CATEGORIES.get(field_type, "text")
+    return f'<span class="tag tag-{cat}">{_esc(field_type)}</span>'
+
+
 class WriteToHtmlFile(WriteToFile):
     def __init__(self, path: Path, title: str, css_path: str, breadcrumbs: list[tuple[str, str]] | None = None, depth: int = 0):
         super().__init__(path=path, language="html")
@@ -496,7 +531,7 @@ def write_tables(base: Base, html_root: Path) -> None:
                 [
                     (_link(_esc(field.name), f"../fields/{table.name_snake()}/{field.name_snake()}.html"), field.name),
                     (w.copyable(field.id), field.id),
-                    (_esc(field.type), field.type),
+                    (_field_type_tag(field.type), field.type),
                 ]
                 for field in table.fields
             ]
@@ -564,7 +599,7 @@ def write_fields(
                     w.list_start("metadata")
                     w.list_item(f"<strong>Airtable ID:</strong> {w.copyable(field.id)}")
                     w.list_item("<strong>Table:</strong> " + _link(_esc(table.name), f"../../tables/{table.name_snake()}.html"))
-                    w.list_item(f'<strong>Type:</strong> <span class="tag">{_esc(field.type)}</span>')
+                    w.list_item(f"<strong>Type:</strong> {_field_type_tag(field.type)}")
 
                 with timer.timer("HTML: write_field: links"):
                     if field.is_link_or_linked_value() and field.options:
