@@ -1,4 +1,5 @@
 import html
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -33,13 +34,15 @@ def _link(text: str, href: str) -> str:
 
 
 class WriteToHtmlFile(WriteToFile):
-    def __init__(self, path: Path, title: str, css_path: str, breadcrumbs: list[tuple[str, str]] | None = None):
+    def __init__(self, path: Path, title: str, css_path: str, breadcrumbs: list[tuple[str, str]] | None = None, depth: int = 0):
         super().__init__(path=path, language="html")
         self._title = title
         self._css_path = css_path
         self._breadcrumbs = breadcrumbs or []
+        self._depth = depth
 
     def document_start(self):
+        root = "../" * self._depth
         self.line("<!DOCTYPE html>")
         self.line('<html lang="en">')
         self.line("<head>")
@@ -47,9 +50,12 @@ class WriteToHtmlFile(WriteToFile):
         self.line('  <meta name="viewport" content="width=device-width, initial-scale=1">')
         self.line(f"  <title>{_esc(self._title)}</title>")
         self.line(f'  <link rel="stylesheet" href="{_esc(self._css_path)}">')
+        self.line(f'  <script src="{root}search-index.js"></script>')
         self.line("</head>")
         self.line("<body>")
         self.line('<div class="page">')
+        # Header bar with breadcrumbs and search
+        self.line('<div class="page-header">')
         if self._breadcrumbs:
             self.line('<nav class="breadcrumbs">')
             parts: list[str] = []
@@ -59,6 +65,11 @@ class WriteToHtmlFile(WriteToFile):
             parts.append(_esc(self._breadcrumbs[-1][0]))
             self.line("  " + '<span class="separator">/</span>'.join(parts))
             self.line("</nav>")
+        self.line(f'<div class="global-search" data-root="{root}">')
+        self.line('  <input type="text" class="global-search-input" placeholder="Search tables and fields...">')
+        self.line('  <div class="global-search-results"></div>')
+        self.line("</div>")
+        self.line("</div>")
 
     def document_end(self):
         self.line("</div>")
@@ -153,6 +164,54 @@ class WriteToHtmlFile(WriteToFile):
         self.line("    scale=Math.max(0.2,scale-0.25);apply();")
         self.line("  });")
         self.line("  container.querySelector('.diagram-reset').addEventListener('click',reset);")
+        self.line("});")
+        # Global search autocomplete
+        self.line("document.querySelectorAll('.global-search').forEach(function(wrap){")
+        self.line("  var input=wrap.querySelector('.global-search-input');")
+        self.line("  var results=wrap.querySelector('.global-search-results');")
+        self.line("  var root=wrap.dataset.root;")
+        self.line("  var sel=-1;")
+        self.line("  function render(items){")
+        self.line("    sel=-1;")
+        self.line("    if(!items.length){results.style.display='none';return;}")
+        self.line("    results.innerHTML=items.map(function(it,i){")
+        self.line("      var label=it.table?it.name+' <span class=\"search-hint\">'+it.table+' &middot; '+it.kind+'</span>'")
+        self.line("        :it.name+' <span class=\"search-hint\">'+it.kind+'</span>';")
+        self.line("      return '<div class=\"search-item\" data-idx=\"'+i+'\">'+label+'</div>';")
+        self.line("    }).join('');")
+        self.line("    results.style.display='block';")
+        self.line("    results._items=items;")
+        self.line("  }")
+        self.line("  input.addEventListener('input',function(){")
+        self.line("    var q=this.value.toLowerCase().trim();")
+        self.line("    if(!q){render([]);return;}")
+        self.line("    var matches=SEARCH_INDEX.filter(function(it){")
+        self.line("      return it.name.toLowerCase().indexOf(q)>=0")
+        self.line("        ||(it.table&&it.table.toLowerCase().indexOf(q)>=0)")
+        self.line("        ||it.kind.toLowerCase().indexOf(q)>=0;")
+        self.line("    }).slice(0,15);")
+        self.line("    render(matches);")
+        self.line("  });")
+        self.line("  input.addEventListener('keydown',function(e){")
+        self.line("    var items=results.querySelectorAll('.search-item');")
+        self.line("    if(!items.length)return;")
+        self.line("    if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(sel+1,items.length-1);}")
+        self.line("    else if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(sel-1,0);}")
+        self.line("    else if(e.key==='Enter'&&sel>=0){e.preventDefault();items[sel].click();return;}")
+        self.line("    else if(e.key==='Escape'){render([]);return;}")
+        self.line("    else return;")
+        self.line("    items.forEach(function(el,i){el.classList.toggle('active',i===sel);});")
+        self.line("  });")
+        self.line("  results.addEventListener('click',function(e){")
+        self.line("    var item=e.target.closest('.search-item');")
+        self.line("    if(!item)return;")
+        self.line("    var idx=parseInt(item.dataset.idx);")
+        self.line("    var entry=results._items[idx];")
+        self.line("    window.location.href=root+entry.url;")
+        self.line("  });")
+        self.line("  document.addEventListener('click',function(e){")
+        self.line("    if(!wrap.contains(e.target))render([]);")
+        self.line("  });")
         self.line("});")
         self.line("</script>")
         self.line("</body>")
@@ -341,6 +400,9 @@ def generate_html(
     # Copy static CSS
     shutil.copy2(_STATIC_CSS, html_root / "style.css")
 
+    # Generate search index
+    write_search_index(base, html_root)
+
     with timer.timer("HTML: write_tables"):
         write_tables(base, html_root)
         if verbose:
@@ -384,6 +446,7 @@ def write_tables(base: Base, html_root: Path) -> None:
             title=table.name,
             css_path=_css_path(1),
             breadcrumbs=crumbs,
+            depth=1,
         ) as w:
             w.document_start()
 
@@ -465,6 +528,7 @@ def write_fields(
                 title=f"{field.name} - {table.name}",
                 css_path=_css_path(2),
                 breadcrumbs=crumbs,
+                depth=2,
             ) as w:
                 w.document_start()
 
@@ -660,3 +724,21 @@ def write_index(base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bo
                 w.svg_embed("diagrams/base.svg", alt="Base schema diagram")
 
         w.document_end()
+
+
+def write_search_index(base: Base, html_root: Path) -> None:
+    """Generate a JS file with all tables/fields for global search."""
+    entries: list[dict[str, str]] = []
+    for table in base.tables:
+        entries.append({"name": table.name, "kind": "table", "url": f"tables/{table.name_snake()}.html"})
+        for field in table.fields:
+            entries.append(
+                {
+                    "name": field.name,
+                    "kind": field.type,
+                    "table": table.name,
+                    "url": f"fields/{table.name_snake()}/{field.name_snake()}.html",
+                }
+            )
+    js_content = f"var SEARCH_INDEX={json.dumps(entries, separators=(',', ':'))};\n"
+    (html_root / "search-index.js").write_text(js_content)
