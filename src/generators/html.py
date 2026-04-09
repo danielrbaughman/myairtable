@@ -1,6 +1,7 @@
 import html
 import json
 import shutil
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -790,6 +791,17 @@ def write_index(base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bo
         for table in base.tables:
             w.list_item(_link(_esc(table.name), f"tables/{table.name_snake()}.html"))
         w.list_end()
+        w.section_end()
+
+        # Field type breakdown
+        type_counts = Counter(field.type for table in base.tables for field in table.fields)
+        w.section_start(f"Field Types ({len(type_counts)})")
+        type_rows = [[(_field_type_tag(ft), ft), (str(count), str(count).zfill(6))] for ft, count in type_counts.most_common()]
+        w.interactive_table(
+            table_id="field-type-stats",
+            headers=["Type", "Count"],
+            rows=type_rows,
+        )
         w.section_end()
 
         # Base diagram
