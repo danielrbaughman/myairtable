@@ -703,6 +703,11 @@ def write_index(base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bo
         w.list_item(f"<strong>Total Views:</strong> {sum(len(t.views) for t in base.tables)}")
         w.list_end()
 
+        # Write schema JSON and add download link
+        schema_path = html_root / "schema.json"
+        schema_path.write_text(json.dumps(base.to_dict(), indent=2))
+        w.paragraph_raw('<a href="schema.json" download="schema.json">Download Schema (JSON)</a>')
+
         w.section_start(f"Tables ({len(base.tables)})")
         w.list_start()
         for table in base.tables:
