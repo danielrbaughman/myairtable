@@ -76,8 +76,12 @@ body {
 	justify-content: space-between;
 	gap: 16px;
 	margin-bottom: 24px;
-	padding-bottom: 12px;
+	padding: 12px 0;
 	border-bottom: 1px solid var(--color-border);
+	position: sticky;
+	top: 0;
+	background: var(--color-bg);
+	z-index: 50;
 }
 
 /* Theme toggle */
