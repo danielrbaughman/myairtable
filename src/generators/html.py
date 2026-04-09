@@ -420,6 +420,13 @@ def generate_html(
     # Generate search index
     write_search_index(base, html_root)
 
+    # Build reverse dependency index: field_id -> list of (field, table) that reference it
+    reverse_deps: dict[str, list[tuple]] = {}
+    for table in base.tables:
+        for field in table.fields:
+            for ref in field.referenced_fields():
+                reverse_deps.setdefault(ref.id, []).append((field, table))
+
     with timer.timer("HTML: write_tables"):
         write_tables(base, html_root)
         if verbose:
@@ -436,6 +443,7 @@ def generate_html(
             format_formulas=format_formulas,
             flatten_formulas=flatten_formulas,
             mermaid_formulas=mermaid_formulas,
+            reverse_deps=reverse_deps,
         )
         if verbose:
             print("[dim] - HTML fields generated.[/]")
@@ -529,6 +537,7 @@ def write_fields(
     format_formulas: bool = True,
     flatten_formulas: bool = True,
     mermaid_formulas: bool = True,
+    reverse_deps: dict[str, list[tuple]] | None = None,
 ) -> list[tuple[str, str]]:
     svg_tasks: list[tuple[str, str]] = []
 
@@ -682,6 +691,22 @@ def write_fields(
                                     )
                                 )
                             w.list_end()
+                        w.section_end()
+
+                with timer.timer("HTML: write_field: reverse deps"):
+                    refs_by = reverse_deps.get(field.id, []) if reverse_deps else []
+                    if refs_by:
+                        w.section_start(f"Referenced By ({len(refs_by)})")
+                        w.list_start()
+                        for ref_field, ref_table in refs_by:
+                            label = f'{_esc(ref_field.name)} <span class="search-hint">{_esc(ref_table.name)} &middot; {_esc(ref_field.type)}</span>'
+                            w.list_item(
+                                _link(
+                                    label,
+                                    f"../../fields/{ref_table.name_snake()}/{ref_field.name_snake()}.html",
+                                )
+                            )
+                        w.list_end()
                         w.section_end()
 
                 w.document_end()
