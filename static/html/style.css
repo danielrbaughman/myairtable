@@ -428,10 +428,50 @@ pre.copyable-block::after {
 }
 
 /* Diagrams */
+.diagram-container {
+	position: relative;
+	margin: 12px 0;
+}
+
+.diagram-viewport {
+	overflow: hidden;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	cursor: grab;
+	min-height: 120px;
+}
+
+.diagram-viewport:active {
+	cursor: grabbing;
+}
+
 .diagram {
 	max-width: 100%;
 	height: auto;
-	margin: 12px 0;
+	transform-origin: 0 0;
+	display: block;
+	-webkit-user-drag: none;
+	user-select: none;
+}
+
+.diagram-controls {
+	display: flex;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.diagram-btn {
+	padding: 4px 10px;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	background: var(--color-bg);
+	cursor: pointer;
+	font-size: 0.8rem;
+	color: var(--color-text-secondary);
+}
+
+.diagram-btn:hover {
+	background: var(--color-table-header);
 }
 
 /* Field list on table pages */
