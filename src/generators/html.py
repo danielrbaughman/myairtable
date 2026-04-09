@@ -7,6 +7,8 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_formatter import _count_nesting_depth
+from ..formulas.formula_tokenizer import TokenType, tokenize_formula
 from ..meta import Base
 from ..utils import timer
 from ..utils.helpers import Paths
@@ -67,6 +69,28 @@ def _field_type_tag(field_type: str) -> str:
     """Return a <span class="tag tag-{category}"> for a field type."""
     cat = _TYPE_CATEGORIES.get(field_type, "text")
     return f'<span class="tag tag-{cat}">{_esc(field_type)}</span>'
+
+
+def _formula_complexity(formula: str) -> tuple[str, str]:
+    """Return (label, css_class) for a formula's complexity level."""
+    depth = _count_nesting_depth(formula)
+    tokens = tokenize_formula(formula)
+    func_count = sum(1 for t in tokens if t.type == TokenType.FUNCTION)
+    ref_count = sum(1 for t in tokens if t.type == TokenType.FIELD_REF)
+
+    score = depth * 3 + func_count + ref_count
+    if score <= 5:
+        return "simple", "complexity-simple"
+    elif score <= 20:
+        return "moderate", "complexity-moderate"
+    else:
+        return "complex", "complexity-complex"
+
+
+def _formula_complexity_badge(formula: str) -> str:
+    """Return a <span> badge for formula complexity."""
+    label, css = _formula_complexity(formula)
+    return f'<span class="tag {css}">{_esc(label)}</span>'
 
 
 class WriteToHtmlFile(WriteToFile):
@@ -658,6 +682,9 @@ def write_fields(
                                     f"../../fields/{table.name_snake()}/{counted_field.name_snake()}.html",
                                 )
                             )
+
+                if field.type == "formula" and field.options and field.options.formula:
+                    w.list_item(f"<strong>Complexity:</strong> {_formula_complexity_badge(field.options.formula)}")
 
                 w.list_end()
 

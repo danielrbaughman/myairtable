@@ -569,6 +569,33 @@ body.dark-mode .tag-numeric {
 	color: #a5b4fc;
 }
 
+/* Formula complexity badges */
+.complexity-simple {
+	background: #d1fae5;
+	color: #065f46;
+}
+.complexity-moderate {
+	background: #fef3c7;
+	color: #92400e;
+}
+.complexity-complex {
+	background: #fde8e8;
+	color: #991b1b;
+}
+
+body.dark-mode .complexity-simple {
+	background: #052e16;
+	color: #6ee7b7;
+}
+body.dark-mode .complexity-moderate {
+	background: #2a1f0e;
+	color: #fcd34d;
+}
+body.dark-mode .complexity-complex {
+	background: #3b1111;
+	color: #fca5a5;
+}
+
 /* Click-to-copy */
 .copyable {
 	cursor: pointer;
