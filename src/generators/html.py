@@ -17,8 +17,12 @@ from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
 from .mermaid import mermaid_base, mermaid_formula
 
-# Path to the static CSS file bundled with the project
-_STATIC_CSS = Path(__file__).resolve().parent.parent.parent / "static" / "html" / "style.css"
+# Paths to static files bundled with the project
+_STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "html"
+_STATIC_CSS = _STATIC_DIR / "style.css"
+_STATIC_JS = _STATIC_DIR / "script.js"
+_TEMPLATE_HEADER = (_STATIC_DIR / "template-header.html").read_text()
+_TEMPLATE_FOOTER = (_STATIC_DIR / "template-footer.html").read_text()
 
 
 def _esc(text: str) -> str:
@@ -101,216 +105,28 @@ class WriteToHtmlFile(WriteToFile):
         self._breadcrumbs = breadcrumbs or []
         self._depth = depth
 
+    def _render_breadcrumbs(self) -> str:
+        if not self._breadcrumbs:
+            return ""
+        parts: list[str] = []
+        for label, href in self._breadcrumbs[:-1]:
+            parts.append(_link(_esc(label), href))
+        parts.append(_esc(self._breadcrumbs[-1][0]))
+        inner = '<span class="separator">/</span>'.join(parts)
+        return f'<nav class="breadcrumbs">\n  {inner}\n</nav>'
+
     def document_start(self):
         root = "../" * self._depth
-        self.line("<!DOCTYPE html>")
-        self.line('<html lang="en">')
-        self.line("<head>")
-        self.line('  <meta charset="utf-8">')
-        self.line('  <meta name="viewport" content="width=device-width, initial-scale=1">')
-        self.line(f"  <title>{_esc(self._title)}</title>")
-        self.line(f'  <link rel="stylesheet" href="{_esc(self._css_path)}">')
-        self.line(f'  <script src="{root}search-index.js"></script>')
-        self.line("</head>")
-        self.line("<body>")
-        # Apply saved theme (or system preference) before any content renders to avoid flash
-        self.line(
-            "<script>(function(){var t=localStorage.getItem('theme');"
-            "if(t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme:dark)').matches))"
-            "document.body.classList.add('dark-mode');})()</script>"
-        )
-        self.line('<div class="page">')
-        # Header bar with breadcrumbs, search, and theme toggle
-        self.line('<div class="page-header">')
-        if self._breadcrumbs:
-            self.line('<nav class="breadcrumbs">')
-            parts: list[str] = []
-            for label, href in self._breadcrumbs[:-1]:
-                parts.append(_link(_esc(label), href))
-            # Last breadcrumb is current page (no link)
-            parts.append(_esc(self._breadcrumbs[-1][0]))
-            self.line("  " + '<span class="separator">/</span>'.join(parts))
-            self.line("</nav>")
-        self.line('<button class="theme-toggle" title="Toggle dark mode">&#9790;</button>')
-        self.line(f'<div class="global-search" data-root="{root}">')
-        self.line('  <input type="text" class="global-search-input" placeholder="Search tables and fields...">')
-        self.line('  <div class="global-search-results"></div>')
-        self.line("</div>")
-        self.line("</div>")
+        header = _TEMPLATE_HEADER.replace("{{title}}", _esc(self._title))
+        header = header.replace("{{css_path}}", _esc(self._css_path))
+        header = header.replace("{{root}}", root)
+        header = header.replace("{{breadcrumbs}}", self._render_breadcrumbs())
+        self.line(header.rstrip())
 
     def document_end(self):
-        self.line("</div>")
-        self.line("<script>")
-        # Theme toggle
-        self.line("document.querySelectorAll('.theme-toggle').forEach(function(btn){")
-        self.line("  btn.textContent=document.body.classList.contains('dark-mode')?'\\u2600':'\\u263E';")
-        self.line("  btn.addEventListener('click',function(){")
-        self.line("    document.body.classList.toggle('dark-mode');")
-        self.line("    var dark=document.body.classList.contains('dark-mode');")
-        self.line("    localStorage.setItem('theme',dark?'dark':'light');")
-        self.line("    btn.textContent=dark?'\\u2600':'\\u263E';")
-        self.line("  });")
-        self.line("});")
-        # Copy-to-clipboard
-        self.line("document.addEventListener('click',function(e){")
-        self.line("  var el=e.target.closest('.copyable');")
-        self.line("  if(!el)return;")
-        self.line("  navigator.clipboard.writeText(el.getAttribute('data-copy'));")
-        self.line("  el.classList.add('copied');")
-        self.line("  setTimeout(function(){el.classList.remove('copied')},1500);")
-        self.line("});")
-        # Interactive table: search
-        self.line("document.querySelectorAll('.interactive-search').forEach(function(input){")
-        self.line("  input.addEventListener('input',function(){")
-        self.line("    var wrap=document.getElementById(this.dataset.target);")
-        self.line("    var term=this.value.toLowerCase();")
-        self.line("    wrap.querySelectorAll('tbody tr').forEach(function(tr){")
-        self.line("      var text=tr.textContent.toLowerCase();")
-        self.line("      tr.style.display=text.indexOf(term)<0?'none':'';")
-        self.line("    });")
-        self.line("  });")
-        self.line("});")
-        # Interactive table: filter
-        self.line("document.querySelectorAll('.interactive-filter').forEach(function(sel){")
-        self.line("  sel.addEventListener('change',function(){")
-        self.line("    var wrap=document.getElementById(this.dataset.target);")
-        self.line("    var col=parseInt(this.dataset.col);")
-        self.line("    var val=this.value;")
-        self.line("    wrap.querySelectorAll('tbody tr').forEach(function(tr){")
-        self.line("      var cell=tr.children[col];")
-        self.line("      if(!val){tr.style.display='';return;}")
-        self.line("      tr.style.display=cell.getAttribute('data-sort-value')===val?'':'none';")
-        self.line("    });")
-        self.line("    var searchInput=wrap.querySelector('.interactive-search');")
-        self.line("    if(searchInput)searchInput.value='';")
-        self.line("  });")
-        self.line("});")
-        # Interactive table: sort
-        self.line("document.querySelectorAll('table.interactive thead th').forEach(function(th){")
-        self.line("  th.addEventListener('click',function(){")
-        self.line("    var table=this.closest('table');")
-        self.line("    var col=parseInt(this.dataset.col);")
-        self.line("    var asc=!this.classList.contains('sort-asc');")
-        self.line("    table.querySelectorAll('th').forEach(function(h){h.classList.remove('sort-asc','sort-desc');});")
-        self.line("    this.classList.add(asc?'sort-asc':'sort-desc');")
-        self.line("    var tbody=table.querySelector('tbody');")
-        self.line("    var rows=Array.from(tbody.querySelectorAll('tr'));")
-        self.line("    rows.sort(function(a,b){")
-        self.line("      var av=a.children[col].getAttribute('data-sort-value')||a.children[col].textContent;")
-        self.line("      var bv=b.children[col].getAttribute('data-sort-value')||b.children[col].textContent;")
-        self.line("      return asc?av.localeCompare(bv):bv.localeCompare(av);")
-        self.line("    });")
-        self.line("    rows.forEach(function(r){tbody.appendChild(r);});")
-        self.line("  });")
-        self.line("});")
-        # Diagram pan/zoom
-        self.line("document.querySelectorAll('.diagram-container').forEach(function(container){")
-        self.line("  var vp=container.querySelector('.diagram-viewport');")
-        self.line("  var img=vp.querySelector('.diagram');")
-        self.line("  var scale=1,panX=0,panY=0,dragging=false,lastX,lastY;")
-        self.line("  function apply(){img.style.transform='translate('+panX+'px,'+panY+'px) scale('+scale+')';}")
-        self.line("  function reset(){scale=1;panX=0;panY=0;apply();}")
-        self.line("  vp.addEventListener('wheel',function(e){")
-        self.line("    e.preventDefault();")
-        self.line("    var d=e.deltaY>0?-0.1:0.1;")
-        self.line("    scale=Math.min(Math.max(0.2,scale+d),5);")
-        self.line("    apply();")
-        self.line("  },{passive:false});")
-        self.line("  vp.addEventListener('pointerdown',function(e){")
-        self.line("    if(e.button!==0)return;")
-        self.line("    dragging=true;lastX=e.clientX;lastY=e.clientY;")
-        self.line("    vp.setPointerCapture(e.pointerId);")
-        self.line("    vp.style.cursor='grabbing';")
-        self.line("    e.preventDefault();")
-        self.line("  });")
-        self.line("  vp.addEventListener('pointermove',function(e){")
-        self.line("    if(!dragging)return;")
-        self.line("    panX+=e.clientX-lastX;panY+=e.clientY-lastY;")
-        self.line("    lastX=e.clientX;lastY=e.clientY;")
-        self.line("    apply();")
-        self.line("  });")
-        self.line("  vp.addEventListener('pointerup',function(e){")
-        self.line("    if(!dragging)return;")
-        self.line("    dragging=false;vp.releasePointerCapture(e.pointerId);")
-        self.line("    vp.style.cursor='';")
-        self.line("  });")
-        self.line("  container.querySelector('.diagram-zoom-in').addEventListener('click',function(){")
-        self.line("    scale=Math.min(5,scale+0.25);apply();")
-        self.line("  });")
-        self.line("  container.querySelector('.diagram-zoom-out').addEventListener('click',function(){")
-        self.line("    scale=Math.max(0.2,scale-0.25);apply();")
-        self.line("  });")
-        self.line("  container.querySelector('.diagram-reset').addEventListener('click',reset);")
-        self.line("});")
-        # Anchor link copy
-        self.line("document.addEventListener('click',function(e){")
-        self.line("  var a=e.target.closest('.anchor-link');")
-        self.line("  if(!a)return;")
-        self.line("  e.preventDefault();")
-        self.line("  var url=location.href.split('#')[0]+a.getAttribute('href');")
-        self.line("  navigator.clipboard.writeText(url);")
-        self.line("  a.textContent='Copied!';")
-        self.line("  setTimeout(function(){a.textContent='#'},1500);")
-        self.line("});")
-        # Keyboard shortcut: / to focus search
-        self.line("document.addEventListener('keydown',function(e){")
-        self.line("  if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){")
-        self.line("    e.preventDefault();")
-        self.line("    var input=document.querySelector('.global-search-input');")
-        self.line("    if(input)input.focus();")
-        self.line("  }")
-        self.line("});")
-        # Global search autocomplete
-        self.line("document.querySelectorAll('.global-search').forEach(function(wrap){")
-        self.line("  var input=wrap.querySelector('.global-search-input');")
-        self.line("  var results=wrap.querySelector('.global-search-results');")
-        self.line("  var root=wrap.dataset.root;")
-        self.line("  var sel=-1;")
-        self.line("  function render(items){")
-        self.line("    sel=-1;")
-        self.line("    if(!items.length){results.style.display='none';return;}")
-        self.line("    results.innerHTML=items.map(function(it,i){")
-        self.line("      var label=it.table?it.name+' <span class=\"search-hint\">'+it.table+' &middot; '+it.kind+'</span>'")
-        self.line("        :it.name+' <span class=\"search-hint\">'+it.kind+'</span>';")
-        self.line("      return '<div class=\"search-item\" data-idx=\"'+i+'\">'+label+'</div>';")
-        self.line("    }).join('');")
-        self.line("    results.style.display='block';")
-        self.line("    results._items=items;")
-        self.line("  }")
-        self.line("  input.addEventListener('input',function(){")
-        self.line("    var q=this.value.toLowerCase().trim();")
-        self.line("    if(!q){render([]);return;}")
-        self.line("    var tokens=q.split(/\\s+/);")
-        self.line("    var matches=SEARCH_INDEX.filter(function(it){")
-        self.line("      var text=(it.name+' '+(it.table||'')+' '+it.kind+' '+(it.desc||'')).toLowerCase();")
-        self.line("      return tokens.every(function(t){return text.indexOf(t)>=0;});")
-        self.line("    }).slice(0,15);")
-        self.line("    render(matches);")
-        self.line("  });")
-        self.line("  input.addEventListener('keydown',function(e){")
-        self.line("    var items=results.querySelectorAll('.search-item');")
-        self.line("    if(!items.length)return;")
-        self.line("    if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(sel+1,items.length-1);}")
-        self.line("    else if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(sel-1,0);}")
-        self.line("    else if(e.key==='Enter'&&sel>=0){e.preventDefault();items[sel].click();return;}")
-        self.line("    else if(e.key==='Escape'){render([]);return;}")
-        self.line("    else return;")
-        self.line("    items.forEach(function(el,i){el.classList.toggle('active',i===sel);});")
-        self.line("  });")
-        self.line("  results.addEventListener('click',function(e){")
-        self.line("    var item=e.target.closest('.search-item');")
-        self.line("    if(!item)return;")
-        self.line("    var idx=parseInt(item.dataset.idx);")
-        self.line("    var entry=results._items[idx];")
-        self.line("    window.location.href=root+entry.url;")
-        self.line("  });")
-        self.line("  document.addEventListener('click',function(e){")
-        self.line("    if(!wrap.contains(e.target))render([]);")
-        self.line("  });")
-        self.line("});")
-        self.line("</script>")
-        self.line("</body>")
-        self.line("</html>")
+        root = "../" * self._depth
+        footer = _TEMPLATE_FOOTER.replace("{{root}}", root)
+        self.line(footer.rstrip())
 
     def header(self, text: str, level: int = 1):
         self.line(f"<h{level}>{_esc(text)}</h{level}>")
@@ -502,8 +318,9 @@ def generate_html(
         svg_cache_dir = output_folder / ".svg_cache"
         svg_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy static CSS
+    # Copy static assets
     shutil.copy2(_STATIC_CSS, html_root / "style.css")
+    shutil.copy2(_STATIC_JS, html_root / "script.js")
 
     # Generate search index
     write_search_index(base, html_root)

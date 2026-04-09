@@ -10,3 +10,4 @@ coverage
 .ruff_cache
 __pycache__
 output
+static/html/template-*.html
