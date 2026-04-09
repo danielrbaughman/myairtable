@@ -596,6 +596,16 @@ body.dark-mode .complexity-complex {
 	color: #fca5a5;
 }
 
+/* Unreferenced field badge */
+.tag-unreferenced {
+	background: #f0f0f0;
+	color: #888;
+}
+body.dark-mode .tag-unreferenced {
+	background: #2a2a2a;
+	color: #777;
+}
+
 /* Click-to-copy */
 .copyable {
 	cursor: pointer;

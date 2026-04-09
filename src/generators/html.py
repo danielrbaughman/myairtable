@@ -543,7 +543,7 @@ def generate_html(
             print("[dim] - SVGs generated.[/]")
 
     with timer.timer("HTML: write_index"):
-        write_index(base, html_root, diagrams_dir, svg_enabled)
+        write_index(base, html_root, diagrams_dir, svg_enabled, reverse_deps)
         if verbose:
             print("[dim] - HTML index generated.[/]")
 
@@ -800,6 +800,8 @@ def write_fields(
                             )
                         w.list_end()
                         w.section_end()
+                    elif reverse_deps is not None and not field.is_computed():
+                        w.paragraph_raw('<span class="tag tag-unreferenced">unreferenced</span> Not used by any formula, lookup, or rollup.')
 
                 w.document_end()
 
@@ -820,7 +822,9 @@ def write_svgs(
                 svg_path.write_text(svg_content)
 
 
-def write_index(base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bool = True) -> None:
+def write_index(
+    base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bool = True, reverse_deps: dict[str, list[tuple]] | None = None
+) -> None:
     with WriteToHtmlFile(
         path=html_root / "index.html",
         title="Airtable Documentation",
@@ -872,6 +876,32 @@ def write_index(base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bo
                 svg_path = diagrams_dir / "base.svg"
                 svg_path.write_text(svg_content)
                 w.svg_embed("diagrams/base.svg", alt="Base schema diagram")
+
+        # Dead fields summary
+        if reverse_deps is not None:
+            dead_fields: list[tuple] = []
+            for table in base.tables:
+                for field in table.fields:
+                    if field.id not in reverse_deps and not field.is_computed():
+                        dead_fields.append((field, table))
+            if dead_fields:
+                w.section_start(f"Unreferenced Fields ({len(dead_fields)})", open=False)
+                w.paragraph("Fields not referenced by any formula, lookup, or rollup.")
+                dead_rows = [
+                    [
+                        (_link(_esc(f.name), f"fields/{t.name_snake()}/{f.name_snake()}.html"), f.name),
+                        (_esc(t.name), t.name),
+                        (_field_type_tag(f.type), f.type),
+                    ]
+                    for f, t in dead_fields
+                ]
+                w.interactive_table(
+                    table_id="dead-fields",
+                    headers=["Field", "Table", "Type"],
+                    rows=dead_rows,
+                    filter_columns=[1, 2],
+                )
+                w.section_end()
 
         w.document_end()
 
