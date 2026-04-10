@@ -104,18 +104,18 @@ myAirtable also includes support for generating documentation for your Airtable 
 - Tags for each field type for easy sorting/filtering
 - Links between related tables/fields, whether by link, lookup, rollup, or formula.
 - Formula fields are where it really shines. It shows:
-  - A "flattened" version of the formula. If the formulas references anoher formula (etc), the whole thing is shown.
+  - A "flattened" version of the formula. If the formula references another formula (etc), the whole thing is shown.
   - A formatted and syntax-colored version of the formula, for easy readability.
   - A [Mermaid](https://mermaid.ai) representation of the formula.
 
 ### Extra Goodies (because I can't stop coding...)
 
-- All the types: just about everything fromt the schema has a constant/dict/type for convenience. Want an array of the options for a select field? How about a map between field ids and names? Or perhaps a union type representing all table names? It's all in there.
+- All the types: just about everything from the schema has a constant/dict/type for convenience. Want an array of the options for a select field? How about a map between field ids and names? Or perhaps a union type representing all table names? It's all in there.
 - Convenience functions to:
   - build an Airtable URL for base/table/view/record
   - get the schema, either static (the one used to build the code) or live (from Airtable's API)
 - Optional caching
-- Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation. Support nearly all formulas (can't do LAST_MODIFIED_TIME or CREATED_TIME).
+- Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation. Supports nearly all formulas (can't do LAST_MODIFIED_TIME or CREATED_TIME).
 - MCP Server: Allows agents to analyze your Airtable schema
 
 ## Getting Started

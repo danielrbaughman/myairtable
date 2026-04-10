@@ -2,12 +2,16 @@
 
 // Theme toggle
 document.querySelectorAll(".theme-toggle").forEach(function (btn) {
-	btn.textContent = document.body.classList.contains("dark-mode") ? "\u2600" : "\u263E";
+	function sync(dark) {
+		btn.textContent = dark ? "\u2600" : "\u263E";
+		btn.setAttribute("aria-pressed", dark ? "true" : "false");
+	}
+	sync(document.body.classList.contains("dark-mode"));
 	btn.addEventListener("click", function () {
 		document.body.classList.toggle("dark-mode");
 		var dark = document.body.classList.contains("dark-mode");
 		localStorage.setItem("theme", dark ? "dark" : "light");
-		btn.textContent = dark ? "\u2600" : "\u263E";
+		sync(dark);
 	});
 });
 
@@ -15,11 +19,16 @@ document.querySelectorAll(".theme-toggle").forEach(function (btn) {
 document.addEventListener("click", function (e) {
 	var el = e.target.closest(".copyable");
 	if (!el) return;
-	navigator.clipboard.writeText(el.getAttribute("data-copy"));
-	el.classList.add("copied");
-	setTimeout(function () {
-		el.classList.remove("copied");
-	}, 1500);
+	if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+	navigator.clipboard.writeText(el.getAttribute("data-copy")).then(
+		function () {
+			el.classList.add("copied");
+			setTimeout(function () {
+				el.classList.remove("copied");
+			}, 1500);
+		},
+		function () {},
+	);
 });
 
 // Interactive table: search
@@ -145,11 +154,16 @@ document.addEventListener("click", function (e) {
 	if (!a) return;
 	e.preventDefault();
 	var url = location.href.split("#")[0] + a.getAttribute("href");
-	navigator.clipboard.writeText(url);
-	a.textContent = "Copied!";
-	setTimeout(function () {
-		a.textContent = "#";
-	}, 1500);
+	if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+	navigator.clipboard.writeText(url).then(
+		function () {
+			a.textContent = "Copied!";
+			setTimeout(function () {
+				a.textContent = "#";
+			}, 1500);
+		},
+		function () {},
+	);
 });
 
 // Keyboard shortcut: / to focus search
@@ -174,18 +188,22 @@ document.querySelectorAll(".global-search").forEach(function (wrap) {
 	var sel = -1;
 	function render(items) {
 		sel = -1;
+		results.replaceChildren();
 		if (!items.length) {
 			results.style.display = "none";
 			return;
 		}
-		results.innerHTML = items
-			.map(function (it, i) {
-				var label = it.table
-					? it.name + ' <span class="search-hint">' + it.table + " &middot; " + it.kind + "</span>"
-					: it.name + ' <span class="search-hint">' + it.kind + "</span>";
-				return '<div class="search-item" data-idx="' + i + '">' + label + "</div>";
-			})
-			.join("");
+		items.forEach(function (it, i) {
+			var item = document.createElement("div");
+			item.className = "search-item";
+			item.dataset.idx = i;
+			item.appendChild(document.createTextNode(it.name + " "));
+			var hint = document.createElement("span");
+			hint.className = "search-hint";
+			hint.textContent = it.table ? it.table + " \u00B7 " + it.kind : it.kind;
+			item.appendChild(hint);
+			results.appendChild(item);
+		});
 		results.style.display = "block";
 		results._items = items;
 	}
