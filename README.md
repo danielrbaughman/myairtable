@@ -96,14 +96,14 @@ airtable.contacts.dict.update(contact)
 
 myAirtable optionally generates CSV files containing the names/ids of the tables and fields, including the "property name" or "model name" (for the ORM models) that they will be given in myAirtable's output. These CSV files, if present in the destination folder, will be used as the source of truth for table, model, and field names in the generated code. They can thus be used to prevent class/property names from changing unexpectedly when someone else changes a field name in Airtable, or for customizing the class/property names as they appear in code, if you prefer a different name for a given table/field. They can also be handy for resolving duplicate property name issues if that happens.
 
-### Documentation via Markdown
+### Documentation (Markdown and HTML)
 
-myAirtable also includes support for generating documentation for your Airtable base, written in Markdown, intended for use in Obsidian. This documentation includes:
+myAirtable also includes support for generating documentation for your Airtable base. There is a version in Markdown (intended for Obsidian) and in HTML (intended as a static website). This documentation includes:
 
 - Files for every table & field, with metadata for each.
 - Tags for each field type for easy sorting/filtering
-- Obsidian links between related tables/fields, whether by link, lookup, rollup, or formula. This make the graph look pretty neat :)
-- For formula fields, the formulas are presented in a variety of ways, most notably:
+- Links between related tables/fields, whether by link, lookup, rollup, or formula.
+- Formula fields are where it really shines. It shows:
   - A "flattened" version of the formula. If the formulas references anoher formula (etc), the whole thing is shown.
   - A formatted and syntax-colored version of the formula, for easy readability.
   - A [Mermaid](https://mermaid.ai) representation of the formula.
@@ -115,7 +115,7 @@ myAirtable also includes support for generating documentation for your Airtable 
   - build an Airtable URL for base/table/view/record
   - get the schema, either static (the one used to build the code) or live (from Airtable's API)
 - Optional caching
-- Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation.
+- Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation. Support nearly all formulas (can't do LAST_MODIFIED_TIME or CREATED_TIME).
 - MCP Server: Allows agents to analyze your Airtable schema
 
 ## Getting Started
