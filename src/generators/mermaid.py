@@ -96,11 +96,16 @@ class WriteToMermaidFile(WriteToFile):
         self.line(f"class {id} {color}")
 
 
+def _mermaid_label(name: str) -> str:
+    """Return a name safe for use inside a quoted mermaid node label."""
+    return name.replace('"', "&quot;")
+
+
 def mermaid_base(base: Base) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
     write.flowchart()
     for table in base.tables:
-        write.node(table.id, table.name_markdown(), indent=1)
+        write.node(table.id, _mermaid_label(table.name), indent=1)
         for t in table.linked_tables():
             write.link(table.id, t.id, indent=2)
 
@@ -108,19 +113,15 @@ def mermaid_base(base: Base) -> str:
 
 
 def box_label(field: Field) -> str:
-    label = f"""
-{field.name_markdown()}
-_({field.type_friendly()})_
-"""
-    return label
+    return f"\n{_mermaid_label(field.name)}\n({field.type_friendly()})\n"
 
 
 def mermaid_field(field: Field) -> str:
     write = WriteToMermaidFile(path=Path("/dev/null"))  # Dummy path since we won't write to file
     write.flowchart("LR")
-    write.node(field.id, field.name_markdown())
+    write.node(field.id, _mermaid_label(field.name))
     for f in field.referenced_fields():
-        write.node(f.id, f.name_markdown())
+        write.node(f.id, _mermaid_label(f.name))
         write.link(field.id, to_id=f.id, indent=2)
 
     return "\n".join(write.lines)
