@@ -370,7 +370,7 @@ def generate_html(
 
 def write_tables(base: Base, html_root: Path) -> None:
     for table in base.tables:
-        crumbs = [("Home", "../index.html"), ("Tables", "../index.html"), (table.name, "")]
+        crumbs = [("Home", "../index.html"), (table.name, "")]
         with WriteToHtmlFile(
             path=html_root / "tables" / f"{table.name_snake()}.html",
             title=table.name,
