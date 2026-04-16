@@ -40,6 +40,54 @@ public protocol AirtableModel: AnyObject, Codable {
 
 extension AirtableModel {
     public var isNew: Bool { (id ?? "").isEmpty }
+
+    // MARK: - Fluent operations via a table
+    //
+    // These extensions give a "model-side" API on top of the stateless
+    // `OrmTable` struct — users write `model.save(via: airtable.primary.orm)`
+    // instead of `airtable.primary.orm.updateOne(model)`. Mirrors the Rust
+    // target's `model.save()` / `.fetch()` / `.delete()` fluent pattern.
+    //
+    // Unlike Rust, we don't cache the client on the model — the caller
+    // threads the table through each call. That keeps models stateless and
+    // SwiftUI-binding-friendly (no hidden references, no Sendable gotchas).
+
+    /// Persist the model. Requires an existing `id` — a brand-new model must
+    /// be created via `OrmTable.createOne(_:)` with a `Create*Model` payload
+    /// (we can't synthesize one from the class at runtime without reflection).
+    public func save<C: Encodable & Sendable>(
+        via table: OrmTable<Self, C>,
+        typecast: Bool = false
+    ) async throws -> Self {
+        try await table.updateOne(self, typecast: typecast)
+    }
+
+    /// Re-fetch the model from the server. Returns a fresh instance — Swift
+    /// protocol extensions can't mutate generic `Self` in-place.
+    public func refresh<C: Encodable & Sendable>(
+        via table: OrmTable<Self, C>
+    ) async throws -> Self {
+        guard let id = self.id, !id.isEmpty else {
+            throw AirtableError.api(
+                code: "UNSAVED_MODEL",
+                message: "Cannot refresh an unsaved model"
+            )
+        }
+        return try await table.getOne(id)
+    }
+
+    /// Delete the record referenced by this model's `id`.
+    public func delete<C: Encodable & Sendable>(
+        via table: OrmTable<Self, C>
+    ) async throws {
+        guard let id = self.id, !id.isEmpty else {
+            throw AirtableError.api(
+                code: "UNSAVED_MODEL",
+                message: "Cannot delete an unsaved model"
+            )
+        }
+        try await table.deleteOne(id)
+    }
 }
 
 // MARK: - Wire envelopes
