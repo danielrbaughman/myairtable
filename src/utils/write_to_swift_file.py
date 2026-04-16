@@ -126,19 +126,19 @@ class WriteToSwiftFile(WriteToFile):
         super().__init__(path=path, language="swift")
 
     # ---- regions / markers ------------------------------------------------
-    def mark(self, text: str):
+    def mark(self, text: str, indent: int = 0):
         """Emit `// MARK: text` — Xcode navigator landmark."""
-        self.line(f"// MARK: {text}")
+        self.line_indented(f"// MARK: {text}", indent)
 
-    def mark_section(self, text: str):
+    def mark_section(self, text: str, indent: int = 0):
         """Emit `// MARK: - text` — Xcode navigator landmark with separator."""
-        self.line(f"// MARK: - {text}")
+        self.line_indented(f"// MARK: - {text}", indent)
 
     # Alias the region/endregion API from WriteToRustFile for parity with
     # existing generator call sites. In Swift these collapse to MARK comments;
     # endregion is a no-op blank line since Swift has no explicit terminator.
-    def region(self, text: str):
-        self.mark_section(text)
+    def region(self, text: str, indent: int = 0):
+        self.mark_section(text, indent)
 
     def endregion(self):
         self.line_empty()

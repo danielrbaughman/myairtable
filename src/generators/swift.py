@@ -261,10 +261,260 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_empty()
 
 
-def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate per-table `{Table}Table` struct exposing a `DictTable` accessor.
+def write_models(base: Base, output_folder: Path) -> None:
+    """Generate per-table `@Observable final class {Table}Model` + `struct Create{Table}Model`.
 
-    F3 emits dict-only tables. F4 adds the `.orm` accessor.
+    Layout: `dynamic/models/{Table}Model.swift`. Each file contains:
+      1. `@Observable final class {Table}Model: AirtableModel`
+         - `let` for computed fields (server-owned)
+         - `var` for writable fields (user-settable)
+         - manual `CodingKeys` + `init(from:)` + `encode(to:)`
+         - `@ObservationIgnored _snapshot` for dirty tracking
+         - protocol impls: `toRecord()`, `takeSnapshot()`, `dirtyFields()`
+      2. `struct Create{Table}Model: Encodable, Sendable`
+         - writable fields only; Encodable payload for OrmTable.createOne
+
+    `@Observable`'s macro-generated observation tracking breaks automatic
+    `Codable` synthesis — hence the manual `init(from:)`/`encode(to:)`.
+    Phase 0 gate (`TestCodableObservableModel.swift`) validates this pattern.
+    """
+    models_dir = _create_swift_dynamic_subdir(output_folder, _DIR_MODELS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        model_name = f"{prefix}Model"
+        create_name = f"Create{prefix}Model"
+        file_name = f"{model_name}.swift"
+
+        # Split fields into computed (read-only) and writable (read-write).
+        computed_fields = [f for f in table.fields if f.is_computed()]
+        writable_fields = [f for f in table.fields if not f.is_computed()]
+
+        with WriteToSwiftFile(path=models_dir / file_name) as write:
+            write.import_stmt("Foundation")
+            write.import_stmt("Observation")
+            write.line_empty()
+
+            # ================================================================
+            # {Table}Model — @Observable class
+            # ================================================================
+            write.doc_comment(f"`@Observable` model for the `{sanitize_string(table.name)}` Airtable table.")
+            write.attribute("Observable")
+            write.class_open(model_name, conformances=["AirtableModel"])
+
+            # Static: tableId
+            write.line_indented(f'public static let tableId: String = "{table.id}"')
+            write.line_empty()
+
+            # ---------- Identity properties ----------
+            write.mark_section("Identity", indent=1)
+            write.doc_comment("Airtable record ID. `nil` for unsaved models.", indent=1)
+            write.line_indented("public let id: RecordId?")
+            write.doc_comment("Server-assigned creation timestamp.", indent=1)
+            write.line_indented("public let createdTime: Date?")
+            write.line_empty()
+
+            # ---------- Computed fields (let) ----------
+            if computed_fields:
+                write.mark_section("Computed fields (server-owned)", indent=1)
+                for field in computed_fields:
+                    write.property_docstring(field, table, indent_level=1)
+                    prop = _swift_ident(field.name_camel())
+                    ty = field.swift_type()
+                    # Every field is optional — Airtable responses are sparse.
+                    write.line_indented(f"public let {prop}: {ty}?")
+                write.line_empty()
+
+            # ---------- Writable fields (var) ----------
+            if writable_fields:
+                write.mark_section("Writable fields", indent=1)
+                for field in writable_fields:
+                    write.property_docstring(field, table, indent_level=1)
+                    prop = _swift_ident(field.name_camel())
+                    ty = field.swift_type()
+                    write.line_indented(f"public var {prop}: {ty}?")
+                write.line_empty()
+
+            # ---------- Snapshot for dirty tracking ----------
+            write.mark_section("Dirty tracking", indent=1)
+            write.doc_comment(
+                "Snapshot of field values at last save/decode. Used by `dirtyFields()` to compute partial updates. NOT observation-tracked.",
+                indent=1,
+            )
+            write.line_indented("@ObservationIgnored")
+            write.line_indented("private var _snapshot: [String: AirtableJSONValue] = [:]")
+            write.line_empty()
+
+            # ---------- CodingKeys ----------
+            write.mark_section("Codable", indent=1)
+            write.line_indented("private enum CodingKeys: String, CodingKey {")
+            write.line_indented("case id", indent=2)
+            write.line_indented("case createdTime", indent=2)
+            write.line_indented("case fields", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # FieldsCodingKeys — maps Swift property → Airtable field ID.
+            write.line_indented("private enum FieldsCodingKeys: String, CodingKey {")
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f'case {prop} = "{field.id}"', indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ---------- init(from decoder:) ----------
+            write.line_indented("public required init(from decoder: any Decoder) throws {")
+            write.line_indented("let c = try decoder.container(keyedBy: CodingKeys.self)", indent=2)
+            write.line_indented("self.id = try c.decodeIfPresent(String.self, forKey: .id)", indent=2)
+            write.line_indented(
+                "self.createdTime = try c.decodeIfPresent(Date.self, forKey: .createdTime)",
+                indent=2,
+            )
+            # Try nested container; fall back to all-nil if missing.
+            write.line_indented(
+                "if let fields = try? c.nestedContainer(keyedBy: FieldsCodingKeys.self, forKey: .fields) {",
+                indent=2,
+            )
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                ty = field.swift_type()
+                write.line_indented(
+                    f"self.{prop} = try fields.decodeIfPresent({ty}.self, forKey: .{prop})",
+                    indent=3,
+                )
+            write.line_indented("} else {", indent=2)
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f"self.{prop} = nil", indent=3)
+            write.line_indented("}", indent=2)
+            write.line_indented("self.takeSnapshot()", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ---------- encode(to:) ----------
+            # We encode only writable fields in the `fields` container (what
+            # gets sent to Airtable on update). id/createdTime go at top level.
+            write.line_indented("public func encode(to encoder: any Encoder) throws {")
+            write.line_indented("var c = encoder.container(keyedBy: CodingKeys.self)", indent=2)
+            write.line_indented("try c.encodeIfPresent(id, forKey: .id)", indent=2)
+            write.line_indented("try c.encodeIfPresent(createdTime, forKey: .createdTime)", indent=2)
+            # Always emit the nested fields container — toRecord() round-trips
+            # via JSONEncoder and relies on it.
+            write.line_indented(
+                "var fields = c.nestedContainer(keyedBy: FieldsCodingKeys.self, forKey: .fields)",
+                indent=2,
+            )
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f"try fields.encodeIfPresent({prop}, forKey: .{prop})", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ---------- AirtableModel protocol methods ----------
+            write.mark_section("AirtableModel", indent=1)
+
+            # toRecord() — round-trip through JSON to produce a dict keyed by field ID.
+            write.doc_comment("All current field values as a dict keyed by field ID.", indent=1)
+            write.line_indented("public func toRecord() -> [String: AirtableJSONValue] {")
+            write.line_indented("let encoder = JSONEncoder()", indent=2)
+            write.line_indented("encoder.dateEncodingStrategy = .iso8601", indent=2)
+            write.line_indented("guard let data = try? encoder.encode(self) else { return [:] }", indent=2)
+            write.line_indented(
+                "struct Envelope: Decodable { let fields: [String: AirtableJSONValue] }",
+                indent=2,
+            )
+            write.line_indented("let decoder = JSONDecoder()", indent=2)
+            write.line_indented("decoder.dateDecodingStrategy = .iso8601", indent=2)
+            write.line_indented(
+                "guard let env = try? decoder.decode(Envelope.self, from: data) else { return [:] }",
+                indent=2,
+            )
+            write.line_indented("return env.fields", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # takeSnapshot()
+            write.doc_comment(
+                "Record a snapshot of all field values. Called after decode/save.",
+                indent=1,
+            )
+            write.line_indented("public func takeSnapshot() {")
+            write.line_indented("self._snapshot = toRecord()", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # dirtyFields()
+            write.doc_comment(
+                "Writable fields whose values differ from the last snapshot. Used by `OrmTable.updateOne` for partial-update payloads.",
+                indent=1,
+            )
+            write.line_indented("public func dirtyFields() -> [String: AirtableJSONValue] {")
+            write.line_indented("let current = toRecord()", indent=2)
+            # Writable field IDs — computed ones are never sent on update.
+            writable_ids = ", ".join(f'"{f.id}"' for f in writable_fields)
+            write.line_indented(f"let writableIds: Set<String> = [{writable_ids}]", indent=2)
+            write.line_indented("var dirty: [String: AirtableJSONValue] = [:]", indent=2)
+            write.line_indented("for id in writableIds {", indent=2)
+            write.line_indented(
+                "if current[id] != _snapshot[id] { dirty[id] = current[id] ?? .null }",
+                indent=3,
+            )
+            write.line_indented("}", indent=2)
+            write.line_indented("return dirty", indent=2)
+            write.line_indented("}")
+
+            write.close()  # end class
+            write.line_empty()
+
+            # ================================================================
+            # Create{Table}Model — struct for create payloads
+            # ================================================================
+            write.doc_comment(f"Writable-only payload for creating new `{sanitize_string(table.name)}` records.")
+            write.struct_open(create_name, conformances=["Encodable", "Sendable"])
+
+            # Writable field properties
+            for field in writable_fields:
+                prop = _swift_ident(field.name_camel())
+                ty = field.swift_type()
+                write.line_indented(f"public var {prop}: {ty}?")
+            write.line_empty()
+
+            # Designated init with defaults so users can pass only what they want.
+            init_params: list[str] = []
+            for field in writable_fields:
+                prop = _swift_ident(field.name_camel())
+                ty = field.swift_type()
+                init_params.append(f"{prop}: {ty}? = nil")
+            # Break across lines for readability when there are many fields.
+            if init_params:
+                write.line_indented("public init(")
+                for i, param in enumerate(init_params):
+                    suffix = "," if i < len(init_params) - 1 else ""
+                    write.line_indented(f"{param}{suffix}", indent=2)
+                write.line_indented(") {")
+                for field in writable_fields:
+                    prop = _swift_ident(field.name_camel())
+                    write.line_indented(f"self.{prop} = {prop}", indent=2)
+                write.line_indented("}")
+            else:
+                write.line_indented("public init() {}")
+            write.line_empty()
+
+            # CodingKeys mapping property → field ID.
+            write.line_indented("private enum CodingKeys: String, CodingKey {")
+            for field in writable_fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f'case {prop} = "{field.id}"', indent=2)
+            write.line_indented("}")
+
+            write.close()  # end struct
+
+
+def write_tables(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Table` struct with `.dict` and `.orm` accessors.
+
+    `.dict` exposes a `DictTable` for raw-dict CRUD; `.orm` exposes an
+    `OrmTable<{Table}Model, Create{Table}Model>` for typed CRUD.
     """
     tables_dir = _create_swift_dynamic_subdir(output_folder, _DIR_TABLES)
 
@@ -272,6 +522,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
         prefix = _table_type_prefix(table)
         type_name = f"{prefix}Table"
         fields_name = f"{prefix}Fields"
+        model_name = f"{prefix}Model"
+        create_name = f"Create{prefix}Model"
         file_name = f"{type_name}.swift"
         with WriteToSwiftFile(path=tables_dir / file_name) as write:
             write.import_stmt("Foundation")
@@ -282,18 +534,20 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f'public static let tableId: String = "{table.id}"')
             write.line_empty()
 
-            # The raw-dict accessor — the only shape in F3. Typed .orm lands in F4.
             write.doc_comment("Raw (dict-style) access — decoded fields keyed by ID.", indent=1)
             write.line_indented("public let dict: DictTable")
+            write.doc_comment("Typed ORM access — returns `@Observable` model instances.", indent=1)
+            write.line_indented(f"public let orm: OrmTable<{model_name}, {create_name}>")
             write.line_empty()
 
             write.line_indented("public init(client: AirtableClient) {")
-            write.line_indented(
-                "self.dict = DictTable(",
-                indent=2,
-            )
+            write.line_indented("self.dict = DictTable(", indent=2)
             write.line_indented("tableId: Self.tableId,", indent=3)
             write.line_indented(f"nameToId: {fields_name}.nameToId,", indent=3)
+            write.line_indented("client: client", indent=3)
+            write.line_indented(")", indent=2)
+            write.line_indented("self.orm = OrmTable(", indent=2)
+            write.line_indented("tableId: Self.tableId,", indent=3)
             write.line_indented("client: client", indent=3)
             write.line_indented(")", indent=2)
             write.line_indented("}")
@@ -406,6 +660,11 @@ def generate_swift(
         write_field_types(base, output_folder)
         if verbose:
             print("[dim] - Swift field types generated.[/]")
+
+    with timer.timer("Swift: write_models"):
+        write_models(base, output_folder)
+        if verbose:
+            print("[dim] - Swift models generated.[/]")
 
     with timer.timer("Swift: write_tables"):
         write_tables(base, output_folder)
