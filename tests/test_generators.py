@@ -491,24 +491,37 @@ class TestSwiftGeneratorOutput:
         assert "nameToId: TestTableFields.nameToId" in content
 
     def test_tables_forwards_orm_methods_directly(self, tmp_path: Path):
-        """ORM is the default: `getOne` / `createOne` / etc. live on the table
-        struct, not hidden behind an `.orm` property. Matches Rust/TS/Py."""
+        """ORM is the default: `get` / `create` / `update` / `delete` live on
+        the table struct as overloaded methods (no `.orm` prefix, no
+        `getOne`/`createOne` variants). Matches TS/Py pattern."""
         fields_spec = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         content = (out / "dynamic" / "tables" / "TestTableTable.swift").read_text()
 
-        # The forwarded methods should appear as top-level members.
-        assert "public func getOne(" in content
-        assert "public func getMany(" in content
-        assert "public func createOne(" in content
-        assert "public func updateOne(" in content
-        assert "public func upsertOne(" in content
-        assert "public func deleteOne(" in content
+        # Overloaded names — no `One`/`Many` suffixes.
+        assert "public func get(_ recordId: String)" in content
+        assert "public func get(_ recordIds: [String])" in content
+        assert "public func get(_ query: AirtableQuery" in content
+        assert "public func create(" in content
+        assert "public func update(" in content
+        assert "public func upsert(" in content
+        assert "public func delete(_ recordId: String)" in content
+        assert "public func delete(_ recordIds: [String])" in content
+        assert "public func delete(_ model: TestTableModel)" in content
+        assert "public func delete(_ models: [TestTableModel])" in content
+
         # No public .orm accessor; the internal OrmTable reference is
         # `@usableFromInline internal`.
         assert "public let orm:" not in content
         assert "@usableFromInline" in content
         assert "internal let orm: OrmTable<TestTableModel>" in content
+        # Old *One/*Many names are gone.
+        assert "getOne" not in content
+        assert "getMany" not in content
+        assert "createOne" not in content
+        assert "updateOne" not in content
+        assert "deleteOne" not in content
+        assert "deleteMany" not in content
 
     def test_model_has_attached_client_property(self, tmp_path: Path):
         """Each model carries an `_attachedClient: AirtableClient?` so

@@ -574,46 +574,79 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # ---------- Forwarded ORM methods ----------
             write.mark_section("ORM access (default)", indent=1)
 
-            # getOne
-            write.doc_comment("Fetch one record by ID and decode into the typed model.", indent=1)
+            # ----- get overloads -----
+            write.doc_comment("Fetch one record by ID.", indent=1)
             write.line_indented("@inlinable")
-            write.line_indented(f"public func getOne(_ recordId: String) async throws -> {model_name} {{")
-            write.line_indented("try await orm.getOne(recordId)", indent=2)
+            write.line_indented(f"public func get(_ recordId: String) async throws -> {model_name} {{")
+            write.line_indented("try await orm.get(recordId)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
-            # getMany
-            write.doc_comment("Fetch records matching the query (paginates internally).", indent=1)
+            write.doc_comment("Fetch many records by ID (parallel, order preserved).", indent=1)
             write.line_indented("@inlinable")
-            write.line_indented(f"public func getMany(_ query: AirtableQuery = AirtableQuery()) async throws -> [{model_name}] {{")
-            write.line_indented("try await orm.getMany(query)", indent=2)
+            write.line_indented(f"public func get(_ recordIds: [String]) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.get(recordIds)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
-            # createOne
+            write.doc_comment(
+                "Fetch records matching the query (paginates internally). Pass the default `AirtableQuery()` to fetch all.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func get(_ query: AirtableQuery = AirtableQuery()) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.get(query)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ----- create overloads -----
             write.doc_comment("Create one record from a `Create*Model` payload.", indent=1)
             write.line_indented("@inlinable")
             write.line_indented(
-                f"public func createOne(\n        _ create: {create_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
+                f"public func create(\n        _ record: {create_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
             )
-            write.line_indented("try await orm.createOne(create, typecast: typecast)", indent=2)
+            write.line_indented("try await orm.create(record, typecast: typecast)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
-            # updateOne (model)
             write.doc_comment(
-                "Update a model, sending only fields that changed since last snapshot.",
+                "Create many records. Chunks into Airtable's 10-per-call batch limit.",
                 indent=1,
             )
             write.line_indented("@inlinable")
             write.line_indented(
-                f"public func updateOne(\n        _ model: {model_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
+                f"public func create(\n        _ records: [{create_name}],\n        typecast: Bool = false\n    ) async throws -> [{model_name}] {{"
             )
-            write.line_indented("try await orm.updateOne(model, typecast: typecast)", indent=2)
+            write.line_indented("try await orm.create(records, typecast: typecast)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
-            # updateFields (record ID + explicit fields)
+            # ----- update overloads -----
+            write.doc_comment(
+                "Update one model. Sends only fields that changed since last snapshot.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(
+                f"public func update(\n        _ model: {model_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
+            )
+            write.line_indented("try await orm.update(model, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment(
+                "Update many models. Each model's dirty-field diff is used; chunks into Airtable's 10-per-call batch limit.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(
+                f"public func update(\n        _ models: [{model_name}],\n        typecast: Bool = false\n    ) async throws -> [{model_name}] {{"
+            )
+            write.line_indented("try await orm.update(models, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ----- updateFields (explicit id + field dict) -----
             write.doc_comment(
                 "Update a record with an explicit field dict (bypasses dirty tracking).",
                 indent=1,
@@ -633,39 +666,55 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("}")
             write.line_empty()
 
-            # upsertOne
+            # ----- upsert -----
             write.doc_comment(
                 "Upsert a record, matching on the supplied field IDs. Returns the model plus `wasCreated` indicating insert vs update.",
                 indent=1,
             )
             write.line_indented("@inlinable")
             write.line_indented(
-                "public func upsertOne(\n"
-                f"        _ create: {create_name},\n"
+                "public func upsert(\n"
+                f"        _ record: {create_name},\n"
                 "        matchFieldsToMerge: [String],\n"
                 "        typecast: Bool = false\n"
                 f"    ) async throws -> (model: {model_name}, wasCreated: Bool) {{"
             )
             write.line_indented(
-                "try await orm.upsertOne(create, matchFieldsToMerge: matchFieldsToMerge, typecast: typecast)",
+                "try await orm.upsert(record, matchFieldsToMerge: matchFieldsToMerge, typecast: typecast)",
                 indent=2,
             )
             write.line_indented("}")
             write.line_empty()
 
-            # deleteOne
+            # ----- delete overloads -----
             write.doc_comment("Delete one record by ID.", indent=1)
             write.line_indented("@inlinable")
-            write.line_indented("public func deleteOne(_ recordId: String) async throws {")
-            write.line_indented("try await orm.deleteOne(recordId)", indent=2)
+            write.line_indented("public func delete(_ recordId: String) async throws {")
+            write.line_indented("try await orm.delete(recordId)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
-            # deleteMany
-            write.doc_comment("Delete many records by ID.", indent=1)
+            write.doc_comment(
+                "Delete many records by ID. Chunks into Airtable's 10-per-call batch limit.",
+                indent=1,
+            )
             write.line_indented("@inlinable")
-            write.line_indented("public func deleteMany(_ recordIds: [String]) async throws {")
-            write.line_indented("try await orm.deleteMany(recordIds)", indent=2)
+            write.line_indented("public func delete(_ recordIds: [String]) async throws {")
+            write.line_indented("try await orm.delete(recordIds)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment("Delete the record referenced by this model's `id`.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func delete(_ model: {model_name}) async throws {{")
+            write.line_indented("try await orm.delete(model)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment("Delete many records by passing their models. Chunks by ID.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func delete(_ models: [{model_name}]) async throws {{")
+            write.line_indented("try await orm.delete(models)", indent=2)
             write.line_indented("}")
 
             write.close()

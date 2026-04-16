@@ -56,19 +56,19 @@ extension AirtableModel {
     // these methods with `.detachedModel`.
 
     /// Persist the model's dirty fields back to Airtable. Requires a saved
-    /// record (`id != nil`) — call the table's `createOne(_:)` with a
+    /// record (`id != nil`) — call the table's `create(_:)` with a
     /// `Create*Model` payload to insert a brand-new row.
     public func save(typecast: Bool = false) async throws -> Self {
         let client = try attachedClientOrThrow()
         guard let recordId = self.id, !recordId.isEmpty else {
             throw AirtableError.api(
                 code: "UNSAVED_MODEL",
-                message: "Cannot save a model without an id; use Airtable.<table>.createOne(...) instead"
+                message: "Cannot save a model without an id; use Airtable.<table>.create(...) instead"
             )
         }
-        let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
         _ = recordId  // silence unused-var linter in strict builds
-        return try await orm.updateOne(self, typecast: typecast)
+        let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
+        return try await orm.update(self, typecast: typecast)
     }
 
     /// Re-fetch the model from the server. Returns a fresh instance — Swift
@@ -82,7 +82,7 @@ extension AirtableModel {
             )
         }
         let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
-        return try await orm.getOne(id)
+        return try await orm.get(id)
     }
 
     /// Delete the record referenced by this model's `id`.
@@ -95,7 +95,7 @@ extension AirtableModel {
             )
         }
         let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
-        try await orm.deleteOne(id)
+        try await orm.delete(id)
     }
 
     private func attachedClientOrThrow() throws -> AirtableClient {

@@ -7,16 +7,17 @@ import Foundation
 /// Typed record accessor paired with `DictTable`. `Sendable` struct front-end
 /// for the `AirtableClient` actor — the client owns all I/O and cache state.
 ///
-/// `Model` is the generated `@Observable final class {Table}Model`. The
-/// `Create` payload for `createOne` / `upsertOne` is a method-level generic
-/// so the same `OrmTable<Model>` can accept whichever `Create*Model` struct
-/// matches. This lets `AirtableModel` construct an `OrmTable<Self>` from a
-/// model-side `save()` / `fetch()` / `delete()` call without knowing the
-/// Create type up-front.
+/// API shape mirrors the TS and Python targets: single-record and list
+/// variants of `get` / `create` / `update` / `delete` live under the same
+/// name and are distinguished by the argument type. Batch variants chunk
+/// into Airtable's 10-records-per-call limit automatically.
 ///
 /// Cache invalidation on mutation happens inside the client (see
 /// `AirtableClient.createRecords` / `updateRecords` / `deleteRecord*`).
 public struct OrmTable<Model: AirtableModel>: Sendable {
+    /// Airtable's hard cap for create / update / delete batches.
+    public static var batchSize: Int { 10 }
+
     public let tableId: String
     internal let client: AirtableClient
 
@@ -25,17 +26,33 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
         self.client = client
     }
 
-    // MARK: - Reads
+    // =====================================================================
+    // MARK: - get (read)
+    // =====================================================================
 
-    /// Fetch one record by ID and decode into `Model`.
-    public func getOne(_ recordId: String) async throws -> Model {
+    /// Fetch one record by ID.
+    public func get(_ recordId: String) async throws -> Model {
         let data = try await client.getRecord(tableId: tableId, recordId: recordId)
         return try decodeRecord(data)
     }
 
-    /// Fetch records matching the query. Paginates internally via the `offset`
-    /// continuation token; returns the merged list in page-arrival order.
-    public func getMany(_ query: AirtableQuery = AirtableQuery()) async throws -> [Model] {
+    /// Fetch many records by ID. Sequential because `Model` (an `@Observable`
+    /// class) isn't `Sendable` and can't cross task boundaries. Airtable has
+    /// no bulk-get endpoint; preserving order is cheap in sequence.
+    public func get(_ recordIds: [String]) async throws -> [Model] {
+        if recordIds.isEmpty { return [] }
+        var collected: [Model] = []
+        collected.reserveCapacity(recordIds.count)
+        for id in recordIds {
+            collected.append(try await self.get(id))
+        }
+        return collected
+    }
+
+    /// Fetch records matching the query. Paginates internally via the
+    /// `offset` continuation token; returns the merged list in page-arrival
+    /// order. Pass `AirtableQuery()` (the default) for all records.
+    public func get(_ query: AirtableQuery = AirtableQuery()) async throws -> [Model] {
         var collected: [Model] = []
         var offset: String? = nil
         repeat {
@@ -52,88 +69,129 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
         return collected
     }
 
-    // MARK: - Writes
+    // =====================================================================
+    // MARK: - create
+    // =====================================================================
 
-    /// Create one record. `typecast: true` lets Airtable coerce user-supplied
-    /// strings into matching single-select / collaborator / attachment values.
-    public func createOne<Create: Encodable & Sendable>(
-        _ create: Create,
+    /// Create one record from a `Create*Model` payload.
+    public func create<Create: Encodable & Sendable>(
+        _ record: Create,
         typecast: Bool = false
     ) async throws -> Model {
+        let results = try await createBatch([record], typecast: typecast)
+        guard let first = results.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
+        }
+        return first
+    }
+
+    /// Create many records. Chunks into Airtable's batch limit (10).
+    public func create<Create: Encodable & Sendable>(
+        _ records: [Create],
+        typecast: Bool = false
+    ) async throws -> [Model] {
+        if records.isEmpty { return [] }
+        var collected: [Model] = []
+        for chunk in records.chunked(intoBatchSize: Self.batchSize) {
+            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
+        }
+        return collected
+    }
+
+    private func createBatch<Create: Encodable & Sendable>(
+        _ records: [Create],
+        typecast: Bool
+    ) async throws -> [Model] {
         let body = AirtableCreateBody(
-            records: [.init(fields: create)],
+            records: records.map { AirtableCreateBody<Create>.Record(fields: $0) },
             typecast: typecast,
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
         let response = try await client.createRecords(tableId: tableId, body: payload)
         let env: AirtableListResponse<Model> = try decodeList(response)
-        guard let first = env.records.first else {
-            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
+        return env.records
+    }
+
+    // =====================================================================
+    // MARK: - update
+    // =====================================================================
+
+    /// Update a single model in place. Diffs against the model's snapshot
+    /// and sends only fields that changed since the last `takeSnapshot()`.
+    public func update(_ model: Model, typecast: Bool = false) async throws -> Model {
+        let results = try await update([model], typecast: typecast)
+        guard let first = results.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
         }
         return first
     }
 
-    /// Update a model in place by diffing against its snapshot. Only fields
-    /// that changed since the last `takeSnapshot()` are sent. Requires the
-    /// model to have a non-empty `id`.
-    public func updateOne(_ model: Model, typecast: Bool = false) async throws -> Model {
-        guard let recordId = model.id, !recordId.isEmpty else {
-            throw AirtableError.api(
-                code: "UNSAVED_MODEL",
-                message: "Cannot update a model without an id"
-            )
+    /// Update many models in a single call. Chunks into Airtable's batch
+    /// limit (10). Each model's dirty-field diff is used as the patch set.
+    public func update(_ models: [Model], typecast: Bool = false) async throws -> [Model] {
+        if models.isEmpty { return [] }
+        var patches: [AirtableUpdateBody.Record] = []
+        patches.reserveCapacity(models.count)
+        for model in models {
+            guard let recordId = model.id, !recordId.isEmpty else {
+                throw AirtableError.api(
+                    code: "UNSAVED_MODEL",
+                    message: "Cannot update a model without an id"
+                )
+            }
+            patches.append(.init(id: recordId, fields: model.dirtyFields()))
         }
-        let dirty = model.dirtyFields()
-        return try await applyUpdate(
-            recordId: recordId,
-            fields: dirty,
-            typecast: typecast
-        )
+
+        var collected: [Model] = []
+        for chunk in patches.chunked(intoBatchSize: Self.batchSize) {
+            collected.append(contentsOf: try await updateBatch(chunk, typecast: typecast))
+        }
+        return collected
     }
 
-    /// Update a record with an explicit field set (useful when the caller
-    /// doesn't hold a `Model`, or wants to force-write specific fields).
+    /// Update a record with an explicit field dict (bypasses dirty tracking).
     public func updateFields(
         _ recordId: String,
         _ fields: [String: AirtableJSONValue],
         typecast: Bool = false
     ) async throws -> Model {
-        return try await applyUpdate(
-            recordId: recordId,
-            fields: fields,
-            typecast: typecast
-        )
+        let patches = [AirtableUpdateBody.Record(id: recordId, fields: fields)]
+        let results = try await updateBatch(patches, typecast: typecast)
+        guard let first = results.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
+        }
+        return first
     }
 
-    private func applyUpdate(
-        recordId: String,
-        fields: [String: AirtableJSONValue],
+    private func updateBatch(
+        _ records: [AirtableUpdateBody.Record],
         typecast: Bool
-    ) async throws -> Model {
+    ) async throws -> [Model] {
         let body = AirtableUpdateBody(
-            records: [.init(id: recordId, fields: fields)],
+            records: records,
             typecast: typecast,
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
         let response = try await client.updateRecords(tableId: tableId, body: payload)
         let env: AirtableListResponse<Model> = try decodeList(response)
-        guard let first = env.records.first else {
-            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
-        }
-        return first
+        return env.records
     }
 
-    /// Upsert a record, matching on the supplied field IDs. Returns the model
-    /// plus a flag indicating whether it was created or matched an existing row.
-    public func upsertOne<Create: Encodable & Sendable>(
-        _ create: Create,
+    // =====================================================================
+    // MARK: - upsert
+    // =====================================================================
+
+    /// Upsert a record, matching on the supplied field IDs. Returns the
+    /// model plus `wasCreated` indicating insert vs update.
+    public func upsert<Create: Encodable & Sendable>(
+        _ record: Create,
         matchFieldsToMerge: [String],
         typecast: Bool = false
     ) async throws -> (model: Model, wasCreated: Bool) {
         let body = AirtableUpsertBody(
-            records: [.init(fields: create)],
+            records: [.init(fields: record)],
             performUpsert: .init(fieldsToMergeOn: matchFieldsToMerge),
             typecast: typecast,
             returnFieldsByFieldId: true
@@ -146,9 +204,7 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
         } catch {
             throw AirtableError.decoding(underlying: error)
         }
-        for model in env.records {
-            attach(model)
-        }
+        for model in env.records { attach(model) }
         guard let first = env.records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "upsert returned no records")
         }
@@ -156,21 +212,51 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
         return (first, wasCreated)
     }
 
-    // MARK: - Delete
+    // =====================================================================
+    // MARK: - delete
+    // =====================================================================
 
     /// Delete one record by ID.
-    public func deleteOne(_ recordId: String) async throws {
+    public func delete(_ recordId: String) async throws {
         _ = try await client.deleteRecord(tableId: tableId, recordId: recordId)
     }
 
-    /// Delete many records in a single request. Airtable caps deleteMany at
-    /// 10 record IDs per call — callers who need >10 should chunk themselves
-    /// (F5 will add a chunking helper).
-    public func deleteMany(_ recordIds: [String]) async throws {
-        _ = try await client.deleteRecords(tableId: tableId, recordIds: recordIds)
+    /// Delete many records by ID. Chunks into Airtable's batch limit (10).
+    public func delete(_ recordIds: [String]) async throws {
+        if recordIds.isEmpty { return }
+        for chunk in recordIds.chunked(intoBatchSize: Self.batchSize) {
+            _ = try await client.deleteRecords(tableId: tableId, recordIds: chunk)
+        }
     }
 
+    /// Delete a record referenced by this model's `id`.
+    public func delete(_ model: Model) async throws {
+        guard let id = model.id, !id.isEmpty else {
+            throw AirtableError.api(
+                code: "UNSAVED_MODEL",
+                message: "Cannot delete an unsaved model"
+            )
+        }
+        try await delete(id)
+    }
+
+    /// Delete many records by passing their models. Chunks by ID.
+    public func delete(_ models: [Model]) async throws {
+        let ids = try models.map { model -> String in
+            guard let id = model.id, !id.isEmpty else {
+                throw AirtableError.api(
+                    code: "UNSAVED_MODEL",
+                    message: "Cannot delete an unsaved model"
+                )
+            }
+            return id
+        }
+        try await delete(ids)
+    }
+
+    // =====================================================================
     // MARK: - Internal helpers
+    // =====================================================================
 
     private func fetchWithOffset(query: AirtableQuery, offset: String) async throws -> Data {
         var items = query.toQueryItems()
@@ -200,9 +286,7 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     private func decodeList(_ data: Data) throws -> AirtableListResponse<Model> {
         do {
             let env = try makeDecoder().decode(AirtableListResponse<Model>.self, from: data)
-            for model in env.records {
-                attach(model)
-            }
+            for model in env.records { attach(model) }
             return env
         } catch {
             throw AirtableError.decoding(underlying: error)
@@ -219,5 +303,27 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d
+    }
+}
+
+// MARK: - Array chunking
+
+extension Array {
+    /// Split into consecutive batches of at most `size` elements. Used by the
+    /// batch create / update / delete paths in both `OrmTable` and `DictTable`
+    /// to respect Airtable's 10-per-call limit. (Named distinctly from a
+    /// potential stdlib `chunked(into:)` to avoid future-ambiguity.)
+    internal func chunked(intoBatchSize size: Int) -> [[Element]] {
+        precondition(size > 0, "chunk size must be positive")
+        if self.isEmpty { return [] }
+        var out: [[Element]] = []
+        out.reserveCapacity((self.count + size - 1) / size)
+        var start = 0
+        while start < self.count {
+            let end = Swift.min(start + size, self.count)
+            out.append(Array(self[start..<end]))
+            start = end
+        }
+        return out
     }
 }

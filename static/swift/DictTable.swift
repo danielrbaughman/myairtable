@@ -83,10 +83,13 @@ public struct DictTable: Sendable {
         )
     }
 
-    // MARK: - Read
+    /// Airtable's hard cap for create / update / delete batches.
+    public static var batchSize: Int { 10 }
+
+    // MARK: - get (read)
 
     /// Fetch one record by ID.
-    public func getOne(_ recordId: String) async throws -> Record {
+    public func get(_ recordId: String) async throws -> Record {
         let data = try await client.getRecord(tableId: tableId, recordId: recordId)
         let env: RawRecordEnvelope
         do {
@@ -97,9 +100,23 @@ public struct DictTable: Sendable {
         return toRecord(env)
     }
 
+    /// Fetch many records by ID (parallel). Preserves caller-supplied order.
+    public func get(_ recordIds: [String]) async throws -> [Record] {
+        if recordIds.isEmpty { return [] }
+        return try await withThrowingTaskGroup(of: (Int, Record).self) { group in
+            for (index, id) in recordIds.enumerated() {
+                group.addTask { (index, try await self.get(id)) }
+            }
+            var slots: [(Int, Record)] = []
+            for try await pair in group { slots.append(pair) }
+            slots.sort { $0.0 < $1.0 }
+            return slots.map { $0.1 }
+        }
+    }
+
     /// Fetch records matching the query. Paginates internally using Airtable's
     /// `offset` token; returns the full merged list.
-    public func getMany(_ query: AirtableQuery = AirtableQuery()) async throws -> [Record] {
+    public func get(_ query: AirtableQuery = AirtableQuery()) async throws -> [Record] {
         var collected: [Record] = []
         var offset: String? = nil
         repeat {
@@ -133,13 +150,30 @@ public struct DictTable: Sendable {
         return try await client.send(req)
     }
 
-    // MARK: - Write
+    // MARK: - create
 
-    /// Create a single record and return the populated envelope.
-    public func createOne(_ fields: Fields, typecast: Bool = false) async throws -> Record {
-        let storage = fields.encodeForWire()
+    /// Create one record and return the populated envelope.
+    public func create(_ fields: Fields, typecast: Bool = false) async throws -> Record {
+        let records = try await createBatch([fields], typecast: typecast)
+        guard let first = records.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
+        }
+        return first
+    }
+
+    /// Create many records. Chunks into Airtable's 10-per-call batch limit.
+    public func create(_ fields: [Fields], typecast: Bool = false) async throws -> [Record] {
+        if fields.isEmpty { return [] }
+        var collected: [Record] = []
+        for chunk in fields.chunked(intoBatchSize: Self.batchSize) {
+            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
+        }
+        return collected
+    }
+
+    private func createBatch(_ fields: [Fields], typecast: Bool) async throws -> [Record] {
         let body = CreateRequestBody(
-            records: [.init(fields: storage)],
+            records: fields.map { CreateRequestBody.RecordPayload(fields: $0.encodeForWire()) },
             typecast: typecast,
             returnFieldsByFieldId: true
         )
@@ -151,17 +185,43 @@ public struct DictTable: Sendable {
         } catch {
             throw AirtableError.decoding(underlying: error)
         }
-        guard let first = env.records.first else {
-            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
-        }
-        return toRecord(first)
+        return env.records.map(toRecord)
     }
 
+    // MARK: - update
+
     /// Update a single record's field values.
-    public func updateOne(_ recordId: String, fields: Fields, typecast: Bool = false) async throws -> Record {
-        let storage = fields.encodeForWire()
+    public func update(_ recordId: String, fields: Fields, typecast: Bool = false) async throws -> Record {
+        let payloads = [UpdateRequestBody.RecordPayload(id: recordId, fields: fields.encodeForWire())]
+        let records = try await updateBatch(payloads, typecast: typecast)
+        guard let first = records.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
+        }
+        return first
+    }
+
+    /// Update many records. Chunks into Airtable's 10-per-call batch limit.
+    public func update(
+        _ updates: [(id: String, fields: Fields)],
+        typecast: Bool = false
+    ) async throws -> [Record] {
+        if updates.isEmpty { return [] }
+        let payloads = updates.map {
+            UpdateRequestBody.RecordPayload(id: $0.id, fields: $0.fields.encodeForWire())
+        }
+        var collected: [Record] = []
+        for chunk in payloads.chunked(intoBatchSize: Self.batchSize) {
+            collected.append(contentsOf: try await updateBatch(chunk, typecast: typecast))
+        }
+        return collected
+    }
+
+    private func updateBatch(
+        _ payloads: [UpdateRequestBody.RecordPayload],
+        typecast: Bool
+    ) async throws -> [Record] {
         let body = UpdateRequestBody(
-            records: [.init(id: recordId, fields: storage)],
+            records: payloads,
             typecast: typecast,
             returnFieldsByFieldId: true
         )
@@ -173,15 +233,22 @@ public struct DictTable: Sendable {
         } catch {
             throw AirtableError.decoding(underlying: error)
         }
-        guard let first = env.records.first else {
-            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
-        }
-        return toRecord(first)
+        return env.records.map(toRecord)
     }
 
+    // MARK: - delete
+
     /// Delete one record by ID.
-    public func deleteOne(_ recordId: String) async throws {
+    public func delete(_ recordId: String) async throws {
         _ = try await client.deleteRecord(tableId: tableId, recordId: recordId)
+    }
+
+    /// Delete many records. Chunks into Airtable's 10-per-call batch limit.
+    public func delete(_ recordIds: [String]) async throws {
+        if recordIds.isEmpty { return }
+        for chunk in recordIds.chunked(intoBatchSize: Self.batchSize) {
+            _ = try await client.deleteRecords(tableId: tableId, recordIds: chunk)
+        }
     }
 
     // MARK: - Coders
