@@ -490,6 +490,45 @@ class TestSwiftGeneratorOutput:
         assert "public init(client: AirtableClient)" in content
         assert "nameToId: TestTableFields.nameToId" in content
 
+    def test_tables_forwards_orm_methods_directly(self, tmp_path: Path):
+        """ORM is the default: `getOne` / `createOne` / etc. live on the table
+        struct, not hidden behind an `.orm` property. Matches Rust/TS/Py."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.swift").read_text()
+
+        # The forwarded methods should appear as top-level members.
+        assert "public func getOne(" in content
+        assert "public func getMany(" in content
+        assert "public func createOne(" in content
+        assert "public func updateOne(" in content
+        assert "public func upsertOne(" in content
+        assert "public func deleteOne(" in content
+        # No public .orm accessor; the internal OrmTable reference is
+        # `@usableFromInline internal`.
+        assert "public let orm:" not in content
+        assert "@usableFromInline" in content
+        assert "internal let orm: OrmTable<TestTableModel>" in content
+
+    def test_model_has_attached_client_property(self, tmp_path: Path):
+        """Each model carries an `_attachedClient: AirtableClient?` so
+        `model.save()` / `.fetch()` / `.delete()` can call back without
+        needing a table argument."""
+        from src.generators.swift import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+        content = (output_folder / "dynamic" / "models" / "TestTableModel.swift").read_text()
+
+        # The property is public+var (needed by protocol requirement) but
+        # flagged @ObservationIgnored so SwiftUI doesn't track it.
+        assert "@ObservationIgnored" in content
+        assert "public var _attachedClient: AirtableClient?" in content
+
     def test_main_airtable_actor_exposes_per_table_accessors(self, tmp_path: Path):
         """Airtable.swift should expose each table as a lowerCamelCase property."""
         fields_spec = [("Primary Key", "fld001", "singleLineText")]

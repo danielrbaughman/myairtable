@@ -24,6 +24,12 @@ public protocol AirtableModel: AnyObject, Codable {
     /// `true` when the model has no server-assigned ID yet.
     var isNew: Bool { get }
 
+    /// Airtable client attached by the table that produced this model. Set
+    /// by `OrmTable` after a successful decode so `save()` / `fetch()` /
+    /// `delete()` can call back without the caller threading a table through.
+    /// Mirrors Rust's `ModelMeta.client` and Python's `_at_client` field.
+    var _attachedClient: AirtableClient? { get set }
+
     /// Capture the current field values as a snapshot. Called at the end of
     /// `init(from:)` and after a successful save so subsequent `dirtyFields()`
     /// computes the diff relative to server state.
@@ -41,52 +47,66 @@ public protocol AirtableModel: AnyObject, Codable {
 extension AirtableModel {
     public var isNew: Bool { (id ?? "").isEmpty }
 
-    // MARK: - Fluent operations via a table
+    // MARK: - Fluent model-side CRUD
     //
-    // These extensions give a "model-side" API on top of the stateless
-    // `OrmTable` struct — users write `model.save(via: airtable.primary.orm)`
-    // instead of `airtable.primary.orm.updateOne(model)`. Mirrors the Rust
-    // target's `model.save()` / `.fetch()` / `.delete()` fluent pattern.
-    //
-    // Unlike Rust, we don't cache the client on the model — the caller
-    // threads the table through each call. That keeps models stateless and
-    // SwiftUI-binding-friendly (no hidden references, no Sendable gotchas).
+    // Mirrors the Rust / TS / Py pattern: once a model has been produced by
+    // a table (getOne / createOne / upsertOne / getMany), it carries that
+    // table's client, and `save()` / `fetch()` / `delete()` need no extra
+    // arguments. A model decoded directly from JSON (no table) throws on
+    // these methods with `.detachedModel`.
 
-    /// Persist the model. Requires an existing `id` — a brand-new model must
-    /// be created via `OrmTable.createOne(_:)` with a `Create*Model` payload
-    /// (we can't synthesize one from the class at runtime without reflection).
-    public func save<C: Encodable & Sendable>(
-        via table: OrmTable<Self, C>,
-        typecast: Bool = false
-    ) async throws -> Self {
-        try await table.updateOne(self, typecast: typecast)
+    /// Persist the model's dirty fields back to Airtable. Requires a saved
+    /// record (`id != nil`) — call the table's `createOne(_:)` with a
+    /// `Create*Model` payload to insert a brand-new row.
+    public func save(typecast: Bool = false) async throws -> Self {
+        let client = try attachedClientOrThrow()
+        guard let recordId = self.id, !recordId.isEmpty else {
+            throw AirtableError.api(
+                code: "UNSAVED_MODEL",
+                message: "Cannot save a model without an id; use Airtable.<table>.createOne(...) instead"
+            )
+        }
+        let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
+        _ = recordId  // silence unused-var linter in strict builds
+        return try await orm.updateOne(self, typecast: typecast)
     }
 
     /// Re-fetch the model from the server. Returns a fresh instance — Swift
     /// protocol extensions can't mutate generic `Self` in-place.
-    public func refresh<C: Encodable & Sendable>(
-        via table: OrmTable<Self, C>
-    ) async throws -> Self {
+    public func fetch() async throws -> Self {
+        let client = try attachedClientOrThrow()
         guard let id = self.id, !id.isEmpty else {
             throw AirtableError.api(
                 code: "UNSAVED_MODEL",
-                message: "Cannot refresh an unsaved model"
+                message: "Cannot fetch an unsaved model"
             )
         }
-        return try await table.getOne(id)
+        let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
+        return try await orm.getOne(id)
     }
 
     /// Delete the record referenced by this model's `id`.
-    public func delete<C: Encodable & Sendable>(
-        via table: OrmTable<Self, C>
-    ) async throws {
+    public func delete() async throws {
+        let client = try attachedClientOrThrow()
         guard let id = self.id, !id.isEmpty else {
             throw AirtableError.api(
                 code: "UNSAVED_MODEL",
                 message: "Cannot delete an unsaved model"
             )
         }
-        try await table.deleteOne(id)
+        let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
+        try await orm.deleteOne(id)
+    }
+
+    private func attachedClientOrThrow() throws -> AirtableClient {
+        guard let client = self._attachedClient else {
+            throw AirtableError.api(
+                code: "DETACHED_MODEL",
+                message:
+                    "Model must be obtained via a table (getOne / createOne / upsertOne / getMany) before calling save() / fetch() / delete()"
+            )
+        }
+        return client
     }
 }
 

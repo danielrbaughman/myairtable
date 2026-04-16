@@ -7,14 +7,18 @@ import Foundation
 /// Typed record accessor paired with `DictTable`. `Sendable` struct front-end
 /// for the `AirtableClient` actor — the client owns all I/O and cache state.
 ///
-/// `Model` is the generated `@Observable final class {Table}Model`, `Create`
-/// is the generated `struct Create{Table}Model` for writable-only payloads.
+/// `Model` is the generated `@Observable final class {Table}Model`. The
+/// `Create` payload for `createOne` / `upsertOne` is a method-level generic
+/// so the same `OrmTable<Model>` can accept whichever `Create*Model` struct
+/// matches. This lets `AirtableModel` construct an `OrmTable<Self>` from a
+/// model-side `save()` / `fetch()` / `delete()` call without knowing the
+/// Create type up-front.
 ///
 /// Cache invalidation on mutation happens inside the client (see
-/// `AirtableClient.createRecords`/`updateRecords`/`deleteRecord*`).
-public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Sendable {
+/// `AirtableClient.createRecords` / `updateRecords` / `deleteRecord*`).
+public struct OrmTable<Model: AirtableModel>: Sendable {
     public let tableId: String
-    private let client: AirtableClient
+    internal let client: AirtableClient
 
     public init(tableId: String, client: AirtableClient) {
         self.tableId = tableId
@@ -52,7 +56,10 @@ public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Send
 
     /// Create one record. `typecast: true` lets Airtable coerce user-supplied
     /// strings into matching single-select / collaborator / attachment values.
-    public func createOne(_ create: Create, typecast: Bool = false) async throws -> Model {
+    public func createOne<Create: Encodable & Sendable>(
+        _ create: Create,
+        typecast: Bool = false
+    ) async throws -> Model {
         let body = AirtableCreateBody(
             records: [.init(fields: create)],
             typecast: typecast,
@@ -118,16 +125,9 @@ public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Send
         return first
     }
 
-    /// Result of an upsert operation — returns the model plus whether it was
-    /// created or matched an existing row.
-    public struct UpsertResult: Sendable where Model: Sendable {
-        public let model: Model
-        public let wasCreated: Bool
-    }
-
-    /// Upsert a record, matching on the supplied field IDs. Semantics match
-    /// Airtable's `performUpsert` documentation.
-    public func upsertOne(
+    /// Upsert a record, matching on the supplied field IDs. Returns the model
+    /// plus a flag indicating whether it was created or matched an existing row.
+    public func upsertOne<Create: Encodable & Sendable>(
         _ create: Create,
         matchFieldsToMerge: [String],
         typecast: Bool = false
@@ -140,9 +140,15 @@ public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Send
         )
         let payload = try makeEncoder().encode(body)
         let response = try await client.updateRecords(tableId: tableId, body: payload)
-        let env: AirtableUpsertResponse<Model> = try makeDecoder().decode(
-            AirtableUpsertResponse<Model>.self, from: response
-        )
+        let env: AirtableUpsertResponse<Model>
+        do {
+            env = try makeDecoder().decode(AirtableUpsertResponse<Model>.self, from: response)
+        } catch {
+            throw AirtableError.decoding(underlying: error)
+        }
+        for model in env.records {
+            attach(model)
+        }
         guard let first = env.records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "upsert returned no records")
         }
@@ -174,9 +180,18 @@ public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Send
         return try await client.send(req)
     }
 
+    /// Attach this table's client to a freshly-decoded model so the model's
+    /// save/fetch/delete methods can call back into the API without taking
+    /// a table parameter.
+    private func attach(_ model: Model) {
+        model._attachedClient = client
+    }
+
     private func decodeRecord(_ data: Data) throws -> Model {
         do {
-            return try makeDecoder().decode(Model.self, from: data)
+            let model = try makeDecoder().decode(Model.self, from: data)
+            attach(model)
+            return model
         } catch {
             throw AirtableError.decoding(underlying: error)
         }
@@ -184,7 +199,11 @@ public struct OrmTable<Model: AirtableModel, Create: Encodable & Sendable>: Send
 
     private func decodeList(_ data: Data) throws -> AirtableListResponse<Model> {
         do {
-            return try makeDecoder().decode(AirtableListResponse<Model>.self, from: data)
+            let env = try makeDecoder().decode(AirtableListResponse<Model>.self, from: data)
+            for model in env.records {
+                attach(model)
+            }
+            return env
         } catch {
             throw AirtableError.decoding(underlying: error)
         }

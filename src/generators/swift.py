@@ -345,6 +345,18 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_indented("private var _snapshot: [String: AirtableJSONValue] = [:]")
             write.line_empty()
 
+            # ---------- Attached client (for model-side save/fetch/delete) ----------
+            write.doc_comment(
+                "Client attached by the table that produced this model. Set by "
+                "`OrmTable` after decode so `save()`/`fetch()`/`delete()` can "
+                "call back without a table argument. `nil` when the model was "
+                "decoded directly from JSON (no table).",
+                indent=1,
+            )
+            write.line_indented("@ObservationIgnored")
+            write.line_indented("public var _attachedClient: AirtableClient?")
+            write.line_empty()
+
             # ---------- CodingKeys ----------
             write.mark_section("Codable", indent=1)
             write.line_indented("private enum CodingKeys: String, CodingKey {")
@@ -511,10 +523,13 @@ def write_models(base: Base, output_folder: Path) -> None:
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate per-table `{Table}Table` struct with `.dict` and `.orm` accessors.
+    """Generate per-table `{Table}Table` struct.
 
-    `.dict` exposes a `DictTable` for raw-dict CRUD; `.orm` exposes an
-    `OrmTable<{Table}Model, Create{Table}Model>` for typed CRUD.
+    The ORM is the default — `airtable.primary.getOne(id)` calls through to
+    the typed `OrmTable<PrimaryModel>`. Raw-dict access lives under `.dict`
+    for parity with the Rust target.
+
+    Matches the Rust / TS / Py API shape (no `.orm` property).
     """
     tables_dir = _create_swift_dynamic_subdir(output_folder, _DIR_TABLES)
 
@@ -534,10 +549,13 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f'public static let tableId: String = "{table.id}"')
             write.line_empty()
 
+            # Stored properties: dict accessor + internal typed ORM that all
+            # forwarded methods below delegate to.
             write.doc_comment("Raw (dict-style) access — decoded fields keyed by ID.", indent=1)
             write.line_indented("public let dict: DictTable")
-            write.doc_comment("Typed ORM access — returns `@Observable` model instances.", indent=1)
-            write.line_indented(f"public let orm: OrmTable<{model_name}, {create_name}>")
+            write.line_empty()
+            write.line_indented("@usableFromInline")
+            write.line_indented(f"internal let orm: OrmTable<{model_name}>")
             write.line_empty()
 
             write.line_indented("public init(client: AirtableClient) {")
@@ -551,6 +569,105 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("client: client", indent=3)
             write.line_indented(")", indent=2)
             write.line_indented("}")
+            write.line_empty()
+
+            # ---------- Forwarded ORM methods ----------
+            write.mark_section("ORM access (default)", indent=1)
+
+            # getOne
+            write.doc_comment("Fetch one record by ID and decode into the typed model.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func getOne(_ recordId: String) async throws -> {model_name} {{")
+            write.line_indented("try await orm.getOne(recordId)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # getMany
+            write.doc_comment("Fetch records matching the query (paginates internally).", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func getMany(_ query: AirtableQuery = AirtableQuery()) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.getMany(query)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # createOne
+            write.doc_comment("Create one record from a `Create*Model` payload.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(
+                f"public func createOne(\n        _ create: {create_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
+            )
+            write.line_indented("try await orm.createOne(create, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # updateOne (model)
+            write.doc_comment(
+                "Update a model, sending only fields that changed since last snapshot.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(
+                f"public func updateOne(\n        _ model: {model_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
+            )
+            write.line_indented("try await orm.updateOne(model, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # updateFields (record ID + explicit fields)
+            write.doc_comment(
+                "Update a record with an explicit field dict (bypasses dirty tracking).",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(
+                "public func updateFields(\n"
+                "        _ recordId: String,\n"
+                "        _ fields: [String: AirtableJSONValue],\n"
+                "        typecast: Bool = false\n"
+                f"    ) async throws -> {model_name} {{"
+            )
+            write.line_indented(
+                "try await orm.updateFields(recordId, fields, typecast: typecast)",
+                indent=2,
+            )
+            write.line_indented("}")
+            write.line_empty()
+
+            # upsertOne
+            write.doc_comment(
+                "Upsert a record, matching on the supplied field IDs. Returns the model plus `wasCreated` indicating insert vs update.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(
+                "public func upsertOne(\n"
+                f"        _ create: {create_name},\n"
+                "        matchFieldsToMerge: [String],\n"
+                "        typecast: Bool = false\n"
+                f"    ) async throws -> (model: {model_name}, wasCreated: Bool) {{"
+            )
+            write.line_indented(
+                "try await orm.upsertOne(create, matchFieldsToMerge: matchFieldsToMerge, typecast: typecast)",
+                indent=2,
+            )
+            write.line_indented("}")
+            write.line_empty()
+
+            # deleteOne
+            write.doc_comment("Delete one record by ID.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented("public func deleteOne(_ recordId: String) async throws {")
+            write.line_indented("try await orm.deleteOne(recordId)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # deleteMany
+            write.doc_comment("Delete many records by ID.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented("public func deleteMany(_ recordIds: [String]) async throws {")
+            write.line_indented("try await orm.deleteMany(recordIds)", indent=2)
+            write.line_indented("}")
+
             write.close()
 
 
