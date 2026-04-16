@@ -47,44 +47,54 @@ public struct AirtableQuery: Sendable, Equatable {
     }
 
     // MARK: - Fluent builders
+    //
+    // Each method shares a name with the stored property it overrides — Swift
+    // disambiguates by the call site's parenthesization: `q.formula` reads
+    // the property, `q.formula("...")` returns a mutated copy. This enables
+    // chainable construction, e.g.:
+    //
+    //     AirtableQuery()
+    //         .formula("NOT({Name}=BLANK())")
+    //         .sort(field: "Name")
+    //         .maxRecords(10)
 
-    public func withFormula(_ formula: String?) -> AirtableQuery {
+    public func formula(_ formula: String?) -> AirtableQuery {
         var copy = self
         copy.formula = formula
         return copy
     }
 
-    public func withSort(_ sort: [Sort]) -> AirtableQuery {
+    public func sort(_ sort: [Sort]) -> AirtableQuery {
         var copy = self
         copy.sort = sort
         return copy
     }
 
-    public func withSort(field: String, direction: SortDirection = .asc) -> AirtableQuery {
+    public func sort(field: String, direction: SortDirection = .asc) -> AirtableQuery {
         var copy = self
         copy.sort.append(Sort(field: field, direction: direction))
         return copy
     }
 
-    public func withFields(_ fields: [String]) -> AirtableQuery {
+    public func fields(_ fields: [String]) -> AirtableQuery {
         var copy = self
         copy.fields = fields
         return copy
     }
 
-    public func withMaxRecords(_ maxRecords: Int?) -> AirtableQuery {
+    public func maxRecords(_ maxRecords: Int?) -> AirtableQuery {
         var copy = self
         copy.maxRecords = maxRecords
         return copy
     }
 
-    public func withPageSize(_ pageSize: Int?) -> AirtableQuery {
+    public func pageSize(_ pageSize: Int?) -> AirtableQuery {
         var copy = self
         copy.pageSize = pageSize
         return copy
     }
 
-    public func withView(_ view: String?) -> AirtableQuery {
+    public func view(_ view: String?) -> AirtableQuery {
         var copy = self
         copy.view = view
         return copy

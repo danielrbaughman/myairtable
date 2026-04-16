@@ -112,10 +112,10 @@ struct TestAirtableQueryBuild {
             maxRecords: 10
         )
         let fluent = AirtableQuery()
-            .withFormula("NOT({Name}=BLANK())")
-            .withSort(field: "Name", direction: .asc)
-            .withFields(["fldA"])
-            .withMaxRecords(10)
+            .formula("NOT({Name}=BLANK())")
+            .sort(field: "Name", direction: .asc)
+            .fields(["fldA"])
+            .maxRecords(10)
         #expect(direct == fluent)
     }
 
