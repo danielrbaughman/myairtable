@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.meta import Base, Field, Options, Result, Table
+from src.meta import Base, Choice, Field, Options, Result, Table
 from src.meta_types import FieldType
 
 
@@ -392,3 +392,163 @@ class TestPythonFormulaFunctions:
 
 
 # endregion
+
+
+# =============================================================================
+# Swift generator (F3)
+# =============================================================================
+
+
+class TestSwiftGeneratorOutput:
+    """Swift generator (F3 — dict-only path) content assertions.
+
+    Verifies the generator emits the expected file structure and key code
+    snippets without shelling out to `swift build` (which would require Swift
+    on PATH in every test env). Compilation is separately verified by
+    ``tests/swift_static/`` + the integration tests in ``myairtable-tests``.
+    """
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        """Generate Swift code to a fresh tmp dir and return the output folder."""
+        from src.generators.swift import write_field_types, write_main, write_options, write_tables
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        write_field_types(base, output_folder)
+        write_tables(base, output_folder)
+        write_main(base, output_folder)
+        return output_folder
+
+    def test_field_types_emit_dual_id_and_name_constants(self, tmp_path: Path):
+        """Every field must get both a `{field}Id` and `{field}Name` static constant."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+
+        fields_file = out / "dynamic" / "types" / "TestTableFields.swift"
+        content = fields_file.read_text()
+
+        assert "public enum TestTableFields" in content
+        assert 'public static let primaryKeyId: String = "fld001"' in content
+        assert 'public static let primaryKeyName: String = "Primary Key"' in content
+
+    def test_field_types_emit_name_to_id_and_id_to_name_dictionaries(self, tmp_path: Path):
+        """The nameToId / idToName maps enable dual-access lookup at runtime."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.swift").read_text()
+
+        assert "public static let nameToId: [String: String]" in content
+        assert "public static let idToName: [String: String]" in content
+        assert '"Primary Key": "fld001"' in content
+        assert '"fld001": "Primary Key"' in content
+        assert "public static func idByName(" in content
+        assert "public static func nameById(" in content
+
+    def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
+        """allIds: [String] should list every field ID in schema order."""
+        fields_spec = [
+            ("A", "fld001", "singleLineText"),
+            ("B", "fld002", "number"),
+            ("C", "fld003", "checkbox"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.swift").read_text()
+
+        assert 'public static let allIds: [String] = ["fld001", "fld002", "fld003"]' in content
+
+    def test_writable_fields_exclude_computed_from_create_enum(self, tmp_path: Path):
+        """Create{Table}Fields enum omits computed fields (formula, createdTime, etc.)."""
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+            ("Created", "fld003", "createdTime"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.swift").read_text()
+
+        assert "public enum CreateTestTableFields" in content
+        # Writable field appears in Create enum
+        create_block = content.split("public enum CreateTestTableFields")[1]
+        assert "myTextId" in create_block
+        # Computed fields are NOT in the Create enum
+        assert "myFormulaId" not in create_block
+        assert "createdId" not in create_block
+
+    def test_tables_struct_exposes_dict_accessor(self, tmp_path: Path):
+        """Each table gets a {Table}Table struct with a `.dict: DictTable` accessor."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.swift").read_text()
+
+        assert "public struct TestTableTable: Sendable" in content
+        assert 'public static let tableId: String = "tblTEST123"' in content
+        assert "public let dict: DictTable" in content
+        assert "public init(client: AirtableClient)" in content
+        assert "nameToId: TestTableFields.nameToId" in content
+
+    def test_main_airtable_actor_exposes_per_table_accessors(self, tmp_path: Path):
+        """Airtable.swift should expose each table as a lowerCamelCase property."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "Airtable.swift").read_text()
+
+        assert "public struct Airtable: Sendable" in content
+        assert "public let testTable: TestTableTable" in content
+        # Dual init: baseId+apiKey with default baseId, plus client injection.
+        assert "public init(baseId: String" in content
+        assert "public init(client: AirtableClient)" in content
+        # Default baseId is embedded so users can construct with just an API key.
+        assert 'baseId: String = "appTEST123"' in content
+
+    def test_no_package_swift_is_emitted(self, tmp_path: Path):
+        """User decision #5: generator does NOT emit Package.swift."""
+        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        out = self._generate(fields_spec, tmp_path)
+        assert not (out / "Package.swift").exists()
+
+
+class TestSwiftOptionsGenerator:
+    """Swift select-option enum generation."""
+
+    def _generate_with_options(self, tmp_path: Path) -> str:
+        """Build a table with a singleSelect field and return its options file content."""
+        from src.generators.swift import write_options
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        # Inject choices into the field's options (make_test_base gives us empty choices).
+        field = base.tables[0].fields[0]
+        assert field.options is not None  # make_test_base always populates Options
+        field.options.choices = [
+            Choice.model_construct(id="sel1", name="Open"),
+            Choice.model_construct(id="sel2", name="In Progress"),
+            Choice.model_construct(id="sel3", name="Closed"),
+        ]
+        # Invalidate the cached select options so it re-reads from options.choices.
+        assert field.__pydantic_private__ is not None
+        field.__pydantic_private__["_select_options_cache"] = None
+
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        return (output_folder / "dynamic" / "options" / "TestTableOptions.swift").read_text()
+
+    def test_options_enum_has_codable_sendable_caseiterable(self, tmp_path: Path):
+        """Each options enum conforms to Codable + Sendable + CaseIterable."""
+        content = self._generate_with_options(tmp_path)
+        # Enum name is derived from field; for "Status" on "Test Table" it is
+        # produced by field.options_name(). We just assert the conformances.
+        assert ": String, Codable, Sendable, CaseIterable" in content
+
+    def test_options_enum_cases_are_lower_camel_case(self, tmp_path: Path):
+        """Choices with spaces should produce lowerCamelCase cases. Swift reserved
+        words (like `open`) are backtick-escaped automatically."""
+        content = self._generate_with_options(tmp_path)
+        assert 'case `open` = "Open"' in content  # `open` is a Swift keyword
+        assert 'case inProgress = "In Progress"' in content
+        assert 'case closed = "Closed"' in content
