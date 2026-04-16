@@ -119,6 +119,23 @@ GENERIC_TO_RUST: dict[GenericType, str] = {
     GenericType.UNKNOWN: "serde_json::Value",
 }
 
+GENERIC_TO_SWIFT: dict[GenericType, str] = {
+    GenericType.STRING: "String",
+    GenericType.INTEGER: "Int",
+    GenericType.FLOAT: "Double",
+    GenericType.BOOLEAN: "Bool",
+    GenericType.DATETIME: "Date",  # custom ISO8601 decoder in static runtime
+    GenericType.DURATION: "TimeInterval",  # Double, seconds (confirmed per project memory)
+    GenericType.RECORD_ID: "[RecordId]",  # API always returns arrays, even for single-link fields (matches Rust)
+    GenericType.ATTACHMENT: "AirtableAttachment",
+    GenericType.COLLABORATOR: "AirtableCollaborator",
+    GenericType.BUTTON: "AirtableButton",
+    GenericType.LIST_OF_RECORD_IDS: "[RecordId]",
+    GenericType.LIST_OF_ATTACHMENTS: "[AirtableAttachment]",
+    GenericType.LIST_OF_COLLABORATORS: "[AirtableCollaborator]",
+    GenericType.UNKNOWN: "AirtableJSONValue",  # sum-type enum wrapping any JSON; defined in Types.swift
+}
+
 # endregion
 
 
@@ -165,10 +182,12 @@ def map_types(base: Base) -> None:
             py_type = render_type(field, "python", resolved=resolved)
             ts_type = render_type(field, "typescript", resolved=resolved)
             rust_type = render_type(field, "rust", resolved=resolved)
+            swift_type = render_type(field, "swift", resolved=resolved)
 
             field._python_type = py_type
             field._typescript_type = ts_type
             field._rust_type = rust_type
+            field._swift_type = swift_type
 
             # Handle disambiguation for union types (list vs single value)
             if "|" in py_type and field.is_valid():
@@ -179,6 +198,7 @@ def map_types(base: Base) -> None:
                     field._python_type = render_type(field, "python", is_list=is_list)
                     field._typescript_type = render_type(field, "typescript", is_list=is_list)
                     field._rust_type = render_type(field, "rust", is_list=is_list)
+                    field._swift_type = render_type(field, "swift", is_list=is_list)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -279,7 +299,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-Language = Literal["python", "typescript", "zod", "rust"]
+Language = Literal["python", "typescript", "zod", "rust", "swift"]
 
 
 @dataclass(frozen=True)
@@ -322,6 +342,16 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         union_fmt="VecOrValue<{0}>",
         enum_fmt="{0}",
     ),
+    "swift": LanguageConfig(
+        type_map=GENERIC_TO_SWIFT,
+        unknown="AirtableJSONValue",
+        list_fmt="[{0}]",
+        # VecOrValue<T> is an enum in static/swift/Types.swift matching the Rust type by name,
+        # decoding either a single T or [T] — used for lookup/rollup fields whose cardinality
+        # can't be determined from Airtable metadata alone.
+        union_fmt="VecOrValue<{0}>",
+        enum_fmt="{0}",
+    ),
 }
 
 
@@ -335,6 +365,8 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return base_type.startswith("z.array(")
         case "rust":
             return base_type.startswith("Vec<")
+        case "swift":
+            return base_type.startswith("[") and base_type.endswith("]")
         case _:
             return False
 
@@ -461,6 +493,20 @@ def map_rust_type(field: Field) -> str:
 
     field._rust_type = rust_type
     return rust_type
+
+
+@timer.timed("map_swift_type")
+def map_swift_type(field: Field) -> str:
+    """Calculate the Swift type for a field."""
+
+    if field._swift_type is not None:
+        return field._swift_type
+
+    resolved: ResolvedType = map_type(field)
+    swift_type: str = render_type(field, "swift", resolved=resolved)
+
+    field._swift_type = swift_type
+    return swift_type
 
 
 # endregion
@@ -640,6 +686,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     field._python_type = render_type(field, "python", is_list=is_list)
     field._typescript_type = render_type(field, "typescript", is_list=is_list)
     field._rust_type = render_type(field, "rust", is_list=is_list)
+    field._swift_type = render_type(field, "swift", is_list=is_list)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:

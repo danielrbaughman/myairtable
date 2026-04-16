@@ -381,6 +381,7 @@ class Field(Named):
     _typescript_type: str | None = PrivateAttr(default=None)
     _zod_type: str | None = PrivateAttr(default=None)
     _rust_type: str | None = PrivateAttr(default=None)
+    _swift_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -584,6 +585,14 @@ class Field(Named):
         from src.utils.type_mapper import map_rust_type
 
         return map_rust_type(self)
+
+    def swift_type(self) -> str:
+        """Returns the Swift type for this field."""
+        if self._swift_type:
+            return self._swift_type
+        from src.utils.type_mapper import map_swift_type
+
+        return map_swift_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""
