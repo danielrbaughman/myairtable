@@ -511,6 +511,147 @@ class TestSwiftGeneratorOutput:
         assert not (out / "Package.swift").exists()
 
 
+class TestSwiftComputedFields:
+    """Swift generator should emit computed fields as `let` (decode-only) and
+    writable fields as `var`. Also verifies manual `Codable` conformance,
+    `@Observable` annotation, CodingKeys mapping to field IDs, and
+    Create{Table}Model excludes computed fields. This is the Swift analog
+    of TestTypeScriptComputedFields (and exercises the F4 generator).
+    """
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.swift import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+        model_path = output_folder / "dynamic" / "models" / "TestTableModel.swift"
+        return model_path.read_text()
+
+    def test_model_class_has_observable_attribute(self, tmp_path: Path):
+        """The generated class must be annotated with @Observable."""
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "@Observable" in content
+        assert "public final class TestTableModel: AirtableModel" in content
+
+    def test_computed_fields_are_let(self, tmp_path: Path):
+        """Each computed-type field should emit as `public let <prop>: T?`."""
+        non_formula_computed = [ft for ft in COMPUTED_TYPES if ft != "formula"]
+        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
+        content = self._generate(fields_spec, tmp_path)
+
+        for i, ft in enumerate(non_formula_computed):
+            # Use make_test_base's camel-naming so we get the right property string.
+            field = make_test_base([(f"Field {i}", f"fld{i:03d}", ft)]).tables[0].fields[0]
+            camel = field.name_camel()
+            assert f"public let {camel}:" in content, f"Missing `let` for {ft}"
+            assert f"public var {camel}:" not in content, f"Unexpected `var` for computed {ft}"
+
+    def test_writable_fields_are_var(self, tmp_path: Path):
+        """Writable field types should emit as `public var <prop>: T?`."""
+        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(WRITABLE_TYPES)]
+        content = self._generate(fields_spec, tmp_path)
+
+        for i, ft in enumerate(WRITABLE_TYPES):
+            field = make_test_base([(f"Field {i}", f"fld{i:03d}", ft)]).tables[0].fields[0]
+            camel = field.name_camel()
+            assert f"public var {camel}:" in content, f"Missing `var` for {ft}"
+            assert f"public let {camel}:" not in content, f"Unexpected `let` for writable {ft}"
+
+    def test_mixed_table_respects_computed_vs_writable(self, tmp_path: Path):
+        """A table with both kinds should emit each at the correct mutability."""
+        content = self._generate(
+            [
+                ("My Formula", "fld001", "formula"),
+                ("My Text", "fld002", "singleLineText"),
+                ("Created", "fld003", "createdTime"),
+                ("Rating", "fld004", "rating"),
+            ],
+            tmp_path,
+        )
+        # Computed
+        assert "public let myFormula:" in content
+        assert "public let created:" in content
+        # Writable
+        assert "public var myText:" in content
+        assert "public var rating:" in content
+        # No crossed wires
+        assert "public var myFormula:" not in content
+        assert "public let myText:" not in content
+
+    def test_coding_keys_raw_values_are_field_ids(self, tmp_path: Path):
+        """FieldsCodingKeys enum maps Swift property → Airtable field ID."""
+        content = self._generate([("My Text", "fld_ABC_123", "singleLineText")], tmp_path)
+        assert "private enum FieldsCodingKeys: String, CodingKey" in content
+        assert 'case myText = "fld_ABC_123"' in content
+
+    def test_manual_codable_conformance_present(self, tmp_path: Path):
+        """Every model emits manual init(from:) + encode(to:) (not synthesized)."""
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "public required init(from decoder: any Decoder) throws" in content
+        assert "public func encode(to encoder: any Encoder) throws" in content
+
+    def test_snapshot_and_dirty_tracking_present(self, tmp_path: Path):
+        """Explicit snapshot-dict dirty tracking, NOT @Observable-based."""
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "@ObservationIgnored" in content
+        assert "private var _snapshot: [String: AirtableJSONValue]" in content
+        assert "public func takeSnapshot()" in content
+        assert "public func dirtyFields() -> [String: AirtableJSONValue]" in content
+
+    def test_create_model_excludes_computed_fields(self, tmp_path: Path):
+        """Create{Table}Model struct omits computed fields and has Encodable conformance."""
+        content = self._generate(
+            [
+                ("My Text", "fld001", "singleLineText"),
+                ("My Formula", "fld002", "formula"),
+                ("Created", "fld003", "createdTime"),
+            ],
+            tmp_path,
+        )
+        assert "public struct CreateTestTableModel: Encodable, Sendable" in content
+        # Find the CreateTestTableModel block and assert writable-only shape.
+        create_block = content.split("public struct CreateTestTableModel")[1]
+        assert "public var myText:" in create_block
+        assert "myFormula" not in create_block  # computed field excluded
+        assert "created" not in create_block  # computed field excluded
+        # CodingKeys should map to field IDs, not names.
+        assert 'case myText = "fld001"' in create_block
+
+
+class TestSwiftFormulaFunctions:
+    """Formula fields should still appear on the model as `let` (not getter
+    methods) in F4 — runtime evaluation methods land in F8. This verifies
+    the F4 shape is stable before F8 adds on to it."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.swift import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+        return (output_folder / "dynamic" / "models" / "TestTableModel.swift").read_text()
+
+    def test_formula_field_is_let_property(self, tmp_path: Path):
+        """A formula field emits as `let myFormula: ...?` (decode-only)."""
+        content = self._generate([("My Formula", "fld001", "formula")], tmp_path)
+        assert "public let myFormula:" in content
+        # No setter, no method.
+        assert "public var myFormula:" not in content
+        assert "func myFormula(" not in content
+
+    def test_formula_field_included_in_fields_coding_keys(self, tmp_path: Path):
+        """Formula fields must be in FieldsCodingKeys to be decoded."""
+        content = self._generate([("My Formula", "fld_formula", "formula")], tmp_path)
+        assert 'case myFormula = "fld_formula"' in content
+
+
 class TestSwiftOptionsGenerator:
     """Swift select-option enum generation."""
 
