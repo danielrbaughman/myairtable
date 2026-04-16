@@ -74,11 +74,8 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     // =====================================================================
 
     /// Create one record from a `Create*Model` payload.
-    public func create<Create: Encodable & Sendable>(
-        _ record: Create,
-        typecast: Bool = false
-    ) async throws -> Model {
-        let results = try await createBatch([record], typecast: typecast)
+    public func create<Create: Encodable & Sendable>(_ record: Create) async throws -> Model {
+        let results = try await createBatch([record])
         guard let first = results.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
         }
@@ -86,25 +83,18 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     }
 
     /// Create many records. Chunks into Airtable's batch limit (10).
-    public func create<Create: Encodable & Sendable>(
-        _ records: [Create],
-        typecast: Bool = false
-    ) async throws -> [Model] {
+    public func create<Create: Encodable & Sendable>(_ records: [Create]) async throws -> [Model] {
         if records.isEmpty { return [] }
         var collected: [Model] = []
         for chunk in records.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
+            collected.append(contentsOf: try await createBatch(chunk))
         }
         return collected
     }
 
-    private func createBatch<Create: Encodable & Sendable>(
-        _ records: [Create],
-        typecast: Bool
-    ) async throws -> [Model] {
+    private func createBatch<Create: Encodable & Sendable>(_ records: [Create]) async throws -> [Model] {
         let body = AirtableCreateBody(
             records: records.map { AirtableCreateBody<Create>.Record(fields: $0) },
-            typecast: typecast,
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
@@ -119,8 +109,8 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
     /// Update a single model in place. Diffs against the model's snapshot
     /// and sends only fields that changed since the last `takeSnapshot()`.
-    public func update(_ model: Model, typecast: Bool = false) async throws -> Model {
-        let results = try await update([model], typecast: typecast)
+    public func update(_ model: Model) async throws -> Model {
+        let results = try await update([model])
         guard let first = results.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
         }
@@ -129,7 +119,7 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
     /// Update many models in a single call. Chunks into Airtable's batch
     /// limit (10). Each model's dirty-field diff is used as the patch set.
-    public func update(_ models: [Model], typecast: Bool = false) async throws -> [Model] {
+    public func update(_ models: [Model]) async throws -> [Model] {
         if models.isEmpty { return [] }
         var patches: [AirtableUpdateBody.Record] = []
         patches.reserveCapacity(models.count)
@@ -145,7 +135,7 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
         var collected: [Model] = []
         for chunk in patches.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await updateBatch(chunk, typecast: typecast))
+            collected.append(contentsOf: try await updateBatch(chunk))
         }
         return collected
     }
@@ -153,26 +143,18 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     /// Update a record with an explicit field dict (bypasses dirty tracking).
     public func updateFields(
         _ recordId: String,
-        _ fields: [String: AirtableJSONValue],
-        typecast: Bool = false
+        _ fields: [String: AirtableJSONValue]
     ) async throws -> Model {
         let patches = [AirtableUpdateBody.Record(id: recordId, fields: fields)]
-        let results = try await updateBatch(patches, typecast: typecast)
+        let results = try await updateBatch(patches)
         guard let first = results.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
         }
         return first
     }
 
-    private func updateBatch(
-        _ records: [AirtableUpdateBody.Record],
-        typecast: Bool
-    ) async throws -> [Model] {
-        let body = AirtableUpdateBody(
-            records: records,
-            typecast: typecast,
-            returnFieldsByFieldId: true
-        )
+    private func updateBatch(_ records: [AirtableUpdateBody.Record]) async throws -> [Model] {
+        let body = AirtableUpdateBody(records: records, returnFieldsByFieldId: true)
         let payload = try makeEncoder().encode(body)
         let response = try await client.updateRecords(tableId: tableId, body: payload)
         let env: AirtableListResponse<Model> = try decodeList(response)
@@ -187,13 +169,11 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     /// model plus `wasCreated` indicating insert vs update.
     public func upsert<Create: Encodable & Sendable>(
         _ record: Create,
-        matchFieldsToMerge: [String],
-        typecast: Bool = false
+        matchFieldsToMerge: [String]
     ) async throws -> (model: Model, wasCreated: Bool) {
         let body = AirtableUpsertBody(
             records: [.init(fields: record)],
             performUpsert: .init(fieldsToMergeOn: matchFieldsToMerge),
-            typecast: typecast,
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)

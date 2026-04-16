@@ -58,7 +58,7 @@ extension AirtableModel {
     /// Persist the model's dirty fields back to Airtable. Requires a saved
     /// record (`id != nil`) — call the table's `create(_:)` with a
     /// `Create*Model` payload to insert a brand-new row.
-    public func save(typecast: Bool = false) async throws -> Self {
+    public func save() async throws -> Self {
         let client = try attachedClientOrThrow()
         guard let recordId = self.id, !recordId.isEmpty else {
             throw AirtableError.api(
@@ -68,7 +68,7 @@ extension AirtableModel {
         }
         _ = recordId  // silence unused-var linter in strict builds
         let orm = OrmTable<Self>(tableId: Self.tableId, client: client)
-        return try await orm.update(self, typecast: typecast)
+        return try await orm.update(self)
     }
 
     /// Re-fetch the model from the server. Returns a fresh instance — Swift
@@ -119,24 +119,26 @@ struct AirtableListResponse<M: Decodable>: Decodable {
     let offset: String?
 }
 
-/// Body for POST /records: `{records: [{fields: <Create>}], typecast: Bool, returnFieldsByFieldId: true}`.
+/// Body for POST /records: `{records: [{fields: <Create>}], returnFieldsByFieldId: true}`.
+///
+/// `typecast` is intentionally omitted — Airtable's server-side default is
+/// false, which matches the Rust / Python / TypeScript targets' behavior.
+/// Cross-target typecast support is tracked at beads myairtable-hbph.
 struct AirtableCreateBody<C: Encodable>: Encodable {
     struct Record: Encodable {
         let fields: C
     }
     let records: [Record]
-    let typecast: Bool
     let returnFieldsByFieldId: Bool
 }
 
-/// Body for PATCH /records: `{records: [{id, fields: <dirty>}], typecast: Bool, returnFieldsByFieldId: true}`.
+/// Body for PATCH /records: `{records: [{id, fields: <dirty>}], returnFieldsByFieldId: true}`.
 struct AirtableUpdateBody: Encodable {
     struct Record: Encodable {
         let id: String
         let fields: [String: AirtableJSONValue]
     }
     let records: [Record]
-    let typecast: Bool
     let returnFieldsByFieldId: Bool
 }
 
@@ -150,7 +152,6 @@ struct AirtableUpsertBody<C: Encodable>: Encodable {
     }
     let records: [Record]
     let performUpsert: PerformUpsert
-    let typecast: Bool
     let returnFieldsByFieldId: Bool
 }
 

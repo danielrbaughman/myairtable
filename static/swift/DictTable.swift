@@ -35,12 +35,14 @@ public struct DictTable: Sendable {
         let offset: String?
     }
 
+    // `typecast` is intentionally omitted — matches the Rust / Py / TS
+    // behavior (Airtable defaults it to false). Cross-target typecast support
+    // is tracked at beads myairtable-hbph.
     private struct CreateRequestBody: Encodable {
         struct RecordPayload: Encodable {
             let fields: [String: AirtableJSONValue]
         }
         let records: [RecordPayload]
-        let typecast: Bool
         // Airtable echoes the inserted records back in the response. Setting
         // this true means the echoed fields are keyed by field ID — matching
         // what `returnFieldsByFieldId=true` does on list/get requests.
@@ -53,7 +55,6 @@ public struct DictTable: Sendable {
             let fields: [String: AirtableJSONValue]
         }
         let records: [RecordPayload]
-        let typecast: Bool
         let returnFieldsByFieldId: Bool
     }
 
@@ -153,8 +154,8 @@ public struct DictTable: Sendable {
     // MARK: - create
 
     /// Create one record and return the populated envelope.
-    public func create(_ fields: Fields, typecast: Bool = false) async throws -> Record {
-        let records = try await createBatch([fields], typecast: typecast)
+    public func create(_ fields: Fields) async throws -> Record {
+        let records = try await createBatch([fields])
         guard let first = records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
         }
@@ -162,19 +163,18 @@ public struct DictTable: Sendable {
     }
 
     /// Create many records. Chunks into Airtable's 10-per-call batch limit.
-    public func create(_ fields: [Fields], typecast: Bool = false) async throws -> [Record] {
+    public func create(_ fields: [Fields]) async throws -> [Record] {
         if fields.isEmpty { return [] }
         var collected: [Record] = []
         for chunk in fields.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
+            collected.append(contentsOf: try await createBatch(chunk))
         }
         return collected
     }
 
-    private func createBatch(_ fields: [Fields], typecast: Bool) async throws -> [Record] {
+    private func createBatch(_ fields: [Fields]) async throws -> [Record] {
         let body = CreateRequestBody(
             records: fields.map { CreateRequestBody.RecordPayload(fields: $0.encodeForWire()) },
-            typecast: typecast,
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
@@ -191,9 +191,9 @@ public struct DictTable: Sendable {
     // MARK: - update
 
     /// Update a single record's field values.
-    public func update(_ recordId: String, fields: Fields, typecast: Bool = false) async throws -> Record {
+    public func update(_ recordId: String, fields: Fields) async throws -> Record {
         let payloads = [UpdateRequestBody.RecordPayload(id: recordId, fields: fields.encodeForWire())]
-        let records = try await updateBatch(payloads, typecast: typecast)
+        let records = try await updateBatch(payloads)
         guard let first = records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
         }
@@ -201,30 +201,20 @@ public struct DictTable: Sendable {
     }
 
     /// Update many records. Chunks into Airtable's 10-per-call batch limit.
-    public func update(
-        _ updates: [(id: String, fields: Fields)],
-        typecast: Bool = false
-    ) async throws -> [Record] {
+    public func update(_ updates: [(id: String, fields: Fields)]) async throws -> [Record] {
         if updates.isEmpty { return [] }
         let payloads = updates.map {
             UpdateRequestBody.RecordPayload(id: $0.id, fields: $0.fields.encodeForWire())
         }
         var collected: [Record] = []
         for chunk in payloads.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await updateBatch(chunk, typecast: typecast))
+            collected.append(contentsOf: try await updateBatch(chunk))
         }
         return collected
     }
 
-    private func updateBatch(
-        _ payloads: [UpdateRequestBody.RecordPayload],
-        typecast: Bool
-    ) async throws -> [Record] {
-        let body = UpdateRequestBody(
-            records: payloads,
-            typecast: typecast,
-            returnFieldsByFieldId: true
-        )
+    private func updateBatch(_ payloads: [UpdateRequestBody.RecordPayload]) async throws -> [Record] {
+        let body = UpdateRequestBody(records: payloads, returnFieldsByFieldId: true)
         let payload = try makeEncoder().encode(body)
         let data = try await client.updateRecords(tableId: tableId, body: payload)
         let env: RawListResponse

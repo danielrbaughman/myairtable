@@ -602,10 +602,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
             # ----- create overloads -----
             write.doc_comment("Create one record from a `Create*Model` payload.", indent=1)
             write.line_indented("@inlinable")
-            write.line_indented(
-                f"public func create(\n        _ record: {create_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
-            )
-            write.line_indented("try await orm.create(record, typecast: typecast)", indent=2)
+            write.line_indented(f"public func create(_ record: {create_name}) async throws -> {model_name} {{")
+            write.line_indented("try await orm.create(record)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -614,10 +612,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 indent=1,
             )
             write.line_indented("@inlinable")
-            write.line_indented(
-                f"public func create(\n        _ records: [{create_name}],\n        typecast: Bool = false\n    ) async throws -> [{model_name}] {{"
-            )
-            write.line_indented("try await orm.create(records, typecast: typecast)", indent=2)
+            write.line_indented(f"public func create(_ records: [{create_name}]) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.create(records)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -627,10 +623,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 indent=1,
             )
             write.line_indented("@inlinable")
-            write.line_indented(
-                f"public func update(\n        _ model: {model_name},\n        typecast: Bool = false\n    ) async throws -> {model_name} {{"
-            )
-            write.line_indented("try await orm.update(model, typecast: typecast)", indent=2)
+            write.line_indented(f"public func update(_ model: {model_name}) async throws -> {model_name} {{")
+            write.line_indented("try await orm.update(model)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -639,10 +633,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 indent=1,
             )
             write.line_indented("@inlinable")
-            write.line_indented(
-                f"public func update(\n        _ models: [{model_name}],\n        typecast: Bool = false\n    ) async throws -> [{model_name}] {{"
-            )
-            write.line_indented("try await orm.update(models, typecast: typecast)", indent=2)
+            write.line_indented(f"public func update(_ models: [{model_name}]) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.update(models)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -655,14 +647,10 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(
                 "public func updateFields(\n"
                 "        _ recordId: String,\n"
-                "        _ fields: [String: AirtableJSONValue],\n"
-                "        typecast: Bool = false\n"
+                "        _ fields: [String: AirtableJSONValue]\n"
                 f"    ) async throws -> {model_name} {{"
             )
-            write.line_indented(
-                "try await orm.updateFields(recordId, fields, typecast: typecast)",
-                indent=2,
-            )
+            write.line_indented("try await orm.updateFields(recordId, fields)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -675,12 +663,11 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(
                 "public func upsert(\n"
                 f"        _ record: {create_name},\n"
-                "        matchFieldsToMerge: [String],\n"
-                "        typecast: Bool = false\n"
+                "        matchFieldsToMerge: [String]\n"
                 f"    ) async throws -> (model: {model_name}, wasCreated: Bool) {{"
             )
             write.line_indented(
-                "try await orm.upsert(record, matchFieldsToMerge: matchFieldsToMerge, typecast: typecast)",
+                "try await orm.upsert(record, matchFieldsToMerge: matchFieldsToMerge)",
                 indent=2,
             )
             write.line_indented("}")
