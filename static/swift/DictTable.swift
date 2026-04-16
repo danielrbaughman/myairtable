@@ -41,6 +41,10 @@ public struct DictTable: Sendable {
         }
         let records: [RecordPayload]
         let typecast: Bool
+        // Airtable echoes the inserted records back in the response. Setting
+        // this true means the echoed fields are keyed by field ID — matching
+        // what `returnFieldsByFieldId=true` does on list/get requests.
+        let returnFieldsByFieldId: Bool
     }
 
     private struct UpdateRequestBody: Encodable {
@@ -50,6 +54,7 @@ public struct DictTable: Sendable {
         }
         let records: [RecordPayload]
         let typecast: Bool
+        let returnFieldsByFieldId: Bool
     }
 
     private struct DeleteSingleResponse: Codable {
@@ -135,7 +140,8 @@ public struct DictTable: Sendable {
         let storage = fields.encodeForWire()
         let body = CreateRequestBody(
             records: [.init(fields: storage)],
-            typecast: typecast
+            typecast: typecast,
+            returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
         let data = try await client.createRecords(tableId: tableId, body: payload)
@@ -156,7 +162,8 @@ public struct DictTable: Sendable {
         let storage = fields.encodeForWire()
         let body = UpdateRequestBody(
             records: [.init(id: recordId, fields: storage)],
-            typecast: typecast
+            typecast: typecast,
+            returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
         let data = try await client.updateRecords(tableId: tableId, body: payload)

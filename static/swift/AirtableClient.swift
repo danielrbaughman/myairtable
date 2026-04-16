@@ -149,9 +149,15 @@ public actor AirtableClient {
     }
 
     /// GET a single record. Returns raw response bytes (envelope:
-    /// `{id, createdTime, fields}`).
+    /// `{id, createdTime, fields}`). Always sets `returnFieldsByFieldId=true`
+    /// so the response keys match the generator's field-ID constants.
     public func getRecord(tableId: String, recordId: String) async throws -> Data {
-        let url = try recordURL(tableId, recordId: recordId)
+        let base = try recordURL(tableId, recordId: recordId)
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            throw AirtableError.invalidUrl
+        }
+        components.queryItems = [URLQueryItem(name: "returnFieldsByFieldId", value: "true")]
+        guard let url = components.url else { throw AirtableError.invalidUrl }
         let req = authorized(url)
         return try await send(req)
     }
