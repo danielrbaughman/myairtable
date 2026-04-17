@@ -180,7 +180,8 @@ def map_types(base: Base) -> None:
                     is_list = csv_python_type.startswith("list[")
                     field._python_type = render_type(field, "python", is_list=is_list)
                     field._typescript_type = render_type(field, "typescript", is_list=is_list)
-                    field._rust_type = render_type(field, "rust", is_list=is_list)
+                    rust_type = render_type(field, "rust", is_list=is_list, is_computed=is_computed)
+                    field._rust_type = apply_rust_computed_wrapping(rust_type, field, resolved)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
