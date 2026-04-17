@@ -65,6 +65,68 @@ fn vec_or_value_serializes_multiple_with_nulls() {
 }
 
 // =============================================================================
+// SpecialNumber / ErrorValue / MaybeSpecialOrError / MaybeError
+// =============================================================================
+
+#[test]
+fn special_number_deserializes() {
+    let v: SpecialNumber = serde_json::from_str(r#"{"specialValue":"NaN"}"#).unwrap();
+    assert_eq!(v.special_value, "NaN");
+    let v: SpecialNumber = serde_json::from_str(r#"{"specialValue":"Infinity"}"#).unwrap();
+    assert_eq!(v.special_value, "Infinity");
+}
+
+#[test]
+fn error_value_deserializes() {
+    let v: ErrorValue = serde_json::from_str(r##"{"error":"#ERROR!"}"##).unwrap();
+    assert_eq!(v.error, "#ERROR!");
+}
+
+#[test]
+fn maybe_special_or_error_deserializes_value() {
+    let v: MaybeSpecialOrError<f64> = serde_json::from_str("42").unwrap();
+    assert!(matches!(v, MaybeSpecialOrError::Value(n) if n == 42.0));
+}
+
+#[test]
+fn maybe_special_or_error_deserializes_special() {
+    let v: MaybeSpecialOrError<f64> = serde_json::from_str(r#"{"specialValue":"NaN"}"#).unwrap();
+    assert!(matches!(v, MaybeSpecialOrError::Special(s) if s.special_value == "NaN"));
+}
+
+#[test]
+fn maybe_special_or_error_deserializes_error() {
+    let v: MaybeSpecialOrError<f64> = serde_json::from_str(r##"{"error":"#ERROR!"}"##).unwrap();
+    assert!(matches!(v, MaybeSpecialOrError::Error(e) if e.error == "#ERROR!"));
+}
+
+#[test]
+fn maybe_error_deserializes_value() {
+    let v: MaybeError<String> = serde_json::from_str(r#""hello""#).unwrap();
+    assert!(matches!(v, MaybeError::Value(s) if s == "hello"));
+}
+
+#[test]
+fn maybe_error_deserializes_error() {
+    let v: MaybeError<String> = serde_json::from_str(r##"{"error":"#ERROR!"}"##).unwrap();
+    assert!(matches!(v, MaybeError::Error(e) if e.error == "#ERROR!"));
+}
+
+#[test]
+fn vec_or_value_of_maybe_special_or_error_mixed_array() {
+    let json = r##"[1, {"specialValue":"NaN"}, {"error":"#ERROR!"}, null]"##;
+    let val: VecOrValue<MaybeSpecialOrError<i64>> = serde_json::from_str(json).unwrap();
+    let VecOrValue::Multiple(v) = val else {
+        panic!("expected Multiple");
+    };
+    assert_eq!(v.len(), 4);
+    assert!(matches!(v[0], Some(MaybeSpecialOrError::Value(1))));
+    assert!(matches!(&v[1], Some(MaybeSpecialOrError::Special(s)) if s.special_value == "NaN"));
+    assert!(matches!(&v[2], Some(MaybeSpecialOrError::Error(e)) if e.error == "#ERROR!"));
+    assert!(v[3].is_none());
+}
+
+// =============================================================================
 // URL building
 // =============================================================================
 

@@ -266,3 +266,50 @@ pub enum VecOrValue<T> {
     Single(T),
     Multiple(Vec<Option<T>>),
 }
+
+/// An Airtable special number value (NaN, Infinity, -Infinity).
+///
+/// Returned by formula fields when the computation produces a non-finite number.
+/// JSON shape: `{"specialValue": "NaN"}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpecialNumber {
+    #[serde(rename = "specialValue")]
+    pub special_value: String,
+}
+
+/// An Airtable error value from a failed formula.
+///
+/// Returned by formula fields when the computation fails (e.g., `#ERROR!`).
+/// JSON shape: `{"error": "#ERROR!"}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorValue {
+    pub error: String,
+}
+
+/// Wraps a computed numeric field that may be a value, special number, or error.
+///
+/// Used for numeric formula/rollup/lookup fields whose result can be one of:
+/// - the expected value (e.g., `42`)
+/// - a special number (`{"specialValue": "NaN"}`)
+/// - an error (`{"error": "#ERROR!"}`)
+///
+/// Variant order matters for `#[serde(untagged)]`: `Value` is tried first so
+/// plain numbers are not misinterpreted as object-shaped fallbacks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MaybeSpecialOrError<T> {
+    Value(T),
+    Special(SpecialNumber),
+    Error(ErrorValue),
+}
+
+/// Wraps a computed non-numeric field that may be a value or an error.
+///
+/// Used for text/date/etc. formula fields whose result can be either the
+/// expected value or an error (`{"error": "#ERROR!"}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MaybeError<T> {
+    Value(T),
+    Error(ErrorValue),
+}

@@ -106,7 +106,19 @@ def _rust_ident(name: str) -> str:
 
 
 # Static types from the runtime crate that may appear in ORM model field types
-_STATIC_TYPES = frozenset({"RecordId", "Attachment", "Collaborator", "AirtableButton", "VecOrValue"})
+_STATIC_TYPES = frozenset(
+    {
+        "RecordId",
+        "Attachment",
+        "Collaborator",
+        "AirtableButton",
+        "VecOrValue",
+        "MaybeSpecialOrError",
+        "MaybeError",
+        "SpecialNumber",
+        "ErrorValue",
+    }
+)
 
 
 def _collect_static_imports(table: Table) -> set[str]:

@@ -162,9 +162,11 @@ def map_types(base: Base) -> None:
             resolved = map_type(field)
 
             # Render all types from the same generic type
+            is_computed = field.is_computed()
             py_type = render_type(field, "python", resolved=resolved)
             ts_type = render_type(field, "typescript", resolved=resolved)
-            rust_type = render_type(field, "rust", resolved=resolved)
+            rust_type = render_type(field, "rust", resolved=resolved, is_computed=is_computed)
+            rust_type = apply_rust_computed_wrapping(rust_type, field, resolved)
 
             field._python_type = py_type
             field._typescript_type = ts_type
@@ -321,6 +323,7 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         list_fmt="Vec<{0}>",
         union_fmt="VecOrValue<{0}>",
         enum_fmt="{0}",
+        computed_union_fmt="VecOrValue<MaybeSpecialOrError<{0}>>",
     ),
 }
 
@@ -449,6 +452,30 @@ def map_zod_type(field: Field) -> str:
     return zod_type
 
 
+def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: ResolvedType | None = None) -> str:
+    """Wrap a computed field's inner Rust type to model Airtable special/error values.
+
+    Numeric computed → `MaybeSpecialOrError<T>`; other computed → `MaybeError<T>`.
+    No-op when the type was already wrapped by `computed_union_fmt` in `render_type`.
+    For disambiguated list types (`Vec<T>`), wraps inner items as `Vec<Option<W<T>>>`
+    to also accommodate null entries in rollup/lookup arrays.
+    """
+    if not field.is_computed():
+        return rust_type
+
+    if "MaybeSpecialOrError<" in rust_type or "MaybeError<" in rust_type:
+        return rust_type
+
+    generic_type = resolved.generic_type if resolved else field._generic_type
+    wrapper = "MaybeSpecialOrError" if generic_type in (GenericType.INTEGER, GenericType.FLOAT, GenericType.DURATION) else "MaybeError"
+
+    if rust_type.startswith("Vec<") and rust_type.endswith(">"):
+        inner = rust_type[len("Vec<") : -1]
+        return f"Vec<Option<{wrapper}<{inner}>>>"
+
+    return f"{wrapper}<{rust_type}>"
+
+
 @timer.timed("map_rust_type")
 def map_rust_type(field: Field) -> str:
     """Calculate the Rust type for a field."""
@@ -457,7 +484,8 @@ def map_rust_type(field: Field) -> str:
         return field._rust_type
 
     resolved: ResolvedType = map_type(field)
-    rust_type: str = render_type(field, "rust", resolved=resolved)
+    rust_type: str = render_type(field, "rust", resolved=resolved, is_computed=field.is_computed())
+    rust_type = apply_rust_computed_wrapping(rust_type, field, resolved)
 
     field._rust_type = rust_type
     return rust_type
@@ -639,7 +667,8 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     """Apply disambiguated types to a field."""
     field._python_type = render_type(field, "python", is_list=is_list)
     field._typescript_type = render_type(field, "typescript", is_list=is_list)
-    field._rust_type = render_type(field, "rust", is_list=is_list)
+    rust_type = render_type(field, "rust", is_list=is_list, is_computed=field.is_computed())
+    field._rust_type = apply_rust_computed_wrapping(rust_type, field)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:
