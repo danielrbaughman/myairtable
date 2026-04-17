@@ -454,12 +454,15 @@ def map_zod_type(field: Field) -> str:
 
 
 def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: ResolvedType | None = None) -> str:
-    """Wrap a computed field's inner Rust type to model Airtable special/error values.
+    """Wrap a computed field's Rust type to model Airtable special/error values.
 
     Numeric computed → `MaybeSpecialOrError<T>`; other computed → `MaybeError<T>`.
     No-op when the type was already wrapped by `computed_union_fmt` in `render_type`.
+
     For disambiguated list types (`Vec<T>`), wraps inner items as `Vec<Option<W<T>>>`
-    to also accommodate null entries in rollup/lookup arrays.
+    (items can be null or per-item errors) and the whole Vec in `MaybeError<..>`
+    because Airtable can return a top-level `{"error":"..."}` instead of the list
+    when the rollup/lookup formula itself fails.
     """
     if not field.is_computed():
         return rust_type
@@ -472,7 +475,7 @@ def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: Resolve
 
     if rust_type.startswith("Vec<") and rust_type.endswith(">"):
         inner = rust_type[len("Vec<") : -1]
-        return f"Vec<Option<{wrapper}<{inner}>>>"
+        return f"MaybeError<Vec<Option<{wrapper}<{inner}>>>>"
 
     return f"{wrapper}<{rust_type}>"
 
