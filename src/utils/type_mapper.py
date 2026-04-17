@@ -456,10 +456,12 @@ def map_zod_type(field: Field) -> str:
 def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: ResolvedType | None = None) -> str:
     """Wrap a computed field's Rust type to model Airtable special/error values.
 
-    Numeric computed → `MaybeSpecialOrError<T>`; other computed → `MaybeError<T>`.
-    No-op when the type was already wrapped by `computed_union_fmt` in `render_type`.
+    Always uses `MaybeSpecialOrError<T>`, even for non-numeric fields: Airtable can
+    return `{"specialValue": ...}` for text-like computed fields when a formula uses
+    numeric intermediates, so restricting non-numeric fields to `MaybeError<T>` fails
+    at deserialization time. No-op when the type was already wrapped.
 
-    For disambiguated list types (`Vec<T>`), wraps inner items as `Vec<Option<W<T>>>`
+    For disambiguated list types (`Vec<T>`), wraps inner items as `Vec<Option<...>>`
     (items can be null or per-item errors) and the whole Vec in `MaybeError<..>`
     because Airtable can return a top-level `{"error":"..."}` instead of the list
     when the rollup/lookup formula itself fails.
@@ -470,14 +472,11 @@ def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: Resolve
     if "MaybeSpecialOrError<" in rust_type or "MaybeError<" in rust_type:
         return rust_type
 
-    generic_type = resolved.generic_type if resolved else field._generic_type
-    wrapper = "MaybeSpecialOrError" if generic_type in (GenericType.INTEGER, GenericType.FLOAT, GenericType.DURATION) else "MaybeError"
-
     if rust_type.startswith("Vec<") and rust_type.endswith(">"):
         inner = rust_type[len("Vec<") : -1]
-        return f"MaybeError<Vec<Option<{wrapper}<{inner}>>>>"
+        return f"MaybeError<Vec<Option<MaybeSpecialOrError<{inner}>>>>"
 
-    return f"{wrapper}<{rust_type}>"
+    return f"MaybeSpecialOrError<{rust_type}>"
 
 
 @timer.timed("map_rust_type")
