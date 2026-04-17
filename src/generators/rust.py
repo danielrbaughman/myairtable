@@ -507,8 +507,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
     for table in base.tables:
         mod_name = table.name_snake()
-        model_name = f"{table.name_pascal()}Model"
-        create_name = f"Create{table.name_pascal()}Model"
+        model_name = table.name_model()
+        create_name = f"Create{model_name}"
 
         # Pre-transpile formula fields for this table
         formula_field_ids = table.formula_field_ids()
@@ -739,16 +739,16 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
         write.use_decl("crate::types::{AirtableQuery, RecordId, build_url}")
         write.use_decl("crate::airtable_model::OrmModel")
         for table in base.tables:
-            pascal = table.name_pascal()
-            write.use_decl(f"crate::models::{{{pascal}Model, Create{pascal}Model}}")
+            model = table.name_model()
+            write.use_decl(f"crate::models::{{{model}, Create{model}}}")
         write.line_empty()
 
         # Per-table wrapper structs
         for table in base.tables:
             pascal = table.name_pascal()
             table_struct = f"{pascal}Table"
-            model = f"{pascal}Model"
-            create = f"Create{pascal}Model"
+            model = table.name_model()
+            create = f"Create{model}"
 
             snake = _rust_ident(table.name_snake())
             write.doc_comment(f"Table accessor for `{sanitize_string(table.name)}`. ORM by default, `.dict` for raw records.")
@@ -954,8 +954,8 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             write.use_decl(f"field_types::{{{', '.join(exports)}}}", public=True)
         # Re-export ORM model types
         for table in base.tables:
-            pascal = table.name_pascal()
-            write.use_decl(f"models::{{{pascal}Model, Create{pascal}Model}}", public=True)
+            model = table.name_model()
+            write.use_decl(f"models::{{{model}, Create{model}}}", public=True)
         # Re-export formula helpers
         if formulas:
             write.use_decl("formula::{FormulaField, FormulaTextOps}", public=True)
