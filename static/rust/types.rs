@@ -271,7 +271,7 @@ pub enum VecOrValue<T> {
 ///
 /// Returned by formula fields when the computation produces a non-finite number.
 /// JSON shape: `{"specialValue": "NaN"}`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpecialNumber {
     #[serde(rename = "specialValue")]
     pub special_value: String,
@@ -281,7 +281,7 @@ pub struct SpecialNumber {
 ///
 /// Returned by formula fields when the computation fails (e.g., `#ERROR!`).
 /// JSON shape: `{"error": "#ERROR!"}`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorValue {
     pub error: String,
 }
@@ -295,7 +295,7 @@ pub struct ErrorValue {
 ///
 /// Variant order matters for `#[serde(untagged)]`: `Value` is tried first so
 /// plain numbers are not misinterpreted as object-shaped fallbacks.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MaybeSpecialOrError<T> {
     Value(T),
@@ -303,13 +303,99 @@ pub enum MaybeSpecialOrError<T> {
     Error(ErrorValue),
 }
 
+impl<T> MaybeSpecialOrError<T> {
+    /// Return the value if the variant is `Value`, else `None`.
+    pub fn value(&self) -> Option<&T> {
+        if let Self::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    /// Consume and return the value if the variant is `Value`, else `None`.
+    pub fn into_value(self) -> Option<T> {
+        if let Self::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    pub fn special(&self) -> Option<&SpecialNumber> {
+        if let Self::Special(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+    pub fn error(&self) -> Option<&ErrorValue> {
+        if let Self::Error(e) = self {
+            Some(e)
+        } else {
+            None
+        }
+    }
+    pub fn is_value(&self) -> bool {
+        matches!(self, Self::Value(_))
+    }
+    pub fn is_special(&self) -> bool {
+        matches!(self, Self::Special(_))
+    }
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+}
+
+impl<T> From<T> for MaybeSpecialOrError<T> {
+    fn from(v: T) -> Self {
+        Self::Value(v)
+    }
+}
+
 /// Wraps a computed non-numeric field that may be a value or an error.
 ///
 /// Used for text/date/etc. formula fields whose result can be either the
 /// expected value or an error (`{"error": "#ERROR!"}`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MaybeError<T> {
     Value(T),
     Error(ErrorValue),
+}
+
+impl<T> MaybeError<T> {
+    /// Return the value if the variant is `Value`, else `None`.
+    pub fn value(&self) -> Option<&T> {
+        if let Self::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    /// Consume and return the value if the variant is `Value`, else `None`.
+    pub fn into_value(self) -> Option<T> {
+        if let Self::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    pub fn error(&self) -> Option<&ErrorValue> {
+        if let Self::Error(e) = self {
+            Some(e)
+        } else {
+            None
+        }
+    }
+    pub fn is_value(&self) -> bool {
+        matches!(self, Self::Value(_))
+    }
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+}
+
+impl<T> From<T> for MaybeError<T> {
+    fn from(v: T) -> Self {
+        Self::Value(v)
+    }
 }

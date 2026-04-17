@@ -113,6 +113,37 @@ fn maybe_error_deserializes_error() {
 }
 
 #[test]
+fn maybe_special_or_error_helpers() {
+    let v: MaybeSpecialOrError<i64> = 42.into();
+    assert!(v.is_value());
+    assert_eq!(v.value(), Some(&42));
+    assert_eq!(v.clone().into_value(), Some(42));
+    assert!(!v.is_special());
+    assert!(!v.is_error());
+
+    let e: MaybeSpecialOrError<i64> = MaybeSpecialOrError::Error(ErrorValue {
+        error: "#ERROR!".into(),
+    });
+    assert!(e.is_error());
+    assert!(e.value().is_none());
+    assert_eq!(e.error().map(|x| x.error.as_str()), Some("#ERROR!"));
+}
+
+#[test]
+fn maybe_error_helpers() {
+    let v: MaybeError<String> = "hi".to_string().into();
+    assert!(v.is_value());
+    assert_eq!(v.value().map(String::as_str), Some("hi"));
+    assert!(!v.is_error());
+
+    let e: MaybeError<String> = MaybeError::Error(ErrorValue {
+        error: "#ERROR!".into(),
+    });
+    assert!(e.is_error());
+    assert_eq!(e.error().map(|x| x.error.as_str()), Some("#ERROR!"));
+}
+
+#[test]
 fn vec_or_value_of_maybe_special_or_error_mixed_array() {
     let json = r##"[1, {"specialValue":"NaN"}, {"error":"#ERROR!"}, null]"##;
     let val: VecOrValue<MaybeSpecialOrError<i64>> = serde_json::from_str(json).unwrap();
