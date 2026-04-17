@@ -257,9 +257,12 @@ pub struct AirtableButton {
 
 /// Represents a value that can be either a single item or a list.
 /// Used for lookup/rollup fields where the shape is ambiguous.
+///
+/// List items are nullable because Airtable rollup/lookup arrays can contain
+/// `null` entries when the source field is missing on a linked record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum VecOrValue<T> {
     Single(T),
-    Multiple(Vec<T>),
+    Multiple(Vec<Option<T>>),
 }

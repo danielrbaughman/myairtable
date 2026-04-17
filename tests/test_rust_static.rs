@@ -16,7 +16,52 @@ fn vec_or_value_deserializes_single() {
 fn vec_or_value_deserializes_multiple() {
     let json = r#"["a", "b"]"#;
     let val: VecOrValue<String> = serde_json::from_str(json).unwrap();
-    assert!(matches!(val, VecOrValue::Multiple(v) if v.len() == 2));
+    let VecOrValue::Multiple(v) = val else {
+        panic!("expected Multiple");
+    };
+    assert_eq!(v.len(), 2);
+    assert_eq!(v[0].as_deref(), Some("a"));
+    assert_eq!(v[1].as_deref(), Some("b"));
+}
+
+#[test]
+fn vec_or_value_deserializes_multiple_with_nulls() {
+    let json = r#"[null, "a", null, "b"]"#;
+    let val: VecOrValue<String> = serde_json::from_str(json).unwrap();
+    let VecOrValue::Multiple(v) = val else {
+        panic!("expected Multiple");
+    };
+    assert_eq!(v.len(), 4);
+    assert!(v[0].is_none());
+    assert_eq!(v[1].as_deref(), Some("a"));
+    assert!(v[2].is_none());
+    assert_eq!(v[3].as_deref(), Some("b"));
+}
+
+#[test]
+fn vec_or_value_deserializes_all_nulls() {
+    let json = r#"[null, null]"#;
+    let val: VecOrValue<i64> = serde_json::from_str(json).unwrap();
+    let VecOrValue::Multiple(v) = val else {
+        panic!("expected Multiple");
+    };
+    assert_eq!(v.len(), 2);
+    assert!(v.iter().all(|x| x.is_none()));
+}
+
+#[test]
+fn vec_or_value_deserializes_empty() {
+    let json = r#"[]"#;
+    let val: VecOrValue<String> = serde_json::from_str(json).unwrap();
+    assert!(matches!(val, VecOrValue::Multiple(v) if v.is_empty()));
+}
+
+#[test]
+fn vec_or_value_serializes_multiple_with_nulls() {
+    let val: VecOrValue<String> =
+        VecOrValue::Multiple(vec![Some("a".into()), None, Some("b".into())]);
+    let json = serde_json::to_string(&val).unwrap();
+    assert_eq!(json, r#"["a",null,"b"]"#);
 }
 
 // =============================================================================
