@@ -234,10 +234,10 @@ def map_type(field: Field) -> ResolvedType:
         return resolved
 
     if airtable_type == "number":
-        if field.options and field.options.precision is not None and field.options.precision == 0:
-            resolved = ResolvedType(generic_type=GenericType.INTEGER)
-        else:
-            resolved = ResolvedType(generic_type=GenericType.FLOAT)
+        # Airtable's `precision` controls display, not storage — a precision=0 field
+        # can still hold/return floats (e.g. 138.73000000000002 from a rollup, or an
+        # imported decimal value). Always use FLOAT so deserialization never fails.
+        resolved = ResolvedType(generic_type=GenericType.FLOAT)
         field._generic_type = resolved.generic_type
         return resolved
 
@@ -461,22 +461,29 @@ def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: Resolve
     numeric intermediates, so restricting non-numeric fields to `MaybeError<T>` fails
     at deserialization time. No-op when the type was already wrapped.
 
-    For disambiguated list types (`Vec<T>`), wraps inner items as `Vec<Option<...>>`
-    (items can be null or per-item errors) and the whole Vec in `MaybeError<..>`
-    because Airtable can return a top-level `{"error":"..."}` instead of the list
-    when the rollup/lookup formula itself fails.
+    For lookup/rollup computed fields, always uses `VecOrValue<MaybeSpecialOrError<T>>`
+    regardless of whether disambiguation collapsed to a list or scalar: Airtable does
+    not guarantee the list/scalar shape per field — any record may return the other
+    shape if the rollup aggregates to a single value or errors at the top level.
     """
     if not field.is_computed():
         return rust_type
 
-    if "MaybeSpecialOrError<" in rust_type or "MaybeError<" in rust_type:
+    if "MaybeSpecialOrError<" in rust_type or "MaybeError<" in rust_type or "VecOrValue<" in rust_type:
         return rust_type
 
-    if rust_type.startswith("Vec<") and rust_type.endswith(">"):
-        inner = rust_type[len("Vec<") : -1]
-        return f"MaybeError<Vec<Option<MaybeSpecialOrError<{inner}>>>>"
+    # Strip any disambiguation-applied `Vec<...>` so we wrap the inner primitive.
+    inner = rust_type
+    if inner.startswith("Vec<") and inner.endswith(">"):
+        inner = inner[len("Vec<") : -1]
 
-    return f"MaybeSpecialOrError<{rust_type}>"
+    # Lookup/rollup computed can be single or list at any record — use VecOrValue.
+    if field.involves_lookup() or field.involves_rollup():
+        return f"VecOrValue<MaybeSpecialOrError<{inner}>>"
+
+    # Non-lookup/rollup computed (plain formula, count, autoNumber, createdTime, etc.)
+    # can only be a single value, special, or error.
+    return f"MaybeSpecialOrError<{inner}>"
 
 
 @timer.timed("map_rust_type")
