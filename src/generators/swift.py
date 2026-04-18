@@ -302,8 +302,14 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.attribute("Observable")
             write.class_open(model_name, conformances=["AirtableModel"])
 
-            # Static: tableId
+            # Static: tableId + formula filters
             write.line_indented(f'public static let tableId: String = "{table.id}"')
+            filters_name = f"{prefix}Filters"
+            write.doc_comment(
+                f'Formula builder for filtering. Usage: `{model_name}.f.primaryKey.equals("x")`.',
+                indent=1,
+            )
+            write.line_indented(f"public static let f = {filters_name}()")
             write.line_empty()
 
             # ---------- Identity properties ----------
@@ -566,6 +572,69 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line_indented("}")
 
             write.close()  # end struct
+
+
+_SWIFT_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
+
+
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Filters` struct accessed via `{Table}Model.f`.
+
+    Layout: `dynamic/formulas/{Table}Filters.swift`. Each struct has one
+    stored property per field, typed to the appropriate Formula*Field struct,
+    plus an `id: FormulaId` for record-ID filters. A static `let f` on the
+    model class is wired up separately (in write_models — TODO: emit later
+    via a follow-up or inline the static property here).
+
+    Shape matches the user's approved API:
+        `PrimaryModel.f.primaryKey.equals("x")`
+    """
+    formulas_dir = _create_swift_dynamic_subdir(output_folder, _DIR_FORMULAS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        filters_name = f"{prefix}Filters"
+        file_name = f"{filters_name}.swift"
+
+        with WriteToSwiftFile(path=formulas_dir / file_name) as write:
+            write.import_stmt("Foundation")
+            write.line_empty()
+
+            write.doc_comment(f"Formula builder for `{sanitize_string(table.name)}`.")
+            write.struct_open(filters_name, conformances=["Sendable"])
+
+            # Record ID formula
+            write.doc_comment("Record ID formula.", indent=1)
+            write.line_indented("public let id: FormulaId")
+
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                formula_class = field.formula_class()
+                swift_type = _SWIFT_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
+                write.line_indented(f"public let {prop}: {swift_type}")
+
+            write.line_empty()
+
+            # Init
+            write.line_indented("public init() {")
+            write.line_indented("self.id = FormulaId()", indent=2)
+            for field in table.fields:
+                prop = _swift_ident(field.name_camel())
+                formula_class = field.formula_class()
+                swift_type = _SWIFT_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.line_indented(f'self.{prop} = {swift_type}("{field.id}")', indent=2)
+            write.line_indented("}")
+
+            write.close()
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
@@ -859,6 +928,11 @@ def generate_swift(
         write_field_types(base, output_folder)
         if verbose:
             print("[dim] - Swift field types generated.[/]")
+
+    with timer.timer("Swift: write_formula_helpers"):
+        write_formula_helpers(base, output_folder)
+        if verbose:
+            print("[dim] - Swift formula helpers generated.[/]")
 
     with timer.timer("Swift: write_models"):
         write_models(base, output_folder)
