@@ -706,6 +706,20 @@ class TestSwiftComputedFields:
         assert "myFormula, forKey: .myFormula" not in encode_body
         assert "created, forKey: .created" not in encode_body
 
+    def test_no_link_fetch_methods_emitted(self, tmp_path: Path):
+        """Linked fields stay as raw [RecordId]? (matching Rust). The
+        `fetch{FieldName}()` per-link async method and the "Linked record
+        fetching" MARK header must not appear in generated models."""
+        content = self._generate(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Links", "fld002", "multipleRecordLinks"),
+            ],
+            tmp_path,
+        )
+        assert "fetchLink" not in content
+        assert "Linked record fetching" not in content
+
 
 class TestSwiftFormulaFunctions:
     """Formula fields should still appear on the model as `let` (not getter

@@ -342,6 +342,8 @@ Depends on Feature 4.
 - 6.3 Unit test: chain compiles against synthetic models.
 - 6.4 **Integration test**: linked-record traversal (parity w/ TS `linked-records.test.ts`).
 
+> **Post-ship note (2026-04-20, beads `myairtable-3cnn`)**: F6 as shipped used a simpler design — raw `[RecordId]?` storage + per-field `fetch{FieldName}()` async methods, NOT the `LinkedRecord<T>` + `@dynamicMemberLookup` wrapper. Those per-field fetch methods were subsequently **removed** to match Rust's shape — users now call `airtable.<linkedTable>.get(id)` directly with the raw IDs. The TS-style wrapper with `callAsFunction`-based awaitability is tracked as a future follow-up at beads `myairtable-rude`.
+
 ### Feature 7 — Formula Builders (filter predicates) [P2]
 
 Depends on Feature 4.

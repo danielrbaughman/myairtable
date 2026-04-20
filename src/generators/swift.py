@@ -532,52 +532,6 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
             write.line_indented("return dirty", indent=2)
             write.line_indented("}")
 
-            # ---------- Linked-record fetch methods ----------
-            link_fields = [f for f in table.fields if f.type == "multipleRecordLinks" and f.linked_table() is not None]
-            if link_fields:
-                write.line_empty()
-                write.mark_section("Linked record fetching", indent=1)
-                for field in link_fields:
-                    linked = field.linked_table()
-                    if linked is None:
-                        continue
-                    prop = _swift_ident(field.name_camel())
-                    linked_model = f"{_table_type_prefix(linked)}Model"
-                    is_single = field.options is not None and field.options.prefers_single_record_link
-                    fetch_name = f"fetch{field.name_pascal()}"
-                    if is_single:
-                        write.doc_comment(
-                            f"Fetch the linked `{sanitize_string(linked.name)}` record via `{sanitize_string(field.name)}`.",
-                            indent=1,
-                        )
-                        write.line_indented(f"public func {_swift_ident(fetch_name)}() async throws -> {linked_model}? {{")
-                        write.line_indented(
-                            f"guard let ids = self.{prop}, let first = ids.first, let client = self._attachedClient else {{ return nil }}",
-                            indent=2,
-                        )
-                        write.line_indented(
-                            f"let orm = OrmTable<{linked_model}>(tableId: {linked_model}.tableId, client: client)",
-                            indent=2,
-                        )
-                        write.line_indented("return try await orm.get(first)", indent=2)
-                        write.line_indented("}")
-                    else:
-                        write.doc_comment(
-                            f"Fetch the linked `{sanitize_string(linked.name)}` records via `{sanitize_string(field.name)}`.",
-                            indent=1,
-                        )
-                        write.line_indented(f"public func {_swift_ident(fetch_name)}() async throws -> [{linked_model}] {{")
-                        write.line_indented(
-                            f"guard let ids = self.{prop}, let client = self._attachedClient else {{ return [] }}",
-                            indent=2,
-                        )
-                        write.line_indented(
-                            f"let orm = OrmTable<{linked_model}>(tableId: {linked_model}.tableId, client: client)",
-                            indent=2,
-                        )
-                        write.line_indented("return try await orm.get(ids)", indent=2)
-                        write.line_indented("}")
-
             # ---------- Runtime formula evaluation methods (F8.10) ----------
             if transpiled_formulas:
                 write.line_empty()
