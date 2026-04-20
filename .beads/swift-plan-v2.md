@@ -288,12 +288,12 @@ Depends on: Feature 1 (specifically 1.12 prototype informs model template).
 
 - 4.1 `AirtableModel.swift` — protocol (id, createdTime, toRecord, snapshot, dirtyFields, isNew) + `@Observable` base-class pattern.
 - 4.2 `OrmTable.swift` — generic typed table; includes **`upsert(_:matchFieldsToMerge:)`** (parity with Rust upsert).
-- 4.3 `write_models()` — per-table `@Observable class {Table}Model` + `struct {Table}CreateModel`:
+- 4.3 `write_models()` — per-table `@Observable class {Table}Model`:
   - Computed fields as `let: T?`; writable as `var: T?`.
   - Manual `CodingKeys` raw-valued to field IDs.
   - Manual `init(from decoder:)` + `encode(to:)` (avoids `@Observable` synthesis issue).
   - `_snapshot` stored property; `snapshot()` / `dirtyFields()` / `toRecord()` methods.
-  - `Create{Table}Model` excludes computed fields.
+  - > **SUPERSEDED 2026-04-20** — the original "separate `Create{Table}Model` struct" design was replaced by a designated `public init(writableField: Type? = nil, ...)` on the ORM class itself; `encode(to:)` narrowed to writable fields only. See `~/.claude/plans/declarative-skipping-feather.md` and design decision #6 in the Swift memory doc. All references to `Create{Table}Model` below are historical.
 - 4.4 Update `write_tables()` — add `.orm` accessor returning `OrmTable<{Table}Model, Create{Table}Model>`.
 - 4.5 Dirty tracking — explicit snapshot dict diff (NOT @Observable-based).
 - 4.6 Unit test `TestSwiftComputedFields` in `tests/test_generators.py`. **Specific assertions**:

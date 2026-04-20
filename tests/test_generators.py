@@ -566,9 +566,9 @@ class TestSwiftGeneratorOutput:
 class TestSwiftComputedFields:
     """Swift generator should emit computed fields as `let` (decode-only) and
     writable fields as `var`. Also verifies manual `Codable` conformance,
-    `@Observable` annotation, CodingKeys mapping to field IDs, and
-    Create{Table}Model excludes computed fields. This is the Swift analog
-    of TestTypeScriptComputedFields (and exercises the F4 generator).
+    `@Observable` annotation, CodingKeys mapping to field IDs, and that the
+    designated init + `encode(to:)` both restrict to writable fields. This is
+    the Swift analog of TestTypeScriptComputedFields.
     """
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
@@ -654,8 +654,9 @@ class TestSwiftComputedFields:
         assert "public func takeSnapshot()" in content
         assert "public func dirtyFields() -> [String: AirtableJSONValue]" in content
 
-    def test_create_model_excludes_computed_fields(self, tmp_path: Path):
-        """Create{Table}Model struct omits computed fields and has Encodable conformance."""
+    def test_no_create_struct_emitted(self, tmp_path: Path):
+        """No separate `Create{Table}Model` struct — the ORM class itself carries
+        the writable-field init."""
         content = self._generate(
             [
                 ("My Text", "fld001", "singleLineText"),
@@ -664,14 +665,46 @@ class TestSwiftComputedFields:
             ],
             tmp_path,
         )
-        assert "public struct CreateTestTableModel: Encodable, Sendable" in content
-        # Find the CreateTestTableModel block and assert writable-only shape.
-        create_block = content.split("public struct CreateTestTableModel")[1]
-        assert "public var myText:" in create_block
-        assert "myFormula" not in create_block  # computed field excluded
-        assert "created" not in create_block  # computed field excluded
-        # CodingKeys should map to field IDs, not names.
-        assert 'case myText = "fld001"' in create_block
+        assert "struct CreateTestTableModel" not in content
+
+    def test_designated_init_excludes_computed_fields(self, tmp_path: Path):
+        """The `public init(...)` on the class lists writable fields only —
+        computed fields are server-owned and initialized to nil internally."""
+        content = self._generate(
+            [
+                ("My Text", "fld001", "singleLineText"),
+                ("My Formula", "fld002", "formula"),
+                ("Created", "fld003", "createdTime"),
+            ],
+            tmp_path,
+        )
+        # Find the `public init(` block that opens the constructor.
+        assert "public init(" in content
+        init_block = content.split("public init(")[1].split(") {")[0]
+        assert "myText: String? = nil" in init_block
+        # Computed fields must NOT appear as init parameters.
+        assert "myFormula" not in init_block
+        assert "created" not in init_block
+
+    def test_encode_emits_only_writable_fields(self, tmp_path: Path):
+        """`encode(to:)` writes only writable fields into the `fields`
+        container — computed fields are read-only server-side."""
+        content = self._generate(
+            [
+                ("My Text", "fld001", "singleLineText"),
+                ("My Formula", "fld002", "formula"),
+                ("Created", "fld003", "createdTime"),
+            ],
+            tmp_path,
+        )
+        # Carve out just the encode(to:) body so we only check what it emits.
+        encode_start = content.index("public func encode(to encoder: any Encoder) throws")
+        encode_body = content[encode_start:]
+        encode_body = encode_body[: encode_body.index("\n    }")]
+        assert "fields.encodeIfPresent(myText, forKey: .myText)" in encode_body
+        # Computed fields absent from the encode path.
+        assert "myFormula, forKey: .myFormula" not in encode_body
+        assert "created, forKey: .created" not in encode_body
 
 
 class TestSwiftFormulaFunctions:

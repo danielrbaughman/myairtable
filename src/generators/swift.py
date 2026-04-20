@@ -264,17 +264,17 @@ def write_field_types(base: Base, output_folder: Path) -> None:
 
 
 def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten: bool = False) -> None:
-    """Generate per-table `@Observable final class {Table}Model` + `struct Create{Table}Model`.
+    """Generate per-table `@Observable final class {Table}Model`.
 
-    Layout: `dynamic/models/{Table}Model.swift`. Each file contains:
-      1. `@Observable final class {Table}Model: AirtableModel`
-         - `let` for computed fields (server-owned)
-         - `var` for writable fields (user-settable)
-         - manual `CodingKeys` + `init(from:)` + `encode(to:)`
-         - `@ObservationIgnored _snapshot` for dirty tracking
-         - protocol impls: `toRecord()`, `takeSnapshot()`, `dirtyFields()`
-      2. `struct Create{Table}Model: Encodable, Sendable`
-         - writable fields only; Encodable payload for OrmTable.createOne
+    Layout: `dynamic/models/{Table}Model.swift`. Each file contains a single
+    class:
+      - `let` for computed fields (server-owned; decoded, never encoded)
+      - `var` for writable fields (user-settable)
+      - designated `init(writableField: Type? = nil, ...)` for constructing
+        unsaved records — hand these to `airtable.<table>.create(_:)`
+      - manual `CodingKeys` + `init(from:)` + `encode(to:)` (writable-only)
+      - `@ObservationIgnored _snapshot` for dirty tracking
+      - protocol impls: `toRecord()`, `takeSnapshot()`, `dirtyFields()`
 
     `@Observable`'s macro-generated observation tracking breaks automatic
     `Codable` synthesis — hence the manual `init(from:)`/`encode(to:)`.
@@ -285,7 +285,6 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
     for table in base.tables:
         prefix = _table_type_prefix(table)
         model_name = f"{prefix}Model"
-        create_name = f"Create{prefix}Model"
         file_name = f"{model_name}.swift"
 
         # Split fields into computed (read-only) and writable (read-write).
@@ -378,6 +377,41 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
             write.line_indented("public var _attachedClient: AirtableClient?")
             write.line_empty()
 
+            # ---------- Designated initializer (for unsaved models) ----------
+            write.mark_section("Construction", indent=1)
+            write.doc_comment(
+                "Construct an unsaved model. All writable fields are optional "
+                "with `nil` defaults. Pass to `airtable.<table>.create(_:)` to "
+                "insert. `id`, `createdTime`, and computed fields are "
+                "server-owned and initialized to nil.",
+                indent=1,
+            )
+            if writable_fields:
+                write.line_indented("public init(")
+                init_params: list[str] = []
+                for field in writable_fields:
+                    prop = _swift_ident(field.name_camel())
+                    ty = field.swift_type()
+                    init_params.append(f"{prop}: {ty}? = nil")
+                for i, param in enumerate(init_params):
+                    suffix = "," if i < len(init_params) - 1 else ""
+                    write.line_indented(f"{param}{suffix}", indent=2)
+                write.line_indented(") {")
+            else:
+                write.line_indented("public init() {")
+            # Identity + computed fields: server-owned, initialized to nil.
+            write.line_indented("self.id = nil", indent=2)
+            write.line_indented("self.createdTime = nil", indent=2)
+            for field in computed_fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f"self.{prop} = nil", indent=2)
+            # Writable fields pulled from init params.
+            for field in writable_fields:
+                prop = _swift_ident(field.name_camel())
+                write.line_indented(f"self.{prop} = {prop}", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
             # ---------- CodingKeys ----------
             write.mark_section("Codable", indent=1)
             write.line_indented("private enum CodingKeys: String, CodingKey {")
@@ -425,8 +459,10 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
             write.line_empty()
 
             # ---------- encode(to:) ----------
-            # We encode only writable fields in the `fields` container (what
-            # gets sent to Airtable on update). id/createdTime go at top level.
+            # We encode only writable fields in the `fields` container — these
+            # are what Airtable will accept on create/update. Computed fields
+            # are server-owned and rejected on write. id/createdTime go at the
+            # top level for informational round-tripping.
             write.line_indented("public func encode(to encoder: any Encoder) throws {")
             write.line_indented("var c = encoder.container(keyedBy: CodingKeys.self)", indent=2)
             write.line_indented("try c.encodeIfPresent(id, forKey: .id)", indent=2)
@@ -437,7 +473,7 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
                 "var fields = c.nestedContainer(keyedBy: FieldsCodingKeys.self, forKey: .fields)",
                 indent=2,
             )
-            for field in table.fields:
+            for field in writable_fields:
                 prop = _swift_ident(field.name_camel())
                 write.line_indented(f"try fields.encodeIfPresent({prop}, forKey: .{prop})", indent=2)
             write.line_indented("}")
@@ -559,50 +595,6 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
                     write.line_indented("}")
 
             write.close()  # end class
-            write.line_empty()
-
-            # ================================================================
-            # Create{Table}Model — struct for create payloads
-            # ================================================================
-            write.doc_comment(f"Writable-only payload for creating new `{sanitize_string(table.name)}` records.")
-            write.struct_open(create_name, conformances=["Encodable", "Sendable"])
-
-            # Writable field properties
-            for field in writable_fields:
-                prop = _swift_ident(field.name_camel())
-                ty = field.swift_type()
-                write.line_indented(f"public var {prop}: {ty}?")
-            write.line_empty()
-
-            # Designated init with defaults so users can pass only what they want.
-            init_params: list[str] = []
-            for field in writable_fields:
-                prop = _swift_ident(field.name_camel())
-                ty = field.swift_type()
-                init_params.append(f"{prop}: {ty}? = nil")
-            # Break across lines for readability when there are many fields.
-            if init_params:
-                write.line_indented("public init(")
-                for i, param in enumerate(init_params):
-                    suffix = "," if i < len(init_params) - 1 else ""
-                    write.line_indented(f"{param}{suffix}", indent=2)
-                write.line_indented(") {")
-                for field in writable_fields:
-                    prop = _swift_ident(field.name_camel())
-                    write.line_indented(f"self.{prop} = {prop}", indent=2)
-                write.line_indented("}")
-            else:
-                write.line_indented("public init() {}")
-            write.line_empty()
-
-            # CodingKeys mapping property → field ID.
-            write.line_indented("private enum CodingKeys: String, CodingKey {")
-            for field in writable_fields:
-                prop = _swift_ident(field.name_camel())
-                write.line_indented(f'case {prop} = "{field.id}"', indent=2)
-            write.line_indented("}")
-
-            write.close()  # end struct
 
 
 _SWIFT_FORMULA_CLASS_MAP = {
@@ -684,7 +676,6 @@ def write_tables(base: Base, output_folder: Path) -> None:
         type_name = f"{prefix}Table"
         fields_name = f"{prefix}Fields"
         model_name = f"{prefix}Model"
-        create_name = f"Create{prefix}Model"
         file_name = f"{type_name}.swift"
         with WriteToSwiftFile(path=tables_dir / file_name) as write:
             write.import_stmt("Foundation")
@@ -746,10 +737,13 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_empty()
 
             # ----- create overloads -----
-            write.doc_comment("Create one record from a `Create*Model` payload.", indent=1)
+            write.doc_comment(
+                f"Create one record. Pass a fresh model built with its initializer (e.g. `{model_name}(...)`); only writable fields are sent.",
+                indent=1,
+            )
             write.line_indented("@inlinable")
-            write.line_indented(f"public func create(_ record: {create_name}) async throws -> {model_name} {{")
-            write.line_indented("try await orm.create(record)", indent=2)
+            write.line_indented(f"public func create(_ model: {model_name}) async throws -> {model_name} {{")
+            write.line_indented("try await orm.create(model)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -758,8 +752,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
                 indent=1,
             )
             write.line_indented("@inlinable")
-            write.line_indented(f"public func create(_ records: [{create_name}]) async throws -> [{model_name}] {{")
-            write.line_indented("try await orm.create(records)", indent=2)
+            write.line_indented(f"public func create(_ models: [{model_name}]) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.create(models)", indent=2)
             write.line_indented("}")
             write.line_empty()
 
@@ -808,12 +802,12 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("@inlinable")
             write.line_indented(
                 "public func upsert(\n"
-                f"        _ record: {create_name},\n"
+                f"        _ model: {model_name},\n"
                 "        matchFieldsToMerge: [String]\n"
                 f"    ) async throws -> (model: {model_name}, wasCreated: Bool) {{"
             )
             write.line_indented(
-                "try await orm.upsert(record, matchFieldsToMerge: matchFieldsToMerge)",
+                "try await orm.upsert(model, matchFieldsToMerge: matchFieldsToMerge)",
                 indent=2,
             )
             write.line_indented("}")

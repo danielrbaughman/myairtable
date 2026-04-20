@@ -73,9 +73,10 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     // MARK: - create
     // =====================================================================
 
-    /// Create one record from a `Create*Model` payload.
-    public func create<Create: Encodable & Sendable>(_ record: Create) async throws -> Model {
-        let results = try await createBatch([record])
+    /// Create one record. Pass a fresh `Model` built with its initializer
+    /// (e.g. `PrimaryModel(primaryKey: "x")`); only writable fields are sent.
+    public func create(_ model: Model) async throws -> Model {
+        let results = try await createBatch([model.toRecord()])
         guard let first = results.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
         }
@@ -83,18 +84,19 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     }
 
     /// Create many records. Chunks into Airtable's batch limit (10).
-    public func create<Create: Encodable & Sendable>(_ records: [Create]) async throws -> [Model] {
-        if records.isEmpty { return [] }
+    public func create(_ models: [Model]) async throws -> [Model] {
+        if models.isEmpty { return [] }
+        let payloads = models.map { $0.toRecord() }
         var collected: [Model] = []
-        for chunk in records.chunked(intoBatchSize: Self.batchSize) {
+        for chunk in payloads.chunked(intoBatchSize: Self.batchSize) {
             collected.append(contentsOf: try await createBatch(chunk))
         }
         return collected
     }
 
-    private func createBatch<Create: Encodable & Sendable>(_ records: [Create]) async throws -> [Model] {
+    private func createBatch(_ records: [[String: AirtableJSONValue]]) async throws -> [Model] {
         let body = AirtableCreateBody(
-            records: records.map { AirtableCreateBody<Create>.Record(fields: $0) },
+            records: records.map { AirtableCreateBody.Record(fields: $0) },
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
@@ -167,12 +169,12 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
     /// Upsert a record, matching on the supplied field IDs. Returns the
     /// model plus `wasCreated` indicating insert vs update.
-    public func upsert<Create: Encodable & Sendable>(
-        _ record: Create,
+    public func upsert(
+        _ model: Model,
         matchFieldsToMerge: [String]
     ) async throws -> (model: Model, wasCreated: Bool) {
         let body = AirtableUpsertBody(
-            records: [.init(fields: record)],
+            records: [.init(fields: model.toRecord())],
             performUpsert: .init(fieldsToMergeOn: matchFieldsToMerge),
             returnFieldsByFieldId: true
         )

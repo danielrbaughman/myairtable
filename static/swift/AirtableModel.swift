@@ -56,8 +56,8 @@ extension AirtableModel {
     // these methods with `.detachedModel`.
 
     /// Persist the model's dirty fields back to Airtable. Requires a saved
-    /// record (`id != nil`) — call the table's `create(_:)` with a
-    /// `Create*Model` payload to insert a brand-new row.
+    /// record (`id != nil`) — construct a model with its initializer and
+    /// pass it to the table's `create(_:)` to insert a brand-new row.
     public func save() async throws -> Self {
         let client = try attachedClientOrThrow()
         guard let recordId = self.id, !recordId.isEmpty else {
@@ -119,14 +119,14 @@ struct AirtableListResponse<M: Decodable>: Decodable {
     let offset: String?
 }
 
-/// Body for POST /records: `{records: [{fields: <Create>}], returnFieldsByFieldId: true}`.
+/// Body for POST /records: `{records: [{fields: {<fieldId>: <value>}}], returnFieldsByFieldId: true}`.
 ///
 /// `typecast` is intentionally omitted — Airtable's server-side default is
 /// false, which matches the Rust / Python / TypeScript targets' behavior.
 /// Cross-target typecast support is tracked at beads myairtable-hbph.
-struct AirtableCreateBody<C: Encodable>: Encodable {
+struct AirtableCreateBody: Encodable {
     struct Record: Encodable {
-        let fields: C
+        let fields: [String: AirtableJSONValue]
     }
     let records: [Record]
     let returnFieldsByFieldId: Bool
@@ -143,12 +143,12 @@ struct AirtableUpdateBody: Encodable {
 }
 
 /// Body for POST /records with upsert: same as create + `performUpsert: { fieldsToMergeOn: [...] }`.
-struct AirtableUpsertBody<C: Encodable>: Encodable {
+struct AirtableUpsertBody: Encodable {
     struct PerformUpsert: Encodable {
         let fieldsToMergeOn: [String]
     }
     struct Record: Encodable {
-        let fields: C
+        let fields: [String: AirtableJSONValue]
     }
     let records: [Record]
     let performUpsert: PerformUpsert
