@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// A record ID string (e.g., "recXXXXXXXXXXXXXX").
 pub type RecordId = String;
@@ -271,19 +273,90 @@ pub enum VecOrValue<T> {
 ///
 /// Returned by formula fields when the computation produces a non-finite number.
 /// JSON shape: `{"specialValue": "NaN"}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Deserialize is implemented manually (not derived) because serde's derived
+/// deserializer for single-field structs accepts a positional tuple form
+/// (`["NaN"]`). Inside the untagged `MaybeSpecialOrError` enum that fallback
+/// hijacks any lookup-array shape — e.g. `["Lab Name"]` — which collapses
+/// rollup/lookup string fields. We only want the object form here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SpecialNumber {
     #[serde(rename = "specialValue")]
     pub special_value: String,
+}
+
+impl<'de> Deserialize<'de> for SpecialNumber {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = SpecialNumber;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(r#"an object with key "specialValue""#)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut special_value: Option<String> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "specialValue" {
+                        if special_value.is_some() {
+                            return Err(de::Error::duplicate_field("specialValue"));
+                        }
+                        special_value = Some(map.next_value()?);
+                    } else {
+                        let _: de::IgnoredAny = map.next_value()?;
+                    }
+                }
+                Ok(SpecialNumber {
+                    special_value: special_value
+                        .ok_or_else(|| de::Error::missing_field("specialValue"))?,
+                })
+            }
+        }
+        deserializer.deserialize_map(V)
+    }
 }
 
 /// An Airtable error value from a failed formula.
 ///
 /// Returned by formula fields when the computation fails (e.g., `#ERROR!`).
 /// JSON shape: `{"error": "#ERROR!"}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Manual Deserialize for the same reason as [`SpecialNumber`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ErrorValue {
     pub error: String,
+}
+
+impl<'de> Deserialize<'de> for ErrorValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = ErrorValue;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(r#"an object with key "error""#)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut error: Option<String> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "error" {
+                        if error.is_some() {
+                            return Err(de::Error::duplicate_field("error"));
+                        }
+                        error = Some(map.next_value()?);
+                    } else {
+                        let _: de::IgnoredAny = map.next_value()?;
+                    }
+                }
+                Ok(ErrorValue {
+                    error: error.ok_or_else(|| de::Error::missing_field("error"))?,
+                })
+            }
+        }
+        deserializer.deserialize_map(V)
+    }
 }
 
 /// Wraps a computed numeric field that may be a value, special number, or error.
