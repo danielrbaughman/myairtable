@@ -58,6 +58,33 @@ public actor AirtableClient {
         self.decoder = dec
     }
 
+    /// Convenience init that constructs a cache with the given TTL (in seconds).
+    /// Matches the Rust target's `Airtable::with_cache(api_key, base_id, seconds)`.
+    public init(
+        baseId: String,
+        apiKey: String,
+        cacheSeconds: TimeInterval,
+        maxEntries: Int? = nil
+    ) {
+        self.init(
+            baseId: baseId,
+            apiKey: apiKey,
+            cache: CacheStore(defaultTtl: cacheSeconds, maxEntries: maxEntries)
+        )
+    }
+
+    // MARK: - Public cache controls
+
+    /// Drop every cached payload across every table.
+    public func invalidateAllCaches() async {
+        await cache.invalidate(.all)
+    }
+
+    /// Drop cached payloads for a single table.
+    public func invalidateCache(tableId: String) async {
+        await cache.invalidate(.table(tableId))
+    }
+
     // MARK: - Endpoint builders
 
     /// `/<baseId>/<tableId>` for list / create.
@@ -140,18 +167,43 @@ public actor AirtableClient {
     // re-decode into their preferred shape (model vs Fields). Cache reads
     // happen at this layer (keyed on table + query/record).
 
+    /// Compose a stable, deterministic cache key from `AirtableQuery`.
+    /// Used by the list-records cache; record-ID gets use the record ID.
+    private func _cacheKeyForQuery(_ query: AirtableQuery) -> String {
+        let items = query.toQueryItems()
+            .map { "\($0.name)=\($0.value ?? "")" }
+            .sorted()
+            .joined(separator: "&")
+        return "list?\(items)"
+    }
+
     /// GET list records. Returns raw response bytes (envelope:
-    /// `{records: [...], offset: "..."}`).
+    /// `{records: [...], offset: "..."}`). When `cache.defaultTtl > 0`,
+    /// cached payloads are returned before hitting the API.
     public func listRecords(tableId: String, query: AirtableQuery) async throws -> Data {
+        let key = CacheStore.Key(
+            tableId: tableId, keyedOn: _cacheKeyForQuery(query)
+        )
+        if let cached = await cache.get(key) {
+            return cached
+        }
         let url = try tableURL(tableId, query: query.toQueryItems())
         let req = authorized(url)
-        return try await send(req)
+        let data = try await send(req)
+        await cache.set(key, payload: data)
+        return data
     }
 
     /// GET a single record. Returns raw response bytes (envelope:
     /// `{id, createdTime, fields}`). Always sets `returnFieldsByFieldId=true`
     /// so the response keys match the generator's field-ID constants.
+    /// When `cache.defaultTtl > 0`, cached payloads are returned before
+    /// hitting the API.
     public func getRecord(tableId: String, recordId: String) async throws -> Data {
+        let key = CacheStore.Key(tableId: tableId, keyedOn: "rec:\(recordId)")
+        if let cached = await cache.get(key) {
+            return cached
+        }
         let base = try recordURL(tableId, recordId: recordId)
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw AirtableError.invalidUrl
@@ -159,7 +211,9 @@ public actor AirtableClient {
         components.queryItems = [URLQueryItem(name: "returnFieldsByFieldId", value: "true")]
         guard let url = components.url else { throw AirtableError.invalidUrl }
         let req = authorized(url)
-        return try await send(req)
+        let data = try await send(req)
+        await cache.set(key, payload: data)
+        return data
     }
 
     /// POST to create records. `body` is a JSON-encoded

@@ -849,6 +849,15 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f"public func delete(_ models: [{model_name}]) async throws {{")
             write.line_indented("try await orm.delete(models)", indent=2)
             write.line_indented("}")
+            write.line_empty()
+
+            # ----- Cache control -----
+            # Not @inlinable: OrmTable.client is `internal` (not
+            # @usableFromInline), and cache invalidation isn't hot-path.
+            write.doc_comment("Drop cached reads for this table.", indent=1)
+            write.line_indented("public func invalidateCache() async {")
+            write.line_indented("await orm.client.invalidateCache(tableId: Self.tableId)", indent=2)
+            write.line_indented("}")
 
             write.close()
 
@@ -886,10 +895,16 @@ def write_main(base: Base, output_folder: Path) -> None:
             write.line_indented(f"public let {prop}: {type_name}")
         write.line_empty()
 
-        # init(baseId:apiKey:)
-        write.line_indented('public init(baseId: String = "' + base.id + '", apiKey: String) {')
+        # init(baseId:apiKey:cacheSeconds:)
+        write.doc_comment(
+            "Construct with an API key and optional TTL caching. `cacheSeconds: 0` "
+            "(the default) disables caching; any positive value enables it across "
+            "all table reads.",
+            indent=1,
+        )
+        write.line_indented('public init(baseId: String = "' + base.id + '", apiKey: String, cacheSeconds: TimeInterval = 0) {')
         write.line_indented(
-            "self.client = AirtableClient(baseId: baseId, apiKey: apiKey)",
+            "self.client = AirtableClient(baseId: baseId, apiKey: apiKey, cacheSeconds: cacheSeconds)",
             indent=2,
         )
         for table in base.tables:
@@ -900,12 +915,20 @@ def write_main(base: Base, output_folder: Path) -> None:
 
         # init(client:) — inject a pre-configured actor.
         write.line_empty()
+        write.doc_comment("Dependency-injection constructor for tests + advanced setups.", indent=1)
         write.line_indented("public init(client: AirtableClient) {")
         write.line_indented("self.client = client", indent=2)
         for table in base.tables:
             prop = _table_property(table)
             type_name = f"{_table_type_prefix(table)}Table"
             write.line_indented(f"self.{prop} = {type_name}(client: client)", indent=2)
+        write.line_indented("}")
+
+        # Public cache-invalidation passthroughs
+        write.line_empty()
+        write.doc_comment("Drop every cached payload across every table.", indent=1)
+        write.line_indented("public func invalidateAllCaches() async {")
+        write.line_indented("await client.invalidateAllCaches()", indent=2)
         write.line_indented("}")
 
         write.close()

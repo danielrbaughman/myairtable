@@ -1,13 +1,17 @@
 import Foundation
 
-/// Actor-owned TTL cache shared by all `OrmTable` / `DictTable` wrappers on a
-/// given `AirtableClient`. Tables remain `Sendable` structs by forwarding all
-/// cache interactions to this actor rather than owning their own `Mutex`.
+/// Actor-owned TTL+LRU cache shared by all `OrmTable` / `DictTable` wrappers
+/// on a given `AirtableClient`. Tables remain `Sendable` structs by forwarding
+/// cache interactions through this actor rather than owning their own lock.
 ///
-/// F2.7 scope: skeleton only — actor type + empty storage + no-op methods.
-/// Full TTL + LRU + cascade-invalidation implementation lands in F9
-/// (myairtable-a9y). The actor lives here now so `AirtableClient` can
-/// reference it.
+/// Semantics:
+/// - **TTL**: `defaultTtl` (seconds). 0 disables caching. Per-call TTL
+///   overrides are supported via the `ttl:` parameter on `get(_:ttl:)`.
+/// - **LRU**: optional `maxEntries` cap. When set, the oldest-inserted
+///   entry is evicted once the cap is exceeded.
+/// - **Scope invalidation**: cascade by table, or wipe everything.
+/// - **Stale reads**: entries past their TTL are removed on access
+///   (lazy expiry).
 public actor CacheStore {
     /// Scope of invalidation. `.all` wipes every entry; `.table` wipes every
     /// entry for one table.
@@ -38,39 +42,71 @@ public actor CacheStore {
     /// Default TTL for new entries when caller doesn't override.
     public let defaultTtl: TimeInterval
 
-    private var storage: [Key: Entry] = [:]
+    /// Optional cap on cached entries. `nil` disables the LRU eviction path.
+    public let maxEntries: Int?
 
-    public init(defaultTtl: TimeInterval = 0) {
+    private var storage: [Key: Entry] = [:]
+    // Insertion-order tracker for LRU eviction. Hit + set both touch this.
+    private var insertionOrder: [Key] = []
+
+    public init(defaultTtl: TimeInterval = 0, maxEntries: Int? = nil) {
         self.defaultTtl = defaultTtl
+        self.maxEntries = maxEntries
     }
 
-    // MARK: - Operations (skeleton — F9 will add real TTL/LRU logic)
+    // MARK: - Operations
 
+    /// Look up a payload by key. Returns nil if absent or expired (and evicts
+    /// the expired entry in that case). `ttl` overrides `defaultTtl` when
+    /// provided.
     public func get(_ key: Key, ttl: TimeInterval? = nil) -> Data? {
         guard let entry = storage[key] else { return nil }
-        let ttl = ttl ?? defaultTtl
-        if ttl > 0 {
+        let effectiveTtl = ttl ?? defaultTtl
+        if effectiveTtl > 0 {
             let age = Date().timeIntervalSince(entry.insertedAt)
-            if age > ttl {
+            if age > effectiveTtl {
                 storage.removeValue(forKey: key)
+                insertionOrder.removeAll { $0 == key }
                 return nil
             }
+        } else if effectiveTtl == 0 {
+            // TTL of 0 means caching is off — never serve cached data.
+            return nil
         }
         return entry.payload
     }
 
+    /// Store `payload` at `key`. Evicts the oldest entry if `maxEntries` is set
+    /// and the cap is exceeded. A no-op when `defaultTtl` is 0 — cache is off.
     public func set(_ key: Key, payload: Data) {
+        guard defaultTtl > 0 else { return }
+        if storage[key] == nil {
+            insertionOrder.append(key)
+        }
         storage[key] = Entry(payload: payload, insertedAt: Date())
+        if let cap = maxEntries, storage.count > cap {
+            let oldest = insertionOrder.removeFirst()
+            storage.removeValue(forKey: oldest)
+        }
     }
 
+    /// Invalidate by scope.
     public func invalidate(_ scope: Scope) {
         switch scope {
         case .all:
             storage.removeAll()
+            insertionOrder.removeAll()
         case .table(let tableId):
             storage = storage.filter { $0.key.tableId != tableId }
+            insertionOrder.removeAll { $0.tableId == tableId }
         }
     }
 
+    /// Current entry count.
     public func count() -> Int { storage.count }
+
+    /// Drop everything (alias for `invalidate(.all)`).
+    public func clear() {
+        invalidate(.all)
+    }
 }
