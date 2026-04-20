@@ -18,7 +18,7 @@ from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 logger = logging.getLogger(__name__)
 
-Language = Literal["typescript", "javascript", "python", "rust"]
+Language = Literal["typescript", "javascript", "python", "rust", "swift"]
 
 
 # region AST Nodes
