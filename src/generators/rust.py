@@ -508,7 +508,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     for table in base.tables:
         mod_name = table.name_snake()
         model_name = table.name_model()
-        create_name = f"Create{model_name}"
 
         # Pre-transpile formula fields for this table
         formula_field_ids = table.formula_field_ids()
@@ -544,7 +543,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line(f'/// let record = airtable.{table_snake}.get_one("rec123").await?;')
             write.line('/// println!("{:?}", record);')
             write.line("///")
-            write.line(f"/// let new = {create_name} {{ ..Default::default() }};")
+            write.line(f"/// let new = {model_name} {{ ..Default::default() }};")
             write.line(f"/// let created = airtable.{table_snake}.create_one(&new).await?;")
             write.line("/// ```")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
@@ -560,7 +559,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("#[serde(skip)]")
             write.line_indented("pub _meta: ModelMeta,")
 
-            # Field properties
+            # Field properties. Writable fields use skip_serializing_if so None
+            # drops out on create/update; computed fields use skip_serializing so
+            # they deserialize from API responses but never re-encode back.
             for field in table.fields:
                 field_name = _rust_ident(field.name_snake())
                 rust_type = field.rust_type()
@@ -568,7 +569,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.property_docstring(field, table)
                 write.serde_rename(field.id, indent=1)
                 write.line_indented("#[serde(default)]", indent=1)
-                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
+                if field.is_computed():
+                    write.line_indented("#[serde(skip_serializing)]", indent=1)
+                else:
+                    write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
                 write.pub_field_optional(field_name, rust_type)
 
             write.line("}")
@@ -632,25 +636,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("fn set_id(&mut self, id: Option<RecordId>) { self.id = id; }")
             write.line_indented("fn get_created_time(&self) -> &Option<String> { &self.created_time }")
             write.line_indented("fn set_created_time(&mut self, ct: Option<String>) { self.created_time = ct; }")
-            write.line("}")
-            write.line_empty()
-
-            # Create model — writable fields only
-            writable_fields = [f for f in table.fields if not f.is_computed()]
-
-            write.doc_comment(f"Writable fields for creating/updating `{sanitize_string(table.name)}` records.")
-            write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
-            write.line(f"pub struct {create_name} {{")
-
-            for field in writable_fields:
-                field_name = _rust_ident(field.name_snake())
-                rust_type = field.rust_type()
-
-                write.serde_rename(field.id, indent=1)
-                write.line_indented("#[serde(default)]", indent=1)
-                write.line_indented('#[serde(skip_serializing_if = "Option::is_none")]', indent=1)
-                write.pub_field_optional(field_name, rust_type)
-
             write.line("}")
             write.line_empty()
 
@@ -740,7 +725,7 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
         write.use_decl("crate::airtable_model::OrmModel")
         for table in base.tables:
             model = table.name_model()
-            write.use_decl(f"crate::models::{{{model}, Create{model}}}")
+            write.use_decl(f"crate::models::{model}")
         write.line_empty()
 
         # Per-table wrapper structs
@@ -748,7 +733,6 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             pascal = table.name_pascal()
             table_struct = f"{pascal}Table"
             model = table.name_model()
-            create = f"Create{model}"
 
             snake = _rust_ident(table.name_snake())
             write.doc_comment(f"Table accessor for `{sanitize_string(table.name)}`. ORM by default, `.dict` for raw records.")
@@ -765,7 +749,7 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             write.line(f"pub struct {table_struct} {{")
             write.doc_comment("Raw record (dict) access.", indent=1)
             write.pub_field("dict", "StructTable")
-            write.line_indented(f"orm: OrmTable<{model}, {create}>,")
+            write.line_indented(f"orm: OrmTable<{model}>,")
             write.line("}")
             write.line_empty()
 
@@ -782,19 +766,19 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             )
             write.doc_comment("Create a new record.", indent=1)
             write.line_indented(
-                f"pub async fn create_one(&self, fields: &{create}) -> Result<{model}, AirtableError> {{ self.orm.create_one(fields).await }}"
+                f"pub async fn create_one(&self, model: &{model}) -> Result<{model}, AirtableError> {{ self.orm.create_one(model).await }}"
             )
             write.doc_comment("Create multiple records.", indent=1)
             write.line_indented(
-                f"pub async fn create_many(&self, records: &[{create}]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(records).await }}"
+                f"pub async fn create_many(&self, models: &[{model}]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(models).await }}"
             )
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                f"pub async fn update_one(&self, record_id: &RecordId, fields: &{create}) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, fields).await }}"
+                f"pub async fn update_one(&self, record_id: &RecordId, model: &{model}) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, model).await }}"
             )
             write.doc_comment("Update multiple records.", indent=1)
             write.line_indented(
-                f"pub async fn update_many(&self, records: &[(&RecordId, &{create})]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records).await }}"
+                f"pub async fn update_many(&self, records: &[(&RecordId, &{model})]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records).await }}"
             )
             write.doc_comment("Upsert a model. Creates if no ID, updates if ID exists.", indent=1)
             write.line_indented(f"pub async fn upsert(&self, model: &mut {model}) -> Result<(), AirtableError> {{ self.orm.upsert(model).await }}")
@@ -955,7 +939,7 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
         # Re-export ORM model types
         for table in base.tables:
             model = table.name_model()
-            write.use_decl(f"models::{{{model}, Create{model}}}", public=True)
+            write.use_decl(f"models::{model}", public=True)
         # Re-export formula helpers
         if formulas:
             write.use_decl("formula::{FormulaField, FormulaTextOps}", public=True)

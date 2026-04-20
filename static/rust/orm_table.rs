@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 
 use crate::airtable_model::OrmModel;
 use crate::client::AirtableClient;
@@ -12,16 +11,16 @@ use crate::error::AirtableError;
 use crate::types::{AirtableQuery, Record, RecordId};
 
 /// A table accessor for typed ORM model access.
-pub struct OrmTable<T, C> {
+pub struct OrmTable<T> {
     client: Arc<AirtableClient>,
     table_id: &'static str,
     table_name: &'static str,
     cache: Mutex<HashMap<String, (serde_json::Value, Instant)>>,
     cache_seconds: u64,
-    _phantom: PhantomData<(T, C)>,
+    _phantom: PhantomData<T>,
 }
 
-impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
+impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
     /// Create a new OrmTable.
     pub fn new(
         client: Arc<AirtableClient>,
@@ -148,42 +147,53 @@ impl<T: DeserializeOwned + OrmModel, C: Serialize> OrmTable<T, C> {
             .collect()
     }
 
-    /// Create a new record.
-    pub async fn create_one(&self, fields: &C) -> Result<T, AirtableError> {
+    /// Create a new record from an ORM model. Only writable fields are sent;
+    /// computed fields and record metadata are omitted.
+    pub async fn create_one(&self, model: &T) -> Result<T, AirtableError> {
         self.invalidate_cache();
+        let fields = model.to_save_json();
         let record = self
             .client
-            .create_record(self.table_id, fields, true)
+            .create_record(self.table_id, &fields, true)
             .await?;
         self.record_to_model(record)
     }
 
-    /// Create multiple records.
-    pub async fn create_many(&self, records: &[C]) -> Result<Vec<T>, AirtableError> {
+    /// Create multiple records from ORM models.
+    pub async fn create_many(&self, models: &[T]) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
+        let payloads: Vec<serde_json::Value> = models.iter().map(|m| m.to_save_json()).collect();
         let raw = self
             .client
-            .create_records(self.table_id, records, true)
+            .create_records(self.table_id, &payloads, true)
             .await?;
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
 
-    /// Update an existing record.
-    pub async fn update_one(&self, record_id: &RecordId, fields: &C) -> Result<T, AirtableError> {
+    /// Update an existing record. Sends the model's dirty diff if a snapshot
+    /// exists, otherwise the full set of writable fields.
+    pub async fn update_one(&self, record_id: &RecordId, model: &T) -> Result<T, AirtableError> {
         self.invalidate_cache();
+        let fields = model.to_save_json();
         let record = self
             .client
-            .update_record(self.table_id, record_id, fields, true)
+            .update_record(self.table_id, record_id, &fields, true)
             .await?;
         self.record_to_model(record)
     }
 
     /// Update multiple records.
-    pub async fn update_many(&self, records: &[(&RecordId, &C)]) -> Result<Vec<T>, AirtableError> {
+    pub async fn update_many(&self, records: &[(&RecordId, &T)]) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
+        let payloads: Vec<(&RecordId, serde_json::Value)> = records
+            .iter()
+            .map(|(id, model)| (*id, model.to_save_json()))
+            .collect();
+        let borrowed: Vec<(&RecordId, &serde_json::Value)> =
+            payloads.iter().map(|(id, v)| (*id, v)).collect();
         let raw = self
             .client
-            .update_records(self.table_id, records, true)
+            .update_records(self.table_id, &borrowed, true)
             .await?;
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
