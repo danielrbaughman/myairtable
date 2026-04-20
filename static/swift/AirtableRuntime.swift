@@ -73,6 +73,25 @@ public enum AirtableRuntime {
         A(args).map { S($0) }
     }
 
+    /// Convert any `Encodable` value to `AirtableJSONValue` for runtime composition.
+    /// Used by the transpiler to wrap model field references (e.g. `V(self.numberInt)`).
+    /// `nil` inputs produce `.null`. Failures fall through to `.null` rather than
+    /// throwing — formulas prefer BLANK-like propagation over hard errors.
+    public static func V<T: Encodable>(_ v: T?) -> AirtableJSONValue {
+        guard let v = v else { return .null }
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        guard let data = try? enc.encode(v) else { return .null }
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .iso8601
+        return (try? dec.decode(AirtableJSONValue.self, from: data)) ?? .null
+    }
+
+    /// Pass-through for values already in `AirtableJSONValue` form.
+    public static func V(_ v: AirtableJSONValue?) -> AirtableJSONValue {
+        v ?? .null
+    }
+
     /// Coerce to `Date`. ISO 8601 strings, Unix timestamps, or `nil`.
     public static func D(_ v: AirtableJSONValue?) -> Date? {
         guard let v = v else { return nil }
@@ -596,6 +615,116 @@ public enum AirtableRuntime {
         let u = unit ?? .string("days")
         guard case .int(let v) = DATETIME_DIFF(d1, d2, u) else { return .bool(false) }
         return .bool(v > 0)
+    }
+
+    /// Human-friendly duration string between two dates.
+    private static func _humanDuration(_ d1v: AirtableJSONValue?, _ d2v: AirtableJSONValue?) -> String {
+        guard let d1 = D(d1v), let d2 = D(d2v) else { return "" }
+        let diff = abs(Int(d1.timeIntervalSince(d2)))
+        let minutes = diff / 60
+        let hours = minutes / 60
+        let days = hours / 24
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let months = abs(
+            (cal.component(.year, from: d1) - cal.component(.year, from: d2)) * 12
+                + (cal.component(.month, from: d1) - cal.component(.month, from: d2))
+        )
+        let years = months / 12
+        if years > 0 { return "\(years) year\(years == 1 ? "" : "s")" }
+        if months > 0 { return "\(months) month\(months == 1 ? "" : "s")" }
+        if days > 0 { return "\(days) day\(days == 1 ? "" : "s")" }
+        if hours > 0 { return "\(hours) hour\(hours == 1 ? "" : "s")" }
+        if minutes > 0 { return "\(minutes) minute\(minutes == 1 ? "" : "s")" }
+        return "\(diff) second\(diff == 1 ? "" : "s")"
+    }
+
+    public static func TONOW(
+        _ date: AirtableJSONValue?, _ unit: AirtableJSONValue? = nil
+    ) -> AirtableJSONValue {
+        if unit != nil {
+            return DATETIME_DIFF(NOW(), date, unit)
+        }
+        return .string(_humanDuration(date, NOW()))
+    }
+
+    public static func FROMNOW(
+        _ date: AirtableJSONValue?, _ unit: AirtableJSONValue? = nil
+    ) -> AirtableJSONValue {
+        if unit != nil {
+            return DATETIME_DIFF(date, NOW(), unit)
+        }
+        return .string(_humanDuration(date, NOW()))
+    }
+
+    /// ISO 8601 week number (week starts on the supplied day; default Sunday).
+    public static func WEEKNUM(
+        _ date: AirtableJSONValue?, _ startDay: AirtableJSONValue? = nil
+    ) -> AirtableJSONValue {
+        guard let d = D(date) else { return .int(0) }
+        let names: [String: Int] = [
+            "sunday": 1, "monday": 2, "tuesday": 3, "wednesday": 4,
+            "thursday": 5, "friday": 6, "saturday": 7,
+        ]
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.firstWeekday = names[S(startDay).lowercased()] ?? 1
+        return .int(cal.component(.weekOfYear, from: d))
+    }
+
+    /// WORKDAY advances a date by N working days (Mon–Fri).
+    public static func WORKDAY(
+        _ start: AirtableJSONValue?, _ numDays: AirtableJSONValue?
+    ) -> AirtableJSONValue {
+        guard var d = D(start) else { return .null }
+        var remaining = Int(N(numDays))
+        let direction = remaining >= 0 ? 1 : -1
+        remaining = abs(remaining)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        while remaining > 0 {
+            guard let next = cal.date(byAdding: .day, value: direction, to: d) else {
+                return .null
+            }
+            d = next
+            let wd = cal.component(.weekday, from: d)
+            // Sunday=1, Saturday=7 → skip.
+            if wd != 1 && wd != 7 { remaining -= 1 }
+        }
+        return .string(_iso(d))
+    }
+
+    /// Count working days (Mon–Fri) between two dates. Signed (start later → negative).
+    public static func WORKDAY_DIFF(
+        _ start: AirtableJSONValue?, _ end: AirtableJSONValue?
+    ) -> AirtableJSONValue {
+        guard let d1 = D(start), let d2 = D(end) else { return .int(0) }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var count = 0
+        var current = d1
+        let direction = d2 > d1 ? 1 : -1
+        if ![1, 7].contains(cal.component(.weekday, from: current)) { count += direction }
+        while (direction == 1 && current < d2) || (direction == -1 && current > d2) {
+            guard let next = cal.date(byAdding: .day, value: direction, to: current) else { break }
+            current = next
+            if ![1, 7].contains(cal.component(.weekday, from: current)) { count += direction }
+        }
+        return .int(count)
+    }
+
+    /// Reinterpret a datetime in a different timezone. Returns the wall-clock
+    /// value as an ISO string (matching the Python runtime's behavior).
+    public static func SET_TIMEZONE(
+        _ date: AirtableJSONValue?, _ tz: AirtableJSONValue?
+    ) -> AirtableJSONValue {
+        guard let d = D(date) else { return .null }
+        let name = S(tz)
+        guard let zone = TimeZone(identifier: name) else { return .string(_iso(d)) }
+        // Offset the UTC instant so the "clock face" matches the target zone.
+        let offset = TimeInterval(zone.secondsFromGMT(for: d))
+        let shifted = d.addingTimeInterval(offset)
+        return .string(_iso(shifted))
     }
 
     public static func DATETIME_FORMAT(

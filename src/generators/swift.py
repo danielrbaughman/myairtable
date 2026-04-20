@@ -21,6 +21,8 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Table
 from ..utils import timer
 from ..utils.helpers import (
@@ -261,7 +263,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_empty()
 
 
-def write_models(base: Base, output_folder: Path) -> None:
+def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten: bool = False) -> None:
     """Generate per-table `@Observable final class {Table}Model` + `struct Create{Table}Model`.
 
     Layout: `dynamic/models/{Table}Model.swift`. Each file contains:
@@ -289,6 +291,19 @@ def write_models(base: Base, output_folder: Path) -> None:
         # Split fields into computed (read-only) and writable (read-write).
         computed_fields = [f for f in table.fields if f.is_computed()]
         writable_fields = [f for f in table.fields if not f.is_computed()]
+
+        # Pre-transpile formula fields for this table (F8.10).
+        transpiled_formulas: dict[str, str] = {}
+        raw_formulas: dict[str, str] = {}
+        if runtime:
+            formula_field_ids = table.formula_field_ids()
+            field_name_map = {f.id: _swift_ident(f.name_camel()) for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            if flatten and raw_formulas:
+                formula_map_tuple = table.base.get_formula_field_map_tuple()
+                raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
+            if raw_formulas:
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "swift", field_name_map, formula_field_ids)
 
         with WriteToSwiftFile(path=models_dir / file_name) as write:
             write.import_stmt("Foundation")
@@ -526,6 +541,22 @@ def write_models(base: Base, output_folder: Path) -> None:
                         )
                         write.line_indented("return try await orm.get(ids)", indent=2)
                         write.line_indented("}")
+
+            # ---------- Runtime formula evaluation methods (F8.10) ----------
+            if transpiled_formulas:
+                write.line_empty()
+                write.mark_section("Runtime formula evaluation", indent=1)
+                for field in table.fields:
+                    if field.id not in transpiled_formulas:
+                        continue
+                    prop = _swift_ident(field.name_camel())
+                    formula_code = transpiled_formulas[field.id]
+                    raw = raw_formulas.get(field.id, "")
+                    preview = sanitize_string(raw).replace("\n", " ")[:80]
+                    write.doc_comment(f"Evaluate formula locally: `{preview}...`", indent=1)
+                    write.line_indented(f"public func evaluate{field.name_pascal()}() -> AirtableJSONValue {{")
+                    write.line_indented(f"return {formula_code}", indent=2)
+                    write.line_indented("}")
 
             write.close()  # end class
             write.line_empty()
@@ -935,7 +966,7 @@ def generate_swift(
             print("[dim] - Swift formula helpers generated.[/]")
 
     with timer.timer("Swift: write_models"):
-        write_models(base, output_folder)
+        write_models(base, output_folder, runtime=runtime, flatten=flatten)
         if verbose:
             print("[dim] - Swift models generated.[/]")
 
