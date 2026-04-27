@@ -11,7 +11,6 @@ from ..formulas.formula_formatter import _count_nesting_depth
 from ..formulas.formula_tokenizer import TokenType, tokenize_formula
 from ..meta import Base
 from ..utils import timer
-from ..utils.helpers import Paths
 from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg, render_svgs_parallel
 from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
@@ -302,16 +301,14 @@ def generate_html(
 ) -> None:
     print("Generating HTML documentation")
 
-    html_root = output_folder / Paths.DOCS
-
     # Pre-create all folders
-    tables_folder = html_root / "tables"
+    tables_folder = output_folder / "tables"
     tables_folder.mkdir(parents=True, exist_ok=True)
     for table in base.tables:
-        fields_folder = html_root / "fields" / table.name_snake()
+        fields_folder = output_folder / "fields" / table.name_snake()
         fields_folder.mkdir(parents=True, exist_ok=True)
 
-    diagrams_dir = html_root / "diagrams"
+    diagrams_dir = output_folder / "diagrams"
     diagrams_dir.mkdir(parents=True, exist_ok=True)
     svg_cache_dir: Path | None = None
     if svg_enabled:
@@ -319,11 +316,11 @@ def generate_html(
         svg_cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy static assets
-    shutil.copy2(_STATIC_CSS, html_root / "style.css")
-    shutil.copy2(_STATIC_JS, html_root / "script.js")
+    shutil.copy2(_STATIC_CSS, output_folder / "style.css")
+    shutil.copy2(_STATIC_JS, output_folder / "script.js")
 
     # Generate search index
-    write_search_index(base, html_root)
+    write_search_index(base, output_folder)
 
     # Build reverse dependency index: field_id -> list of (field, table) that reference it
     reverse_deps: dict[str, list[tuple]] = {}
@@ -333,7 +330,7 @@ def generate_html(
                 reverse_deps.setdefault(ref.id, []).append((field, table))
 
     with timer.timer("HTML: write_tables"):
-        write_tables(base, html_root)
+        write_tables(base, output_folder)
         if verbose:
             print("[dim] - HTML tables generated.[/]")
 
@@ -341,7 +338,7 @@ def generate_html(
     with timer.timer("HTML: write_fields"):
         svg_tasks = write_fields(
             base,
-            html_root,
+            output_folder,
             svg_enabled,
             diagrams_dir,
             svg_cache_dir,
@@ -359,7 +356,7 @@ def generate_html(
             print("[dim] - SVGs generated.[/]")
 
     with timer.timer("HTML: write_index"):
-        write_index(base, html_root, diagrams_dir, svg_enabled, reverse_deps)
+        write_index(base, output_folder, diagrams_dir, svg_enabled, reverse_deps)
         if verbose:
             print("[dim] - HTML index generated.[/]")
 
@@ -368,11 +365,11 @@ def generate_html(
         print("")
 
 
-def write_tables(base: Base, html_root: Path) -> None:
+def write_tables(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         crumbs = [("Home", "../index.html"), (table.name, "")]
         with WriteToHtmlFile(
-            path=html_root / "tables" / f"{table.name_snake()}.html",
+            path=output_folder / "tables" / f"{table.name_snake()}.html",
             title=table.name,
             css_path=_css_path(1),
             breadcrumbs=crumbs,
@@ -435,7 +432,7 @@ def write_tables(base: Base, html_root: Path) -> None:
 
 def write_fields(
     base: Base,
-    html_root: Path,
+    output_folder: Path,
     svg_enabled: bool = True,
     diagrams_dir: Path | None = None,
     svg_cache_dir: Path | None = None,
@@ -447,7 +444,7 @@ def write_fields(
     svg_tasks: list[tuple[str, str]] = []
 
     for table in base.tables:
-        folder = html_root / "fields" / table.name_snake()
+        folder = output_folder / "fields" / table.name_snake()
         for field in table.fields:
             crumbs = [
                 ("Home", "../../index.html"),
@@ -639,10 +636,10 @@ def write_svgs(
 
 
 def write_index(
-    base: Base, html_root: Path, diagrams_dir: Path, svg_enabled: bool = True, reverse_deps: dict[str, list[tuple]] | None = None
+    base: Base, output_folder: Path, diagrams_dir: Path, svg_enabled: bool = True, reverse_deps: dict[str, list[tuple]] | None = None
 ) -> None:
     with WriteToHtmlFile(
-        path=html_root / "index.html",
+        path=output_folder / "index.html",
         title="Airtable Documentation",
         css_path=_css_path(0),
     ) as w:
@@ -658,7 +655,7 @@ def write_index(
         w.list_end()
 
         # Write schema JSON and add download link
-        schema_path = html_root / "schema.json"
+        schema_path = output_folder / "schema.json"
         schema_path.write_text(json.dumps(base.to_dict(), indent=2))
         w.paragraph_raw('<a href="schema.json" download="schema.json">Download Schema (JSON)</a>')
 
@@ -685,7 +682,7 @@ def write_index(
         mmd_path = diagrams_dir / "base.mmd"
         mmd_path.write_text(mmd_code)
         if svg_enabled:
-            svg_cache_dir = html_root.parent / ".svg_cache"
+            svg_cache_dir = output_folder.parent / ".svg_cache"
             svg_cache_dir.mkdir(parents=True, exist_ok=True)
             svg_content = mermaid_to_svg(mmd_code, svg_cache_dir, "base")
             if svg_content:
@@ -722,7 +719,7 @@ def write_index(
         w.document_end()
 
 
-def write_search_index(base: Base, html_root: Path) -> None:
+def write_search_index(base: Base, output_folder: Path) -> None:
     """Generate a JS file with all tables/fields for global search."""
     entries: list[dict[str, str]] = []
     for table in base.tables:
@@ -738,4 +735,4 @@ def write_search_index(base: Base, html_root: Path) -> None:
                 entry["desc"] = field.description
             entries.append(entry)
     js_content = f"var SEARCH_INDEX={json.dumps(entries, separators=(',', ':'))};\n"
-    (html_root / "search-index.js").write_text(js_content)
+    (output_folder / "search-index.js").write_text(js_content)
