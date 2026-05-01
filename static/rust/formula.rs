@@ -92,6 +92,13 @@ pub trait FormulaField {
 
 /// Text operations: equals, contains, starts_with, ends_with, regex, phone.
 pub trait FormulaTextOps: FormulaField {
+    /// Field reference used in string operations (FIND/LEN with LOWER/TRIM).
+    /// Override in lookup fields to wrap the reference in `ARRAYJOIN(field, ", ")`
+    /// so Airtable can coerce the array to a string. Defaults to bare `{field}`.
+    fn string_field(&self) -> String {
+        self.field()
+    }
+
     /// Exact equality.
     fn equals(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
         let f = wrap_field(&self.field(), case_sensitive, trim);
@@ -118,7 +125,7 @@ pub trait FormulaTextOps: FormulaField {
 
     /// Contains substring.
     fn contains(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let f = wrap_field(&self.string_field(), case_sensitive, trim);
         let v = wrap_value_str(value, case_sensitive, trim);
         format!("FIND({v},{f})>0")
     }
@@ -150,28 +157,28 @@ pub trait FormulaTextOps: FormulaField {
 
     /// Starts with the given value.
     fn starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let f = wrap_field(&self.string_field(), case_sensitive, trim);
         let v = wrap_value_str(value, case_sensitive, trim);
         format!("FIND({v},{f})=1")
     }
 
     /// Does not start with the given value.
     fn not_starts_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let f = wrap_field(&self.string_field(), case_sensitive, trim);
         let v = wrap_value_str(value, case_sensitive, trim);
         format!("FIND({v},{f})!=1")
     }
 
     /// Ends with the given value.
     fn ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let f = wrap_field(&self.string_field(), case_sensitive, trim);
         let v = wrap_value_str(value, case_sensitive, trim);
         format!("FIND({v},{f})=LEN({f})-LEN({v})+1")
     }
 
     /// Does not end with the given value.
     fn not_ends_with(&self, value: &str, case_sensitive: bool, trim: bool) -> String {
-        let f = wrap_field(&self.field(), case_sensitive, trim);
+        let f = wrap_field(&self.string_field(), case_sensitive, trim);
         let v = wrap_value_str(value, case_sensitive, trim);
         format!("FIND({v},{f})!=LEN({f})-LEN({v})+1")
     }
@@ -247,6 +254,42 @@ impl FormulaField for FormulaTextField {
 }
 
 impl FormulaTextOps for FormulaTextField {}
+
+// =============================================================================
+// Lookup Field
+// =============================================================================
+
+/// Formula builder for `multipleLookupValues` / `lookup` fields.
+///
+/// Lookup field values are arrays. Airtable does not auto-coerce arrays through
+/// `LOWER` / `TRIM` / `FIND`, so `contains`, `starts_with` and `ends_with` would
+/// silently match nothing. We override `string_field()` to wrap the reference in
+/// `ARRAYJOIN(field, ", ")` so string ops see a string.
+///
+/// Equality (`=`) is unaffected — Airtable coerces array fields to a comma-joined
+/// string under `=`, so direct equality already works.
+#[derive(Debug, Clone, Copy)]
+pub struct FormulaLookupField {
+    field_id: &'static str,
+}
+
+impl FormulaLookupField {
+    pub const fn new(field_id: &'static str) -> Self {
+        Self { field_id }
+    }
+}
+
+impl FormulaField for FormulaLookupField {
+    fn field_id(&self) -> &str {
+        self.field_id
+    }
+}
+
+impl FormulaTextOps for FormulaLookupField {
+    fn string_field(&self) -> String {
+        format!("ARRAYJOIN({}, \", \")", self.field())
+    }
+}
 
 // =============================================================================
 // Select Fields

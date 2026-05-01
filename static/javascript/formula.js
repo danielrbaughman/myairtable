@@ -38,11 +38,16 @@ function isFormula(value) {
 	return typeof value === "string" && /^[A-Z_]+\(/.test(value);
 }
 
+/** Check if a value is a bare field reference like `{Name}` or `{fldXxx}`. */
+function isFieldRef(value) {
+	return typeof value === "string" && /^\{[^{}]+\}$/.test(value);
+}
+
 /** Wrap a value for use in a formula - quotes strings, passes through formulas and fields */
 function wrapValue(value) {
 	if (value instanceof Field) {
 		return value.field;
-	} else if (isFormula(value)) {
+	} else if (isFormula(value) || isFieldRef(value)) {
 		return value;
 	} else {
 		return `"${value}"`;
@@ -80,6 +85,9 @@ function DATETIME_DIFF(left, right, unit) {
 }
 function SUBSTITUTE(value, oldText, newText) {
 	return `SUBSTITUTE(${wrapValue(value)}, "${oldText}", "${newText}")`;
+}
+function ARRAYJOIN(value, separator = ", ") {
+	return `ARRAYJOIN(${wrapValue(value)}, "${separator}")`;
 }
 
 /** Record ID formulas */
@@ -188,24 +196,33 @@ class TextField extends Field {
 		return `${this.field}!="${escapedValue}"`;
 	}
 
+	/**
+	 * Field reference used in string operations. Subclasses override to wrap
+	 * (e.g. LookupField wraps in ARRAYJOIN so array fields coerce to a string).
+	 */
+	stringSelf() {
+		return this.field;
+	}
+
 	_find(value, comparison, caseSensitive = false, trim = true) {
 		StringSchema.parse(value);
+		const ref = this.stringSelf();
 		if (caseSensitive) {
 			if (trim) {
 				const left = TRIM(value);
-				const right = TRIM(this);
+				const right = TRIM(ref);
 				return FIND(left, right) + comparison;
 			} else {
-				return FIND(value, this.field) + comparison;
+				return FIND(value, ref) + comparison;
 			}
 		} else {
 			if (trim) {
 				const left = TRIM(LOWER(value));
-				const right = TRIM(LOWER(this));
+				const right = TRIM(LOWER(ref));
 				return FIND(left, right) + comparison;
 			} else {
 				const left = LOWER(value);
-				const right = LOWER(this);
+				const right = LOWER(ref);
 				return FIND(left, right) + comparison;
 			}
 		}
@@ -275,15 +292,16 @@ class TextField extends Field {
 
 	_endsWith(value, comparison, caseSensitive = false, trim = true) {
 		StringSchema.parse(value);
+		const ref = this.stringSelf();
 		if (caseSensitive) {
 			if (trim) {
-				const f = TRIM(this);
+				const f = TRIM(ref);
 				const v = TRIM(value);
 				const left = FIND(v, f);
 				const right = `${LEN(f)} - ${LEN(v)} + 1`;
 				return `${left} ${comparison} ${right}`;
 			} else {
-				const f = this.field;
+				const f = ref;
 				const v = value;
 				const left = FIND(v, f);
 				const right = `${LEN(f)} - ${LEN(v)} + 1`;
@@ -291,13 +309,13 @@ class TextField extends Field {
 			}
 		} else {
 			if (trim) {
-				const f = TRIM(LOWER(this));
+				const f = TRIM(LOWER(ref));
 				const v = TRIM(LOWER(value));
 				const left = FIND(v, f);
 				const right = `${LEN(f)} - ${LEN(v)} + 1`;
 				return `${left} ${comparison} ${right}`;
 			} else {
-				const f = LOWER(this);
+				const f = LOWER(ref);
 				const v = LOWER(value);
 				const left = FIND(v, f);
 				const right = `${LEN(f)} - ${LEN(v)} + 1`;
@@ -333,6 +351,23 @@ class TextField extends Field {
 	regexMatch(pattern) {
 		StringSchema.parse(pattern);
 		return REGEX(this, pattern);
+	}
+}
+
+/**
+ * Formula helpers for `multipleLookupValues` / `lookup` fields.
+ *
+ * Lookup field values are arrays. Airtable does not auto-coerce arrays through
+ * `LOWER` / `TRIM` / `FIND`, so `contains`, `startsWith` and `endsWith` would
+ * silently match nothing. We wrap the field reference in `ARRAYJOIN(field, ", ")`
+ * for string operations so they see a string.
+ *
+ * Equality (`=`) is unaffected — Airtable coerces array fields to a comma-joined
+ * string under `=`, so direct equality already works.
+ */
+class LookupField extends TextField {
+	stringSelf() {
+		return ARRAYJOIN(this, ", ");
 	}
 }
 
@@ -630,6 +665,7 @@ module.exports = {
 	ID,
 	Field,
 	TextField,
+	LookupField,
 	SingleSelectField,
 	MultiSelectField,
 	NumberField,

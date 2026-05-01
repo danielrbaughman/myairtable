@@ -650,7 +650,17 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
         with WriteToJavaScriptFile(path=formulas_dir / f"{table.name_camel()}.js") as write:
             # Requires
             write.require_statement(
-                ["ID", "AttachmentsField", "BooleanField", "DateField", "NumberField", "TextField", "SingleSelectField", "MultiSelectField"],
+                [
+                    "ID",
+                    "AttachmentsField",
+                    "BooleanField",
+                    "DateField",
+                    "LookupField",
+                    "NumberField",
+                    "TextField",
+                    "SingleSelectField",
+                    "MultiSelectField",
+                ],
                 "../../static/formula",
             )
             write.select_options_require(table, f"../types/{table.name_camel()}")

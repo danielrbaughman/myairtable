@@ -656,7 +656,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
         with WriteToPythonFile(path=formulas_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.line(
-                "from ...static.formula import AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
+                "from ...static.formula import AttachmentsField, BooleanField, DateField, LookupField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
             )
             write.select_options_import(table)
             write.line_empty()

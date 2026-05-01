@@ -736,7 +736,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.line(
-                'import { ID, AttachmentsField, BooleanField, DateField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
+                'import { ID, AttachmentsField, BooleanField, DateField, LookupField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
             )
             write.select_options_import(table, f"../types/{table_name_camel}")
             write.line_empty()

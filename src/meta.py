@@ -755,6 +755,14 @@ class Field(Named):
         airtable_type: FieldType = self.type
         formula_type: str = "TextField"
 
+        # Lookup field references are arrays. Airtable does not auto-coerce
+        # arrays through LOWER/TRIM/FIND, so a TextField formula class would
+        # silently fail. Route to LookupField, which wraps the reference in
+        # ARRAYJOIN for string ops. Must be checked before is_calculated()
+        # since that branch resolves to the *element* type and loses array-ness.
+        if self.is_lookup():
+            return "LookupField"
+
         # With calculated fields, we want to know the type of the result
         if self.is_calculated():
             airtable_type = self.result_type()

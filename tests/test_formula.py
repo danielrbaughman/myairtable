@@ -20,6 +20,7 @@ from formula import (  # type: ignore[attr-defined]
     DateComparison,
     DateField,
     Field,
+    LookupField,
     MultiSelectField,
     NumberField,
     SingleSelectField,
@@ -383,6 +384,47 @@ class TestTextField:
         field = TextField("Email")
         result = field.regex_match(r"^[a-z]+@[a-z]+\.com$")
         assert "REGEX_MATCH(" in str(result)
+
+
+class TestLookupField:
+    """LookupField wraps the field reference in ARRAYJOIN for string ops so
+    Airtable can coerce the array to a string. Equality (=) is unaffected
+    because Airtable already coerces arrays under =."""
+
+    def test_contains_wraps_in_arrayjoin(self):
+        field = LookupField("Client")
+        result = str(field.contains("groundwork"))
+        assert "ARRAYJOIN({Client}" in result
+        assert "FIND(" in result
+        assert "LOWER(" in result
+
+    def test_starts_with_wraps_in_arrayjoin(self):
+        field = LookupField("Client")
+        result = str(field.starts_with("Ground"))
+        assert "ARRAYJOIN({Client}" in result
+
+    def test_ends_with_wraps_in_arrayjoin(self):
+        field = LookupField("Client")
+        result = str(field.ends_with("BioAg"))
+        assert "ARRAYJOIN({Client}" in result
+        assert "LEN(" in result
+
+    def test_equals_does_not_wrap_in_arrayjoin(self):
+        """`=` already coerces arrays to comma-strings — no ARRAYJOIN needed."""
+        field = LookupField("Client")
+        result = str(field == "Groundwork Bio Ag")
+        assert "ARRAYJOIN" not in result
+        assert "{Client}" in result
+        assert "Groundwork Bio Ag" in result
+
+    def test_not_empty_does_not_wrap(self):
+        field = LookupField("Client")
+        assert "ARRAYJOIN" not in str(field.not_empty())
+
+    def test_text_field_unaffected(self):
+        """Regression: TextField must still emit a bare {field} reference."""
+        field = TextField("Name")
+        assert "ARRAYJOIN" not in str(field.contains("hello"))
 
 
 class TestSingleSelectField:

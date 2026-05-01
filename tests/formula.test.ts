@@ -7,6 +7,7 @@ import {
 	ID,
 	Field,
 	TextField,
+	LookupField,
 	SingleSelectField,
 	MultiSelectField,
 	NumberField,
@@ -421,6 +422,49 @@ describe("TextField", () => {
 			const result = field.regexMatch("^[a-z]+@");
 			expect(result).toContain("REGEX(");
 		});
+	});
+});
+
+describe("LookupField", () => {
+	// LookupField wraps the field reference in ARRAYJOIN for string ops so
+	// Airtable can coerce the array to a string. Equality (=) is unaffected
+	// because Airtable already coerces arrays under =.
+
+	it("contains wraps in ARRAYJOIN", () => {
+		const field = new LookupField("Client");
+		const result = field.contains("groundwork");
+		expect(result).toContain("ARRAYJOIN({Client}");
+		expect(result).toContain("FIND(");
+		expect(result).toContain("LOWER(");
+	});
+
+	it("startsWith wraps in ARRAYJOIN", () => {
+		const field = new LookupField("Client");
+		expect(field.startsWith("Ground")).toContain("ARRAYJOIN({Client}");
+	});
+
+	it("endsWith wraps in ARRAYJOIN", () => {
+		const field = new LookupField("Client");
+		const result = field.endsWith("BioAg");
+		expect(result).toContain("ARRAYJOIN({Client}");
+		expect(result).toContain("LEN(");
+	});
+
+	it("equals does not wrap in ARRAYJOIN (= already coerces)", () => {
+		const field = new LookupField("Client");
+		const result = field.equals("Groundwork Bio Ag");
+		expect(result).not.toContain("ARRAYJOIN");
+		expect(result).toContain("{Client}");
+	});
+
+	it("notEmpty does not wrap", () => {
+		const field = new LookupField("Client");
+		expect(field.notEmpty()).not.toContain("ARRAYJOIN");
+	});
+
+	it("regression: TextField is unaffected", () => {
+		const field = new TextField("Name");
+		expect(field.contains("hello")).not.toContain("ARRAYJOIN");
 	});
 });
 

@@ -655,6 +655,7 @@ _FORMULA_CLASS_MAP = {
     "DateField": "FormulaDateField",
     "NumberField": "FormulaNumberField",
     "AttachmentsField": "FormulaAttachmentsField",
+    "LookupField": "FormulaLookupField",
     "SingleSelectField": "FormulaSingleSelectField",
     "MultiSelectField": "FormulaMultiSelectField",
 }

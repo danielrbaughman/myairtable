@@ -574,3 +574,68 @@ fn attachments_count() {
         "LEN({fld123})=3"
     );
 }
+
+// =============================================================================
+// Lookup Field
+// =============================================================================
+// FormulaLookupField wraps the field reference in ARRAYJOIN for string ops so
+// Airtable can coerce the array to a string. Equality (=) is unaffected because
+// Airtable already coerces arrays under =.
+
+#[test]
+fn lookup_contains_wraps_in_arrayjoin() {
+    let f = FormulaLookupField::new("fldClient");
+    let result = f.contains("groundwork", false, true);
+    assert!(
+        result.contains("ARRAYJOIN({fldClient}"),
+        "missing ARRAYJOIN: {result}"
+    );
+    assert!(result.contains("FIND("), "missing FIND: {result}");
+    assert!(result.contains("LOWER("), "missing LOWER: {result}");
+}
+
+#[test]
+fn lookup_starts_with_wraps_in_arrayjoin() {
+    let f = FormulaLookupField::new("fldClient");
+    let result = f.starts_with("Ground", false, true);
+    assert!(
+        result.contains("ARRAYJOIN({fldClient}"),
+        "missing ARRAYJOIN: {result}"
+    );
+}
+
+#[test]
+fn lookup_ends_with_wraps_in_arrayjoin() {
+    let f = FormulaLookupField::new("fldClient");
+    let result = f.ends_with("BioAg", false, true);
+    assert!(
+        result.contains("ARRAYJOIN({fldClient}"),
+        "missing ARRAYJOIN: {result}"
+    );
+    assert!(result.contains("LEN("), "missing LEN: {result}");
+}
+
+#[test]
+fn lookup_equals_does_not_wrap_in_arrayjoin() {
+    // `=` already coerces arrays to comma-strings — no ARRAYJOIN needed.
+    let f = FormulaLookupField::new("fldClient");
+    let result = f.equals("Groundwork Bio Ag", true, false);
+    assert!(
+        !result.contains("ARRAYJOIN"),
+        "should not wrap equals: {result}"
+    );
+    assert!(result.contains("{fldClient}"), "missing field: {result}");
+}
+
+#[test]
+fn lookup_not_empty_does_not_wrap() {
+    let f = FormulaLookupField::new("fldClient");
+    assert!(!f.not_empty().contains("ARRAYJOIN"));
+}
+
+#[test]
+fn text_field_unaffected_regression() {
+    // Regression: FormulaTextField must still emit a bare {field} reference.
+    let f = FormulaTextField::new("fldName");
+    assert!(!f.contains("hello", false, true).contains("ARRAYJOIN"));
+}

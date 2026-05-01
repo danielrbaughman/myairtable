@@ -105,6 +105,10 @@ class TextField(Field):
         formula = normalize(self) + " = " + normalize(value)
         return F.Formula(formula)
 
+    def _string_self(self) -> Any:
+        """Field reference used in string operations. Subclasses override to wrap (e.g. ARRAYJOIN for arrays)."""
+        return self
+
     def _find(
         self,
         value: str,
@@ -113,17 +117,18 @@ class TextField(Field):
         trim: bool = True,
     ) -> F.Formula:
         formula: str
+        ref = self._string_self()
 
         if case_sensitive:
             if trim:
-                formula = str(F.FIND(F.TRIM(value), F.TRIM(self))) + comparison
+                formula = str(F.FIND(F.TRIM(value), F.TRIM(ref))) + comparison
             else:
-                formula = str(F.FIND(value, self)) + comparison
+                formula = str(F.FIND(value, ref)) + comparison
         else:
             if trim:
-                formula = str(F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(self)))) + comparison
+                formula = str(F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(ref)))) + comparison
             else:
-                formula = str(F.FIND(F.LOWER(value), F.LOWER(self))) + comparison
+                formula = str(F.FIND(F.LOWER(value), F.LOWER(ref))) + comparison
 
         return F.Formula(formula)
 
@@ -221,24 +226,25 @@ class TextField(Field):
         actual_index: F.Formula
         field_length: F.Formula
         value_length: F.Formula
+        ref = self._string_self()
 
         if case_sensitive:
             if trim:
-                actual_index = F.FIND(F.TRIM(value), F.TRIM(self))
-                field_length = F.LEN(F.TRIM(self))
+                actual_index = F.FIND(F.TRIM(value), F.TRIM(ref))
+                field_length = F.LEN(F.TRIM(ref))
                 value_length = F.LEN(F.TRIM(value))
             else:
-                actual_index = F.FIND(value, self)
-                field_length = F.LEN(self)
+                actual_index = F.FIND(value, ref)
+                field_length = F.LEN(ref)
                 value_length = F.LEN(value)
         else:
             if trim:
-                actual_index = F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(self)))
-                field_length = F.LEN(F.TRIM(F.LOWER(self)))
+                actual_index = F.FIND(F.TRIM(F.LOWER(value)), F.TRIM(F.LOWER(ref)))
+                field_length = F.LEN(F.TRIM(F.LOWER(ref)))
                 value_length = F.LEN(F.TRIM(F.LOWER(value)))
             else:
-                actual_index = F.FIND(F.LOWER(value), F.LOWER(self))
-                field_length = F.LEN(F.LOWER(self))
+                actual_index = F.FIND(F.LOWER(value), F.LOWER(ref))
+                field_length = F.LEN(F.LOWER(ref))
                 value_length = F.LEN(F.LOWER(value))
 
         expected_index = F.Formula(f"{field_length} - {value_length} + 1")
@@ -286,6 +292,23 @@ class TextField(Field):
             str: An Airtable formula string using REGEX_MATCH with the field name and the provided pattern.
         """
         return F.REGEX_MATCH(self, pattern)
+
+
+class LookupField(TextField):
+    """
+    Formula helpers for ``multipleLookupValues`` / ``lookup`` fields.
+
+    Lookup field values are arrays. Airtable does not auto-coerce arrays through
+    ``LOWER`` / ``TRIM`` / ``FIND``, so ``contains``, ``starts_with`` and
+    ``ends_with`` would silently match nothing. We wrap the field reference in
+    ``ARRAYJOIN(field, ", ")`` for string operations so they see a string.
+
+    Equality (``=``) is unaffected — Airtable coerces array fields to a
+    comma-joined string under ``=``, so direct equality already works.
+    """
+
+    def _string_self(self) -> Any:
+        return F.FunctionCall("ARRAYJOIN", self, ", ")
 
 
 SelectOptions = TypeVar("SelectOptions", bound=str)
@@ -643,6 +666,7 @@ __all__ = [
     "NOT",
     "ID",
     "TextField",
+    "LookupField",
     "NumberField",
     "BooleanField",
     "AttachmentsField",
