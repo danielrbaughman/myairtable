@@ -669,7 +669,8 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
                 property_name = field.name_snake()
                 formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
-                    write.line_indented(f"{property_name}: {formula_class}[{field.options_name()}] = {formula_class}('{field.id}')")
+                    type_param = field.options_name() if field.select_options() else "str"
+                    write.line_indented(f"{property_name}: {formula_class}[{type_param}] = {formula_class}('{field.id}')")
                 else:
                     write.line_indented(f"{property_name}: {formula_class} = {formula_class}('{field.id}')")
                 write.property_docstring(field, table)

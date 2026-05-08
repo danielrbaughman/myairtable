@@ -748,7 +748,8 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
                 property_name = field.name_camel()
                 formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
-                    write.line_indented(f"export const {property_name}: {formula_class}<{field.options_name()}> = new {formula_class}('{field.id}');")
+                    type_param = field.options_name() if field.select_options() else "string"
+                    write.line_indented(f"export const {property_name}: {formula_class}<{type_param}> = new {formula_class}('{field.id}');")
                 else:
                     write.line_indented(f"export const {property_name}: {formula_class} = new {formula_class}('{field.id}');")
             write.line("}")
