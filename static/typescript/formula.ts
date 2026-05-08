@@ -534,6 +534,10 @@ class DateComparison extends Field {
 		return `${DATETIME_PARSE(isoString)}${this.compare}${DATETIME_PARSE(this)}`;
 	}
 
+	_field(other: DateField): string {
+		return `${DATETIME_PARSE(other)}${this.compare}${DATETIME_PARSE(this)}`;
+	}
+
 	private _ago(unit: DateUnit, value: number): string {
 		return DATETIME_DIFF(NOW, this, unit) + this.compare + value;
 	}
@@ -592,11 +596,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against. Can be a `Date` object or a date string. If omitted, returns a `DateComparison` instance.
 	 */
 	on(): DateComparison;
-	on(date: Date | string): string;
-	on(date?: Date | string): DateComparison | string {
+	on(date: Date | string | DateField): string;
+	on(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, "=");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -608,11 +615,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	onOrAfter(): DateComparison;
-	onOrAfter(date: Date | string): string;
-	onOrAfter(date?: Date | string): DateComparison | string {
+	onOrAfter(date: Date | string | DateField): string;
+	onOrAfter(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, "<=");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -624,11 +634,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	onOrBefore(): DateComparison;
-	onOrBefore(date: Date | string): string;
-	onOrBefore(date?: Date | string): DateComparison | string {
+	onOrBefore(date: Date | string | DateField): string;
+	onOrBefore(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, ">=");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -640,11 +653,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	after(): DateComparison;
-	after(date: Date | string): string;
-	after(date?: Date | string): DateComparison | string {
+	after(date: Date | string | DateField): string;
+	after(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, "<");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -658,11 +674,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or ISO string. Optional.
 	 */
 	before(): DateComparison;
-	before(date: Date | string): string;
-	before(date?: Date | string): DateComparison | string {
+	before(date: Date | string | DateField): string;
+	before(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, ">");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -674,11 +693,14 @@ export class DateField extends Field {
 	 * @param date - The date to compare against, as a `Date` object or a string. If omitted, returns a generic "not equal" comparison.
 	 */
 	notOn(): DateComparison;
-	notOn(date: Date | string): string;
-	notOn(date?: Date | string): DateComparison | string {
+	notOn(date: Date | string | DateField): string;
+	notOn(date?: Date | string | DateField): DateComparison | string {
 		const dateComparison = new DateComparison(this.nameOrId, "!=");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -691,13 +713,13 @@ export class DateField extends Field {
 	 * @param endDate - The end date of the range. Can be a Date object or string.
 	 * @param inclusive - Whether to include the start and end dates in the range. Defaults to true.
 	 */
-	between(startDate: Date | string, endDate: Date | string, inclusive: boolean = true): string {
-		const startParsed = parseDate(startDate);
-		const endParsed = parseDate(endDate);
+	between(startDate: Date | string | DateField, endDate: Date | string | DateField, inclusive: boolean = true): string {
+		const start = startDate instanceof DateField ? startDate : parseDate(startDate);
+		const end = endDate instanceof DateField ? endDate : parseDate(endDate);
 		if (inclusive) {
-			return AND(this.onOrAfter(startParsed) as string, this.onOrBefore(endParsed) as string);
+			return AND(this.onOrAfter(start), this.onOrBefore(end));
 		} else {
-			return AND(this.after(startParsed) as string, this.before(endParsed) as string);
+			return AND(this.after(start), this.before(end));
 		}
 	}
 }

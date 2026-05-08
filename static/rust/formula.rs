@@ -449,6 +449,23 @@ impl FormulaField for FormulaBooleanField {
 // Date Field
 // =============================================================================
 
+/// Either side of a date comparison: a literal date string or another date field.
+pub trait DateOperand {
+    fn datetime_parse_expr(&self) -> String;
+}
+
+impl DateOperand for &str {
+    fn datetime_parse_expr(&self) -> String {
+        format!("DATETIME_PARSE('{self}')")
+    }
+}
+
+impl DateOperand for FormulaDateField {
+    fn datetime_parse_expr(&self) -> String {
+        format!("DATETIME_PARSE({{{}}})", self.field_id)
+    }
+}
+
 /// Intermediate builder for date "time ago" comparisons.
 #[derive(Debug, Clone)]
 pub struct FormulaDateComparison {
@@ -457,11 +474,13 @@ pub struct FormulaDateComparison {
 }
 
 impl FormulaDateComparison {
-    /// Compare with a specific date string.
-    pub fn date(&self, date: &str) -> String {
+    /// Compare against a literal date string or another date field.
+    pub fn date(&self, other: impl DateOperand) -> String {
         format!(
-            "DATETIME_PARSE('{date}'){}DATETIME_PARSE({{{}}})",
-            self.op, self.field_id
+            "{}{}DATETIME_PARSE({{{}}})",
+            other.datetime_parse_expr(),
+            self.op,
+            self.field_id,
         )
     }
 
@@ -556,8 +575,8 @@ impl FormulaDateField {
         }
     }
 
-    /// Date equals. Pass a date string, or call without args for chaining (e.g., `.on_chain().days_ago(7)`).
-    pub fn on(&self, date: &str) -> String {
+    /// Date equals. Pass a date string or another date field, or call `on_chain()` for chaining.
+    pub fn on(&self, date: impl DateOperand) -> String {
         self.comparison("=").date(date)
     }
 
@@ -567,7 +586,7 @@ impl FormulaDateField {
     }
 
     /// Date does not equal.
-    pub fn not_on(&self, date: &str) -> String {
+    pub fn not_on(&self, date: impl DateOperand) -> String {
         self.comparison("!=").date(date)
     }
 
@@ -577,7 +596,7 @@ impl FormulaDateField {
     }
 
     /// Date is on or after.
-    pub fn on_or_after(&self, date: &str) -> String {
+    pub fn on_or_after(&self, date: impl DateOperand) -> String {
         self.comparison("<=").date(date)
     }
 
@@ -587,7 +606,7 @@ impl FormulaDateField {
     }
 
     /// Date is on or before.
-    pub fn on_or_before(&self, date: &str) -> String {
+    pub fn on_or_before(&self, date: impl DateOperand) -> String {
         self.comparison(">=").date(date)
     }
 
@@ -597,7 +616,7 @@ impl FormulaDateField {
     }
 
     /// Date is after.
-    pub fn after(&self, date: &str) -> String {
+    pub fn after(&self, date: impl DateOperand) -> String {
         self.comparison("<").date(date)
     }
 
@@ -607,7 +626,7 @@ impl FormulaDateField {
     }
 
     /// Date is before.
-    pub fn before(&self, date: &str) -> String {
+    pub fn before(&self, date: impl DateOperand) -> String {
         self.comparison(">").date(date)
     }
 
@@ -617,7 +636,12 @@ impl FormulaDateField {
     }
 
     /// Date is between start and end.
-    pub fn between(&self, start: &str, end: &str, inclusive: bool) -> String {
+    pub fn between(
+        &self,
+        start: impl DateOperand,
+        end: impl DateOperand,
+        inclusive: bool,
+    ) -> String {
         if inclusive {
             AND(&[&self.on_or_after(start), &self.on_or_before(end)])
         } else {

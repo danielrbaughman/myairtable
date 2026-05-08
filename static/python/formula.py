@@ -424,6 +424,11 @@ class DateComparison(Field):
         right_side = F.DATETIME_PARSE(self)
         return F.Formula(f"{left_side}{self.compare}{right_side}")
 
+    def _field(self, other: "DateField") -> F.Formula:
+        left_side = F.DATETIME_PARSE(other)
+        right_side = F.DATETIME_PARSE(self)
+        return F.Formula(f"{left_side}{self.compare}{right_side}")
+
     def _ago(self, unit: str, value: int) -> F.Formula:
         time_ago = F.DATETIME_DIFF(F.NOW(), F.DATETIME_PARSE(self), unit)
         return F.Formula(f"{time_ago}{self.compare}{value}")
@@ -472,13 +477,15 @@ class DateField(Field):
     def on(self) -> DateComparison: ...
     @overload
     def on(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def on(self, date: "DateField") -> F.Formula: ...
 
-    def on(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def on(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the object's date matches the specified date.
 
         Args:
-            date (Optional[str | datetime], optional): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If None, returns a DateComparison object without a specific date.
 
         Returns:
@@ -488,24 +495,28 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare="=")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __eq__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __eq__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.on(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def on_or_after(self) -> DateComparison: ...
     @overload
     def on_or_after(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def on_or_after(self, date: "DateField") -> F.Formula: ...
 
-    def on_or_after(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def on_or_after(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is on or after the specified date.
 
         Args:
-            date (Optional[str | datetime]): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If None, returns a DateComparison object for further configuration.
 
         Returns:
@@ -514,24 +525,28 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare="<=")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ge__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __ge__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.on_or_after(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def on_or_before(self) -> DateComparison: ...
     @overload
     def on_or_before(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def on_or_before(self, date: "DateField") -> F.Formula: ...
 
-    def on_or_before(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def on_or_before(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is on or before the specified date.
 
         Args:
-            date (Optional[str | datetime], optional): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If None, returns a DateComparison object for further configuration. Defaults to None.
 
         Returns:
@@ -541,24 +556,28 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare=">=")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __le__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __le__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.on_or_before(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def after(self) -> DateComparison: ...
     @overload
     def after(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def after(self, date: "DateField") -> F.Formula: ...
 
-    def after(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def after(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is after the specified date.
 
         Args:
-            date (Optional[str | datetime]): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If None, returns a DateComparison object for further comparison.
 
         Returns:
@@ -568,24 +587,28 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare="<")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __gt__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __gt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.after(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def before(self) -> DateComparison: ...
     @overload
     def before(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def before(self, date: "DateField") -> F.Formula: ...
 
-    def before(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def before(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the date associated with this instance is before the specified date.
 
         Args:
-            date (Optional[str | datetime]): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If None, returns a DateComparison object for further configuration.
 
         Returns:
@@ -594,24 +617,28 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare=">")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __lt__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __lt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.before(date)  # ty: ignore[invalid-return-type]
 
     @overload
     def not_on(self) -> DateComparison: ...
     @overload
     def not_on(self, date: str | datetime) -> F.Formula: ...
+    @overload
+    def not_on(self, date: "DateField") -> F.Formula: ...
 
-    def not_on(self, date: Optional[str | datetime] = None) -> DateComparison | F.Formula:
+    def not_on(self, date: "Optional[str | datetime | DateField]" = None) -> DateComparison | F.Formula:
         """
         Checks if the field's date is not equal to the specified date.
 
         Args:
-            date (Optional[str | datetime], optional): The date to compare against. Can be a string or a datetime object.
+            date: The date to compare against. Can be a string, datetime, or another DateField.
                 If not provided, returns a DateComparison object for further configuration.
 
         Returns:
@@ -621,22 +648,29 @@ class DateField(Field):
         date_comparison = DateComparison(name=self.value, compare="!=")
         if date is None:
             return date_comparison
+        if isinstance(date, DateField):
+            return date_comparison._field(date)
 
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ne__(self, date: str | datetime) -> F.Formula:  # ty: ignore
+    def __ne__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
         return self.not_on(date)  # ty: ignore[invalid-return-type]
 
-    def between(self, start_date: str | datetime, end_date: str | datetime, inclusive: bool = True) -> F.Formula:
+    def between(
+        self,
+        start_date: "str | datetime | DateField",
+        end_date: "str | datetime | DateField",
+        inclusive: bool = True,
+    ) -> F.Formula:
         """
         Check if the date falls between two given dates.
 
         Args:
-            start_date (str | datetime): The start date for the range comparison.
-                Can be a string or datetime object.
-            end_date (str | datetime): The end date for the range comparison.
-                Can be a string or datetime object.
+            start_date: The start date for the range comparison.
+                Can be a string, datetime, or another DateField.
+            end_date: The end date for the range comparison.
+                Can be a string, datetime, or another DateField.
             inclusive (bool, optional): Whether to include the boundary dates in the comparison.
                 If True, uses >= and <= operators. If False, uses > and < operators.
                 Defaults to True.
@@ -645,17 +679,15 @@ class DateField(Field):
             str: A formula string that evaluates to True if the date is between
                  the start and end dates according to the inclusive parameter.
         """
-        parsed_start_date: datetime = _parse_date(start_date)
-        parsed_end_date: datetime = _parse_date(end_date)
         if inclusive:
             return AND(
-                self.gte(parsed_start_date),
-                self.lte(parsed_end_date),
+                self.on_or_after(start_date),
+                self.on_or_before(end_date),
             )
         else:
             return AND(
-                self.gt(parsed_start_date),
-                self.lt(parsed_end_date),
+                self.after(start_date),
+                self.before(end_date),
             )
 
 

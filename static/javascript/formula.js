@@ -500,6 +500,10 @@ class DateComparison extends Field {
 		return `${DATETIME_PARSE(isoString)}${this.compare}${DATETIME_PARSE(this)}`;
 	}
 
+	_field(other) {
+		return `${DATETIME_PARSE(other)}${this.compare}${DATETIME_PARSE(this)}`;
+	}
+
 	_ago(unit, value) {
 		return DATETIME_DIFF(NOW, this, unit) + this.compare + value;
 	}
@@ -562,6 +566,9 @@ class DateField extends Field {
 		if (date === undefined) {
 			return dateComparison;
 		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
+		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
 	}
@@ -575,6 +582,9 @@ class DateField extends Field {
 		const dateComparison = new DateComparison(this.nameOrId, "<=");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -590,6 +600,9 @@ class DateField extends Field {
 		if (date === undefined) {
 			return dateComparison;
 		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
+		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
 	}
@@ -603,6 +616,9 @@ class DateField extends Field {
 		const dateComparison = new DateComparison(this.nameOrId, "<");
 		if (date === undefined) {
 			return dateComparison;
+		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
 		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
@@ -620,6 +636,9 @@ class DateField extends Field {
 		if (date === undefined) {
 			return dateComparison;
 		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
+		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
 	}
@@ -634,6 +653,9 @@ class DateField extends Field {
 		if (date === undefined) {
 			return dateComparison;
 		}
+		if (date instanceof DateField) {
+			return dateComparison._field(date);
+		}
 		const parsedDate = parseDate(date);
 		return dateComparison._date(parsedDate);
 	}
@@ -646,12 +668,12 @@ class DateField extends Field {
 	 * @param inclusive - Whether to include the start and end dates in the range. Defaults to true.
 	 */
 	between(startDate, endDate, inclusive = true) {
-		const startParsed = parseDate(startDate);
-		const endParsed = parseDate(endDate);
+		const start = startDate instanceof DateField ? startDate : parseDate(startDate);
+		const end = endDate instanceof DateField ? endDate : parseDate(endDate);
 		if (inclusive) {
-			return AND(this.onOrAfter(startParsed), this.onOrBefore(endParsed));
+			return AND(this.onOrAfter(start), this.onOrBefore(end));
 		} else {
-			return AND(this.after(startParsed), this.before(endParsed));
+			return AND(this.after(start), this.before(end));
 		}
 	}
 }
