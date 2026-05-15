@@ -321,6 +321,44 @@ def write_options(base: Base, output_folder: Path) -> None:
                 write.line("}")
                 write.line_empty()
 
+                # For singleSelect / multipleSelects, emit id() / from_id() so
+                # callers can (de)serialize using the stable Airtable option id
+                # instead of the option name. Renaming an option then doesn't
+                # break stored data.
+                name_id_pairs = field.select_option_choices()
+                if name_id_pairs:
+                    name_to_variant = dict(zip(choices, variants))
+                    write.line(f"impl {enum_name} {{")
+                    write.line_indented("pub fn id(&self) -> &'static str {")
+                    write.line_indented("match self {", 2)
+                    for name, option_id in name_id_pairs:
+                        variant = name_to_variant.get(name)
+                        if variant is None:
+                            continue
+                        write.line_indented(
+                            f'Self::{variant} => "{escape_for_double_quoted_string(option_id)}",',
+                            3,
+                        )
+                    write.line_indented('Self::Unknown => "",', 3)
+                    write.line_indented("}", 2)
+                    write.line_indented("}")
+                    write.line_empty()
+                    write.line_indented("pub fn from_id(id: &str) -> Option<Self> {")
+                    write.line_indented("match id {", 2)
+                    for name, option_id in name_id_pairs:
+                        variant = name_to_variant.get(name)
+                        if variant is None:
+                            continue
+                        write.line_indented(
+                            f'"{escape_for_double_quoted_string(option_id)}" => Some(Self::{variant}),',
+                            3,
+                        )
+                    write.line_indented("_ => None,", 3)
+                    write.line_indented("}", 2)
+                    write.line_indented("}")
+                    write.line("}")
+                    write.line_empty()
+
             # Options struct — provides const arrays of valid options per field
             options_name = f"{table.name_pascal()}Options"
             write.doc_comment(f"Select field options for `{sanitize_string(table.name)}`")

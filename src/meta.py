@@ -746,6 +746,22 @@ class Field(Named):
         self._select_options_cache = []
         return []
 
+    def select_option_choices(self) -> list[tuple[str, str]]:
+        """For singleSelect / multipleSelects fields only: sorted list of (name, id) pairs.
+
+        Returns [] for any other field type (formula / lookup choices have ids that
+        are not stable user-managed select-option ids, so they're intentionally
+        excluded). Sort order matches `select_options()` so generated output stays
+        deterministic.
+        """
+        if self.type != "singleSelect" and self.type != "multipleSelects":
+            return []
+        if not self.options or not self.options.choices:
+            return []
+        pairs = [(choice.name, choice.id) for choice in self.options.choices]
+        pairs.sort(key=lambda p: p[0])
+        return pairs
+
     def options_name(self) -> str:
         return f"{self.table.name_pascal()}{self.name_pascal().rstrip('_')}Option"
 

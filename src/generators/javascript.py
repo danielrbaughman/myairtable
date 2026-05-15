@@ -190,6 +190,20 @@ def write_types(base: Base, output_folder: Path) -> None:
                     option_name = f"{field.options_name()}s"
                     write.const_array(option_name, options, f"Select options for `{sanitize_string(field.name)}`")
                     exports.append(option_name)
+
+                # For singleSelect / multipleSelects, also emit name<->id maps so
+                # callers can (de)serialize using the stable Airtable option id
+                # instead of the option name. Renaming an option then doesn't
+                # break stored data.
+                choices = field.select_option_choices()
+                if choices:
+                    option_type = field.options_name()
+                    name_id_mapping = f"{option_type}NameIdMapping"
+                    id_name_mapping = f"{option_type}IdNameMapping"
+                    write.const_object(name_id_mapping, choices, is_value_string=True)
+                    exports.append(name_id_mapping)
+                    write.const_object(id_name_mapping, [(id_, name) for (name, id_) in choices], is_value_string=True)
+                    exports.append(id_name_mapping)
             write.endregion()
 
             # Table Types

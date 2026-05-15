@@ -544,3 +544,82 @@ class TestSelectOptionEscaping:
 
 
 # endregion
+
+
+# region Select Option Name<->ID Mapping Tests
+
+
+class TestSelectOptionNameIdMappings:
+    """singleSelect / multipleSelects fields must emit name<->id maps alongside
+    their Option Literal / list. Callers use these so JSON they write uses the
+    stable Airtable option id, surviving option renames."""
+
+    CHOICES = ["Open", "Completed", "Closed"]
+
+    def test_python_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
+        from src.generators.python import write_types
+
+        base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "jobs.py").read_text()
+        ast.parse(content)  # must remain valid Python
+
+        # Name->ID map
+        assert "JobsStatusBillingOptionNameIdMapping: dict[JobsStatusBillingOption, str] = {" in content
+        assert '"Open": "sel000"' in content
+        assert '"Completed": "sel001"' in content
+        assert '"Closed": "sel002"' in content
+
+        # ID->Name map (reverse)
+        assert "JobsStatusBillingOptionIdNameMapping: dict[str, JobsStatusBillingOption] = {" in content
+        assert '"sel000": "Open"' in content
+        assert '"sel001": "Completed"' in content
+        assert '"sel002": "Closed"' in content
+
+    def test_typescript_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
+        from src.generators.typescript import write_types
+
+        base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "jobs.ts").read_text()
+
+        assert "JobsStatusBillingOptionNameIdMapping: Record<JobsStatusBillingOption, string>" in content
+        assert '"Open": "sel000"' in content
+        assert "JobsStatusBillingOptionIdNameMapping: Record<string, JobsStatusBillingOption>" in content
+        assert '"sel000": "Open"' in content
+
+    def test_javascript_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
+        from src.generators.javascript import write_types
+
+        base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "jobs.js").read_text()
+
+        assert "JobsStatusBillingOptionNameIdMapping" in content
+        assert '"Open": "sel000"' in content
+        assert "JobsStatusBillingOptionIdNameMapping" in content
+        assert '"sel000": "Open"' in content
+
+    def test_rust_emits_id_and_from_id_helpers(self, tmp_path: Path):
+        from src.generators.rust import write_options
+
+        base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
+        write_options(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "options" / "jobs.rs").read_text()
+
+        assert "impl JobsStatusBillingOption {" in content
+        assert "pub fn id(&self) -> &'static str {" in content
+        assert 'Self::Open => "sel000",' in content
+        assert 'Self::Completed => "sel001",' in content
+        assert 'Self::Closed => "sel002",' in content
+        assert 'Self::Unknown => "",' in content
+        assert "pub fn from_id(id: &str) -> Option<Self> {" in content
+        assert '"sel000" => Some(Self::Open),' in content
+        assert "_ => None," in content
+
+
+# endregion
