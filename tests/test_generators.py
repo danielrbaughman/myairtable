@@ -1,8 +1,9 @@
 """Tests for computed field read-only property generation in TS, JS, and Python generators."""
 
+import ast
 from pathlib import Path
 
-from src.meta import Base, Field, Options, Result, Table
+from src.meta import Base, Choice, Field, Options, Result, Table, View
 from src.meta_types import FieldType
 
 
@@ -389,6 +390,157 @@ class TestPythonFormulaFunctions:
         assert "@property" in content
         assert "def my_formula(self)" in content
         assert "recalculate" not in content
+
+
+# endregion
+
+
+# region Select Option Escaping Tests
+
+
+def _make_base_with_select_field(table_name: str, field_name: str, field_id: str, choices: list[str]) -> Base:
+    """Build a Base with a single singleSelect field whose choices are the given strings."""
+    base = Base.model_construct(
+        id="appTEST123",
+        tables=[],
+        _original_metadata={"tables": []},
+        _csv_cache=None,
+        _involves_lookup_cache={},
+        _involves_rollup_cache={},
+        _field_index={},
+        _table_index={},
+        _select_fields_cache=None,
+        _select_field_ids_cache=None,
+    )
+
+    view = View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")
+    table = Table.model_construct(
+        id="tblTEST123",
+        name=table_name,
+        primary_field_id=field_id,
+        fields=[],
+        views=[view],
+        base=base,
+        _field_id_to_name_cache=None,
+    )
+    table.__pydantic_private__ = {
+        "_field_id_to_name_cache": None,
+        "_snake": None,
+        "_pascal": None,
+        "_model": None,
+        "_upper": None,
+        "_name_cache": {},
+    }
+
+    choice_models = [Choice.model_construct(id=f"sel{i:03d}", name=name, color=None) for i, name in enumerate(choices)]
+
+    field = Field.model_construct(
+        id=field_id,
+        name=field_name,
+        type="singleSelect",
+        description=None,
+        options=Options.model_construct(
+            formula=None,
+            view_id_for_record_selection=None,
+            is_reversed=None,
+            precision=None,
+            choices=choice_models,
+            linked_table_id=None,
+            prefers_single_record_link=None,
+            inverse_link_field_id=None,
+            icon=None,
+            color=None,
+            is_valid=True,
+            date_format=None,
+            duration_format=None,
+            record_link_field_id=None,
+            field_id_in_linked_table=None,
+            referenced_field_ids=None,
+            result=None,
+            field_id=field_id,
+        ),
+        table=table,
+        base=base,
+    )
+    field.__pydantic_private__ = {
+        "_select_options_cache": None,
+        "_python_type_csv": None,
+        "_typescript_type_csv": None,
+        "_formula_cache": {},
+        "_generic_type": None,
+        "_python_type": None,
+        "_typescript_type": None,
+        "_zod_type": None,
+        "_snake": None,
+        "_pascal": None,
+        "_model": None,
+        "_upper": None,
+        "_name_cache": {},
+    }
+    table.fields.append(field)
+    base._field_index[field_id] = field
+    base.tables.append(table)
+    base._table_index[table.id] = table
+    return base
+
+
+class TestSelectOptionEscaping:
+    """Generators must escape special characters (notably ") in select option names.
+
+    Regression: Airtable allows option names like '"Bucyrus, OH"' (literally containing
+    quote characters). Naively wrapping with double-quotes produces invalid syntax like
+    `""Bucyrus, OH""` in the emitted source. See myairtable issue around rig_assignments.
+    """
+
+    CHOICES_WITH_QUOTES = [
+        '"Bucyrus, OH"',
+        '"Springfield, IL"',
+        "Bucyrus, OH",
+    ]
+
+    def test_python_emits_parseable_literal_and_list(self, tmp_path: Path):
+        from src.generators.python import write_types
+
+        base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "rig_assignments.py").read_text()
+
+        # The whole file must parse as valid Python — this is the regression check.
+        # Before the fix, names like `"Bucyrus, OH"` produced `""Bucyrus, OH""` which is a syntax error.
+        ast.parse(content)
+
+        # Quoted option names should appear escaped inside double-quoted string literals.
+        assert '"\\"Bucyrus, OH\\""' in content
+        assert '"\\"Springfield, IL\\""' in content
+        # Plain option (no internal quotes) should still appear as-is.
+        assert '"Bucyrus, OH"' in content
+
+    def test_typescript_emits_escaped_literal_and_list(self, tmp_path: Path):
+        from src.generators.typescript import write_types
+
+        base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "rigAssignments.ts").read_text()
+
+        # Each quoted option should appear as \"Bucyrus, OH\" inside the double-quoted string literal
+        assert '"\\"Bucyrus, OH\\""' in content
+        assert '"\\"Springfield, IL\\""' in content
+        # The plain option (no internal quotes) should still appear as-is
+        assert '"Bucyrus, OH"' in content
+
+    def test_javascript_emits_escaped_const_array(self, tmp_path: Path):
+        from src.generators.javascript import write_types
+
+        base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
+        write_types(base, tmp_path)
+
+        content = (tmp_path / "dynamic" / "types" / "rigAssignments.js").read_text()
+
+        assert '"\\"Bucyrus, OH\\""' in content
+        assert '"\\"Springfield, IL\\""' in content
+        assert '"Bucyrus, OH"' in content
 
 
 # endregion

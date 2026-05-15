@@ -13,6 +13,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    escape_for_double_quoted_string,
     reset_folder,
     sanitize_property_name,
     sanitize_string,
@@ -311,8 +312,7 @@ def write_options(base: Base, output_folder: Path) -> None:
                 write.line(f"pub enum {enum_name} {{")
 
                 for choice, variant in zip(choices, variants):
-                    escaped = choice.replace("\\", "\\\\").replace('"', '\\"')
-                    write.serde_rename(escaped, indent=1)
+                    write.serde_rename(escape_for_double_quoted_string(choice), indent=1)
                     write.line_indented(f"{variant},")
 
                 # Unknown fallback for forward compatibility
@@ -395,7 +395,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.line_indented("pub fn id_by_name(name: &str) -> Option<&'static str> {")
             write.line_indented("match name {", 2)
             for field in table.fields:
-                escaped_name = sanitize_string(field.name).replace("\\", "\\\\").replace('"', '\\"')
+                escaped_name = escape_for_double_quoted_string(sanitize_string(field.name))
                 write.line_indented(f'"{escaped_name}" => Some("{field.id}"),', 3)
             write.line_indented("_ => None,", 3)
             write.line_indented("}", 2)
@@ -407,7 +407,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.line_indented("pub fn name_by_id(id: &str) -> Option<&'static str> {")
             write.line_indented("match id {", 2)
             for field in table.fields:
-                escaped_name = sanitize_string(field.name).replace("\\", "\\\\").replace('"', '\\"')
+                escaped_name = escape_for_double_quoted_string(sanitize_string(field.name))
                 write.line_indented(f'"{field.id}" => Some("{escaped_name}"),', 3)
             write.line_indented("_ => None,", 3)
             write.line_indented("}", 2)

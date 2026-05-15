@@ -145,6 +145,17 @@ def sanitize_string(text: str) -> str:
     return text.replace('"', "'")
 
 
+def escape_for_double_quoted_string(text: str) -> str:
+    """Escape text so it can be safely embedded between double-quote characters
+    when emitting Python, TypeScript, or JavaScript source code.
+
+    Escapes backslashes and double quotes (and a few control characters that
+    would otherwise break the line). The output is intentionally compatible
+    across all three target languages.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 def deduplicate_names(names: list[str]) -> list[str]:
     """Append ' (2)', ' (3)', etc. to duplicate names to ensure uniqueness."""
     counts: dict[str, int] = {}

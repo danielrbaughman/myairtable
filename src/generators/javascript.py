@@ -12,6 +12,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
 )
@@ -36,7 +37,7 @@ class WriteToJavaScriptFile(WriteToFile):
             self.docstring(docstring, indent=0)
         self.line(f"const {name} = [")
         for item in items:
-            self.line_indented(f'"{item}",')
+            self.line_indented(f'"{escape_for_double_quoted_string(item)}",')
         self.line("];")
         self.line_empty()
 
@@ -46,10 +47,11 @@ class WriteToJavaScriptFile(WriteToFile):
             self.docstring(docstring, indent=0)
         self.line(f"const {name} = {{")
         for k, v in pairs:
+            escaped_key = escape_for_double_quoted_string(k)
             if is_value_string:
-                self.line_indented(f'"{k}": "{v}",')
+                self.line_indented(f'"{escaped_key}": "{escape_for_double_quoted_string(v)}",')
             else:
-                self.line_indented(f'"{k}": {v},')
+                self.line_indented(f'"{escaped_key}": {v},')
         self.line("};")
         self.line_empty()
 

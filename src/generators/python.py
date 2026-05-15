@@ -11,6 +11,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
 )
@@ -78,20 +79,21 @@ class WriteToPythonFile(WriteToFile):
     def literal(self, name: str, list: list[str]):
         self.line(f"type {name} = Literal[")
         for item in list:
-            self.line_indented(f'"{item}",')
+            self.line_indented(f'"{escape_for_double_quoted_string(item)}",')
         self.line("]")
 
     def str_list(self, name: str, list: list[str], type: str = "str"):
         self.line(f"{name}: list[{type}] = [")
         for item in list:
-            self.line_indented(f'"{item}",')
+            self.line_indented(f'"{escape_for_double_quoted_string(item)}",')
         self.line("]")
 
     def dict_row(self, key: str, value: str, value_is_string: bool = True):
+        escaped_key = escape_for_double_quoted_string(key)
         if value_is_string:
-            self.line_indented(f'"{key}": "{value}",')
+            self.line_indented(f'"{escaped_key}": "{escape_for_double_quoted_string(value)}",')
         else:
-            self.line_indented(f'"{key}": {value},')
+            self.line_indented(f'"{escaped_key}": {value},')
 
     def property_row(self, name: str, type: str):
         self.line_indented(f"{name}: {type}")

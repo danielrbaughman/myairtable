@@ -12,6 +12,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
 )
@@ -33,15 +34,16 @@ class WriteToTypeScriptFile(WriteToFile):
     def literal(self, name: str, list: list[str]):
         self.line(f"export type {name} = ")
         for item in list:
+            escaped = escape_for_double_quoted_string(item)
             if item != list[-1]:
-                self.line_indented(f'"{item}" |')
+                self.line_indented(f'"{escaped}" |')
             else:
-                self.line_indented(f'"{item}"')
+                self.line_indented(f'"{escaped}"')
 
     def str_list(self, name: str, list: list[str], type: str = "string"):
         self.line(f"export const {name}: {type}[] = [")
         for item in list:
-            self.line_indented(f'"{item}",')
+            self.line_indented(f'"{escape_for_double_quoted_string(item)}",')
         self.line("]")
 
     def docstring(self, text: str | list[str], indent: int = 1):
@@ -73,10 +75,11 @@ class WriteToTypeScriptFile(WriteToFile):
         self.line_empty()
 
     def dict_row(self, key: str, value: str, is_value_string: bool = False, optional: bool = False):
+        escaped_key = escape_for_double_quoted_string(key)
         if is_value_string:
-            self.line_indented(f'"{key}"{"?" if optional else ""}: "{value}",')
+            self.line_indented(f'"{escaped_key}"{"?" if optional else ""}: "{escape_for_double_quoted_string(value)}",')
         else:
-            self.line_indented(f'"{key}"{"?" if optional else ""}: {value},')
+            self.line_indented(f'"{escaped_key}"{"?" if optional else ""}: {value},')
 
     def property_row(self, name: str, type: str, is_name_string: bool = False, optional: bool = False):
         if is_name_string:
