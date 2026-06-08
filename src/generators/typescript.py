@@ -190,8 +190,9 @@ def write_types(base: Base, output_folder: Path) -> None:
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
-            write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
-            write.line('import { RecordId } from "../../static/special-types";')
+            write.mark_imports()
+            write.add_import("airtable", ["Attachment", "Collaborator", "FieldSet"])
+            write.add_import("../../static/special-types", ["RecordId"])
             write.endregion()
             write.line_empty()
 
