@@ -16,7 +16,7 @@ from ..utils.helpers import (
     sanitize_string,
 )
 from ..utils.verbose import verbose
-from ..utils.write_to_file import WriteToFile
+from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
 
 
 class WriteToPythonFile(WriteToFile):
@@ -113,10 +113,19 @@ class WriteToPythonFile(WriteToFile):
         self.line(")")
 
     def select_options_import(self, table: Table) -> None:
-        """Import select field option types if the table has any select fields."""
+        """Register select field option types (resolved against actual usage at flush time)."""
         select_fields = table.select_fields()
         if len(select_fields) > 0:
-            self.multiline_import("..types", [field.options_name() for field in select_fields])
+            self.add_import("..types", [field.options_name() for field in select_fields])
+
+    def _render_import_group(self, group: ImportGroup, used: list[ImportSymbol]) -> list[str]:
+        names = [sym.name for sym in used]
+        if len(names) == 1:
+            return [f"from {group.module} import {names[0]}"]
+        lines = [f"from {group.module} import ("]
+        lines += [f"    {name}," for name in names]
+        lines.append(")")
+        return lines
 
 
 # region MAIN
@@ -201,10 +210,10 @@ def write_types(base: Base, output_folder: Path) -> None:
         with WriteToPythonFile(path=types_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
-            write.line("from datetime import datetime, timedelta")
-            write.line("from typing import Any, Literal, TypedDict")
-            write.line_empty()
-            write.line("from ...static.special_types import AirtableAttachment, AirtableButton, AirtableCollaborator, RecordId")
+            write.mark_imports()
+            write.add_import("datetime", ["datetime", "timedelta"])
+            write.add_import("typing", ["Any", "Literal", "TypedDict"])
+            write.add_import("...static.special_types", ["AirtableAttachment", "AirtableButton", "AirtableCollaborator", "RecordId"])
             write.endregion()
             write.line_empty()
 
@@ -409,11 +418,10 @@ def write_dicts(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         with WriteToPythonFile(path=dicts_dir / f"{table.name_snake()}.py") as write:
             # Imports
-            write.line("from typing import Any")
-            write.line_empty()
-            write.line("from pyairtable.api.types import CreateRecordDict, RecordDict, UpdateRecordDict")
-            write.line_empty()
-            write.multiline_import(
+            write.mark_imports()
+            write.add_import("typing", ["Any"])
+            write.add_import("pyairtable.api.types", ["CreateRecordDict", "RecordDict", "UpdateRecordDict"])
+            write.add_import(
                 "..types",
                 [
                     f"{table.name_pascal()}FieldsDict",
@@ -488,28 +496,33 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
         url_method_name: str = "URL" if has_field_called_url else "url"
 
         with WriteToPythonFile(path=models_dir / f"{table.name_snake()}.py") as write:
-            # Imports
-            write.line("from datetime import datetime, timedelta")
-            write.line("from typing import Any, TYPE_CHECKING")
-            write.line_empty()
-            write.line("from pyairtable.orm import Model")
-            write.line(f"from pyairtable.orm.fields import {', '.join(PYAIRTABLE_FIELD_TYPES)}")
-            write.line_empty()
-            write.line("from ...static.helpers import get_api_key, get_base_id, build_url")
-            write.line("from ...static.special_types import AirtableAttachment, RecordId")
-            # Check if this table has any transpilable formula fields (pre-scan)
+            # Imports (registered as candidates; only symbols used in the body are emitted)
+            write.mark_imports()
+            write.add_import("datetime", ["datetime", "timedelta"])
+            write.add_import("typing", ["Any", "TYPE_CHECKING"])
+            write.add_import("pyairtable.orm", ["Model"])
+            write.add_import("pyairtable.orm.fields", list(PYAIRTABLE_FIELD_TYPES))
+            write.add_import("...static.helpers", ["get_api_key", "get_base_id", "build_url"])
+            write.add_import("...static.special_types", ["AirtableAttachment", "RecordId"])
+            # Register the formula runtime import unconditionally; resolve_imports drops it when no
+            # transpiled formula references `F`.
+            write.add_import("...static.airtable_runtime", [("AirtableRuntime as F", "F")])
+            write.select_options_import(table)
+            write.add_import("..dicts", [f"{table.name_pascal()}RecordDict"])
+            write.add_import("..formulas", [f"{table.name_pascal()}Formulas"])
+            write.add_import("..types", [f"{table.name_pascal()}View", f"{table.name_pascal()}ViewNameIdMapping"])
+            if len(table.select_fields()) > 0:
+                write.add_import("..options", [f"{table.name_pascal()}Options"])
+
+            # Module imports (`import x`) used only inside transpiled formula code; kept conditional
+            # since their tokens are too ambiguous to scan reliably.
             _has_formulas = any(field.is_formula() and field.options and field.options.formula for field in table.fields)
             if runtime and _has_formulas:
-                write.line("from ...static.airtable_runtime import AirtableRuntime as F")
                 write.line("import urllib.parse")
                 write.line("import math")
                 write.line("import re")
-            write.select_options_import(table)
-            write.line(f"from ..dicts import {table.name_pascal()}RecordDict")
-            write.line(f"from ..formulas import {table.name_pascal()}Formulas")
-            write.line(f"from ..types import {table.name_pascal()}View, {table.name_pascal()}ViewNameIdMapping")
-            if len(table.select_fields()) > 0:
-                write.line(f"from ..options import {table.name_pascal()}Options")
+
+            # Linked models are imported under TYPE_CHECKING (forward refs); left as a raw block.
             linked_tables = table.linked_tables()
             if len(linked_tables) > 0:
                 write.line("if TYPE_CHECKING:")
@@ -611,10 +624,10 @@ def write_tables(base: Base, output_folder: Path) -> None:
         with WriteToPythonFile(path=tables_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
-            write.line("from pyairtable import Table")
-            write.line_empty()
-            write.line("from ...static.airtable_table import AirtableTable")
-            write.multiline_import(
+            write.mark_imports()
+            write.add_import("pyairtable", ["Table"])
+            write.add_import("...static.airtable_table", ["AirtableTable"])
+            write.add_import(
                 "..types",
                 [
                     f"{table.name_pascal()}Field",
@@ -625,7 +638,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
                     f"{table.name_pascal()}Fields",
                 ],
             )
-            write.multiline_import(
+            write.add_import(
                 "..dicts",
                 [
                     f"{table.name_pascal()}RecordDict",
@@ -633,7 +646,7 @@ def write_tables(base: Base, output_folder: Path) -> None:
                     f"{table.name_pascal()}UpdateRecordDict",
                 ],
             )
-            write.line(f"from ..models import {table.name_model()}")
+            write.add_import("..models", [table.name_model()])
             write.endregion()
             write.line_empty()
             write.line_empty()
@@ -676,9 +689,21 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 
     for table in base.tables:
         with WriteToPythonFile(path=formulas_dir / f"{table.name_snake()}.py") as write:
-            # Imports
-            write.line(
-                "from ...static.formula import AttachmentsField, BooleanField, DateField, LookupField, NumberField, TextField, SingleSelectField, MultiSelectField, ID"
+            # Imports (only the formula classes / option types actually referenced are emitted)
+            write.mark_imports()
+            write.add_import(
+                "...static.formula",
+                [
+                    "AttachmentsField",
+                    "BooleanField",
+                    "DateField",
+                    "LookupField",
+                    "NumberField",
+                    "TextField",
+                    "SingleSelectField",
+                    "MultiSelectField",
+                    "ID",
+                ],
             )
             write.select_options_import(table)
             write.line_empty()
@@ -709,8 +734,9 @@ def write_options(base: Base, output_folder: Path) -> None:
         select_fields = table.select_fields()
         with WriteToPythonFile(path=options_dir / f"{table.name_snake()}.py") as write:
             if len(select_fields) > 0:
-                # Import const arrays from types
-                write.multiline_import("..types", [f"{field.options_name()}s" for field in select_fields])
+                # Register const arrays from types (resolved against usage)
+                write.mark_imports()
+                write.add_import("..types", [f"{field.options_name()}s" for field in select_fields])
                 write.line_empty()
 
             # Class with property per select field
@@ -733,13 +759,13 @@ def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToPythonFile(path=output_folder / Paths.DYNAMIC / "airtable_main.py") as write:
         # Imports
         write.region("IMPORTS")
-        write.line("from pyairtable import Api")
-        write.line_empty()
-        write.line("from .types import TableName")
-        write.line("from ..static.airtable_table import AirtableTable, TableType")
-        write.line("from ..static.helpers import get_api_key, get_base_id, set_airtable_config, build_url")
-        write.line("from ..static.schema_types import BaseSchema")
-        write.multiline_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
+        write.mark_imports()
+        write.add_import("pyairtable", ["Api"])
+        write.add_import(".types", ["TableName"])
+        write.add_import("..static.airtable_table", ["AirtableTable", "TableType"])
+        write.add_import("..static.helpers", ["get_api_key", "get_base_id", "set_airtable_config", "build_url"])
+        write.add_import("..static.schema_types", ["BaseSchema"])
+        write.add_import(".tables", [f"{table.name_pascal()}Table" for table in base.tables])
         write.endregion()
         write.line_empty()
         write.line_empty()
