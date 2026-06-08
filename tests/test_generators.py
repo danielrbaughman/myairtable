@@ -623,3 +623,119 @@ class TestSelectOptionNameIdMappings:
 
 
 # endregion
+
+
+# region SMART IMPORTS
+
+
+def _imports_block(content: str) -> str:
+    """Return everything in the file up to the first class/namespace/struct declaration.
+
+    Smart imports may legitimately reference a symbol in the body (e.g. a docstring);
+    restricting assertions to the import region avoids false positives.
+    """
+    for marker in ("\nexport class ", "\nclass ", "\nexport namespace ", "\npub struct "):
+        idx = content.find(marker)
+        if idx != -1:
+            return content[:idx]
+    return content
+
+
+class TestSmartImportsTypeScript:
+    """The TS generator must only import symbols a file actually references."""
+
+    def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.typescript import write_models
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "ts_output"
+        out.mkdir(parents=True, exist_ok=True)
+        write_models(base, out, formulas=False, zod=False)
+        return _read_generated_model(out, "typescript")
+
+    def _formula(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.typescript import write_formula_helpers
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "ts_output"
+        out.mkdir()
+        write_formula_helpers(base, out)
+        return (out / "dynamic" / "formulas" / "testTable.ts").read_text()
+
+    def test_model_drops_unused_imports(self, tmp_path: Path):
+        """A text-only table must not import attachment/collaborator/linked-record symbols."""
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        imports = _imports_block(content)
+        for unused in ("Attachment", "Collaborator", "AirtableButton", "LinkedRecord", "ChainableLinkedRecord", "RecordId"):
+            assert unused not in imports, f"{unused} should not be imported for a text-only table"
+
+    def test_model_imports_attachment_when_used(self, tmp_path: Path):
+        """An attachment field must pull in the Attachment type."""
+        content = self._model([("Files", "fld001", "multipleAttachments")], tmp_path)
+        assert "Attachment" in _imports_block(content)
+
+    def test_formula_only_imports_used_classes(self, tmp_path: Path):
+        """A number-only table's formula file imports NumberField + ID, not other field classes."""
+        imports = self._formula([("My Number", "fld001", "number")], tmp_path)
+        assert "NumberField" in imports
+        assert "ID" in imports
+        for unused in ("TextField", "DateField", "AttachmentsField", "BooleanField", "LookupField"):
+            assert unused not in imports, f"{unused} should not be imported for a number-only formula file"
+
+    def test_deterministic_output(self, tmp_path: Path):
+        """Generating twice must produce byte-identical models."""
+        spec: list[tuple[str, str, FieldType]] = [
+            ("My Text", "fld001", "singleLineText"),
+            ("Files", "fld002", "multipleAttachments"),
+        ]
+        first = self._model(spec, tmp_path / "a")
+        second = self._model(spec, tmp_path / "b")
+        assert first == second
+
+
+class TestSmartImportsJavaScript:
+    """The JS generator must only require symbols a file actually references."""
+
+    def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.javascript import write_models
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "js_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, zod=False)
+        return _read_generated_model(out, "javascript")
+
+    def test_model_drops_unused_requires(self, tmp_path: Path):
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        imports = _imports_block(content)
+        for unused in ("LinkedRecord", "wrapLinkedRecordProxy"):
+            assert unused not in imports, f"{unused} should not be required for a text-only table"
+
+
+class TestSmartImportsPython:
+    """The Python generator must only import symbols a file actually references."""
+
+    def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.python import write_models
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, package_prefix="")
+        return (out / "dynamic" / "models" / "test_table.py").read_text()
+
+    def test_model_drops_unused_field_types(self, tmp_path: Path):
+        """A text-only table imports SingleLineTextField but not unrelated pyairtable field types."""
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        imports = _imports_block(content)
+        assert "SingleLineTextField" in imports
+        for unused in ("AutoNumberField", "DurationField", "CollaboratorField", "AttachmentsField"):
+            assert unused not in imports, f"{unused} should not be imported for a text-only table"
+
+    def test_model_is_valid_python(self, tmp_path: Path):
+        """Generated model with smart imports must still parse."""
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        ast.parse(content)
+
+
+# endregion
