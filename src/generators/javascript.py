@@ -17,7 +17,7 @@ from ..utils.helpers import (
     sanitize_string,
 )
 from ..utils.verbose import verbose
-from ..utils.write_to_file import WriteToFile
+from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
 
 
 class WriteToJavaScriptFile(WriteToFile):
@@ -85,13 +85,22 @@ class WriteToJavaScriptFile(WriteToFile):
             self.line("};")
 
     def select_options_require(self, table: Table, from_path: str) -> list[str]:
-        """Require select field option arrays if the table has any select fields. Returns list of imported names."""
+        """Register select field option arrays (resolved against usage). Returns the candidate names."""
         names: list[str] = []
         if len(table.select_fields()) > 0:
             for field in table.select_fields():
                 names.append(f"{field.options_name()}s")
-            self.require_statement(names, from_path)
+            self.add_import(from_path, list(names))
         return names
+
+    def _render_import_group(self, group: ImportGroup, used: list[ImportSymbol]) -> list[str]:
+        names = [sym.name for sym in used]
+        if len(names) == 1:
+            return [f'const {{ {names[0]} }} = require("{group.module}");']
+        lines = ["const {"]
+        lines += [f"    {name}," for name in names]
+        lines.append(f'}} = require("{group.module}");')
+        return lines
 
 
 # region MAIN
@@ -380,22 +389,17 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         with WriteToJavaScriptFile(path=zod_dir / f"{table.name_camel()}.js") as write:
             write.line('const z = require("zod");')
-            write.require_statement(
-                [
-                    "recordIdSchema",
-                    "AirtableAttachmentSchema",
-                    "AirtableCollaboratorSchema",
-                    "AirtableButtonSchema",
-                    "SpecialNumberSchema",
-                    "ErrorValueSchema",
-                ],
+            write.mark_imports()
+            write.add_import("../../static/special-types", ["recordIdSchema"], always=True)
+            write.add_import(
                 "../../static/special-types",
+                ["AirtableAttachmentSchema", "AirtableCollaboratorSchema", "AirtableButtonSchema", "SpecialNumberSchema", "ErrorValueSchema"],
             )
 
-            # Require select option constants from types
+            # Register select option constants from types (resolved against usage)
             if len(table.select_fields()) > 0:
                 names = [f"{field.options_name()}s" for field in table.select_fields()]
-                write.require_statement(names, f"../types/{table.name_camel()}")
+                write.add_import(f"../types/{table.name_camel()}", list(names))
             write.line_empty()
 
             write.region(table.name_upper())
@@ -422,42 +426,41 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     # Write individual table model files
     for table in base.tables:
         with WriteToJavaScriptFile(path=models_dir / f"{table.name_camel()}.js") as write:
-            # Requires
+            # Requires (registered as candidates; only symbols used in the body are emitted)
             write.region("REQUIRES")
-            write.require_statement(["AirtableModel"], "../../static/airtable-model")
-            write.require_statement(["LinkedRecord", "LinkedRecords", "wrapLinkedRecordProxy"], "../../static/linked-record")
-            write.require_statement(["getOptions", "getBaseId", "buildUrl"], "../../static/helpers")
+            write.mark_imports()
+            write.add_import("../../static/airtable-model", ["AirtableModel"], always=True)
+            write.add_import("../../static/linked-record", ["LinkedRecord", "LinkedRecords", "wrapLinkedRecordProxy"])
+            write.add_import("../../static/helpers", ["getOptions", "getBaseId", "buildUrl"])
 
-            # Require field mappings from types
-            write.require_statement(
-                [
-                    f"{table.name_pascal()}FieldNameIdMapping",
-                    f"{table.name_pascal()}FieldIdNameMapping",
-                    f"{table.name_pascal()}FieldNamePropertyMapping",
-                    f"{table.name_pascal()}ViewNameIdMapping",
-                ],
-                f"../types/{table.name_camel()}",
-            )
-
-            # Require select options from types
-            select_fields = table.select_fields()
-            if len(select_fields) > 0:
-                type_imports = [f"{field.options_name()}s" for field in select_fields]
-                write.require_statement(type_imports, f"../types/{table.name_camel()}")
+            # Require field mappings + select options from types
+            type_imports: list[str | tuple[str, str]] = [
+                f"{table.name_pascal()}FieldNameIdMapping",
+                f"{table.name_pascal()}FieldIdNameMapping",
+                f"{table.name_pascal()}FieldNamePropertyMapping",
+                f"{table.name_pascal()}ViewNameIdMapping",
+            ]
+            for field in table.select_fields():
+                type_imports.append(f"{field.options_name()}s")
+            write.add_import(f"../types/{table.name_camel()}", type_imports)
 
             if formulas:
-                write.require_statement([f"{table.name_pascal()}Formulas"], f"../formulas/{table.name_camel()}")
+                write.add_import(f"../formulas/{table.name_camel()}", [f"{table.name_pascal()}Formulas"])
             if len(table.select_fields()) > 0:
-                write.require_statement([f"{table.name_pascal()}Options"], f"../options/{table.name_camel()}")
+                write.add_import(f"../options/{table.name_camel()}", [f"{table.name_pascal()}Options"])
 
             # Note: Other models are loaded lazily to avoid circular dependencies
 
             # Require table class for this table
-            write.require_statement([f"{table.name_pascal()}Table"], f"../tables/{table.name_camel()}")
+            write.add_import(f"../tables/{table.name_camel()}", [f"{table.name_pascal()}Table"])
             if zod:
-                write.require_statement([f"{table.name_pascal()}Schema"], f"../zod/{table.name_camel()}")
+                write.add_import(f"../zod/{table.name_camel()}", [f"{table.name_pascal()}Schema"])
 
-            # Pre-transpile formula fields and add AirtableRuntime require if any succeed
+            # Register the formula runtime require unconditionally; resolve_imports drops it when no
+            # transpiled formula references `F`.
+            write.add_import("../../static/airtable-runtime", [("AirtableRuntime: F", "F")])
+
+            # Pre-transpile formula fields
             formula_field_ids = table.formula_field_ids()
             if runtime:
                 linked_record_field_ids = table.linked_record_field_ids()
@@ -470,9 +473,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 transpiled_formulas = transpile_table_formulas(
                     raw_formulas, "javascript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
                 )
-                has_any_formula = any(f.is_formula() for f in table.fields)
-                if has_any_formula:
-                    write.line('const { AirtableRuntime: F } = require("../../static/airtable-runtime");')
             else:
                 transpiled_formulas = {}
             write.endregion()
@@ -615,15 +615,16 @@ def write_tables(base: Base, output_folder: Path) -> None:
         with WriteToJavaScriptFile(path=tables_dir / f"{table.name_camel()}.js") as write:
             # Requires
             write.region("REQUIRES")
-            write.require_statement(["AirtableTable"], "../../static/airtable-table")
-            write.require_statement(
+            write.mark_imports()
+            write.add_import("../../static/airtable-table", ["AirtableTable"])
+            write.add_import(
+                f"../types/{table.name_camel()}",
                 [
                     f"{table.name_pascal()}ViewNameIdMapping",
                     f"{table.name_pascal()}FieldNameIdMapping",
                     f"{table.name_pascal()}FieldIdNameMapping",
                     f"{table.name_pascal()}WritableFieldIds",
                 ],
-                f"../types/{table.name_camel()}",
             )
             # Note: Model is loaded lazily to avoid circular dependencies
             write.endregion()
@@ -664,8 +665,10 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 
     for table in base.tables:
         with WriteToJavaScriptFile(path=formulas_dir / f"{table.name_camel()}.js") as write:
-            # Requires
-            write.require_statement(
+            # Requires (only the formula classes actually instantiated are emitted)
+            write.mark_imports()
+            write.add_import(
+                "../../static/formula",
                 [
                     "ID",
                     "AttachmentsField",
@@ -677,7 +680,6 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
                     "SingleSelectField",
                     "MultiSelectField",
                 ],
-                "../../static/formula",
             )
             write.select_options_require(table, f"../types/{table.name_camel()}")
             write.line_empty()
@@ -705,9 +707,10 @@ def write_options(base: Base, output_folder: Path) -> None:
         select_fields = table.select_fields()
         with WriteToJavaScriptFile(path=options_dir / f"{table.name_camel()}.js") as write:
             if len(select_fields) > 0:
-                # Require the const arrays from types
+                # Register the const arrays from types (resolved against usage)
+                write.mark_imports()
                 option_names = [f"{field.options_name()}s" for field in select_fields]
-                write.require_statement(option_names, f"../types/{table.name_camel()}")
+                write.add_import(f"../types/{table.name_camel()}", list(option_names))
                 write.line_empty()
 
             # Object with property per select field
@@ -730,10 +733,11 @@ def write_options(base: Base, output_folder: Path) -> None:
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToJavaScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.js") as write:
         # Requires
-        write.require_statement(["getApiKey", "getBaseId", "setAirtableConfig", "buildUrl"], "../static/helpers")
+        write.mark_imports()
+        write.add_import("../static/helpers", ["getApiKey", "getBaseId", "setAirtableConfig", "buildUrl"])
         table_classes = [f"{table.name_pascal()}Table" for table in base.tables]
-        write.require_statement(table_classes, "./tables")
-        write.require_statement(["TableNamePropertyMapping"], "./types")
+        write.add_import("./tables", list(table_classes))
+        write.add_import("./types", ["TableNamePropertyMapping"])
         write.line_empty()
 
         write.docstring("Airtable base wrapper", 0)

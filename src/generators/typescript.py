@@ -17,7 +17,7 @@ from ..utils.helpers import (
     sanitize_string,
 )
 from ..utils.verbose import verbose
-from ..utils.write_to_file import WriteToFile
+from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
 
 
 class WriteToTypeScriptFile(WriteToFile):
@@ -88,13 +88,19 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(f"{name}{'?' if optional else ''}: {type}")
 
     def select_options_import(self, table: Table, from_path: str) -> None:
-        """Import select field option types if the table has any select fields."""
+        """Register select field option types (resolved against actual usage at flush time)."""
         select_fields = table.select_fields()
         if len(select_fields) > 0:
-            self.line("import {")
-            for field in select_fields:
-                self.line_indented(f"{field.options_name()},")
-            self.line(f'}} from "{from_path}";')
+            self.add_import(from_path, [field.options_name() for field in select_fields])
+
+    def _render_import_group(self, group: ImportGroup, used: list[ImportSymbol]) -> list[str]:
+        names = [sym.name for sym in used]
+        if len(names) <= 3:
+            return [f'import {{ {", ".join(names)} }} from "{group.module}";']
+        lines = ["import {"]
+        lines += [f"    {name}," for name in names]
+        lines.append(f'}} from "{group.module}";')
+        return lines
 
 
 # region MAIN
@@ -184,8 +190,9 @@ def write_types(base: Base, output_folder: Path) -> None:
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
-            write.line('import { Attachment, Collaborator, FieldSet } from "airtable";')
-            write.line('import { RecordId } from "../../static/special-types";')
+            write.mark_imports()
+            write.add_import("airtable", ["Attachment", "Collaborator", "FieldSet"])
+            write.add_import("../../static/special-types", ["RecordId"])
             write.endregion()
             write.line_empty()
 
@@ -401,8 +408,11 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         with WriteToTypeScriptFile(path=zod_dir / f"{table.name_camel()}.ts") as write:
             write.line('import * as z from "zod";')
-            write.line(
-                'import { recordIdSchema, AirtableAttachmentSchema, AirtableCollaboratorSchema, AirtableButtonSchema, SpecialNumberSchema, ErrorValueSchema } from "../../static/special-types";'
+            write.mark_imports()
+            write.add_import("../../static/special-types", ["recordIdSchema"], always=True)
+            write.add_import(
+                "../../static/special-types",
+                ["AirtableAttachmentSchema", "AirtableCollaboratorSchema", "AirtableButtonSchema", "SpecialNumberSchema", "ErrorValueSchema"],
             )
 
             write.line_empty()
@@ -438,45 +448,48 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         table_name_camel = table.name_camel()
         model_name = table.name_model()
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
-            # Imports
-            write.line('import { AirtableOptions, Attachment, Collaborator, FieldSet, Record } from "airtable";')
-            write.line('import { AirtableModel, FieldDescriptor } from "../../static/airtable-model";')
-            write.line('import { RecordId, AirtableButton } from "../../static/special-types";')
-            write.line('import { LinkedRecord, LinkedRecords, ChainableLinkedRecord } from "../../static/linked-record";')
-            write.line('import { buildUrl } from "../../static/helpers";')
+            # Imports (registered as candidates; only symbols used in the body are emitted)
+            write.mark_imports()
+            write.add_import("airtable", ["AirtableOptions", "FieldSet", "Record"], always=True)
+            write.add_import("airtable", ["Attachment", "Collaborator"])
+            write.add_import("../../static/airtable-model", ["AirtableModel", "FieldDescriptor"], always=True)
+            write.add_import("../../static/special-types", ["RecordId", "AirtableButton"])
+            write.add_import("../../static/linked-record", ["LinkedRecord", "LinkedRecords", "ChainableLinkedRecord"])
+            write.add_import("../../static/helpers", ["buildUrl"])
 
             # Import types for this table
-            write.line("import {")
-            write.line_indented(f"{table_name}FieldSet,")
-            write.line_indented(f"{table_name}Field,")
-            write.line_indented(f"{table_name}View,")
-            write.line_indented(f"{table_name}ViewNameIdMapping,")
-            write.line_indented(f"{table_name}FieldNameIdMapping,")
-            write.line_indented(f"{table_name}FieldIdNameMapping,")
-            write.line_indented(f"{table_name}FieldNamePropertyMapping,")
+            type_symbols: list[str | tuple[str, str]] = [
+                f"{table_name}FieldSet",
+                f"{table_name}Field",
+                f"{table_name}View",
+                f"{table_name}ViewNameIdMapping",
+                f"{table_name}FieldNameIdMapping",
+                f"{table_name}FieldIdNameMapping",
+                f"{table_name}FieldNamePropertyMapping",
+            ]
             for field in table.fields:
-                options = field.select_options()
-                if len(options) > 0:
-                    write.line_indented(f"{field.options_name()},")
-            write.line(f'}} from "../types/{table_name_camel}";')
+                if len(field.select_options()) > 0:
+                    type_symbols.append(field.options_name())
+            write.add_import(f"../types/{table_name_camel}", type_symbols)
             if formulas:
-                write.line(f"import {{ {table_name}Formulas }} from '../formulas/{table_name_camel}';")
+                write.add_import(f"../formulas/{table_name_camel}", [f"{table_name}Formulas"])
             if len(table.select_fields()) > 0:
-                write.line(f"import {{ {table_name}Options }} from '../options/{table_name_camel}';")
+                write.add_import(f"../options/{table_name_camel}", [f"{table_name}Options"])
 
             linked_tables = table.linked_tables()
             if linked_tables:
-                write.line("import {")
-                for _table in linked_tables:
-                    write.line_indented(f"{_table.name_model()},")
-                write.line('} from "../models";')
+                write.add_import("../models", [_table.name_model() for _table in linked_tables])
 
             # Import table class for this table
-            write.line(f"import {{ {table_name}Table }} from '../tables/{table_name_camel}';")
+            write.add_import(f"../tables/{table_name_camel}", [f"{table_name}Table"])
             if zod:
-                write.line(f"import {{ {table_name}Schema, I{table_name} }} from '../zod/{table_name_camel}';")
+                write.add_import(f"../zod/{table_name_camel}", [f"{table_name}Schema", f"I{table_name}"])
 
-            # Pre-transpile formula fields and add AirtableRuntime import if any succeed
+            # Register the formula runtime import unconditionally; resolve_imports drops it when no
+            # transpiled formula references `F`.
+            write.add_import("../../static/airtable-runtime", [("AirtableRuntime as F", "F")])
+
+            # Pre-transpile formula fields
             formula_field_ids = table.formula_field_ids()
             if runtime:
                 linked_record_field_ids = table.linked_record_field_ids()
@@ -489,9 +502,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 transpiled_formulas = transpile_table_formulas(
                     raw_formulas, "typescript", field_name_map, formula_field_ids, linked_record_field_ids, single_linked_record_field_ids
                 )
-                has_any_formula = any(f.is_formula() for f in table.fields)
-                if has_any_formula:
-                    write.line('import { AirtableRuntime as F } from "../../static/airtable-runtime";')
             else:
                 transpiled_formulas = {}
             write.line_empty()
@@ -688,18 +698,22 @@ def write_tables(base: Base, output_folder: Path) -> None:
         with WriteToTypeScriptFile(path=tables_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
-            write.line('import { AirtableTable } from "../../static/airtable-table";')
-            write.line("import {")
-            write.line_indented(f"{table_name}FieldSet,")
-            write.line_indented(f"{table_name}Field,")
-            write.line_indented(f"{table_name}View,")
-            write.line_indented(f"{table_name}ViewNameIdMapping,")
-            write.line_indented(f"{table_name}FieldNameIdMapping,")
-            write.line_indented(f"{table_name}FieldIdNameMapping,")
-            write.line_indented(f"{table_name}WritableFieldIds,")
-            write.line(f'}} from "../types/{table_name_camel}";')
-            write.line(f"import {{ {model_name} }} from '../models/{table_name_camel}';")
-            write.line('import { AirtableOptions } from "airtable";')
+            write.mark_imports()
+            write.add_import("../../static/airtable-table", ["AirtableTable"])
+            write.add_import(
+                f"../types/{table_name_camel}",
+                [
+                    f"{table_name}FieldSet",
+                    f"{table_name}Field",
+                    f"{table_name}View",
+                    f"{table_name}ViewNameIdMapping",
+                    f"{table_name}FieldNameIdMapping",
+                    f"{table_name}FieldIdNameMapping",
+                    f"{table_name}WritableFieldIds",
+                ],
+            )
+            write.add_import(f"../models/{table_name_camel}", [model_name])
+            write.add_import("airtable", ["AirtableOptions"])
             write.endregion()
             write.line_empty()
 
@@ -759,9 +773,21 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
-            # Imports
-            write.line(
-                'import { ID, AttachmentsField, BooleanField, DateField, LookupField, NumberField, TextField, SingleSelectField, MultiSelectField } from "../../static/formula";'
+            # Imports (only the formula classes / option types actually referenced are emitted)
+            write.mark_imports()
+            write.add_import(
+                "../../static/formula",
+                [
+                    "ID",
+                    "AttachmentsField",
+                    "BooleanField",
+                    "DateField",
+                    "LookupField",
+                    "NumberField",
+                    "TextField",
+                    "SingleSelectField",
+                    "MultiSelectField",
+                ],
             )
             write.select_options_import(table, f"../types/{table_name_camel}")
             write.line_empty()
@@ -793,11 +819,9 @@ def write_options(base: Base, output_folder: Path) -> None:
         select_fields = table.select_fields()
         with WriteToTypeScriptFile(path=options_dir / f"{table_name_camel}.ts") as write:
             if len(select_fields) > 0:
-                # Import the const arrays from types
-                write.line("import {")
-                for field in select_fields:
-                    write.line_indented(f"{field.options_name()}s,")
-                write.line(f'}} from "../types/{table_name_camel}";')
+                # Register the const arrays from types (resolved against usage)
+                write.mark_imports()
+                write.add_import(f"../types/{table_name_camel}", [f"{field.options_name()}s" for field in select_fields])
                 write.line_empty()
 
             # Namespace with property per select field
@@ -818,16 +842,15 @@ def write_options(base: Base, output_folder: Path) -> None:
 def write_main_class(base: Base, output_folder: Path) -> None:
     with WriteToTypeScriptFile(path=output_folder / Paths.DYNAMIC / "airtable-main.ts") as write:
         # Imports
-        write.line('import { ExtendedAirtableOptions } from "../static/special-types";')
-        write.line('import { BaseSchema } from "../static/schema-types";')
-        write.line('import { getApiKey, getBaseId, setAirtableConfig, buildUrl } from "../static/helpers";')
-        write.line("import {")
-        for table in base.tables:
-            table_name_pascal = table.name_pascal()
-            write.line_indented(f"{table_name_pascal}Table,")
-        write.line_indented("TableNameToTableType,")
-        write.line('} from "./tables";')
-        write.line('import { TableName, TableNamePropertyMapping } from "./types";')
+        write.mark_imports()
+        write.add_import("../static/special-types", ["ExtendedAirtableOptions"])
+        write.add_import("../static/schema-types", ["BaseSchema"])
+        write.add_import("../static/helpers", ["getApiKey", "getBaseId", "setAirtableConfig", "buildUrl"])
+        write.add_import(
+            "./tables",
+            [f"{table.name_pascal()}Table" for table in base.tables] + ["TableNameToTableType"],
+        )
+        write.add_import("./types", ["TableName", "TableNamePropertyMapping"])
         write.line_empty()
 
         write.docstring("Airtable base wrapper")
