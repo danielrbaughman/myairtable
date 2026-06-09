@@ -14,7 +14,10 @@ Languages supported:
 
 ## Features
 
-The following examples are in Python, but most features are suppported in every language. See notes in each section for language-specific differences.
+The following examples are in Python, but most features are supported in every language. See notes in each section for language-specific differences.
+
+> [!NOTE]
+> In the examples below, `myairtable_output` stands in for _your_ generated package — the actual import path depends on the output folder you generate into.
 
 ### ORM Models
 
@@ -23,14 +26,14 @@ myAirtable generates strongly-typed RecordDicts and ORM classes, intended for us
 ```python
 # Fully-typed versions of pyAirtable's RecordDict TypedDict class
 class ContactsRecordDict(RecordDict):
-  fields: dict[ContactsField, Any] # ContactsFields is a Literal of the fields names in the Contacts table
+  fields: dict[ContactsField, Any] # ContactsField is a Literal of the field names in the Contacts table
 
-nanm = contact["fields"]["Name"] # your IDE will suggest "Name"
+name = contact["fields"]["Name"] # your IDE will suggest "Name"
 
 # Instance of pyAirtable's ORM
 class ContactsModel(Model):
   name: SingleLineTextField = SingleLineTextField(field_name="fld123")
-  address: MultiLineTextField = MultiLineTextField(field_name="fld789")
+  address: MultilineTextField = MultilineTextField(field_name="fld789")
   # etc
 
 name = contact.name
@@ -49,10 +52,10 @@ myAirtable also generates formula builders, for use when filtering by formula. p
 from myairtable_output import Airtable, AND, OR, ContactsModel
 
 formula: str = AND(
-  (ContactsModel.f.first_name.contains("Bob") & ContactsModel.f.last_name == "Smith"),
+  ContactsModel.f.first_name.contains("Bob") & (ContactsModel.f.last_name == "Smith"),
   ContactsModel.f.birthday.after().years_ago(30),
-  ContactsModel.f.birthday < "2019-04-01"
-  (ContactsModel.f.age < 10 | ContactsModel.f.age == 12 | ContactsModel.f.age > 15),
+  ContactsModel.f.birthday < "2019-04-01",
+  (ContactsModel.f.age < 10) | (ContactsModel.f.age == 12) | (ContactsModel.f.age > 15),
   "{fld1234567890}='you can also put raw strings here'",
 )
 
@@ -79,8 +82,8 @@ airtable.contacts.update(contact) # or you can use myAirtable's wrapper if you p
 
 # table.get() method has kwargs for most of pyAirtable's options, which are otherwise less clear. View and Fields kwargs are typed.
 contacts: list[ContactsModel] = airtable.contacts.get(view="Family & Friends", fields=["Name", "Age"])
-for contact in contacts
-	contact.age = contact.age + 1
+for contact in contacts:
+  contact.age = contact.age + 1
   contact.save()
 
 # CRUD operations for pyAirtable RecordDicts
@@ -119,6 +122,8 @@ myAirtable also includes support for generating documentation for your Airtable 
 - MCP Server: Allows agents to analyze your Airtable schema
 
 ## Getting Started
+
+Requires Python 3.12+.
 
 1. Clone the repo
 
@@ -159,3 +164,7 @@ Add the following to your MCP client config (e.g. `claude_desktop_config.json` f
 ```
 
 If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
+
+## License
+
+[MIT](LICENSE)
