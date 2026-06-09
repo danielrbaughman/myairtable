@@ -10,8 +10,6 @@ from pathlib import Path
 from mermaid_cli import render_mermaid
 from rich import print
 
-from . import timer
-
 
 def mermaid_live_url(mermaid_code: str) -> str:
     """Generate a Mermaid Live Editor URL for the given mermaid code."""
@@ -102,8 +100,7 @@ def mermaid_to_svg(
     content_hash = _compute_content_hash(mermaid_code)
     cache_file = cache_dir / f"{field_id}_{content_hash}.svg"
 
-    with timer.timer("mermaid-cli render (SVG)"):
-        svg_data = asyncio.run(render_svg(mermaid_code))
+    svg_data = asyncio.run(render_svg(mermaid_code))
 
     if svg_data:
         svg_content = svg_data.decode("utf-8") if isinstance(svg_data, bytes) else svg_data
@@ -197,8 +194,7 @@ def render_svgs_parallel(
     sys.stdout.write(f"Generating formula SVGs (0/{total})...")
     sys.stdout.flush()
 
-    with timer.timer("mermaid-cli render (SVG) - parallel"):
-        results = asyncio.run(render_all_svgs_async(svg_tasks, cache_dir, update_progress))
+    results = asyncio.run(render_all_svgs_async(svg_tasks, cache_dir, update_progress))
 
     sys.stdout.write(" done\n")
     sys.stdout.flush()

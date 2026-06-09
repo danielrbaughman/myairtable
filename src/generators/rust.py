@@ -8,7 +8,6 @@ from rich import print
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
-from ..utils import timer
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -237,36 +236,30 @@ def generate_rust(base: Base, output_folder: Path, formulas: bool = True, wrappe
     if not runtime:
         exclude_static.append("airtable_runtime.rs")
 
-    with timer.timer("Rust: copy_static_files"):
-        copy_static_files(output_folder, "rust", exclude=exclude_static or None)
-        if verbose:
-            print("[dim] - Rust static files copied.[/]")
+    copy_static_files(output_folder, "rust", exclude=exclude_static or None)
+    if verbose:
+        print("[dim] - Rust static files copied.[/]")
 
-    with timer.timer("Rust: write_options"):
-        write_options(base, output_folder)
-        if verbose:
-            print("[dim] - Rust options generated.[/]")
+    write_options(base, output_folder)
+    if verbose:
+        print("[dim] - Rust options generated.[/]")
 
-    with timer.timer("Rust: write_field_types"):
-        write_field_types(base, output_folder)
-        if verbose:
-            print("[dim] - Rust field types generated.[/]")
+    write_field_types(base, output_folder)
+    if verbose:
+        print("[dim] - Rust field types generated.[/]")
 
-    with timer.timer("Rust: write_models"):
-        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
-        if verbose:
-            print("[dim] - Rust ORM models generated.[/]")
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
+    if verbose:
+        print("[dim] - Rust ORM models generated.[/]")
 
     if formulas:
-        with timer.timer("Rust: write_formulas"):
-            write_formula_helpers(base, output_folder)
-            if verbose:
-                print("[dim] - Rust formula helpers generated.[/]")
-
-    with timer.timer("Rust: write_lib"):
-        write_lib(base, output_folder, formulas=formulas, wrappers=wrappers, runtime=runtime)
+        write_formula_helpers(base, output_folder)
         if verbose:
-            print("[dim] - Rust lib.rs generated.[/]")
+            print("[dim] - Rust formula helpers generated.[/]")
+
+    write_lib(base, output_folder, formulas=formulas, wrappers=wrappers, runtime=runtime)
+    if verbose:
+        print("[dim] - Rust lib.rs generated.[/]")
 
     if verbose:
         print("[green] - Rust code generation complete.[/]")

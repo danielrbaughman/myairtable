@@ -14,7 +14,6 @@ from src.generators.python import generate_python
 from src.generators.rust import generate_rust
 from src.generators.typescript import generate_typescript
 from src.meta import AirtableCredentials, Base, Field, generate_meta, get_base_meta_data
-from src.utils import timer
 from src.utils.helpers import create_folder, reset_folder
 from src.utils.type_mapper import map_types
 from src.utils.verbose import verbose
@@ -30,13 +29,6 @@ def main_callback(
     """myAirtable CLI - Generate code and documentation from Airtable metadata."""
     creds = AirtableCredentials.get_instance()
     creds.set_credentials(api_key=api_key, base_id=base_id)
-
-
-def setup_benchmark(benchmark: bool):
-    """Enable timing if benchmark flag is set."""
-    if benchmark:
-        timer.enable()
-        timer.reset()
 
 
 @app.command()
@@ -60,10 +52,8 @@ def csv(
     """Export Airtable metadata to CSV format."""
     folder_path = reset_folder(Path(folder))
     base = Base(csv_folder=folder_path)
-    with timer.timer("Type calculation"):
-        map_types(base)
-    with timer.timer("CSV generation"):
-        generate_csv(base=base, folder=folder_path, fresh=fresh)
+    map_types(base)
+    generate_csv(base=base, folder=folder_path, fresh=fresh)
 
 
 @app.command()
@@ -77,34 +67,26 @@ def py(
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate types and models in Python"""
-    setup_benchmark(benchmark)
-
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
 
     base = Base(csv_folder=csv_folder_path)
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
 
     if fresh:
-        with timer.timer("CSV generation"):
-            generate_csv(base=base, folder=csv_folder_path, fresh=True)
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
 
-    with timer.timer("Python generation"):
-        generate_python(
-            base=base,
-            output_folder=folder_path,
-            formulas=formulas,
-            wrappers=wrappers,
-            runtime=runtime,
-            flatten=flatten,
-            package_prefix=package_prefix,
-        )
-
-    timer.summary()
+    generate_python(
+        base=base,
+        output_folder=folder_path,
+        formulas=formulas,
+        wrappers=wrappers,
+        runtime=runtime,
+        flatten=flatten,
+        package_prefix=package_prefix,
+    )
 
 
 @app.command()
@@ -123,13 +105,10 @@ def ts(
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base(csv_folder=csv_folder_path)
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
     if fresh:
-        with timer.timer("CSV generation"):
-            generate_csv(base=base, folder=csv_folder_path, fresh=True)
-    with timer.timer("TypeScript generation"):
-        generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    generate_typescript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
 
 
 @app.command()
@@ -143,23 +122,15 @@ def js(
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     zod: Annotated[bool, Option(help="Generate Zod schemas for runtime validation.")] = True,
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate types and models in JavaScript"""
-    setup_benchmark(benchmark)
-
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base(csv_folder=csv_folder_path)
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
     if fresh:
-        with timer.timer("CSV generation"):
-            generate_csv(base=base, folder=csv_folder_path, fresh=True)
-    with timer.timer("JavaScript generation"):
-        generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
-
-    timer.summary()
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    generate_javascript(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten, zod=zod)
 
 
 @app.command()
@@ -172,30 +143,21 @@ def rs(
     wrappers: Annotated[bool, Option(help="Include wrapper types for tables and base in the output.")] = True,
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
 ):
     """Generate types and models in Rust"""
-    setup_benchmark(benchmark)
-
     folder_path = reset_folder(Path(folder))
     csv_folder_path = Path(csv_folder) if csv_folder else folder_path
     base = Base(csv_folder=csv_folder_path)
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
     if fresh:
-        with timer.timer("CSV generation"):
-            generate_csv(base=base, folder=csv_folder_path, fresh=True)
-    with timer.timer("Rust generation"):
-        generate_rust(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
-
-    timer.summary()
+        generate_csv(base=base, folder=csv_folder_path, fresh=True)
+    generate_rust(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
 
 @app.command()
 @verbose()
 def md(
     folder: Annotated[str, Argument(help="Path to the output folder")],
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
     reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache")] = False,
     format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability.")] = True,
@@ -207,7 +169,6 @@ def md(
     ] = True,
 ):
     """Generate Markdown documentation for the base. Intended for use in Obsidian."""
-    setup_benchmark(benchmark)
     start = datetime.datetime.now()
 
     preserve = None if reset_svg_cache else [".svg_cache"]
@@ -215,20 +176,17 @@ def md(
 
     base = Base()
 
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
 
-    with timer.timer("Markdown generation"):
-        generate_markdown(
-            base=base,
-            output_folder=folder_path,
-            svg_enabled=svg,
-            format_formulas=format_formulas,
-            flatten_formulas=flatten_formulas,
-            mermaid_formulas=mermaid_formulas,
-        )
+    generate_markdown(
+        base=base,
+        output_folder=folder_path,
+        svg_enabled=svg,
+        format_formulas=format_formulas,
+        flatten_formulas=flatten_formulas,
+        mermaid_formulas=mermaid_formulas,
+    )
 
-    timer.summary()
     end = datetime.datetime.now()
     print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
 
@@ -237,7 +195,6 @@ def md(
 @verbose()
 def html(
     folder: Annotated[str, Argument(help="Path to the output folder")],
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields.")] = True,
     reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache")] = False,
     format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability.")] = True,
@@ -249,7 +206,6 @@ def html(
     ] = True,
 ):
     """Generate HTML documentation for the base. Deployable as a static site."""
-    setup_benchmark(benchmark)
     start = datetime.datetime.now()
 
     preserve = None if reset_svg_cache else [".svg_cache"]
@@ -257,20 +213,17 @@ def html(
 
     base = Base()
 
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
 
-    with timer.timer("HTML generation"):
-        generate_html(
-            base=base,
-            output_folder=folder_path,
-            svg_enabled=svg,
-            format_formulas=format_formulas,
-            flatten_formulas=flatten_formulas,
-            mermaid_formulas=mermaid_formulas,
-        )
+    generate_html(
+        base=base,
+        output_folder=folder_path,
+        svg_enabled=svg,
+        format_formulas=format_formulas,
+        flatten_formulas=flatten_formulas,
+        mermaid_formulas=mermaid_formulas,
+    )
 
-    timer.summary()
     end = datetime.datetime.now()
     print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
 
@@ -345,7 +298,6 @@ def all(
     runtime: Annotated[bool, Option(help="Include the formula runtime for evaluating formulas at runtime.")] = True,
     flatten: Annotated[bool, Option(help="Flatten (expand) nested formula references in runtime transpilation.")] = False,
     py_package_prefix: Annotated[str, Option(help="Use if the code is not generated at the root level of the package")] = "",
-    benchmark: Annotated[bool, Option(help="Enable detailed performance timing.")] = False,
     svg: Annotated[bool, Option("--svg/--no-svg", help="Generate SVG diagrams for formula fields in docs.")] = True,
     reset_svg_cache: Annotated[bool, Option(help="Reset the SVG cache when regenerating docs.")] = False,
     format_formulas: Annotated[bool, Option("--format-formulas/--no-format-formulas", help="Format formulas for better readability in docs.")] = True,
@@ -355,82 +307,70 @@ def all(
     ] = True,
 ):
     """Generate json, CSV, Python, TypeScript, JavaScript, and/or HTML code."""
-    setup_benchmark(benchmark)
-
     csv_folder_path = create_folder(csv_folder) if csv_folder else None
 
     base = Base(csv_folder=csv_folder_path)
 
     if meta_folder:
-        with timer.timer("Meta generation"):
-            meta_folder_path = create_folder(meta_folder)
-            generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
+        meta_folder_path = create_folder(meta_folder)
+        generate_meta(metadata=base.to_dict(), folder=meta_folder_path)
 
-    with timer.timer("Type calculation"):
-        map_types(base)
+    map_types(base)
 
     if csv_folder_path:
-        with timer.timer("CSV generation"):
-            generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
+        generate_csv(base=base, folder=csv_folder_path, fresh=fresh)
 
     if py_folder:
-        with timer.timer("Python generation"):
-            py_folder_path = reset_folder(py_folder)
-            generate_python(
-                base=base,
-                output_folder=py_folder_path,
-                formulas=formulas,
-                wrappers=wrappers,
-                runtime=runtime,
-                flatten=flatten,
-                package_prefix=py_package_prefix,
-            )
+        py_folder_path = reset_folder(py_folder)
+        generate_python(
+            base=base,
+            output_folder=py_folder_path,
+            formulas=formulas,
+            wrappers=wrappers,
+            runtime=runtime,
+            flatten=flatten,
+            package_prefix=py_package_prefix,
+        )
 
     if ts_folder:
-        with timer.timer("TypeScript generation"):
-            ts_folder_path = reset_folder(ts_folder)
-            generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
+        ts_folder_path = reset_folder(ts_folder)
+        generate_typescript(base=base, output_folder=ts_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if js_folder:
-        with timer.timer("JavaScript generation"):
-            js_folder_path = reset_folder(js_folder)
-            generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
+        js_folder_path = reset_folder(js_folder)
+        generate_javascript(base=base, output_folder=js_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if rs_folder:
-        with timer.timer("Rust generation"):
-            rs_folder_path = reset_folder(rs_folder)
-            generate_rust(base=base, output_folder=rs_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
+        rs_folder_path = reset_folder(rs_folder)
+        generate_rust(base=base, output_folder=rs_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if md_folder:
-        with timer.timer("Markdown generation"):
-            preserve = None if reset_svg_cache else [".svg_cache"]
-            md_folder_path = reset_folder(md_folder, preserve=preserve)
-            generate_markdown(
-                base=base,
-                output_folder=md_folder_path,
-                svg_enabled=svg,
-                format_formulas=format_formulas,
-                flatten_formulas=flatten_formulas,
-                mermaid_formulas=mermaid_formulas,
-            )
+        preserve = None if reset_svg_cache else [".svg_cache"]
+        md_folder_path = reset_folder(md_folder, preserve=preserve)
+        generate_markdown(
+            base=base,
+            output_folder=md_folder_path,
+            svg_enabled=svg,
+            format_formulas=format_formulas,
+            flatten_formulas=flatten_formulas,
+            mermaid_formulas=mermaid_formulas,
+        )
 
     if html_folder:
-        with timer.timer("HTML generation"):
-            preserve = None if reset_svg_cache else [".svg_cache"]
-            html_folder_path = reset_folder(html_folder, preserve=preserve)
-            generate_html(
-                base=base,
-                output_folder=html_folder_path,
-                svg_enabled=svg,
-                format_formulas=format_formulas,
-                flatten_formulas=flatten_formulas,
-                mermaid_formulas=mermaid_formulas,
-            )
+        preserve = None if reset_svg_cache else [".svg_cache"]
+        html_folder_path = reset_folder(html_folder, preserve=preserve)
+        generate_html(
+            base=base,
+            output_folder=html_folder_path,
+            svg_enabled=svg,
+            format_formulas=format_formulas,
+            flatten_formulas=flatten_formulas,
+            mermaid_formulas=mermaid_formulas,
+        )
 
     check_invalid(base)
     print("[green]Generation complete.[/]")
 
-    timer.summary()
     print("")
 
 

@@ -8,7 +8,6 @@ from rich import print
 
 from ..meta import AirtableCredentials, Base, Field
 from ..meta_types import FieldType, GenericType, ResolvedType
-from . import timer
 from .verbose import verbose
 
 # =============================================================================
@@ -144,7 +143,6 @@ def python_type_matches_generic(saved: str, generic_type: GenericType | None) ->
 # =============================================================================
 
 
-@timer.timed("map_types")
 def map_types(base: Base) -> None:
     """Calculate and store Python and TypeScript types for all fields. Idempotent."""
     print("Determining field types")
@@ -206,7 +204,6 @@ def map_types(base: Base) -> None:
 # =============================================================================
 
 
-@timer.timed("map_type")
 def map_type(field: Field) -> ResolvedType:
     """Calculate the generic type for a field."""
 
@@ -264,7 +261,6 @@ def map_type(field: Field) -> ResolvedType:
     return resolved
 
 
-@timer.timed("get_select_options_name")
 def get_select_options_name(field: Field) -> str | None:
     """Extract the options name for a select field (shared logic for single/multiple)."""
     select_fields_ids = field.base.select_fields_ids()
@@ -343,7 +339,6 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return False
 
 
-@timer.timed("render_type")
 def render_type(
     field: Field,
     language: Language,
@@ -396,7 +391,6 @@ def render_type(
     return base_type
 
 
-@timer.timed("map_python_type")
 def map_python_type(field: Field) -> str:
     """Calculate the raw Python type for a field (without disambiguation)."""
 
@@ -410,7 +404,6 @@ def map_python_type(field: Field) -> str:
     return py_type
 
 
-@timer.timed("map_typescript_type")
 def map_typescript_type(field: Field) -> str:
     """Calculate the raw TypeScript type for a field (without disambiguation)."""
 
@@ -424,7 +417,6 @@ def map_typescript_type(field: Field) -> str:
     return ts_type
 
 
-@timer.timed("map_zod_type")
 def map_zod_type(field: Field) -> str:
     """Calculate the Zod schema for a field."""
 
@@ -486,7 +478,6 @@ def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: Resolve
     return f"MaybeSpecialOrError<{inner}>"
 
 
-@timer.timed("map_rust_type")
 def map_rust_type(field: Field) -> str:
     """Calculate the Rust type for a field."""
 
@@ -508,7 +499,6 @@ def map_rust_type(field: Field) -> str:
 # =============================================================================
 
 
-@timer.timed("disambiguate_fields")
 def disambiguate_fields(fields: list[Field]) -> None:
     """Disambiguate multiple fields efficiently by batching API calls per table."""
 
@@ -570,7 +560,6 @@ def disambiguate_fields(fields: list[Field]) -> None:
                 print(f"[dim]    - Table '{field.table.name}' Field '{field.name}' (ID: {field.id})[/]")
 
 
-@timer.timed("disambiguate_fields_per_table")
 def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Field]:
     """Disambiguate all fields from a single table with minimal API calls."""
 
@@ -610,7 +599,6 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
         return fields  # Return all as failures
 
 
-@timer.timed("process_records_and_get_remaining")
 def process_records_and_get_remaining(fields: list[Field], records: list[dict]) -> list[Field]:
     """Process records and return fields that still need disambiguation."""
     remaining: list[Field] = []
@@ -623,7 +611,6 @@ def process_records_and_get_remaining(fields: list[Field], records: list[dict]) 
     return remaining
 
 
-@timer.timed("disambiguate_with_or_formula")
 def disambiguate_with_or_formula(table: pyairtable.Table, fields: list[Field]) -> list[Field]:
     """Iteratively fetch records where ANY field is non-blank until no progress."""
     remaining = list(fields)
@@ -658,7 +645,6 @@ def any_not_blank(field_ids: list[str]) -> str:
     return f"OR({', '.join(conditions)})"
 
 
-@timer.timed("disambiguate_single_field")
 def disambiguate_single_field(table: pyairtable.Table, field: Field) -> Field | None:
     """Fetch a single record where the field is not blank."""
     record = table.first(

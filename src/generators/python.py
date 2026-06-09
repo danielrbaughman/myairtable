@@ -5,7 +5,6 @@ from rich import print
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
-from ..utils import timer
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -144,44 +143,36 @@ def generate_python(
     if verbose:
         print("[dim] - Python static files copied.[/]")
 
-    with timer.timer("Python: write_types"):
-        write_types(base, output_folder)
-        if verbose:
-            print("[dim] - Python types generated.[/]")
-    with timer.timer("Python: write_dicts"):
-        write_dicts(base, output_folder)
-        if verbose:
-            print("[dim] - Python dicts generated.[/]")
+    write_types(base, output_folder)
+    if verbose:
+        print("[dim] - Python types generated.[/]")
+    write_dicts(base, output_folder)
+    if verbose:
+        print("[dim] - Python dicts generated.[/]")
 
-    with timer.timer("Python: write_models"):
-        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, package_prefix=package_prefix)
-        if verbose:
-            print("[dim] - Python models generated.[/]")
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, package_prefix=package_prefix)
+    if verbose:
+        print("[dim] - Python models generated.[/]")
 
     if formulas:
-        with timer.timer("Python: write_formula_helpers"):
-            write_formula_helpers(base, output_folder)
-            if verbose:
-                print("[dim] - Python formula helpers generated.[/]")
-
-    with timer.timer("Python: write_options"):
-        write_options(base, output_folder)
+        write_formula_helpers(base, output_folder)
         if verbose:
-            print("[dim] - Python options generated.[/]")
+            print("[dim] - Python formula helpers generated.[/]")
+
+    write_options(base, output_folder)
+    if verbose:
+        print("[dim] - Python options generated.[/]")
 
     if wrappers:
-        with timer.timer("Python: write_tables"):
-            write_tables(base, output_folder)
-            if verbose:
-                print("[dim] - Python tables generated.[/]")
+        write_tables(base, output_folder)
+        if verbose:
+            print("[dim] - Python tables generated.[/]")
 
-        with timer.timer("Python: write_main_class"):
-            write_main_class(base, output_folder)
-            if verbose:
-                print("[dim] - Python main class generated.[/]")
+        write_main_class(base, output_folder)
+        if verbose:
+            print("[dim] - Python main class generated.[/]")
 
-    with timer.timer("Python: write_init"):
-        write_init(output_folder, formulas, wrappers)
+    write_init(output_folder, formulas, wrappers)
 
     if verbose:
         print("[green] - Python code generation complete.[/]")

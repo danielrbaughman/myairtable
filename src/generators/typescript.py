@@ -6,7 +6,6 @@ from rich import print
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
-from ..utils import timer
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -114,52 +113,43 @@ def generate_typescript(
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
-    with timer.timer("TypeScript: copy_static_files"):
-        exclude = ["airtable-runtime.ts"] if not runtime else None
-        copy_static_files(output_folder, "typescript", exclude=exclude)
-        if verbose:
-            print("[dim] - TypeScript static files copied.[/]")
+    exclude = ["airtable-runtime.ts"] if not runtime else None
+    copy_static_files(output_folder, "typescript", exclude=exclude)
+    if verbose:
+        print("[dim] - TypeScript static files copied.[/]")
 
-    with timer.timer("TypeScript: write_types"):
-        write_types(base, output_folder)
-        if verbose:
-            print("[dim] - TypeScript types generated.[/]")
+    write_types(base, output_folder)
+    if verbose:
+        print("[dim] - TypeScript types generated.[/]")
 
     if formulas:
-        with timer.timer("TypeScript: write_formula_helpers"):
-            write_formula_helpers(base, output_folder)
-            if verbose:
-                print("[dim] - TypeScript formula helpers generated.[/]")
-
-    with timer.timer("TypeScript: write_options"):
-        write_options(base, output_folder)
+        write_formula_helpers(base, output_folder)
         if verbose:
-            print("[dim] - TypeScript options generated.[/]")
+            print("[dim] - TypeScript formula helpers generated.[/]")
+
+    write_options(base, output_folder)
+    if verbose:
+        print("[dim] - TypeScript options generated.[/]")
 
     if zod:
-        with timer.timer("TypeScript: write_zod_schemas"):
-            write_zod_schemas(base, output_folder)
-            if verbose:
-                print("[dim] - TypeScript Zod schemas generated.[/]")
+        write_zod_schemas(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript Zod schemas generated.[/]")
 
     if wrappers:
-        with timer.timer("TypeScript: write_models"):
-            write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, zod=zod)
-            if verbose:
-                print("[dim] - TypeScript models generated.[/]")
+        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, zod=zod)
+        if verbose:
+            print("[dim] - TypeScript models generated.[/]")
 
-        with timer.timer("TypeScript: write_tables"):
-            write_tables(base, output_folder)
-            if verbose:
-                print("[dim] - TypeScript tables generated.[/]")
+        write_tables(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript tables generated.[/]")
 
-        with timer.timer("TypeScript: write_main_class"):
-            write_main_class(base, output_folder)
-            if verbose:
-                print("[dim] - TypeScript main class generated.[/]")
+        write_main_class(base, output_folder)
+        if verbose:
+            print("[dim] - TypeScript main class generated.[/]")
 
-    with timer.timer("TypeScript: write_index"):
-        write_index(output_folder, formulas=formulas, wrappers=wrappers)
+    write_index(output_folder, formulas=formulas, wrappers=wrappers)
 
     if verbose:
         print("[green] - TypeScript code generation complete.[/]")

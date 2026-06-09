@@ -6,7 +6,6 @@ from rich import print
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
-from ..utils import timer
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -114,52 +113,43 @@ def generate_javascript(
     reset_folder(output_folder / Paths.DYNAMIC)
     reset_folder(output_folder / Paths.STATIC)
 
-    with timer.timer("JavaScript: copy_static_files"):
-        exclude = ["airtable-runtime.js"] if not runtime else None
-        copy_static_files(output_folder, "javascript", exclude=exclude)
-        if verbose:
-            print("[dim] - JavaScript static files copied.[/]")
+    exclude = ["airtable-runtime.js"] if not runtime else None
+    copy_static_files(output_folder, "javascript", exclude=exclude)
+    if verbose:
+        print("[dim] - JavaScript static files copied.[/]")
 
-    with timer.timer("JavaScript: write_types"):
-        write_types(base, output_folder)
-        if verbose:
-            print("[dim] - JavaScript types generated.[/]")
+    write_types(base, output_folder)
+    if verbose:
+        print("[dim] - JavaScript types generated.[/]")
 
     if formulas:
-        with timer.timer("JavaScript: write_formula_helpers"):
-            write_formula_helpers(base, output_folder)
-            if verbose:
-                print("[dim] - JavaScript formula helpers generated.[/]")
-
-    with timer.timer("JavaScript: write_options"):
-        write_options(base, output_folder)
+        write_formula_helpers(base, output_folder)
         if verbose:
-            print("[dim] - JavaScript options generated.[/]")
+            print("[dim] - JavaScript formula helpers generated.[/]")
+
+    write_options(base, output_folder)
+    if verbose:
+        print("[dim] - JavaScript options generated.[/]")
 
     if zod:
-        with timer.timer("JavaScript: write_zod_schemas"):
-            write_zod_schemas(base, output_folder)
-            if verbose:
-                print("[dim] - JavaScript Zod schemas generated.[/]")
+        write_zod_schemas(base, output_folder)
+        if verbose:
+            print("[dim] - JavaScript Zod schemas generated.[/]")
 
     if wrappers:
-        with timer.timer("JavaScript: write_models"):
-            write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, zod=zod)
-            if verbose:
-                print("[dim] - JavaScript models generated.[/]")
+        write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten, zod=zod)
+        if verbose:
+            print("[dim] - JavaScript models generated.[/]")
 
-        with timer.timer("JavaScript: write_tables"):
-            write_tables(base, output_folder)
-            if verbose:
-                print("[dim] - JavaScript tables generated.[/]")
+        write_tables(base, output_folder)
+        if verbose:
+            print("[dim] - JavaScript tables generated.[/]")
 
-        with timer.timer("JavaScript: write_main_class"):
-            write_main_class(base, output_folder)
-            if verbose:
-                print("[dim] - JavaScript main class generated.[/]")
+        write_main_class(base, output_folder)
+        if verbose:
+            print("[dim] - JavaScript main class generated.[/]")
 
-    with timer.timer("JavaScript: write_index"):
-        write_index(output_folder, formulas=formulas, wrappers=wrappers)
+    write_index(output_folder, formulas=formulas, wrappers=wrappers)
 
     if verbose:
         print("[green] - JavaScript code generation complete.[/]")
