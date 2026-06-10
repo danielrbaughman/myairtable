@@ -147,6 +147,26 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def list_automations(workflow: str = "", include_config: bool = True) -> dict:
+        """List all automations (workflows), organized by sidebar section, with full trigger and action configuration.
+
+        Automations have NO public API — this is the only programmatic access. Each automation
+        includes its trigger and ordered actions with friendly type names plus raw config, and
+        the table/field IDs it references (a real dependency signal: a field may be load-bearing
+        in an automation while looking unused everywhere else). With include_config=true (default)
+        this is one extra request per workflow (concurrent); set false for a fast inventory, or
+        pass workflow (name or wfl ID) to dump just one.
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.list_automations(workflow or None, include_config=include_config)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 

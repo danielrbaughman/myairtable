@@ -208,6 +208,27 @@ class InterfaceBundle(_InternalModel):
     pages: list[InterfacePage] = []
 
 
+class WorkflowSection(_InternalModel):
+    """An automation sidebar section (wsc...) from application/read workflowSectionsById."""
+
+    id: str
+    name: str | None = None
+    workflow_order: list[str] = []
+    is_default_section: bool | None = None
+
+
+class WorkflowSummary(_InternalModel):
+    """One workflow from listWorkflows — inventory only (configs stripped).
+
+    The full trigger/action config lives in workflow/{id}/read, not here.
+    """
+
+    id: str
+    name: str | None = None
+    description: str | None = None
+    deployment_status: str | None = None  # "deployed" | "undeployed"
+
+
 def parse_view_definition(data: dict[str, Any]) -> ViewDefinition:
     try:
         return ViewDefinition.model_validate(data)

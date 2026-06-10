@@ -150,6 +150,23 @@ def list_interfaces_command(
         _fail(e)
 
 
+@tools_app.command("list-automations")
+def list_automations_command(
+    workflow: Annotated[str, Argument(help="Optional automation name or wfl ID; all automations if omitted")] = "",
+    no_config: Annotated[bool, Option("--no-config", help="Inventory only — skip the per-workflow full-config fetch")] = False,
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """All automations by section, with full trigger/action config dumps.
+
+    Automations have no public API. Full config is one request per workflow
+    (concurrent); --no-config for a fast inventory. Internal (unofficial) API.
+    """
+    try:
+        _emit(tools.list_automations(workflow or None, include_config=not no_config), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

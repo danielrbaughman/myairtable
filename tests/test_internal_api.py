@@ -584,7 +584,7 @@ def test_audit_shares(monkeypatch):
 
     tables = [TableViews.model_validate(TABLE_SCHEMA)]
     base_shares = [ShareInfo.model_validate(BASE_SHARE)]
-    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, []))
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, [], []))
     monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
 
     responses = {
@@ -626,7 +626,7 @@ def test_audit_shares_table_scope_excludes_base_shares(monkeypatch):
 
     tables = [TableViews.model_validate(TABLE_SCHEMA)]
     base_shares = [ShareInfo.model_validate(BASE_SHARE)]
-    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, []))
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, [], []))
     monkeypatch.setattr(tools, "_read_table_views", lambda force_refresh=False: tables)
     monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
     monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
@@ -674,7 +674,7 @@ def test_list_interfaces(monkeypatch):
     from src.internal_api.models import InterfaceBundle
 
     interfaces = [InterfaceBundle.model_validate(PAGE_BUNDLE)]
-    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData([], [], interfaces))
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData([], [], interfaces, []))
     monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
 
     result = tools.list_interfaces()
@@ -685,6 +685,136 @@ def test_list_interfaces(monkeypatch):
     assert iface["is_published"] is True
     assert [p["name"] for p in iface["pages"]] == ["Issues", "Untitled"]
     assert iface["pages"][1]["is_published"] is False
+
+
+WORKFLOW_SECTIONS = {
+    "wscAAAAAAAAAAAAAA": {"id": "wscAAAAAAAAAAAAAA", "name": "Sales", "workflowOrder": ["wflAAAAAAAAAAAAAA"]},
+}
+LIST_WORKFLOWS = [
+    {"id": "wflAAAAAAAAAAAAAA", "name": "Notify on new lead", "deploymentStatus": "deployed"},
+    {"id": "wflBBBBBBBBBBBBBB", "name": "Nightly cleanup", "deploymentStatus": "undeployed"},  # unsectioned
+]
+WORKFLOW_READ = {
+    "wflAAAAAAAAAAAAAA": {
+        "id": "wflAAAAAAAAAAAAAA",
+        "name": "Notify on new lead",
+        "trigger": {
+            "id": "wtrAAAAAAAAAAAAAA",
+            "workflowTriggerTypeId": "wttRECORDCREATED0",
+            "inputExpressions": {"tableId": {"type": "literal", "value": "tblXXXXXXXXXXXXXX"}},
+        },
+        "graph": {
+            "entryWorkflowActionId": "wac1AAAAAAAAAAAAA",
+            "actionsById": {
+                "wac2AAAAAAAAAAAAA": {
+                    "id": "wac2AAAAAAAAAAAAA",
+                    "workflowActionTypeId": "watCUSTOMSCRIPT00",
+                    "nextWorkflowActionId": None,
+                    "inputExpressions": {"x": 1},
+                },
+                "wac1AAAAAAAAAAAAA": {
+                    "id": "wac1AAAAAAAAAAAAA",
+                    "workflowActionTypeId": "watGMAILSENDMAIL0",
+                    "nextWorkflowActionId": "wac2AAAAAAAAAAAAA",
+                    "inputExpressions": {"to": {"type": "literal", "value": "fldYYYYYYYYYYYYYY"}},
+                },
+            },
+        },
+    },
+    "wflBBBBBBBBBBBBBB": {
+        "id": "wflBBBBBBBBBBBBBB",
+        "name": "Nightly cleanup",
+        "trigger": {"workflowTriggerTypeId": "wttCRON0000000000", "inputExpressions": None},
+        "graph": {"entryWorkflowActionId": None, "actionsById": {}},
+    },
+}
+
+
+def _automation_transport():
+    class WorkflowTransport:
+        def get(self, path, object_params=None, app_id=None):
+            if path.endswith("/listWorkflows"):
+                return {"data": {"workflows": LIST_WORKFLOWS}}
+            if "/workflow/" in path and path.endswith("/read"):
+                wfl_id = path.split("/")[3]
+                return {"data": {"workflow": WORKFLOW_READ[wfl_id]}}
+            raise AssertionError(f"unexpected path {path}")
+
+    return WorkflowTransport()
+
+
+def _automation_app_data():
+    from src.internal_api.models import WorkflowSection
+
+    sections = [WorkflowSection.model_validate(s) for s in WORKFLOW_SECTIONS.values()]
+    return tools.ApplicationData([], [], [], sections)
+
+
+def test_list_automations_full(monkeypatch):
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: _automation_app_data())
+    monkeypatch.setattr(tools, "_get_transport", lambda: _automation_transport())
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    result = tools.list_automations()
+    assert result["summary"] == {"total": 2, "deployed": 1, "sections": 1}
+
+    [section] = result["sections"]
+    assert section["name"] == "Sales"
+    [auto] = section["automations"]
+    assert auto["name"] == "Notify on new lead"
+    assert auto["trigger"]["type"] == "When record created"
+    # actions ordered from the entry point: Gmail (entry) then script
+    assert [a["type"] for a in auto["actions"]] == ["Send email (Gmail)", "Run script"]
+    # referenced ids extracted from configs
+    assert auto["references"]["table_ids"] == ["tblXXXXXXXXXXXXXX"]
+    assert auto["references"]["field_ids"] == ["fldYYYYYYYYYYYYYY"]
+
+    # unsectioned workflow surfaces in ungrouped, with friendly cron name
+    [ungrouped] = result["ungrouped_automations"]
+    assert ungrouped["name"] == "Nightly cleanup"
+    assert ungrouped["trigger"]["type"] == "At scheduled time"
+
+
+def test_list_automations_inventory_only_skips_detail(monkeypatch):
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: _automation_app_data())
+
+    class CountingTransport:
+        def __init__(self):
+            self.reads = 0
+
+        def get(self, path, object_params=None, app_id=None):
+            if path.endswith("/listWorkflows"):
+                return {"data": {"workflows": LIST_WORKFLOWS}}
+            self.reads += 1
+            return {"data": {"workflow": WORKFLOW_READ[path.split("/")[3]]}}
+
+    transport = CountingTransport()
+    monkeypatch.setattr(tools, "_get_transport", lambda: transport)
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    result = tools.list_automations(include_config=False)
+    assert transport.reads == 0  # no per-workflow read
+    auto = result["sections"][0]["automations"][0]
+    assert "trigger" not in auto and auto["name"] == "Notify on new lead"
+
+
+def test_list_automations_single(monkeypatch):
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: _automation_app_data())
+    monkeypatch.setattr(tools, "_get_transport", lambda: _automation_transport())
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    result = tools.list_automations("notify on new lead")
+    assert result["workflow"]["name"] == "Notify on new lead"
+    assert result["workflow"]["trigger"]["type"] == "When record created"
+
+
+def test_list_automations_unknown(monkeypatch):
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: _automation_app_data())
+    monkeypatch.setattr(tools, "_get_transport", lambda: _automation_transport())
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    with pytest.raises(InternalApiError, match="Available: Notify on new lead, Nightly cleanup"):
+        tools.list_automations("nope")
 
 
 # --- ids ---------------------------------------------------------------------

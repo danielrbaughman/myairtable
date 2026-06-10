@@ -140,6 +140,48 @@ against the live base:
 bounded concurrency (threads over the shared httpx client), per-view TTL
 cache; whole-base scans documented as expensive (~1 call/view).
 
+## Investigation 2026-06-10 — automation read endpoints (myairtable-eang)
+
+Automations live at the UI path `/{appId}/automations` (NOT `/workflows` —
+that 404s). "Automations" are "workflows" in the API. Discovered by driving
+the Firefox session to the Automations tab and capturing XHR. Endpoints (all
+GET, `stringifiedObjectParams={}`, like view reads — `secretSocketId` sent by
+the UI but NOT required):
+
+| Endpoint                                                       | Returns                                                                                                                                                              |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `application/{appId}/listWorkflows`                            | `data.workflows[]` — every workflow's id, name, description, deploymentStatus, trigger (type only), graph skeleton (action type ids + wiring). **Configs stripped.** |
+| `workflow/{wflId}/read`                                        | `data.workflow` — FULL config: trigger + each action's `inputExpressions` (table ids, filter objects, Gmail bodies, custom scripts, ...).                            |
+| `workflowDeployment/{wfdId}/read`                              | deployment detail (not needed for inventory)                                                                                                                         |
+| `application/{appId}/readForWorkflows`                         | a workflow-oriented schema variant                                                                                                                                   |
+| `application/{appId}/getWorkflowExecutionCountsInCurrentMonth` | run counts                                                                                                                                                           |
+
+**Verified live (45 workflows in our base):**
+
+- `listWorkflows` returns all 45 in one call; **full config requires per-workflow
+  `workflow/{id}/read`** (configs are stripped from the list). All 45 read OK,
+  including 19 custom-script actions — **full dump is feasible.**
+- **Field/table references are extractable**: 45/45 reference table ids,
+  36/45 reference field ids, as plain `tbl…`/`fld…` literals inside
+  `inputExpressions`. Regex-parseable — this is the future `find_unused_fields`
+  / `find_views_using_field` automation signal.
+- `deploymentStatus`: 30 deployed, 15 undeployed (proxy for on/off).
+- Trigger/action **type ids** are mostly human-readable constants
+  (`wttRECORDMATCHES0`, `wttRECORDCREATED0`, `wttRECORDUPDATED0`,
+  `wttCRON0000000000`; `watUPDATERECORD00`, `watCREATERECORD00`,
+  `watGMAILSENDMAIL0`, `watFINDRECORDS000`, `watCUSTOMSCRIPT00`) — but some are
+  opaque hashes (`wttBRZzRXx3C2jyIc` ×29, `watBETUHIcuho4hit` ×13, likely
+  integration/first-party-app types) and one action had `null` type. Decode the
+  known constants to friendly names; pass unknown ids through verbatim; parse
+  defensively (null type ids exist).
+- Workflow→section grouping comes from `workflowSectionsById` (already in
+  `application/read`; each section has `name` + `workflowOrder`).
+
+**Strategy for list_automations:** `listWorkflows` for the inventory +
+section grouping; concurrent per-workflow `workflow/{id}/read` for full
+config (same bounded-concurrency + TTL-cache pattern as views); decode known
+type ids, pass through unknown; extract referenced table/field ids.
+
 ---
 
 # Part 1 — Internal API Reference

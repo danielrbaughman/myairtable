@@ -31,6 +31,7 @@ Provides 24 tools for exploring an Airtable base without modifying it:
 - **Visualization**: generate_schema_diagram (Mermaid ER diagram)
 - **Live view state** (internal API): get_view (full filter/sort/group/column config), get_view_sections (sidebar groupings)
 - **View analysis** (internal API): find_views_using_field (view-side complement of reverse_dependencies), count_records (per-view counts without downloading records), audit_views (hygiene report), find_unused_fields (multi-signal dead-field leads)
+- **UI-only surfaces** (internal API): audit_shares (share-link exposure audit), list_interfaces (interface inventory), list_automations (full automation/workflow config dumps)
 
 Tables and fields can be referenced by name (case-insensitive) or Airtable ID.
 

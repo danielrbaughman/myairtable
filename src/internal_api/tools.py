@@ -8,6 +8,7 @@ All functions return plain JSON-serializable data and raise InternalApiError
 subclasses on failure (adapters convert those to structured error output).
 """
 
+import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +19,16 @@ from src.meta import get_base_id
 
 from .errors import InternalApiError
 from .ids import validate_airtable_id
-from .models import InterfaceBundle, ShareInfo, TableViews, ViewDefinition, parse_table_views, parse_view_definition
+from .models import (
+    InterfaceBundle,
+    ShareInfo,
+    TableViews,
+    ViewDefinition,
+    WorkflowSection,
+    WorkflowSummary,
+    parse_table_views,
+    parse_view_definition,
+)
 from .transport import InternalApiTransport
 
 # application/read is heavy-ish (~MBs on large bases); the schema barely
@@ -47,6 +57,7 @@ class ApplicationData(NamedTuple):
     tables: list[TableViews]
     base_shares: list[ShareInfo]
     interfaces: list[InterfaceBundle]
+    workflow_sections: list[WorkflowSection]
 
 
 def _read_application_data(force_refresh: bool = False) -> ApplicationData:
@@ -77,7 +88,8 @@ def _read_application_data(force_refresh: bool = False) -> ApplicationData:
     tables = [parse_table_views(t) for t in table_schemas]
     base_shares = [ShareInfo.model_validate(s) for s in (data.get("sharesById") or {}).values()]
     interfaces = [InterfaceBundle.model_validate(pb) for pb in (data.get("pageBundles") or [])]
-    app_data = ApplicationData(tables, base_shares, interfaces)
+    workflow_sections = [WorkflowSection.model_validate(ws) for ws in (data.get("workflowSectionsById") or {}).values()]
+    app_data = ApplicationData(tables, base_shares, interfaces, workflow_sections)
     _schema_cache = (now, app_data)
     return app_data
 
@@ -682,6 +694,189 @@ def list_interfaces() -> dict[str, Any]:
         },
         "interfaces": interfaces,
     }
+
+
+# Known workflow trigger/action type-id constants → friendly names. Opaque
+# hash ids (integration/first-party-app types) are passed through verbatim.
+_WORKFLOW_TYPE_NAMES = {
+    "wttRECORDMATCHES0": "When record matches conditions",
+    "wttRECORDCREATED0": "When record created",
+    "wttRECORDUPDATED0": "When record updated",
+    "wttRECORDENTERSVIEW": "When record enters view",
+    "wttCRON0000000000": "At scheduled time",
+    "wttFORMSUBMITTED0": "When form submitted",
+    "wttBUTTONCLICKED0": "When button clicked",
+    "watUPDATERECORD00": "Update record",
+    "watCREATERECORD00": "Create record",
+    "watFINDRECORDS000": "Find records",
+    "watGMAILSENDMAIL0": "Send email (Gmail)",
+    "watSENDEMAIL00000": "Send email",
+    "watCUSTOMSCRIPT00": "Run script",
+    "watSLACKMESSAGE00": "Send Slack message",
+}
+
+_ID_REF_RE = re.compile(r'"(tbl|fld)([A-Za-z0-9]{14})"')
+
+
+def _type_name(type_id: str | None) -> str | None:
+    if type_id is None:
+        return None
+    return _WORKFLOW_TYPE_NAMES.get(type_id, type_id)
+
+
+def _extract_id_refs(config: Any) -> dict[str, list[str]]:
+    """Table/field IDs referenced anywhere in a workflow config blob."""
+    blob = json.dumps(config)
+    tables = sorted({f"tbl{m}" for p, m in _ID_REF_RE.findall(blob) if p == "tbl"})
+    fields = sorted({f"fld{m}" for p, m in _ID_REF_RE.findall(blob) if p == "fld"})
+    return {"table_ids": tables, "field_ids": fields}
+
+
+def _workflow_detail(wfl_id: str) -> dict[str, Any]:
+    """Full config of one workflow via workflow/{id}/read.
+
+    Envelope (id/name/trigger type/action list) is structured; action and
+    trigger configs (inputExpressions) pass through as raw JSON — they are
+    open-ended (custom scripts, integration actions) and not worth modeling.
+    """
+    base_id = validate_airtable_id(get_base_id())
+    payload = _get_transport().get(
+        f"/v0.3/workflow/{validate_airtable_id(wfl_id)}/read",
+        object_params={},
+        app_id=base_id,
+    )
+    wf = (payload.get("data") or {}).get("workflow")
+    if not isinstance(wf, dict):
+        raise InternalApiError(f"workflow/{wfl_id}/read response has no data.workflow object.")
+
+    trigger = wf.get("trigger") or {}
+    graph = wf.get("graph") or {}
+    actions_by_id = graph.get("actionsById") or {}
+
+    # Walk the action chain from the entry point so order is meaningful.
+    actions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    current = graph.get("entryWorkflowActionId")
+    while current and current in actions_by_id and current not in seen:
+        seen.add(current)
+        a = actions_by_id[current]
+        actions.append(
+            {
+                "id": a.get("id"),
+                "type_id": a.get("workflowActionTypeId"),
+                "type": _type_name(a.get("workflowActionTypeId")),
+                "config": a.get("inputExpressions"),
+            }
+        )
+        current = a.get("nextWorkflowActionId")
+    # Include any actions not reachable from the entry chain (branches, orphans).
+    for aid, a in actions_by_id.items():
+        if aid not in seen:
+            actions.append(
+                {
+                    "id": a.get("id"),
+                    "type_id": a.get("workflowActionTypeId"),
+                    "type": _type_name(a.get("workflowActionTypeId")),
+                    "config": a.get("inputExpressions"),
+                }
+            )
+
+    return {
+        "trigger": {
+            "type_id": trigger.get("workflowTriggerTypeId"),
+            "type": _type_name(trigger.get("workflowTriggerTypeId")),
+            "config": trigger.get("inputExpressions"),
+        },
+        "actions": actions,
+        "references": _extract_id_refs(wf),
+    }
+
+
+def list_automations(workflow: str | None = None, include_config: bool = True) -> dict[str, Any]:
+    """All automations (workflows), organized by sidebar section, with full
+    trigger/action configuration.
+
+    Automations have no public API at all. With include_config (default), each
+    workflow's full trigger and action configs are dumped (one extra request
+    per workflow — concurrent). Pass `workflow` (name or wfl ID) to dump just
+    one. Referenced table/field IDs are extracted from each config.
+    """
+    base_id = validate_airtable_id(get_base_id())
+    app_data = _read_application_data()
+
+    payload = _get_transport().get(
+        f"/v0.3/application/{base_id}/listWorkflows",
+        object_params={},
+        app_id=base_id,
+    )
+    raw = (payload.get("data") or {}).get("workflows")
+    if not isinstance(raw, list):
+        raise InternalApiError("listWorkflows response has no data.workflows list.")
+    summaries = [WorkflowSummary.model_validate(w) for w in raw]
+    by_id = {w.id: w for w in summaries}
+
+    # Single-workflow mode
+    if workflow is not None:
+        needle = workflow.strip().lower()
+        match = next((w for w in summaries if w.id == workflow or (w.name or "").lower() == needle), None)
+        if match is None:
+            available = ", ".join(w.name or w.id for w in summaries)
+            raise InternalApiError(f"Automation '{workflow}' not found. Available: {available}")
+        entry = _workflow_entry(match, include_config=True)
+        return {"workflow": entry}
+
+    detail_by_id: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    if include_config:
+
+        def fetch(wfl_id: str) -> None:
+            try:
+                detail_by_id[wfl_id] = _workflow_detail(wfl_id)
+            except InternalApiError as e:
+                errors[wfl_id] = str(e)
+
+        with ThreadPoolExecutor(max_workers=_FETCH_CONCURRENCY) as pool:
+            list(pool.map(fetch, list(by_id)))
+
+    def entry(w: WorkflowSummary) -> dict[str, Any]:
+        return _workflow_entry(w, include_config=include_config, detail=detail_by_id.get(w.id))
+
+    # Organize by section; collect unsectioned workflows after.
+    sections: list[dict[str, Any]] = []
+    sectioned_ids: set[str] = set()
+    for section in app_data.workflow_sections:
+        members = [entry(by_id[wid]) for wid in section.workflow_order if wid in by_id]
+        sectioned_ids.update(w.id for w in (by_id[wid] for wid in section.workflow_order if wid in by_id))
+        sections.append({"id": section.id, "name": section.name, "automations": members})
+
+    ungrouped = [entry(w) for w in summaries if w.id not in sectioned_ids]
+
+    result: dict[str, Any] = {
+        "summary": {
+            "total": len(summaries),
+            "deployed": sum(1 for w in summaries if w.deployment_status == "deployed"),
+            "sections": len(sections),
+        },
+        "sections": sections,
+        "ungrouped_automations": ungrouped,
+    }
+    if errors:
+        result["scan_errors"] = errors
+    return result
+
+
+def _workflow_entry(w: WorkflowSummary, include_config: bool, detail: dict[str, Any] | None = None) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "id": w.id,
+        "name": w.name,
+        "description": w.description,
+        "deployment_status": w.deployment_status,
+    }
+    if include_config:
+        if detail is None:
+            detail = _workflow_detail(w.id)
+        entry.update(detail)
+    return entry
 
 
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:
