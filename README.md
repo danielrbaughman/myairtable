@@ -184,6 +184,24 @@ Setup (opt-in):
 
 See `docs/airtable-internal-api.md` for the endpoint reference and spike findings.
 
+### Large results are saved to disk
+
+Many tools can return large payloads (whole-base scans, full automation config dumps). When a
+result exceeds the inline limit (default 16 KB; override with `MYAIRTABLE_INLINE_MAX_BYTES`),
+the **full** result is written to a gitignored `.data/internal_api/<tool>__<args>.json` and the
+caller receives a small envelope instead:
+
+```json
+{ "saved_to": "...", "bytes": 412934, "record_count": 287,
+  "summary": { ... }, "schema": { ...compact shape skeleton... }, "note": "..." }
+```
+
+`schema` is a depth-capped structural skeleton of the file (keys → type tags, arrays → length +
+element shape) — enough to `jq`/`grep` the file without re-running the tool. This applies to
+**all** MCP tools via a server middleware. From the CLI, add `--save` (e.g.
+`myairtable tools --save list-automations`) to exercise the same path. Note: `audit_shares`
+writes share-URL tokens to that local file.
+
 ## License
 
 [MIT](LICENSE)
