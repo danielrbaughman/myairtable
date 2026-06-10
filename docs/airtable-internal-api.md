@@ -103,6 +103,43 @@ was observed directly; where it contradicts Part 1, **the spike wins**.
 - The spike's live session profile persists at `~/.myairtable/spike-profile-ff`
   with storage state at `~/.myairtable/spike-state.json`.
 
+## Investigation 2026-06-10 — batch view fetching (myairtable-vqkq)
+
+For the view-analysis tools we needed all viewDatas of a table/base. Verified
+against the live base:
+
+- **`includeDataForViewIds` accepts exactly ONE view.** Two or more (even
+  same-type, same-table, correct pairs) → `422 FAILED_STATE_CHECK`. There is
+  no batch fetch.
+- **`table/{tblId}/readData` with a view included pulls FULL row/cell data**
+  for that view's rows (13.6 MB for one 9.7k-row calendar view) — never use
+  it for view definitions. `view/{viwId}/readData` (no cell data, only
+  `rowOrder`) is the right path, ~0.01–0.51 MB per view depending on type and
+  row count.
+- **Unknown `stringifiedObjectParams` keys are silently ignored** (tried
+  several invented rowOrder-excluding params — no 422, no effect). There is
+  no known way to drop `rowOrder` server-side; drop it at parse time and keep
+  its length as `row_count`.
+- **All six view types** (grid, form, kanban, calendar, gallery, levels)
+  return the same viewData shape via `view/readData`; form views lack
+  `filters`/`lastSortsApplied` (model them optional). `metadata` appears on
+  some types (calendar, levels, form).
+- **Other users' personal views ARE readable** via `view/readData` (our base
+  has 381 of them) — personal views need no special-casing in coverage
+  claims.
+- **No row-count field exists anywhere** (checked `table/readData`,
+  `getApplicationScaffoldingData` — the latter is tiny: tableById +
+  visibleTableOrder only, no view state). Total table row count: use
+  `max(len(rowOrder))` across the table's views — exact when an unfiltered
+  view exists, a lower bound otherwise.
+- `table/readData` with `includeDataForViewIds: []` still returns one
+  viewData (the session's `lastViewIdUsed`) and one row in `loadedSlices` —
+  don't rely on it returning nothing.
+
+**Chosen fetch strategy:** per-view `GET /v0.3/view/{viwId}/readData`,
+bounded concurrency (threads over the shared httpx client), per-view TTL
+cache; whole-base scans documented as expensive (~1 call/view).
+
 ---
 
 # Part 1 — Internal API Reference
