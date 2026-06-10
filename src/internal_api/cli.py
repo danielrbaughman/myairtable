@@ -84,6 +84,24 @@ def count_records_command(
         _fail(e)
 
 
+@tools_app.command("audit-views")
+def audit_views_command(
+    table: Annotated[str, Argument(help="Optional table name or ID; whole base if omitted")] = "",
+    stale_sort_months: Annotated[int, Option(help="Months after which a lastSortsApplied counts as stale")] = 6,
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """View hygiene report: personal views, suspicious names, unfiltered
+    duplicates, stale sorts, empty views.
+
+    Whole-base scans are one request per uncached view — expect a wait on a
+    cold cache. Internal (unofficial) API.
+    """
+    try:
+        _emit(tools.audit_views(table or None, stale_sort_months=stale_sort_months), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

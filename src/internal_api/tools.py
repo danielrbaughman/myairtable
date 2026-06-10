@@ -8,8 +8,10 @@ All functions return plain JSON-serializable data and raise InternalApiError
 subclasses on failure (adapters convert those to structured error output).
 """
 
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.meta import get_base_id
@@ -314,6 +316,110 @@ def count_records(table: str, view: str | None = None) -> dict[str, Any]:
     }
     if scan_errors:
         result["scan_errors"] = scan_errors
+    return result
+
+
+# Name patterns that usually indicate abandoned/duplicate views. Extend freely.
+SUSPICIOUS_NAME_PATTERNS: list[tuple[str, str]] = [
+    (r"\bcopy(\s+\d+)?\b", "copy"),
+    (r"\bcopy of\b", "copy of"),
+    (r"\btest\b", "test"),
+    (r"\buntitled\b", "untitled"),
+    (r"\btmp\b|\btemp\b", "temp"),
+    (r"\bold\b", "old"),
+    (r"\bdraft\b", "draft"),
+    (r"\bbackup\b|\bbak\b", "backup"),
+    (r"\bdeprecated\b", "deprecated"),
+    (r"\(\d+\)\s*$", "numbered duplicate"),
+]
+
+
+def _suspicious_name(name: str) -> str | None:
+    for pattern, label in SUSPICIOUS_NAME_PATTERNS:
+        if re.search(pattern, name, re.IGNORECASE):
+            return label
+    return None
+
+
+def audit_views(table: str | None = None, stale_sort_months: int = 6) -> dict[str, Any]:
+    """View hygiene report: personal views, suspicious names, unfiltered
+    grid duplicates, stale sorts, empty views.
+
+    Scoped to one table, or the whole base if omitted (one request per
+    uncached view — a large base takes a while on a cold cache).
+    Flags are evidence, not verdicts: a flagged view may be intentional.
+    """
+    tables = [_find_table_views(table)] if table else _read_table_views()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30 * stale_sort_months)
+
+    table_reports: list[dict[str, Any]] = []
+    kind_totals: dict[str, int] = {}
+    total_scanned = 0
+    all_scan_errors: dict[str, str] = {}
+
+    for t in tables:
+        definitions, scan_errors = get_all_view_definitions(t)
+        all_scan_errors.update(scan_errors)
+        total_scanned += len(definitions)
+
+        default_grid_id = next((v.id for v in t.views if v.type == "grid"), None)
+        flagged: list[dict[str, Any]] = []
+
+        for info in t.views:
+            d = definitions.get(info.id)
+            flags: list[dict[str, Any]] = []
+
+            if info.personal_for_user_id:
+                flags.append({"kind": "personal", "owner_user_id": info.personal_for_user_id})
+
+            label = _suspicious_name(info.name)
+            if label:
+                flags.append({"kind": "suspicious_name", "matched": label})
+
+            if d is not None:
+                if d.type == "grid" and info.id != default_grid_id and not _has_active_filters(d):
+                    flags.append({"kind": "unfiltered_grid", "note": "no filters — possibly a duplicate of the default view"})
+
+                applied = d.last_sorts_applied.applied_time if d.last_sorts_applied else None
+                if applied:
+                    try:
+                        applied_dt = datetime.fromisoformat(applied.replace("Z", "+00:00"))
+                        if applied_dt < cutoff:
+                            flags.append({"kind": "stale_sort", "applied_time": applied})
+                    except ValueError:
+                        pass
+
+                if d.row_count == 0:
+                    flags.append({"kind": "empty"})
+
+            if flags:
+                for f in flags:
+                    kind_totals[f["kind"]] = kind_totals.get(f["kind"], 0) + 1
+                flagged.append(
+                    {
+                        "id": info.id,
+                        "name": info.name,
+                        "type": info.type,
+                        "created_by_user_id": (d.created_by_user_id if d else None) or info.created_by_user_id,
+                        "flags": flags,
+                    }
+                )
+
+        if flagged:
+            table_reports.append({"table_id": t.id, "table_name": t.name, "views_flagged": flagged})
+
+    result: dict[str, Any] = {
+        "summary": {
+            "tables_scanned": len(tables),
+            "views_scanned": total_scanned,
+            "views_flagged": sum(len(r["views_flagged"]) for r in table_reports),
+            "by_kind": kind_totals,
+            "stale_sort_months": stale_sort_months,
+        },
+        "tables": table_reports,
+    }
+    if all_scan_errors:
+        result["scan_errors"] = all_scan_errors
     return result
 
 

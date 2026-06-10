@@ -74,6 +74,24 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def audit_views(table_name: str = "", stale_sort_months: int = 6) -> dict:
+        """View hygiene report: flags personal views, suspicious names (copy/test/old/...),
+        unfiltered grid views (likely duplicates of the default), stale sorts, and empty views.
+
+        Scope to one table via table_name, or scan the whole base if omitted (one request per
+        uncached view — a large base takes minutes cold, so prefer per-table scans when iterating).
+        Flags are evidence with details, not verdicts.
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.audit_views(table_name or None, stale_sort_months=stale_sort_months)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 

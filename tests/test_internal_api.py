@@ -384,6 +384,93 @@ def test_count_records_total_lower_bound_when_all_filtered(fake_schema, monkeypa
     assert result["total_is_exact"] is False
 
 
+AUDIT_TABLE_SCHEMA = {
+    "id": "tblAAAAAAAAAAAAAA",
+    "name": "Contacts",
+    "views": [
+        {"id": "viwAAAAAAAAAAAAAA", "name": "Main Grid", "type": "grid"},  # default — never unfiltered-flagged
+        {"id": "viwBBBBBBBBBBBBBB", "name": "Pipeline copy", "type": "grid", "personalForUserId": "usrXXXXXXXXXXXXXX"},
+        {"id": "viwCCCCCCCCCCCCCC", "name": "Quarterly Review", "type": "grid"},
+    ],
+    "viewOrder": ["viwAAAAAAAAAAAAAA", "viwBBBBBBBBBBBBBB", "viwCCCCCCCCCCCCCC"],
+    "viewSectionsById": {},
+    "columns": [{"id": "fldAAAAAAAAAAAAAA", "name": "Name", "type": "text"}],
+}
+
+
+def test_audit_views(monkeypatch):
+    tables = [TableViews.model_validate(AUDIT_TABLE_SCHEMA)]
+    monkeypatch.setattr(tools, "_read_table_views", lambda force_refresh=False: tables)
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    responses = {
+        # default grid: unfiltered but exempt; stale sort from 2020
+        "viwAAAAAAAAAAAAAA": {
+            "id": "viwAAAAAAAAAAAAAA",
+            "type": "grid",
+            "filters": None,
+            "lastSortsApplied": {
+                "sortSet": [{"id": "srtAAAAAAAAAAAAAA", "columnId": "fldAAAAAAAAAAAAAA", "ascending": True}],
+                "shouldAutoSort": True,
+                "appliedTime": "2020-01-01T00:00:00.000Z",
+            },
+            "columnOrder": [],
+            "rowOrder": [{"rowId": "rec1", "visibility": True}],
+        },
+        # personal + 'copy' name + unfiltered + empty
+        "viwBBBBBBBBBBBBBB": {
+            "id": "viwBBBBBBBBBBBBBB",
+            "type": "grid",
+            "filters": {"filterSet": [], "conjunction": "and"},
+            "columnOrder": [],
+            "rowOrder": [],
+        },
+        # clean filtered view: no flags
+        "viwCCCCCCCCCCCCCC": {
+            "id": "viwCCCCCCCCCCCCCC",
+            "type": "grid",
+            "filters": {
+                "filterSet": [{"id": "fltAAAAAAAAAAAAAA", "columnId": "fldAAAAAAAAAAAAAA", "operator": "=", "value": 1}],
+                "conjunction": "and",
+            },
+            "columnOrder": [],
+            "rowOrder": [{"rowId": "rec1", "visibility": True}],
+        },
+    }
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.audit_views()
+    assert result["summary"]["views_scanned"] == 3
+    assert result["summary"]["views_flagged"] == 2
+
+    [report] = result["tables"]
+    by_name = {v["name"]: v for v in report["views_flagged"]}
+
+    main_kinds = [f["kind"] for f in by_name["Main Grid"]["flags"]]
+    assert main_kinds == ["stale_sort"]  # default grid exempt from unfiltered_grid
+
+    copy_kinds = sorted(f["kind"] for f in by_name["Pipeline copy"]["flags"])
+    assert copy_kinds == ["empty", "personal", "suspicious_name", "unfiltered_grid"]
+
+    assert "Quarterly Review" not in by_name
+    assert result["summary"]["by_kind"]["personal"] == 1
+
+
+def test_suspicious_name_patterns():
+    assert tools._suspicious_name("Pipeline copy") == "copy"
+    assert tools._suspicious_name("Copy of Main") == "copy"
+    assert tools._suspicious_name("test view") == "test"
+    assert tools._suspicious_name("Grid (2)") == "numbered duplicate"
+    assert tools._suspicious_name("Quarterly Review") is None
+    assert tools._suspicious_name("Latest deals") is None  # 'test' inside a word doesn't match
+
+
 # --- ids ---------------------------------------------------------------------
 
 
