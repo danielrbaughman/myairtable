@@ -245,6 +245,66 @@ def test_get_view_sections_assembly(fake_schema):
     assert [v["name"] for v in result["ungrouped_views"]] == ["Cal"]
 
 
+def test_find_views_using_field(fake_schema, monkeypatch):
+    """Field used in: Grid A filter (top-level + nested), Grid A sort; hidden in Grid B."""
+
+    grid_a = {
+        **VIEW_READDATA,
+        "id": "viwAAAAAAAAAAAAAA",
+    }
+    grid_b = {
+        "id": "viwBBBBBBBBBBBBBB",
+        "type": "grid",
+        "filters": None,
+        "lastSortsApplied": {"sortSet": [], "shouldAutoSort": True},
+        "groupLevels": [{"id": "glvAAAAAAAAAAAAAA", "columnId": "fldBBBBBBBBBBBBBB", "order": "descending"}],
+        "columnOrder": [{"columnId": "fldAAAAAAAAAAAAAA", "visibility": False}],
+        "rowOrder": [],
+    }
+    cal = {
+        "id": "viwCCCCCCCCCCCCCC",
+        "type": "calendar",
+        "filters": None,
+        "columnOrder": [],
+        "rowOrder": [],
+    }
+    responses = {"viwAAAAAAAAAAAAAA": grid_a, "viwBBBBBBBBBBBBBB": grid_b, "viwCCCCCCCCCCCCCC": cal}
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    # fldAAA: filter (leaf 'contains') + sort in Grid A; hidden in Grid B
+    result = tools.find_views_using_field("Contacts", "Name")
+    assert result["field"] == {"id": "fldAAAAAAAAAAAAAA", "name": "Name", "type": "text"}
+    assert result["summary"]["views_scanned"] == 3
+    assert result["summary"]["views_using_field"] == 1
+    assert result["summary"]["by_kind"] == {"filter": 1, "sort": 1}
+    assert result["summary"]["visible_in"] == 1  # Grid A
+    assert result["summary"]["hidden_in"] == 1  # Grid B
+    [usage_view] = result["views"]
+    assert usage_view["name"] == "Grid A"
+    kinds = {u["kind"] for u in usage_view["usage"]}
+    assert kinds == {"filter", "sort"}
+
+    # fldBBB: nested filter in Grid A + group in Grid B
+    monkeypatch.setattr(tools, "_view_cache", {})
+    result = tools.find_views_using_field("Contacts", "fldBBBBBBBBBBBBBB")
+    assert result["summary"]["by_kind"] == {"filter": 1, "group": 1}
+    names = [v["name"] for v in result["views"]]
+    assert names == ["Grid A", "Grid B"]
+    grid_a_usage = next(v for v in result["views"] if v["name"] == "Grid A")
+    assert grid_a_usage["usage"] == [{"kind": "filter", "operators": ["="]}]  # found inside nested group
+
+
+def test_find_views_using_field_unknown_field(fake_schema):
+    with pytest.raises(InternalApiError, match="Available fields: Name, Status"):
+        tools.find_views_using_field("Contacts", "Nope")
+
+
 # --- ids ---------------------------------------------------------------------
 
 

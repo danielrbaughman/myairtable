@@ -160,6 +160,105 @@ def get_view(table: str, view: str) -> dict[str, Any]:
     return result
 
 
+def _find_column(table_views: TableViews, field: str):
+    needle = field.strip().lower()
+    for c in table_views.columns:
+        if c.id == field or c.name.lower() == needle:
+            return c
+    available = ", ".join(c.name for c in table_views.columns)
+    raise InternalApiError(f"Field '{field}' not found in table '{table_views.name}'. Available fields: {available}")
+
+
+def _filter_operators_for_field(definition: ViewDefinition, field_id: str) -> list[str]:
+    """Operators of every filter (incl. inside nested groups) targeting the field."""
+    operators: list[str] = []
+
+    def walk(filter_set) -> None:
+        for f in filter_set:
+            if f.is_nested and f.filter_set:
+                walk(f.filter_set)
+            elif f.column_id == field_id:
+                operators.append(f.operator or "?")
+
+    if definition.filters is not None:
+        walk(definition.filters.filter_set)
+    return operators
+
+
+def find_views_using_field(table: str, field: str) -> dict[str, Any]:
+    """Which views reference a field — in filters, sorts, grouping, or color
+    config — plus where the field is visible vs hidden.
+
+    The view-side complement of reverse_dependencies (which covers formulas):
+    together they answer "what breaks if I change this field?".
+
+    Scans every view of the table (one request per uncached view).
+    """
+    t = _find_table_views(table)
+    column = _find_column(t, field)
+    definitions, scan_errors = get_all_view_definitions(t)
+
+    views_using: list[dict[str, Any]] = []
+    by_kind: dict[str, int] = {}
+    visible_in = 0
+    hidden_in = 0
+
+    for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+        usage: list[dict[str, Any]] = []
+
+        operators = _filter_operators_for_field(d, column.id)
+        if operators:
+            usage.append({"kind": "filter", "operators": operators})
+
+        if d.last_sorts_applied is not None:
+            for s in d.last_sorts_applied.sort_set:
+                if s.column_id == column.id:
+                    usage.append({"kind": "sort", "ascending": s.ascending})
+
+        for g in d.group_levels or []:
+            if g.column_id == column.id:
+                usage.append({"kind": "group", "order": g.order})
+
+        # colorConfig shapes vary by type (selectColumn, ...); detect by id presence
+        if d.color_config and column.id in str(d.color_config):
+            usage.append({"kind": "color"})
+
+        entry = next((c for c in d.column_order if c.column_id == column.id), None)
+        if entry is not None:
+            visible_in += 1 if entry.visibility else 0
+            hidden_in += 0 if entry.visibility else 1
+
+        if usage:
+            for u in usage:
+                by_kind[u["kind"]] = by_kind.get(u["kind"], 0) + 1
+            views_using.append(
+                {
+                    "id": view_id,
+                    "name": d.name,
+                    "type": d.type,
+                    "usage": usage,
+                    "field_visible": entry.visibility if entry else None,
+                }
+            )
+
+    result: dict[str, Any] = {
+        "table_id": t.id,
+        "table_name": t.name,
+        "field": {"id": column.id, "name": column.name, "type": column.type},
+        "summary": {
+            "views_scanned": len(definitions),
+            "views_using_field": len(views_using),
+            "by_kind": by_kind,
+            "visible_in": visible_in,
+            "hidden_in": hidden_in,
+        },
+        "views": views_using,
+    }
+    if scan_errors:
+        result["scan_errors"] = scan_errors
+    return result
+
+
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:
     """Sidebar view sections (groupings) per table, with the views each
     contains and any ungrouped views, in sidebar display order.

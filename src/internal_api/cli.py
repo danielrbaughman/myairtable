@@ -50,6 +50,23 @@ def get_view_command(
         _fail(e)
 
 
+@tools_app.command("find-views-using-field")
+def find_views_using_field_command(
+    table: Annotated[str, Argument(help="Table name (case-insensitive) or ID")],
+    field: Annotated[str, Argument(help="Field name (case-insensitive) or ID")],
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Which views filter/sort/group/color by a field, plus visibility.
+
+    The view-side complement of reverse_dependencies. Scans every view of the
+    table (one request per uncached view). Internal (unofficial) API.
+    """
+    try:
+        _emit(tools.find_views_using_field(table, field), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

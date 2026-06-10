@@ -39,6 +39,23 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def find_views_using_field(table_name: str, field_name: str) -> dict:
+        """Find every view that references a field — in filters, sorts, grouping, or color config — plus visible/hidden counts across all views.
+
+        The view-side complement of reverse_dependencies (which covers formula references):
+        together they answer "what breaks if I change this field?". Scans every view of the
+        table (one request per uncached view; ~30 views take a few seconds cold).
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.find_views_using_field(table_name, field_name)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 
