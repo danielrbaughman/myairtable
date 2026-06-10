@@ -436,6 +436,50 @@ def table_connectivity() -> dict:
     }
 
 
+def formula_function_usage(table_name: str = "") -> dict:
+    """Base-wide histogram of which functions formulas use, and where.
+
+    For each function: total call count, how many formula fields use it, and
+    the fields. Reveals the formula vocabulary, rare/risky functions, and
+    transpile-migration surface. analyze_formula_complexity gives per-field
+    detail; this is the aggregate.
+
+    Args:
+        table_name: Optional table name or ID; all tables if empty.
+    """
+    base = _get_base()
+    tables = [_find_table(table_name)] if table_name else base.tables
+
+    counts: Counter = Counter()
+    fields_by_function: dict[str, list[dict]] = {}
+    formula_field_count = 0
+
+    for table in tables:
+        for field in table.fields:
+            if not field.is_formula() or not field.options or not field.options.formula:
+                continue
+            formula_field_count += 1
+            tokens = tokenize_formula(field.options.formula)
+            funcs = [t.value for t in tokens if t.type == TokenType.FUNCTION]
+            counts.update(funcs)
+            for fn in set(funcs):
+                fields_by_function.setdefault(fn, []).append({"table": table.name, "field": field.name})
+
+    functions = [
+        {"name": fn, "count": count, "field_count": len(fields_by_function[fn]), "fields": fields_by_function[fn]}
+        for fn, count in counts.most_common()
+    ]
+
+    return {
+        "summary": {
+            "formula_fields": formula_field_count,
+            "distinct_functions": len(counts),
+            "total_function_calls": sum(counts.values()),
+        },
+        "functions": functions,
+    }
+
+
 def get_schema() -> dict:
     """Return the full base schema: all tables with their fields and views."""
     base = _get_base()
@@ -1289,4 +1333,5 @@ PUBLIC_TOOLS = [
     find_type_ambiguities,
     dependency_graph_metrics,
     table_connectivity,
+    formula_function_usage,
 ]

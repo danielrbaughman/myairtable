@@ -308,6 +308,18 @@ def table_connectivity_command(pretty: Annotated[bool, _PRETTY] = False):
         _fail(e)
 
 
+@tools_app.command("formula-function-usage")
+def formula_function_usage_command(
+    table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",
+    pretty: Annotated[bool, _PRETTY] = False,
+):
+    """Base-wide histogram of which functions formulas use, and where."""
+    try:
+        _emit("formula_function_usage", schema_tools.formula_function_usage(table), pretty)
+    except Exception as e:
+        _fail(e)
+
+
 @tools_app.command("compare-tables")
 def compare_tables_command(
     table_a: Annotated[str, Argument(help="First table name or ID")],

@@ -15,7 +15,7 @@ Provides 24 tools for exploring an Airtable base without modifying it:
 
 - **Schema browsing**: get_schema, list_tables, describe_table, describe_field, search_fields
 - **Relationships**: get_links, get_lookups_and_rollups, check_link_symmetry
-- **Formulas**: get_formula, list_formula_fields, flatten_formula, analyze_formula_complexity, transpile
+- **Formulas**: get_formula, list_formula_fields, flatten_formula, analyze_formula_complexity, transpile, formula_function_usage (base-wide function histogram)
 - **Dependencies**: trace_field_dependencies, reverse_dependencies, find_circular_references
 - **Validation**: find_invalid_fields, analyze_type_consistency, find_type_ambiguities
 - **Statistics**: base_stats, find_dead_fields, compare_tables, get_select_options

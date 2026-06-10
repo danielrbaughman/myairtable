@@ -116,3 +116,51 @@ def test_cardinality():
     assert schema_tools._cardinality(False, True, True) == "one-to-many"
     assert schema_tools._cardinality(False, False, True) == "many-to-many"
     assert schema_tools._cardinality(True, True, False) == "unknown"
+
+
+class _FormulaField:
+    def __init__(self, name, formula):
+        self.name = name
+        self.type = "formula"
+        self.options = _Opts(formula=formula)
+
+    def is_formula(self):
+        return True
+
+
+class _PlainField:
+    def __init__(self, name):
+        self.name = name
+        self.type = "singleLineText"
+        self.options = None
+
+    def is_formula(self):
+        return False
+
+
+class _FormulaBase:
+    def __init__(self):
+        t = _Tbl("tF", "T", "fp")
+        t.fields = [
+            _PlainField("Raw"),
+            _FormulaField("A", "IF({x}, 1, IF({y}, 2, 3))"),  # IF x2
+            _FormulaField("B", "AND(IF({z}, TRUE(), FALSE()), {w})"),  # IF x1, AND x1, TRUE/FALSE
+        ]
+        self._tables = [t]
+
+    @property
+    def tables(self):
+        return self._tables
+
+
+def test_formula_function_usage(monkeypatch):
+    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, _FormulaBase()))
+
+    result = schema_tools.formula_function_usage()
+    assert result["summary"]["formula_fields"] == 2  # plain field excluded
+    by_fn = {f["name"]: f for f in result["functions"]}
+    assert by_fn["IF"]["count"] == 3  # 2 in A, 1 in B
+    assert by_fn["IF"]["field_count"] == 2  # both A and B use IF
+    assert by_fn["AND"]["count"] == 1
+    # most_common ordering: IF first
+    assert result["functions"][0]["name"] == "IF"
