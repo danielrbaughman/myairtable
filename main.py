@@ -20,8 +20,11 @@ from src.utils.verbose import verbose
 
 app = Typer()
 
-# Internal (unofficial) API surface — separate package, see src/internal_api/.
-from src.internal_api.cli import login_command, tools_app  # noqa: E402
+# `tools` subcommand group: shared scaffolding (src/tools_cli.py) with command
+# modules registering onto it. Importing a command module registers its commands.
+import src.internal_api.cli  # noqa: E402,F401  (registers internal-API commands)
+from src.internal_api.cli import login_command  # noqa: E402
+from src.tools_cli import tools_app  # noqa: E402
 
 app.add_typer(tools_app, name="tools")
 app.command("login")(login_command)

@@ -1,51 +1,20 @@
 """CLI adapters for the internal-API tools.
 
 Thin adapters only — all logic lives in src/internal_api/tools.py (shared
-with the MCP server, so a CLI invocation verifies MCP behavior too).
-
-Output is JSON on stdout by default (agent-testable, pipeable to jq);
---pretty renders with rich. Failures print a JSON object with an "error" key
-and exit 1.
+with the MCP server, so a CLI invocation verifies MCP behavior too). Commands
+register onto the shared `tools_app` (src/tools_cli.py), alongside the public
+meta-API commands, so everything is reachable as `myairtable tools <name>`.
 """
 
 import json
-import sys
-from typing import Annotated, Any
+from typing import Annotated
 
-from rich import print as rich_print
-from typer import Argument, Exit, Option, Typer
+from typer import Argument, Option
+
+from src.tools_cli import _emit, _fail, tools_app
 
 from . import tools
 from .errors import InternalApiError
-from .result_store import offload
-
-tools_app = Typer(help="Schema tools (CLI mirrors of the MCP tools). Internal-API backed commands auto-authenticate from .env.")
-
-_save_state = {"on": False}
-
-
-@tools_app.callback()
-def _tools_callback(
-    save: Annotated[
-        bool, Option("--save", help="Offload large results to .data/internal_api/ and print the envelope (mirrors the MCP server)")
-    ] = False,
-):
-    """Internal-API schema tools."""
-    _save_state["on"] = save
-
-
-def _emit(tool_name: str, result: Any, pretty: bool) -> None:
-    if _save_state["on"]:
-        result = offload(tool_name, None, result)
-    if pretty:
-        rich_print(result)
-    else:
-        print(json.dumps(result, indent=2))
-
-
-def _fail(error: Exception) -> None:
-    print(json.dumps({"error": type(error).__name__, "message": str(error)}, indent=2), file=sys.stderr)
-    raise Exit(code=1)
 
 
 @tools_app.command("get-view")
