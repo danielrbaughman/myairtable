@@ -135,6 +135,21 @@ def audit_shares_command(
         _fail(e)
 
 
+@tools_app.command("list-interfaces")
+def list_interfaces_command(
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """All interfaces (page bundles) with pages and publish state.
+
+    Interfaces have no public API at all. Internal (unofficial) API; cheap
+    (single cached schema call).
+    """
+    try:
+        _emit(tools.list_interfaces(), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

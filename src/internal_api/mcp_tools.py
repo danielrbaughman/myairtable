@@ -130,6 +130,23 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def list_interfaces() -> dict:
+        """List all interfaces (Airtable's app-builder 'page bundles') in the base: name, icon,
+        pages, publish state, and last-published/last-edited times.
+
+        Interfaces are completely invisible to the public API — this is the only programmatic
+        inventory. Cheap: served from the cached schema response.
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.list_interfaces()
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 

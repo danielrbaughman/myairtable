@@ -179,6 +179,35 @@ class TableViews(_InternalModel):
     primary_column_id: str | None = None
 
 
+class InterfacePageMetadata(_InternalModel):
+    type: str | None = None
+    name: str | None = None
+    description: str | None = None
+
+
+class InterfacePage(_InternalModel):
+    """One page (pag...) of an interface bundle."""
+
+    id: str
+    metadata: InterfacePageMetadata | None = None
+    is_published: bool = False
+    last_published_revision_change_time: str | None = None
+    last_working_draft_modified_time: str | None = None
+
+
+class InterfaceBundle(_InternalModel):
+    """An interface (pbd... 'page bundle') from application/read pageBundles."""
+
+    id: str
+    name: str
+    description: str | None = None
+    color: str | None = None
+    icon: str | None = None
+    first_page_published_time: str | None = None
+    last_published_time: str | None = None
+    pages: list[InterfacePage] = []
+
+
 def parse_view_definition(data: dict[str, Any]) -> ViewDefinition:
     try:
         return ViewDefinition.model_validate(data)

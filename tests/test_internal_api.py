@@ -584,7 +584,7 @@ def test_audit_shares(monkeypatch):
 
     tables = [TableViews.model_validate(TABLE_SCHEMA)]
     base_shares = [ShareInfo.model_validate(BASE_SHARE)]
-    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: (tables, base_shares))
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, []))
     monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
 
     responses = {
@@ -626,7 +626,7 @@ def test_audit_shares_table_scope_excludes_base_shares(monkeypatch):
 
     tables = [TableViews.model_validate(TABLE_SCHEMA)]
     base_shares = [ShareInfo.model_validate(BASE_SHARE)]
-    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: (tables, base_shares))
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData(tables, base_shares, []))
     monkeypatch.setattr(tools, "_read_table_views", lambda force_refresh=False: tables)
     monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
     monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
@@ -643,6 +643,48 @@ def test_get_view_output_excludes_shares(fake_schema, monkeypatch):
 
     result = tools.get_view("Contacts", "Grid A")
     assert "shares_by_id" not in result and "sharesById" not in result
+
+
+PAGE_BUNDLE = {
+    "id": "pbdAAAAAAAAAAAAAA",
+    "name": "Lab Issue Mgmt",
+    "description": None,
+    "color": "green",
+    "icon": "beaker",
+    "firstPagePublishedTime": "2023-01-12T02:02:51.000Z",
+    "lastPublishedTime": "2023-01-12T02:02:51.000Z",
+    "pages": [
+        {
+            "id": "pagAAAAAAAAAAAAAA",
+            "metadata": {"type": "entry", "name": "Issues", "description": None},
+            "isPublished": True,
+            "lastPublishedRevisionChangeTime": "2023-01-12T02:02:51.000Z",
+            "lastWorkingDraftModifiedTime": "2023-01-12T01:58:54.000Z",
+        },
+        {
+            "id": "pagBBBBBBBBBBBBBB",
+            "metadata": {"type": "entry", "name": None},
+            "isPublished": False,
+        },
+    ],
+}
+
+
+def test_list_interfaces(monkeypatch):
+    from src.internal_api.models import InterfaceBundle
+
+    interfaces = [InterfaceBundle.model_validate(PAGE_BUNDLE)]
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: tools.ApplicationData([], [], interfaces))
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    result = tools.list_interfaces()
+    assert result["summary"] == {"interfaces": 1, "published": 1, "pages": 2}
+    [iface] = result["interfaces"]
+    assert iface["name"] == "Lab Issue Mgmt"
+    assert iface["url"] == "https://airtable.com/appAAAAAAAAAAAAAA/pbdAAAAAAAAAAAAAA"
+    assert iface["is_published"] is True
+    assert [p["name"] for p in iface["pages"]] == ["Issues", "Untitled"]
+    assert iface["pages"][1]["is_published"] is False
 
 
 # --- ids ---------------------------------------------------------------------

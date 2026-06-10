@@ -12,13 +12,13 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from src.meta import get_base_id
 
 from .errors import InternalApiError
 from .ids import validate_airtable_id
-from .models import ShareInfo, TableViews, ViewDefinition, parse_table_views, parse_view_definition
+from .models import InterfaceBundle, ShareInfo, TableViews, ViewDefinition, parse_table_views, parse_view_definition
 from .transport import InternalApiTransport
 
 # application/read is heavy-ish (~MBs on large bases); the schema barely
@@ -32,7 +32,7 @@ _VIEW_CACHE_TTL_SECONDS = 120.0
 _FETCH_CONCURRENCY = 6
 
 _transport: InternalApiTransport | None = None
-_schema_cache: tuple[float, list[TableViews], list[ShareInfo]] | None = None
+_schema_cache: tuple[float, "ApplicationData"] | None = None
 _view_cache: dict[str, tuple[float, ViewDefinition]] = {}
 
 
@@ -43,12 +43,18 @@ def _get_transport() -> InternalApiTransport:
     return _transport
 
 
-def _read_application_data(force_refresh: bool = False) -> tuple[list[TableViews], list[ShareInfo]]:
-    """Base schema (view slice) + base-level share links, via application/read. Cached for 30s."""
+class ApplicationData(NamedTuple):
+    tables: list[TableViews]
+    base_shares: list[ShareInfo]
+    interfaces: list[InterfaceBundle]
+
+
+def _read_application_data(force_refresh: bool = False) -> ApplicationData:
+    """Base schema (view slice) + base-level shares + interfaces, via application/read. Cached for 30s."""
     global _schema_cache
     now = time.monotonic()
     if not force_refresh and _schema_cache is not None and now - _schema_cache[0] < _SCHEMA_CACHE_TTL_SECONDS:
-        return _schema_cache[1], _schema_cache[2]
+        return _schema_cache[1]
 
     base_id = validate_airtable_id(get_base_id())
     # The two may* flags are REQUIRED (500 without them); empty
@@ -70,12 +76,14 @@ def _read_application_data(force_refresh: bool = False) -> tuple[list[TableViews
         raise InternalApiError("application/read response has no data.tableSchemas list.")
     tables = [parse_table_views(t) for t in table_schemas]
     base_shares = [ShareInfo.model_validate(s) for s in (data.get("sharesById") or {}).values()]
-    _schema_cache = (now, tables, base_shares)
-    return tables, base_shares
+    interfaces = [InterfaceBundle.model_validate(pb) for pb in (data.get("pageBundles") or [])]
+    app_data = ApplicationData(tables, base_shares, interfaces)
+    _schema_cache = (now, app_data)
+    return app_data
 
 
 def _read_table_views(force_refresh: bool = False) -> list[TableViews]:
-    return _read_application_data(force_refresh)[0]
+    return _read_application_data(force_refresh).tables
 
 
 def _find_table_views(table: str) -> TableViews:
@@ -594,7 +602,8 @@ def audit_shares(table: str | None = None) -> dict[str, Any]:
     password/domain restrictions reported here. Base-level shares expose the
     whole base; view shares expose one view's records.
     """
-    all_tables, base_shares = _read_application_data()
+    app_data = _read_application_data()
+    all_tables, base_shares = app_data.tables, app_data.base_shares
     tables = [_find_table_views(table)] if table else all_tables
 
     shares: list[dict[str, Any]] = []
@@ -626,6 +635,53 @@ def audit_shares(table: str | None = None) -> dict[str, Any]:
     if all_scan_errors:
         result["scan_errors"] = all_scan_errors
     return result
+
+
+def list_interfaces() -> dict[str, Any]:
+    """All interfaces (page bundles) in the base, with pages and publish state.
+
+    Interfaces are invisible to the public API entirely — this is the only
+    programmatic inventory. Comes from the already-cached application/read
+    response, so it's a single (often zero) network call.
+    """
+    app_data = _read_application_data()
+    base_id = get_base_id()
+
+    interfaces = []
+    for bundle in app_data.interfaces:
+        pages = [
+            {
+                "id": p.id,
+                "name": (p.metadata.name if p.metadata else None) or "Untitled",
+                "is_published": p.is_published,
+                "last_published": p.last_published_revision_change_time,
+                "last_draft_modified": p.last_working_draft_modified_time,
+            }
+            for p in bundle.pages
+        ]
+        interfaces.append(
+            {
+                "id": bundle.id,
+                "name": bundle.name,
+                "description": bundle.description,
+                "icon": bundle.icon,
+                "color": bundle.color,
+                "url": f"https://airtable.com/{base_id}/{bundle.id}",
+                "is_published": any(p["is_published"] for p in pages),
+                "first_page_published_time": bundle.first_page_published_time,
+                "last_published_time": bundle.last_published_time,
+                "pages": pages,
+            }
+        )
+
+    return {
+        "summary": {
+            "interfaces": len(interfaces),
+            "published": sum(1 for i in interfaces if i["is_published"]),
+            "pages": sum(len(i["pages"]) for i in interfaces),
+        },
+        "interfaces": interfaces,
+    }
 
 
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:
