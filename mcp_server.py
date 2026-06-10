@@ -37,7 +37,13 @@ Tables and fields can be referenced by name (case-insensitive) or Airtable ID.
 
 The live-view-state tools use Airtable's internal (unofficial) API and auto-authenticate
 from AIRTABLE_EMAIL/AIRTABLE_PASSWORD in .env. If they fail, they return a structured
-error explaining how to fix it; all other tools are unaffected.\
+error explaining how to fix it; all other tools are unaffected.
+
+LARGE RESULTS ARE SAVED TO DISK. When a tool's result exceeds the inline limit, instead of
+the full payload you receive an envelope: {saved_to, bytes, record_count, summary, schema, note}.
+`saved_to` is a JSON file under .data/internal_api/; `schema` is a compact shape skeleton of
+its structure. Read or jq/grep that file for the detail rather than re-running the tool.
+Note: audit_shares writes share-URL tokens to that local file.\
 """,
 )
 
@@ -1003,8 +1009,16 @@ def find_type_ambiguities() -> list[dict]:
 # break without notice if Airtable changes the unofficial endpoints.
 # ---------------------------------------------------------------------------
 from src.internal_api.mcp_tools import register as _register_internal_api_tools  # noqa: E402
+from src.internal_api.offload_middleware import ResultOffloadMiddleware, disable_output_schemas  # noqa: E402
 
 _register_internal_api_tools(mcp)
+
+# Offload large results (any tool) to disk; the agent gets a path + schema.
+mcp.add_middleware(ResultOffloadMiddleware())
+# Tool results are now dynamic (normal shape OR offload envelope), so a fixed
+# output schema can't describe them — clear them so strict clients don't reject
+# the mismatch. Results flow as JSON text either way.
+disable_output_schemas(mcp)
 
 
 if __name__ == "__main__":
