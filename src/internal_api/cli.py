@@ -102,6 +102,23 @@ def audit_views_command(
         _fail(e)
 
 
+@tools_app.command("find-unused-fields")
+def find_unused_fields_command(
+    table: Annotated[str, Argument(help="Optional table name or ID; whole base if omitted")] = "",
+    min_signals: Annotated[int, Option(help="Minimum independent signals (1-3) for a field to be reported")] = 2,
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Candidate-unused fields: no formula refs (public API) + hidden in all
+    views + unused in view configs (internal API).
+
+    A lead-generator with explicit caveats, not a deletion verdict.
+    """
+    try:
+        _emit(tools.find_unused_fields(table or None, min_signals=min_signals), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

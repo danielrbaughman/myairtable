@@ -423,6 +423,143 @@ def audit_views(table: str | None = None, stale_sort_months: int = 6) -> dict[st
     return result
 
 
+_UNUSED_FIELD_CAVEATS = [
+    "Usage by automations, interfaces, sync targets, and external API consumers is NOT visible to this analysis.",
+    "Signals are independent evidence, not a deletion verdict — verify before removing anything.",
+    "Computed fields (formula/lookup/rollup/count) and linked-record fields are excluded: they are consumers or structural.",
+]
+
+
+def _collect_view_field_usage(definitions: dict[str, ViewDefinition]) -> dict[str, dict[str, int]]:
+    """Per field id: visible_in / present_in (columnOrder) and config_uses (filter/sort/group/color)."""
+    usage: dict[str, dict[str, int]] = {}
+
+    def bump(field_id: str, key: str) -> None:
+        u = usage.setdefault(field_id, {"present_in": 0, "visible_in": 0, "config_uses": 0})
+        u[key] += 1
+
+    for d in definitions.values():
+        for entry in d.column_order:
+            bump(entry.column_id, "present_in")
+            if entry.visibility:
+                bump(entry.column_id, "visible_in")
+
+        def walk(filter_set) -> None:
+            for f in filter_set:
+                if f.is_nested and f.filter_set:
+                    walk(f.filter_set)
+                elif f.column_id:
+                    bump(f.column_id, "config_uses")
+
+        if d.filters is not None:
+            walk(d.filters.filter_set)
+        if d.last_sorts_applied is not None:
+            for s in d.last_sorts_applied.sort_set:
+                bump(s.column_id, "config_uses")
+        for g in d.group_levels or []:
+            bump(g.column_id, "config_uses")
+        if d.color_config:
+            blob = str(d.color_config)
+            for field_id in usage:
+                if field_id in blob:
+                    bump(field_id, "config_uses")
+
+    return usage
+
+
+def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[str, Any]:
+    """Candidate-unused fields, combining public-API formula analysis with
+    internal-API view usage.
+
+    Three independent signals per field:
+    - no_formula_references (public meta API): not referenced by any formula,
+      lookup, rollup, or link configuration anywhere in the base
+    - hidden_in_all_views (internal): present in view columnOrders but visible
+      in none
+    - not_in_view_config (internal): used by no view filter/sort/group/color
+
+    Fields reaching min_signals are reported with all evidence. This is a
+    lead-generator, not a verdict — see the caveats in the output.
+    """
+    from src.meta import Base
+
+    base = Base()  # public meta API — formula/lookup/rollup reference graph
+    referenced_ids: set[str] = set()
+    for field in base.fields():
+        if field.options and field.options.referenced_field_ids:
+            referenced_ids.update(field.options.referenced_field_ids)
+        if field.options and field.options.field_id_in_linked_table:
+            referenced_ids.add(field.options.field_id_in_linked_table)
+        if field.options and field.options.record_link_field_id:
+            referenced_ids.add(field.options.record_link_field_id)
+        if field.is_formula():
+            referenced_ids.update(field.get_field_ids_from_formula())
+
+    public_fields_by_table_id = {t.id: t.fields for t in base.tables}
+
+    internal_tables = [_find_table_views(table)] if table else _read_table_views()
+
+    reported: list[dict[str, Any]] = []
+    fields_scanned = 0
+    all_scan_errors: dict[str, str] = {}
+
+    for t in internal_tables:
+        public_fields = public_fields_by_table_id.get(t.id)
+        if public_fields is None:
+            continue  # table not visible to the public API (shouldn't happen)
+        definitions, scan_errors = get_all_view_definitions(t)
+        all_scan_errors.update(scan_errors)
+        usage = _collect_view_field_usage(definitions)
+
+        for field in public_fields:
+            if field.is_computed() or field.type == "multipleRecordLinks":
+                continue
+            if field.id == t.primary_column_id:
+                continue  # structural
+            fields_scanned += 1
+
+            u = usage.get(field.id, {"present_in": 0, "visible_in": 0, "config_uses": 0})
+            signals: list[str] = []
+            if field.id not in referenced_ids:
+                signals.append("no_formula_references")
+            if u["present_in"] > 0 and u["visible_in"] == 0:
+                signals.append("hidden_in_all_views")
+            if u["config_uses"] == 0:
+                signals.append("not_in_view_config")
+
+            if len(signals) >= min_signals:
+                reported.append(
+                    {
+                        "table_id": t.id,
+                        "table_name": t.name,
+                        "id": field.id,
+                        "name": field.name,
+                        "type": field.type,
+                        "signals": signals,
+                        "evidence": {
+                            "visible_in_views": u["visible_in"],
+                            "present_in_views": u["present_in"],
+                            "view_config_uses": u["config_uses"],
+                        },
+                    }
+                )
+
+    reported.sort(key=lambda f: (-len(f["signals"]), f["table_name"], f["name"]))
+    result: dict[str, Any] = {
+        "summary": {
+            "tables_scanned": len(internal_tables),
+            "fields_scanned": fields_scanned,
+            "fields_reported": len(reported),
+            "min_signals": min_signals,
+        },
+        "fields": reported,
+        "caveats": _UNUSED_FIELD_CAVEATS,
+    }
+    if all_scan_errors:
+        result["scan_errors"] = all_scan_errors
+    return result
+
+
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:
     """Sidebar view sections (groupings) per table, with the views each
     contains and any ungrouped views, in sidebar display order.

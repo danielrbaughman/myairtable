@@ -471,6 +471,88 @@ def test_suspicious_name_patterns():
     assert tools._suspicious_name("Latest deals") is None  # 'test' inside a word doesn't match
 
 
+class _FakePublicField:
+    def __init__(self, id, name, type="singleLineText", referenced_ids=None, formula_refs=None):
+        self.id = id
+        self.name = name
+        self.type = type
+
+        class _Opts:
+            referenced_field_ids = referenced_ids or []
+            field_id_in_linked_table = None
+            record_link_field_id = None
+
+        self.options = _Opts()
+        self._formula_refs = formula_refs or []
+
+    def is_computed(self):
+        return self.type in ("formula", "rollup", "multipleLookupValues", "count")
+
+    def is_formula(self):
+        return self.type == "formula"
+
+    def get_field_ids_from_formula(self):
+        return self._formula_refs
+
+
+class _FakePublicBase:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def fields(self):
+        return [f for t in self.tables for f in t.fields]
+
+
+class _FakePublicTable:
+    def __init__(self, id, fields):
+        self.id = id
+        self.fields = fields
+
+
+def test_find_unused_fields(fake_schema, monkeypatch):
+    fields = [
+        _FakePublicField("fldAAAAAAAAAAAAAA", "Name"),  # primary -> skipped
+        _FakePublicField("fldBBBBBBBBBBBBBB", "Status"),  # hidden everywhere + unreferenced; used in a nested filter
+        _FakePublicField("fldDDDDDDDDDDDDDD", "Notes"),  # absent from views entirely + unreferenced
+        _FakePublicField("fldEEEEEEEEEEEEEE", "Amount"),  # referenced by a formula -> only 1 signal
+        _FakePublicField("fldFFFFFFFFFFFFFF", "Calc", type="formula", formula_refs=["fldEEEEEEEEEEEEEE"]),  # computed -> skipped
+    ]
+    fake_base = _FakePublicBase([_FakePublicTable("tblAAAAAAAAAAAAAA", fields)])
+    monkeypatch.setattr("src.meta.Base", lambda: fake_base)
+
+    fake = FakeTransport({"data": VIEW_READDATA})
+    monkeypatch.setattr(tools, "_get_transport", lambda: fake)
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.find_unused_fields("Contacts")
+    assert result["summary"]["fields_scanned"] == 3  # primary + computed excluded
+    by_name = {f["name"]: f for f in result["fields"]}
+
+    # Status: hidden in the view, no formula refs, but IS in a nested filter
+    # (the fake transport serves the same viewData for all 3 views -> 3 uses)
+    assert sorted(by_name["Status"]["signals"]) == ["hidden_in_all_views", "no_formula_references"]
+    assert by_name["Status"]["evidence"]["view_config_uses"] == 3
+
+    # Notes: unreferenced + in no view config (not present in any columnOrder)
+    assert sorted(by_name["Notes"]["signals"]) == ["no_formula_references", "not_in_view_config"]
+
+    # Amount: referenced by the Calc formula -> 1 signal only, below min_signals=2
+    assert "Amount" not in by_name
+    assert result["caveats"]
+
+
+def test_find_unused_fields_min_signals_one(fake_schema, monkeypatch):
+    fields = [_FakePublicField("fldEEEEEEEEEEEEEE", "Amount", referenced_ids=[])]
+    fake_base = _FakePublicBase([_FakePublicTable("tblAAAAAAAAAAAAAA", fields)])
+    monkeypatch.setattr("src.meta.Base", lambda: fake_base)
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.find_unused_fields("Contacts", min_signals=1)
+    [field] = result["fields"]
+    assert field["name"] == "Amount"
+
+
 # --- ids ---------------------------------------------------------------------
 
 

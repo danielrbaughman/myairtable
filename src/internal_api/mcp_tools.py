@@ -92,6 +92,26 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def find_unused_fields(table_name: str = "", min_signals: int = 2) -> dict:
+        """Find candidate-unused fields by combining formula analysis (public API) with live view usage (internal API).
+
+        Stronger than find_dead_fields (formula references only): adds whether each field is
+        hidden in every view and whether any view filters/sorts/groups/colors by it. Each field
+        is reported with its independent signals and evidence — automations, interfaces, and
+        external API consumers are NOT visible to this analysis, so treat results as leads,
+        never as safe-to-delete verdicts. Scope to one table via table_name (whole base scans
+        are one request per uncached view — minutes when cold).
+
+        Uses Airtable's internal (unofficial) API plus the public meta API. Auto-authenticates
+        from AIRTABLE_EMAIL / AIRTABLE_PASSWORD in .env. On failure, returns {"error",
+        "message"} — public-API tools are unaffected.
+        """
+        try:
+            return tools.find_unused_fields(table_name or None, min_signals=min_signals)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 
