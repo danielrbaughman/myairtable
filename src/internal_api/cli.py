@@ -119,6 +119,22 @@ def find_unused_fields_command(
         _fail(e)
 
 
+@tools_app.command("audit-shares")
+def audit_shares_command(
+    table: Annotated[str, Argument(help="Optional table name or ID; whole base if omitted")] = "",
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Every share link in the base with its exposure details and full URL.
+
+    Share IDs are public URL tokens — treat this output as sensitive.
+    Whole-base scans are one request per uncached view. Internal (unofficial) API.
+    """
+    try:
+        _emit(tools.audit_shares(table or None), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

@@ -109,7 +109,8 @@ def test_parse_view_definition_observed_shape():
 def test_parse_view_definition_dump_excludes_observed_extras():
     dumped = parse_view_definition(VIEW_READDATA).model_dump(mode="json")
     assert "rowOrder" not in dumped and "row_order" not in dumped
-    assert "sharesById" not in dumped and "shares_by_id" not in dumped
+    # shares ARE modeled (for audit_shares) but excluded from get_view output —
+    # see test_get_view_output_excludes_shares
 
 
 def test_row_count_captured_from_row_order():
@@ -551,6 +552,97 @@ def test_find_unused_fields_min_signals_one(fake_schema, monkeypatch):
     result = tools.find_unused_fields("Contacts", min_signals=1)
     [field] = result["fields"]
     assert field["name"] == "Amount"
+
+
+BASE_SHARE = {
+    "id": "shrBASEAAAAAAAAAA",
+    "modelId": "appAAAAAAAAAAAAAA",
+    "createdByUserId": "usrXXXXXXXXXXXXXX",
+    "canBeCloned": False,
+    "canBeExported": False,
+    "includeHiddenColumns": False,
+    "includeBlocks": False,
+    "emailDomain": None,
+    "hasPassword": True,
+}
+
+VIEW_SHARE = {
+    "id": "shrVIEWAAAAAAAAAA",
+    "modelId": "viwAAAAAAAAAAAAAA",
+    "createdByUserId": "usrXXXXXXXXXXXXXX",
+    "canBeCloned": False,
+    "canBeExported": True,
+    "includeHiddenColumns": False,
+    "includeBlocks": False,
+    "emailDomain": "rogoag.com",
+    "hasPassword": False,
+}
+
+
+def test_audit_shares(monkeypatch):
+    from src.internal_api.models import ShareInfo
+
+    tables = [TableViews.model_validate(TABLE_SCHEMA)]
+    base_shares = [ShareInfo.model_validate(BASE_SHARE)]
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: (tables, base_shares))
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+
+    responses = {
+        "viwAAAAAAAAAAAAAA": {**VIEW_READDATA, "sharesById": {"shrVIEWAAAAAAAAAA": VIEW_SHARE}},
+        "viwBBBBBBBBBBBBBB": {"id": "viwBBBBBBBBBBBBBB", "type": "grid", "columnOrder": [], "rowOrder": []},
+        "viwCCCCCCCCCCCCCC": {"id": "viwCCCCCCCCCCCCCC", "type": "calendar", "columnOrder": [], "rowOrder": []},
+    }
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.audit_shares()
+    assert result["summary"] == {
+        "total_shares": 2,
+        "base_shares": 1,
+        "view_shares": 1,
+        "exportable": 1,
+        "password_protected": 1,
+        "domain_restricted": 1,
+        "views_scanned": 3,
+    }
+    by_scope = {s["scope"]: s for s in result["shares"]}
+    assert by_scope["base"]["url"] == "https://airtable.com/shrBASEAAAAAAAAAA"
+    assert by_scope["base"]["has_password"] is True
+    view_share = by_scope["view"]
+    assert view_share["url"] == "https://airtable.com/shrVIEWAAAAAAAAAA"
+    assert view_share["table_name"] == "Contacts"
+    assert view_share["view_name"] == "Grid A"
+    assert view_share["can_be_exported"] is True
+    assert view_share["email_domain"] == "rogoag.com"
+
+
+def test_audit_shares_table_scope_excludes_base_shares(monkeypatch):
+    from src.internal_api.models import ShareInfo
+
+    tables = [TableViews.model_validate(TABLE_SCHEMA)]
+    base_shares = [ShareInfo.model_validate(BASE_SHARE)]
+    monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: (tables, base_shares))
+    monkeypatch.setattr(tools, "_read_table_views", lambda force_refresh=False: tables)
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.audit_shares("Contacts")
+    assert result["summary"]["base_shares"] == 0
+
+
+def test_get_view_output_excludes_shares(fake_schema, monkeypatch):
+    response = {**VIEW_READDATA, "sharesById": {"shrVIEWAAAAAAAAAA": VIEW_SHARE}}
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": response}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.get_view("Contacts", "Grid A")
+    assert "shares_by_id" not in result and "sharesById" not in result
 
 
 # --- ids ---------------------------------------------------------------------

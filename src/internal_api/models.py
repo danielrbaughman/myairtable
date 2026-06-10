@@ -78,6 +78,24 @@ class ColumnOrderEntry(_InternalModel):
     width: int | None = None
 
 
+class ShareInfo(_InternalModel):
+    """A share link (shr...) — observed identically shaped at base and view level.
+
+    The id IS the public URL token: https://airtable.com/{id} exposes the data
+    to anyone holding it.
+    """
+
+    id: str
+    model_id: str | None = None  # appXXX (base share) or viwXXX (view share)
+    created_by_user_id: str | None = None
+    can_be_cloned: bool = False
+    can_be_exported: bool = False
+    include_hidden_columns: bool = False
+    include_blocks: bool = False
+    email_domain: str | None = None
+    has_password: bool = False
+
+
 class ViewDefinition(_InternalModel):
     """Full live definition of a view, from GET /v0.3/view/{viwId}/readData.
 
@@ -100,6 +118,9 @@ class ViewDefinition(_InternalModel):
     # Derived: len(rowOrder) captured before the heavy key is discarded.
     # The number of records the view's filters currently match.
     row_count: int | None = None
+    # Share links on this view. Excluded from get_view output (see tools.py);
+    # consumed by audit_shares.
+    shares_by_id: dict[str, ShareInfo] = {}
 
     @model_validator(mode="before")
     @classmethod

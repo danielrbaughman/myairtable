@@ -18,7 +18,7 @@ from src.meta import get_base_id
 
 from .errors import InternalApiError
 from .ids import validate_airtable_id
-from .models import TableViews, ViewDefinition, parse_table_views, parse_view_definition
+from .models import ShareInfo, TableViews, ViewDefinition, parse_table_views, parse_view_definition
 from .transport import InternalApiTransport
 
 # application/read is heavy-ish (~MBs on large bases); the schema barely
@@ -32,7 +32,7 @@ _VIEW_CACHE_TTL_SECONDS = 120.0
 _FETCH_CONCURRENCY = 6
 
 _transport: InternalApiTransport | None = None
-_schema_cache: tuple[float, list[TableViews]] | None = None
+_schema_cache: tuple[float, list[TableViews], list[ShareInfo]] | None = None
 _view_cache: dict[str, tuple[float, ViewDefinition]] = {}
 
 
@@ -43,12 +43,12 @@ def _get_transport() -> InternalApiTransport:
     return _transport
 
 
-def _read_table_views(force_refresh: bool = False) -> list[TableViews]:
-    """Base schema (view slice), via application/read. Cached for 30s."""
+def _read_application_data(force_refresh: bool = False) -> tuple[list[TableViews], list[ShareInfo]]:
+    """Base schema (view slice) + base-level share links, via application/read. Cached for 30s."""
     global _schema_cache
     now = time.monotonic()
     if not force_refresh and _schema_cache is not None and now - _schema_cache[0] < _SCHEMA_CACHE_TTL_SECONDS:
-        return _schema_cache[1]
+        return _schema_cache[1], _schema_cache[2]
 
     base_id = validate_airtable_id(get_base_id())
     # The two may* flags are REQUIRED (500 without them); empty
@@ -64,12 +64,18 @@ def _read_table_views(force_refresh: bool = False) -> list[TableViews]:
         },
         app_id=base_id,
     )
-    table_schemas = (payload.get("data") or {}).get("tableSchemas")
+    data = payload.get("data") or {}
+    table_schemas = data.get("tableSchemas")
     if not isinstance(table_schemas, list):
         raise InternalApiError("application/read response has no data.tableSchemas list.")
     tables = [parse_table_views(t) for t in table_schemas]
-    _schema_cache = (now, tables)
-    return tables
+    base_shares = [ShareInfo.model_validate(s) for s in (data.get("sharesById") or {}).values()]
+    _schema_cache = (now, tables, base_shares)
+    return tables, base_shares
+
+
+def _read_table_views(force_refresh: bool = False) -> list[TableViews]:
+    return _read_application_data(force_refresh)[0]
 
 
 def _find_table_views(table: str) -> TableViews:
@@ -156,7 +162,7 @@ def get_view(table: str, view: str) -> dict[str, Any]:
     view_id = _find_view(table_views, view)
     definition = _fetch_view_definition(table_views, view_id)
 
-    result = definition.model_dump(mode="json")
+    result = definition.model_dump(mode="json", exclude={"shares_by_id"})  # shares belong to audit_shares
     result["table_id"] = table_views.id
     result["table_name"] = table_views.name
     return result
@@ -554,6 +560,68 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
         },
         "fields": reported,
         "caveats": _UNUSED_FIELD_CAVEATS,
+    }
+    if all_scan_errors:
+        result["scan_errors"] = all_scan_errors
+    return result
+
+
+def _share_entry(share: ShareInfo, scope: str, table: TableViews | None = None, view_name: str | None = None) -> dict[str, Any]:
+    return {
+        "id": share.id,
+        "url": f"https://airtable.com/{share.id}",
+        "scope": scope,
+        "table_id": table.id if table else None,
+        "table_name": table.name if table else None,
+        "view_id": share.model_id if scope == "view" else None,
+        "view_name": view_name,
+        "created_by_user_id": share.created_by_user_id,
+        "can_be_exported": share.can_be_exported,
+        "can_be_cloned": share.can_be_cloned,
+        "include_hidden_columns": share.include_hidden_columns,
+        "include_blocks": share.include_blocks,
+        "has_password": share.has_password,
+        "email_domain": share.email_domain,
+    }
+
+
+def audit_shares(table: str | None = None) -> dict[str, Any]:
+    """Every share link in the base (or one table's views), with what each
+    exposes.
+
+    A share id (shr...) is a public URL token — anyone holding
+    https://airtable.com/{shrId} can see the shared data, subject only to the
+    password/domain restrictions reported here. Base-level shares expose the
+    whole base; view shares expose one view's records.
+    """
+    all_tables, base_shares = _read_application_data()
+    tables = [_find_table_views(table)] if table else all_tables
+
+    shares: list[dict[str, Any]] = []
+    if table is None:
+        shares.extend(_share_entry(s, "base") for s in base_shares)
+
+    all_scan_errors: dict[str, str] = {}
+    views_scanned = 0
+    for t in tables:
+        definitions, scan_errors = get_all_view_definitions(t)
+        all_scan_errors.update(scan_errors)
+        views_scanned += len(definitions)
+        for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+            for share in d.shares_by_id.values():
+                shares.append(_share_entry(share, "view", table=t, view_name=d.name))
+
+    result: dict[str, Any] = {
+        "summary": {
+            "total_shares": len(shares),
+            "base_shares": sum(1 for s in shares if s["scope"] == "base"),
+            "view_shares": sum(1 for s in shares if s["scope"] == "view"),
+            "exportable": sum(1 for s in shares if s["can_be_exported"]),
+            "password_protected": sum(1 for s in shares if s["has_password"]),
+            "domain_restricted": sum(1 for s in shares if s["email_domain"]),
+            "views_scanned": views_scanned,
+        },
+        "shares": shares,
     }
     if all_scan_errors:
         result["scan_errors"] = all_scan_errors

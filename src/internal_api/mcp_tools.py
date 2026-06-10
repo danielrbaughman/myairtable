@@ -112,6 +112,24 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def audit_shares(table_name: str = "") -> dict:
+        """List every share link in the base — base-level and per-view — with what each exposes.
+
+        For each share: full public URL, scope, table/view, creator, and exposure flags
+        (exportable, cloneable, includes hidden columns, password-protected, domain-restricted).
+        A share URL grants access to anyone holding it, so treat output as sensitive. Scope to
+        one table via table_name; whole-base scans are one request per uncached view.
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.audit_shares(table_name or None)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 
