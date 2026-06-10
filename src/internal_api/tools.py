@@ -41,9 +41,14 @@ _SCHEMA_CACHE_TTL_SECONDS = 30.0
 _VIEW_CACHE_TTL_SECONDS = 120.0
 _FETCH_CONCURRENCY = 6
 
+# Automation configs change rarely and a whole-base read is ~1 call/workflow;
+# cache the derived reference index longer than the view cache.
+_AUTOMATION_INDEX_TTL_SECONDS = 300.0
+
 _transport: InternalApiTransport | None = None
 _schema_cache: tuple[float, "ApplicationData"] | None = None
 _view_cache: dict[str, tuple[float, ViewDefinition]] = {}
+_automation_index_cache: tuple[float, "AutomationReferenceIndex"] | None = None
 
 
 def _get_transport() -> InternalApiTransport:
@@ -724,12 +729,18 @@ def _type_name(type_id: str | None) -> str | None:
     return _WORKFLOW_TYPE_NAMES.get(type_id, type_id)
 
 
+def _refs_in_blob(config: Any) -> tuple[set[str], set[str]]:
+    """(table_ids, field_ids) referenced in one config object."""
+    blob = json.dumps(config)
+    tables = {f"tbl{m}" for p, m in _ID_REF_RE.findall(blob) if p == "tbl"}
+    fields = {f"fld{m}" for p, m in _ID_REF_RE.findall(blob) if p == "fld"}
+    return tables, fields
+
+
 def _extract_id_refs(config: Any) -> dict[str, list[str]]:
     """Table/field IDs referenced anywhere in a workflow config blob."""
-    blob = json.dumps(config)
-    tables = sorted({f"tbl{m}" for p, m in _ID_REF_RE.findall(blob) if p == "tbl"})
-    fields = sorted({f"fld{m}" for p, m in _ID_REF_RE.findall(blob) if p == "fld"})
-    return {"table_ids": tables, "field_ids": fields}
+    tables, fields = _refs_in_blob(config)
+    return {"table_ids": sorted(tables), "field_ids": sorted(fields)}
 
 
 def _workflow_detail(wfl_id: str) -> dict[str, Any]:
@@ -877,6 +888,78 @@ def _workflow_entry(w: WorkflowSummary, include_config: bool, detail: dict[str, 
             detail = _workflow_detail(w.id)
         entry.update(detail)
     return entry
+
+
+class AutomationReferenceIndex(NamedTuple):
+    """Base-wide map of which automations reference each field/table.
+
+    fields/tables map an id → list of reference dicts:
+      {automation_id, automation_name, deployment_status, where, action_type?}
+    where is "trigger" or "action". errors maps wfl_id → message for
+    workflows whose config could not be read.
+    """
+
+    fields: dict[str, list[dict[str, Any]]]
+    tables: dict[str, list[dict[str, Any]]]
+    errors: dict[str, str]
+
+
+def _automation_reference_index(force_refresh: bool = False) -> AutomationReferenceIndex:
+    """Build (cached) the field/table → automations map from full workflow configs.
+
+    Base-wide: an automation in any section can reference any table's fields,
+    so this can't be scoped down. One read per workflow (concurrent), cached
+    for _AUTOMATION_INDEX_TTL_SECONDS.
+    """
+    global _automation_index_cache
+    now = time.monotonic()
+    if not force_refresh and _automation_index_cache is not None and now - _automation_index_cache[0] < _AUTOMATION_INDEX_TTL_SECONDS:
+        return _automation_index_cache[1]
+
+    base_id = validate_airtable_id(get_base_id())
+    payload = _get_transport().get(
+        f"/v0.3/application/{base_id}/listWorkflows",
+        object_params={},
+        app_id=base_id,
+    )
+    raw = (payload.get("data") or {}).get("workflows")
+    if not isinstance(raw, list):
+        raise InternalApiError("listWorkflows response has no data.workflows list.")
+    summaries = [WorkflowSummary.model_validate(w) for w in raw]
+
+    fields: dict[str, list[dict[str, Any]]] = {}
+    tables: dict[str, list[dict[str, Any]]] = {}
+    errors: dict[str, str] = {}
+
+    def add(index: dict[str, list[dict[str, Any]]], ref_id: str, ref: dict[str, Any]) -> None:
+        index.setdefault(ref_id, []).append(ref)
+
+    def process(w: WorkflowSummary) -> None:
+        try:
+            detail = _workflow_detail(w.id)
+        except InternalApiError as e:
+            errors[w.id] = str(e)
+            return
+        base_ref = {"automation_id": w.id, "automation_name": w.name, "deployment_status": w.deployment_status}
+        sources = [("trigger", None, detail.get("trigger", {}).get("config"))]
+        for action in detail.get("actions", []):
+            sources.append(("action", action.get("type"), action.get("config")))
+        for where, action_type, config in sources:
+            tbls, flds = _refs_in_blob(config)
+            ref = {**base_ref, "where": where}
+            if action_type:
+                ref["action_type"] = action_type
+            for tid in tbls:
+                add(tables, tid, ref)
+            for fid in flds:
+                add(fields, fid, ref)
+
+    with ThreadPoolExecutor(max_workers=_FETCH_CONCURRENCY) as pool:
+        list(pool.map(process, summaries))
+
+    index = AutomationReferenceIndex(fields=fields, tables=tables, errors=errors)
+    _automation_index_cache = (now, index)
+    return index
 
 
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:

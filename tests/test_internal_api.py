@@ -798,6 +798,25 @@ def test_list_automations_inventory_only_skips_detail(monkeypatch):
     assert "trigger" not in auto and auto["name"] == "Notify on new lead"
 
 
+def test_automation_reference_index(monkeypatch):
+    monkeypatch.setattr(tools, "_get_transport", lambda: _automation_transport())
+    monkeypatch.setattr("src.internal_api.tools.get_base_id", lambda: "appAAAAAAAAAAAAAA")
+    monkeypatch.setattr(tools, "_automation_index_cache", None)
+
+    idx = tools._automation_reference_index()
+    assert idx.errors == {}
+    # wflA trigger config references tblXXX...; Gmail action references fldYYY...
+    assert "tblXXXXXXXXXXXXXX" in idx.tables
+    assert "fldYYYYYYYYYYYYYY" in idx.fields
+    [fref] = idx.fields["fldYYYYYYYYYYYYYY"]
+    assert fref["automation_name"] == "Notify on new lead"
+    assert fref["where"] == "action"
+    assert fref["action_type"] == "Send email (Gmail)"
+    # trigger ref attributed to the trigger
+    [tref] = idx.tables["tblXXXXXXXXXXXXXX"]
+    assert tref["where"] == "trigger"
+
+
 def test_list_automations_single(monkeypatch):
     monkeypatch.setattr(tools, "_read_application_data", lambda force_refresh=False: _automation_app_data())
     monkeypatch.setattr(tools, "_get_transport", lambda: _automation_transport())
