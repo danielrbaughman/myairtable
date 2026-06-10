@@ -480,6 +480,97 @@ def formula_function_usage(table_name: str = "") -> dict:
     }
 
 
+_GOD_TABLE_FIELD_THRESHOLD = 100
+_HIGH_BLAST_RADIUS_THRESHOLD = 25
+
+
+def base_health_report(include_internal: bool = False) -> dict:
+    """Information-only roll-up of everything notable about the base, in one call.
+
+    Categorized findings (counts + items, no severity — the caller prioritizes),
+    aggregating the public analysis tools plus the graph signals:
+    dead/invalid fields, formula circular references, link asymmetry, type
+    ambiguities/inconsistencies, high-blast-radius fields, isolated tables, and
+    god tables.
+
+    With include_internal=True, also folds in internal-API findings (stale
+    views, exportable shares, undeployed automations, view-aware unused fields)
+    *when an internal session exists* — degrading gracefully (with a noted
+    reason) if the internal extra isn't installed or there's no session. This
+    path runs whole-base view scans, so it is slow; it is opt-in for that
+    reason.
+    """
+    base = _get_base()
+    categories: list[dict] = []
+
+    def add(category: str, items: list, note: str | None = None) -> None:
+        entry: dict = {"category": category, "count": len(items), "items": items}
+        if note:
+            entry["note"] = note
+        categories.append(entry)
+
+    # --- public meta-API signals ---
+    add("dead_fields", find_dead_fields(), "Not referenced by any formula/lookup/rollup (metadata only).")
+    add("invalid_fields", find_invalid_fields())
+    add("formula_circular_references", find_circular_references()["formula_circular_references"])
+    add("link_asymmetry", check_link_symmetry())
+    add("type_ambiguities", find_type_ambiguities())
+    add("type_inconsistencies", analyze_type_consistency())
+
+    metrics = dependency_graph_metrics(top_n=25)
+    high_blast = [m for m in metrics["rankings"]["most_central"] if m["blast_radius"] >= _HIGH_BLAST_RADIUS_THRESHOLD]
+    add("high_blast_radius_fields", high_blast, f"Fields whose change affects >= {_HIGH_BLAST_RADIUS_THRESHOLD} others.")
+
+    connectivity = table_connectivity()
+    add("isolated_tables", [{"table": n} for n in connectivity["isolated_tables"]], "No links in or out.")
+    god_tables = [{"table": t.name, "field_count": len(t.fields)} for t in base.tables if len(t.fields) > _GOD_TABLE_FIELD_THRESHOLD]
+    add("god_tables", sorted(god_tables, key=lambda g: g["field_count"], reverse=True), f"More than {_GOD_TABLE_FIELD_THRESHOLD} fields.")
+
+    # --- optional internal-API enrichment (graceful) ---
+    internal_status = "disabled (pass include_internal=true to add internal-API findings)"
+    if include_internal:
+        internal_status = _enrich_with_internal(add)
+
+    return {
+        "summary": {
+            "categories": len(categories),
+            "total_findings": sum(c["count"] for c in categories),
+            "internal_enrichment": internal_status,
+        },
+        "findings": categories,
+    }
+
+
+def _enrich_with_internal(add) -> str:
+    """Fold internal-API findings into the report; returns a status string."""
+    try:
+        from src.internal_api import tools as internal
+        from src.internal_api.errors import InternalApiError
+    except ImportError:
+        return "skipped: internal extra not installed (uv sync --group internal)"
+
+    try:
+        # audit_views flags stale/empty/personal views base-wide.
+        audit = internal.audit_views()
+        flagged = [v for tbl in audit.get("tables", []) for v in tbl.get("views_flagged", [])]
+        add("flagged_views", flagged, "Stale sorts, empty, suspicious names, unfiltered duplicates (internal API).")
+
+        shares = internal.audit_shares()
+        exportable = [s for s in shares.get("shares", []) if s.get("can_be_exported")]
+        add("exportable_share_links", exportable, "Publicly exportable share links (internal API).")
+
+        autos = internal.list_automations(include_config=False)
+        undeployed = [a for sec in autos.get("sections", []) for a in sec.get("automations", []) if a.get("deployment_status") != "deployed"]
+        undeployed += [a for a in autos.get("ungrouped_automations", []) if a.get("deployment_status") != "deployed"]
+        add("undeployed_automations", undeployed, "Automations not currently deployed (internal API).")
+
+        unused = internal.find_unused_fields()
+        add("view_aware_unused_fields", unused.get("fields", []), "Multi-signal dead-field leads (internal API).")
+        return "included"
+    except InternalApiError as e:
+        return f"skipped: {e}"
+
+
 def get_schema() -> dict:
     """Return the full base schema: all tables with their fields and views."""
     base = _get_base()
@@ -1334,4 +1425,5 @@ PUBLIC_TOOLS = [
     dependency_graph_metrics,
     table_connectivity,
     formula_function_usage,
+    base_health_report,
 ]

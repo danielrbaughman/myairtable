@@ -164,3 +164,83 @@ def test_formula_function_usage(monkeypatch):
     assert by_fn["AND"]["count"] == 1
     # most_common ordering: IF first
     assert result["functions"][0]["name"] == "IF"
+
+
+def _stub_public_finders(monkeypatch):
+    """Make base_health_report's public aggregations return small canned data."""
+    monkeypatch.setattr(schema_tools, "find_dead_fields", lambda: [{"name": "X"}])
+    monkeypatch.setattr(schema_tools, "find_invalid_fields", lambda: [])
+    monkeypatch.setattr(
+        schema_tools, "find_circular_references", lambda: {"formula_circular_references": [{"f": 1}], "bidirectional_link_pairs": [1, 2]}
+    )
+    monkeypatch.setattr(schema_tools, "check_link_symmetry", lambda: [{"issue": 1}])
+    monkeypatch.setattr(schema_tools, "find_type_ambiguities", lambda: [])
+    monkeypatch.setattr(schema_tools, "analyze_type_consistency", lambda: [])
+    monkeypatch.setattr(
+        schema_tools,
+        "dependency_graph_metrics",
+        lambda top_n=25: {"rankings": {"most_central": [{"field": "T.A", "blast_radius": 99}, {"field": "T.B", "blast_radius": 3}]}},
+    )
+    monkeypatch.setattr(schema_tools, "table_connectivity", lambda: {"isolated_tables": ["Lonely"]})
+
+    class _T:
+        def __init__(self, name, n):
+            self.name = name
+            self.fields = list(range(n))
+
+    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, type("B", (), {"tables": [_T("Big", 150), _T("Small", 5)]})()))
+
+
+def test_base_health_report_public_only(monkeypatch):
+    _stub_public_finders(monkeypatch)
+
+    result = schema_tools.base_health_report()
+    cats = {c["category"]: c for c in result["findings"]}
+    assert cats["dead_fields"]["count"] == 1
+    # only formula cycles, not the (normal) bidirectional link pairs
+    assert cats["formula_circular_references"]["count"] == 1
+    # only blast radius >= threshold (25)
+    assert cats["high_blast_radius_fields"]["count"] == 1
+    assert cats["isolated_tables"]["items"] == [{"table": "Lonely"}]
+    assert cats["god_tables"]["items"] == [{"table": "Big", "field_count": 150}]
+    assert result["summary"]["internal_enrichment"].startswith("disabled")
+
+
+def test_base_health_report_internal_enrichment(monkeypatch):
+    _stub_public_finders(monkeypatch)
+
+    from src.internal_api import tools as internal
+
+    monkeypatch.setattr(internal, "audit_views", lambda: {"tables": [{"views_flagged": [{"v": 1}, {"v": 2}]}]})
+    monkeypatch.setattr(internal, "audit_shares", lambda: {"shares": [{"can_be_exported": True}, {"can_be_exported": False}]})
+    monkeypatch.setattr(
+        internal,
+        "list_automations",
+        lambda include_config=True: {"sections": [{"automations": [{"deployment_status": "undeployed"}]}], "ungrouped_automations": []},
+    )
+    monkeypatch.setattr(internal, "find_unused_fields", lambda: {"fields": [{"name": "U"}]})
+
+    result = schema_tools.base_health_report(include_internal=True)
+    cats = {c["category"]: c for c in result["findings"]}
+    assert result["summary"]["internal_enrichment"] == "included"
+    assert cats["flagged_views"]["count"] == 2
+    assert cats["exportable_share_links"]["count"] == 1  # only the exportable one
+    assert cats["undeployed_automations"]["count"] == 1
+    assert cats["view_aware_unused_fields"]["count"] == 1
+
+
+def test_base_health_report_enrichment_skips_without_session(monkeypatch):
+    _stub_public_finders(monkeypatch)
+
+    from src.internal_api import tools as internal
+    from src.internal_api.errors import InternalApiError
+
+    def no_session():
+        raise InternalApiError("no session")
+
+    monkeypatch.setattr(internal, "audit_views", no_session)
+
+    result = schema_tools.base_health_report(include_internal=True)
+    assert result["summary"]["internal_enrichment"].startswith("skipped")
+    cats = {c["category"] for c in result["findings"]}
+    assert "flagged_views" not in cats  # internal categories absent

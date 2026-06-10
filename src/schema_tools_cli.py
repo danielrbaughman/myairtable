@@ -320,6 +320,18 @@ def formula_function_usage_command(
         _fail(e)
 
 
+@tools_app.command("base-health-report")
+def base_health_report_command(
+    include_internal: Annotated[bool, Option("--include-internal", help="Add internal-API findings (slow: whole-base view scans)")] = False,
+    pretty: Annotated[bool, _PRETTY] = False,
+):
+    """One-call categorized roll-up of everything notable about the base."""
+    try:
+        _emit("base_health_report", schema_tools.base_health_report(include_internal), pretty)
+    except Exception as e:
+        _fail(e)
+
+
 @tools_app.command("compare-tables")
 def compare_tables_command(
     table_a: Annotated[str, Argument(help="First table name or ID")],
