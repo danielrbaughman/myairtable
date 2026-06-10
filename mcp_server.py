@@ -19,7 +19,7 @@ Provides 24 tools for exploring an Airtable base without modifying it:
 - **Dependencies**: trace_field_dependencies, reverse_dependencies, find_circular_references
 - **Validation**: find_invalid_fields, analyze_type_consistency, find_type_ambiguities
 - **Statistics**: base_stats, find_dead_fields, compare_tables, get_select_options
-- **Graph analysis**: dependency_graph_metrics (per-field blast radius / depth / centrality, base-wide)
+- **Graph analysis**: dependency_graph_metrics (per-field blast radius / depth / centrality, base-wide), table_connectivity (link graph: hubs, isolated/junction tables, cardinality)
 - **Visualization**: generate_schema_diagram (Mermaid ER diagram)
 - **Live view state** (internal API): get_view (full filter/sort/group/column config), get_view_sections (sidebar groupings)
 - **View analysis** (internal API): find_views_using_field (view-side complement of reverse_dependencies), count_records (per-view counts without downloading records), audit_views (hygiene report), find_unused_fields (multi-signal dead-field leads)

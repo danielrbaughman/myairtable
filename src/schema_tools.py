@@ -325,6 +325,117 @@ def dependency_graph_metrics(table_name: str = "", top_n: int = 20) -> dict:
     }
 
 
+def _cardinality(field_single: bool, inverse_single: bool, has_inverse: bool) -> str:
+    if not has_inverse:
+        return "unknown"
+    if field_single and inverse_single:
+        return "one-to-one"
+    if field_single or inverse_single:
+        return "one-to-many"
+    return "many-to-many"
+
+
+def table_connectivity() -> dict:
+    """Analyze the table link graph: connectivity, hubs, isolated and junction tables.
+
+    Per table: how many link fields it has, how many distinct tables it
+    connects to (degree), and inbound link count. Base-level: hub tables (most
+    connected), isolated tables (no links in or out), junction tables (a
+    two-link table with little else — a many-to-many join), and every
+    relationship with its inferred cardinality (one-to-one / one-to-many /
+    many-to-many). Quantifies what generate_schema_diagram only draws.
+    """
+    base = _get_base()
+
+    # Per-table aggregates
+    link_fields_by_table: dict[str, list] = {t.id: [] for t in base.tables}
+    connected: dict[str, set[str]] = {t.id: set() for t in base.tables}
+    inbound: dict[str, int] = {t.id: 0 for t in base.tables}
+
+    relationships: list[dict] = []
+    seen: set[str] = set()
+
+    for field in base.fields():
+        if field.type != "multipleRecordLinks":
+            continue
+        linked = field.linked_table()
+        if not linked:
+            continue
+        link_fields_by_table[field.table.id].append(field)
+        connected[field.table.id].add(linked.id)
+        if linked.id in connected:
+            connected[linked.id].add(field.table.id)
+            inbound[linked.id] += 1
+
+        if field.id in seen:
+            continue
+        seen.add(field.id)
+        inverse = None
+        if field.options and field.options.inverse_link_field_id:
+            inverse = base.field_by_id(field.options.inverse_link_field_id)
+            if inverse:
+                seen.add(inverse.id)
+        field_single = bool(field.options and field.options.prefers_single_record_link)
+        inverse_single = bool(inverse and inverse.options and inverse.options.prefers_single_record_link)
+        relationships.append(
+            {
+                "from_table": field.table.name,
+                "to_table": linked.name,
+                "from_field": field.name,
+                "to_field": inverse.name if inverse else None,
+                "cardinality": _cardinality(field_single, inverse_single, inverse is not None),
+            }
+        )
+
+    def _is_junction(table) -> bool:
+        links = link_fields_by_table[table.id]
+        if len(links) != 2 or len({lf.linked_table().id for lf in links if lf.linked_table()}) != 2:
+            return False
+        # few other fields: nothing but the primary + the two links + maybe a computed helper
+        others = [f for f in table.fields if f.id != table.primary_field_id and f.type != "multipleRecordLinks" and not f.is_computed()]
+        return len(others) <= 2
+
+    def _table_names(tids: set[str]) -> list[str]:
+        names = [base.table_by_id(tid) for tid in tids]
+        return sorted(t.name for t in names if t is not None)
+
+    tables = []
+    isolated = []
+    junctions = []
+    for t in base.tables:
+        degree = len(connected[t.id])
+        entry = {
+            "name": t.name,
+            "id": t.id,
+            "link_field_count": len(link_fields_by_table[t.id]),
+            "inbound_link_count": inbound[t.id],
+            "degree": degree,
+            "connected_tables": _table_names(connected[t.id]),
+        }
+        tables.append(entry)
+        if degree == 0:
+            isolated.append(t.name)
+        if _is_junction(t):
+            junctions.append({"name": t.name, "links_between": entry["connected_tables"]})
+
+    tables.sort(key=lambda e: e["degree"], reverse=True)
+
+    return {
+        "summary": {
+            "table_count": len(base.tables),
+            "total_link_fields": sum(len(v) for v in link_fields_by_table.values()),
+            "relationship_count": len(relationships),
+            "isolated_count": len(isolated),
+            "junction_count": len(junctions),
+        },
+        "hubs": [{"name": e["name"], "degree": e["degree"]} for e in tables[:10] if e["degree"] > 0],
+        "isolated_tables": sorted(isolated),
+        "junction_tables": junctions,
+        "relationships": relationships,
+        "tables": tables,
+    }
+
+
 def get_schema() -> dict:
     """Return the full base schema: all tables with their fields and views."""
     base = _get_base()
@@ -1177,4 +1288,5 @@ PUBLIC_TOOLS = [
     analyze_type_consistency,
     find_type_ambiguities,
     dependency_graph_metrics,
+    table_connectivity,
 ]

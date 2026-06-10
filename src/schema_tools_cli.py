@@ -299,6 +299,15 @@ def dependency_graph_metrics_command(
         _fail(e)
 
 
+@tools_app.command("table-connectivity")
+def table_connectivity_command(pretty: Annotated[bool, _PRETTY] = False):
+    """Table link graph: hubs, isolated tables, junctions, and relationship cardinality."""
+    try:
+        _emit("table_connectivity", schema_tools.table_connectivity(), pretty)
+    except Exception as e:
+        _fail(e)
+
+
 @tools_app.command("compare-tables")
 def compare_tables_command(
     table_a: Annotated[str, Argument(help="First table name or ID")],
