@@ -56,6 +56,24 @@ def register(mcp: Any) -> None:
             return _error_payload(e)
 
     @mcp.tool()
+    def count_records(table_name: str, view_name: str = "") -> dict:
+        """Count records per view (and the table total) WITHOUT downloading any record data.
+
+        Each view's count reflects its filters — effectively saved-query statistics the public
+        API cannot provide without paging through all records. total_is_exact is true when the
+        table has at least one unfiltered view; otherwise the total is a lower bound (max across
+        views). Optionally scope to one view via view_name.
+
+        Uses Airtable's internal (unofficial) API. Auto-authenticates from AIRTABLE_EMAIL /
+        AIRTABLE_PASSWORD in .env. On failure, returns {"error", "message"} — public-API tools
+        are unaffected.
+        """
+        try:
+            return tools.count_records(table_name, view_name or None)
+        except InternalApiError as e:
+            return _error_payload(e)
+
+    @mcp.tool()
     def get_view_sections(table_name: str = "") -> list[dict] | dict:
         """Get sidebar view sections (the named groups views are organized under in Airtable's sidebar) per table, with member views and ungrouped views in display order.
 

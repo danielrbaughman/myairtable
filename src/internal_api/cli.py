@@ -67,6 +67,23 @@ def find_views_using_field_command(
         _fail(e)
 
 
+@tools_app.command("count-records")
+def count_records_command(
+    table: Annotated[str, Argument(help="Table name (case-insensitive) or ID")],
+    view: Annotated[str, Argument(help="Optional view name or ID; all views if omitted")] = "",
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Record counts per view (and table total) without downloading records.
+
+    Counts reflect each view's filters — saved-query stats the public API
+    can't provide without paging. Internal (unofficial) API.
+    """
+    try:
+        _emit(tools.count_records(table, view or None), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
 @tools_app.command("get-view-sections")
 def get_view_sections_command(
     table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",

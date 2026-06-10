@@ -305,6 +305,85 @@ def test_find_views_using_field_unknown_field(fake_schema):
         tools.find_views_using_field("Contacts", "Nope")
 
 
+def _counting_responses():
+    """Grid A: filtered, 2 rows. Grid B: unfiltered, 5 rows. Cal: unfiltered, 3 rows."""
+    return {
+        "viwAAAAAAAAAAAAAA": {
+            **VIEW_READDATA,
+            "rowOrder": [{"rowId": "rec1", "visibility": True}, {"rowId": "rec2", "visibility": True}],
+        },
+        "viwBBBBBBBBBBBBBB": {
+            "id": "viwBBBBBBBBBBBBBB",
+            "type": "grid",
+            "filters": {"filterSet": [], "conjunction": "and"},
+            "columnOrder": [],
+            "rowOrder": [{"rowId": f"rec{i}", "visibility": True} for i in range(5)],
+        },
+        "viwCCCCCCCCCCCCCC": {
+            "id": "viwCCCCCCCCCCCCCC",
+            "type": "calendar",
+            "filters": None,
+            "columnOrder": [],
+            "rowOrder": [{"rowId": f"rec{i}", "visibility": True} for i in range(3)],
+        },
+    }
+
+
+def test_count_records_all_views(fake_schema, monkeypatch):
+    responses = _counting_responses()
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.count_records("Contacts")
+    assert result["total_records"] == 5  # max over unfiltered views (Grid B)
+    assert result["total_is_exact"] is True
+    by_name = {v["name"]: v for v in result["views"]}
+    assert by_name["Grid A"]["row_count"] == 2 and by_name["Grid A"]["is_filtered"] is True
+    assert by_name["Grid B"]["row_count"] == 5 and by_name["Grid B"]["is_filtered"] is False
+
+
+def test_count_records_single_view(fake_schema, monkeypatch):
+    responses = _counting_responses()
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.count_records("Contacts", "grid a")
+    assert result["row_count"] == 2
+    assert result["is_filtered"] is True
+    assert result["view"]["name"] == "Grid A"
+
+
+def test_count_records_total_lower_bound_when_all_filtered(fake_schema, monkeypatch):
+    responses = _counting_responses()
+    # make every view filtered
+    for r in responses.values():
+        r["filters"] = {
+            "filterSet": [{"id": "fltZZZZZZZZZZZZZZ", "columnId": "fldAAAAAAAAAAAAAA", "operator": "=", "value": 1}],
+            "conjunction": "and",
+        }
+
+    class MappedTransport:
+        def get(self, path, object_params=None, app_id=None):
+            return {"data": responses[path.split("/")[3]]}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    result = tools.count_records("Contacts")
+    assert result["total_records"] == 5
+    assert result["total_is_exact"] is False
+
+
 # --- ids ---------------------------------------------------------------------
 
 

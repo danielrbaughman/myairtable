@@ -259,6 +259,64 @@ def find_views_using_field(table: str, field: str) -> dict[str, Any]:
     return result
 
 
+def _has_active_filters(definition: ViewDefinition) -> bool:
+    return definition.filters is not None and len(definition.filters.filter_set) > 0
+
+
+def count_records(table: str, view: str | None = None) -> dict[str, Any]:
+    """Record counts from view rowOrder lengths — no record data is downloaded.
+
+    With a view: that view's count (records matching its filters). Without:
+    every view's count plus a table total. The total is exact when the table
+    has at least one unfiltered view (its rowOrder covers all records);
+    otherwise it is the max across views, a lower bound.
+    """
+    t = _find_table_views(table)
+
+    if view is not None:
+        view_id = _find_view(t, view)
+        d = _fetch_view_definition(t, view_id)
+        return {
+            "table_id": t.id,
+            "table_name": t.name,
+            "view": {"id": view_id, "name": d.name, "type": d.type},
+            "row_count": d.row_count,
+            "is_filtered": _has_active_filters(d),
+        }
+
+    definitions, scan_errors = get_all_view_definitions(t)
+    views = []
+    unfiltered_counts: list[int] = []
+    all_counts: list[int] = []
+    for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+        if d.row_count is None:
+            continue  # form views have no rowOrder
+        views.append(
+            {
+                "id": view_id,
+                "name": d.name,
+                "type": d.type,
+                "row_count": d.row_count,
+                "is_filtered": _has_active_filters(d),
+            }
+        )
+        all_counts.append(d.row_count)
+        if not _has_active_filters(d):
+            unfiltered_counts.append(d.row_count)
+
+    total = max(unfiltered_counts, default=None)
+    result: dict[str, Any] = {
+        "table_id": t.id,
+        "table_name": t.name,
+        "total_records": total if total is not None else max(all_counts, default=None),
+        "total_is_exact": total is not None,
+        "views": views,
+    }
+    if scan_errors:
+        result["scan_errors"] = scan_errors
+    return result
+
+
 def get_view_sections(table: str | None = None) -> list[dict[str, Any]]:
     """Sidebar view sections (groupings) per table, with the views each
     contains and any ungrouped views, in sidebar display order.
