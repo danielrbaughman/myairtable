@@ -286,6 +286,19 @@ def transpile_command(
         _fail(e)
 
 
+@tools_app.command("dependency-graph-metrics")
+def dependency_graph_metrics_command(
+    table: Annotated[str, Argument(help="Optional table name or ID to scope the field list")] = "",
+    top_n: Annotated[int, Option("--top-n", help="Entries per ranking")] = 20,
+    pretty: Annotated[bool, _PRETTY] = False,
+):
+    """Field blast radius, dependency depth, and centrality across the base."""
+    try:
+        _emit("dependency_graph_metrics", schema_tools.dependency_graph_metrics(table, top_n), pretty)
+    except Exception as e:
+        _fail(e)
+
+
 @tools_app.command("compare-tables")
 def compare_tables_command(
     table_a: Annotated[str, Argument(help="First table name or ID")],

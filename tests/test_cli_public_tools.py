@@ -14,33 +14,8 @@ from src import schema_tools
 
 runner = CliRunner()
 
-# kebab name -> snake function name (all 24 public tools)
-PUBLIC_COMMANDS = {
-    "get-schema": "get_schema",
-    "list-tables": "list_tables",
-    "describe-table": "describe_table",
-    "describe-field": "describe_field",
-    "search-fields": "search_fields",
-    "get-links": "get_links",
-    "get-lookups-and-rollups": "get_lookups_and_rollups",
-    "trace-field-dependencies": "trace_field_dependencies",
-    "get-formula": "get_formula",
-    "list-formula-fields": "list_formula_fields",
-    "flatten-formula": "flatten_formula",
-    "check-link-symmetry": "check_link_symmetry",
-    "find-invalid-fields": "find_invalid_fields",
-    "analyze-formula-complexity": "analyze_formula_complexity",
-    "transpile": "transpile",
-    "reverse-dependencies": "reverse_dependencies",
-    "find-circular-references": "find_circular_references",
-    "generate-schema-diagram": "generate_schema_diagram",
-    "base-stats": "base_stats",
-    "find-dead-fields": "find_dead_fields",
-    "compare-tables": "compare_tables",
-    "get-select-options": "get_select_options",
-    "analyze-type-consistency": "analyze_type_consistency",
-    "find-type-ambiguities": "find_type_ambiguities",
-}
+# Every public tool (schema_tools.PUBLIC_TOOLS) must have a kebab-case CLI command.
+PUBLIC_COMMANDS = {fn.__name__.replace("_", "-"): fn.__name__ for fn in schema_tools.PUBLIC_TOOLS}
 
 
 def test_all_public_commands_registered():
@@ -91,7 +66,8 @@ def test_mcp_still_exposes_all_tools():
     async def names():
         return sorted(t.name for t in await mcp_server.mcp.list_tools())
 
-    all_names = asyncio.run(names())
-    assert len(all_names) == 33
-    assert {fn for fn in PUBLIC_COMMANDS.values()} <= set(all_names)
-    assert {"get_view", "list_automations"} <= set(all_names)
+    all_names = set(asyncio.run(names()))
+    # every public tool registered, plus the 9 internal-API tools
+    assert {fn.__name__ for fn in schema_tools.PUBLIC_TOOLS} <= all_names
+    assert {"get_view", "list_automations"} <= all_names
+    assert len(all_names) == len(schema_tools.PUBLIC_TOOLS) + 9

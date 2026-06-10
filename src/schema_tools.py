@@ -240,6 +240,91 @@ class FieldDependencyGraph:
         return walk(field_id, ())
 
 
+def _field_label(field: Field) -> str:
+    return f"{field.table.name}.{field.name}"
+
+
+def dependency_graph_metrics(table_name: str = "", top_n: int = 20) -> dict:
+    """Base-wide field dependency-graph metrics: blast radius, depth, centrality.
+
+    For each field that participates in the dependency graph: fan_in (direct
+    dependents), fan_out (direct dependencies), blast_radius (transitive
+    dependents — everything that breaks if it changes), dependency_depth
+    (longest chain down to raw inputs), and in_cycle. Plus base-level rankings:
+    the most central fields (largest blast radius), the deepest dependency
+    chains, and the widest fan-out formulas.
+
+    Edges span tables (lookups/rollups reach into linked tables), so blast
+    radius is cross-table. Optionally scope the per-field list to one table
+    (rankings still consider the whole base).
+
+    Args:
+        table_name: Optional table name or ID to scope the field list.
+        top_n: How many entries to include in each ranking.
+    """
+    graph = FieldDependencyGraph(_get_base())
+    scoped_table = _find_table(table_name) if table_name else None
+    cycle_members = graph.cycle_members
+
+    def metrics(fid: str) -> dict:
+        field = graph.fields_by_id[fid]
+        return {
+            "id": fid,
+            "name": field.name,
+            "table": field.table.name,
+            "type": field.type,
+            "fan_in": len(graph.dependents[fid]),
+            "fan_out": len(graph.deps[fid]),
+            "blast_radius": len(graph.transitive_dependents(fid)),
+            "dependency_depth": graph.depth(fid),
+            "in_cycle": fid in cycle_members,
+        }
+
+    # Only fields that participate in the graph (have a dependency or a dependent).
+    participating = [fid for fid in graph.fields_by_id if graph.deps[fid] or graph.dependents[fid]]
+    all_metrics = [metrics(fid) for fid in participating]
+
+    def top(key: str) -> list[dict]:
+        return sorted(all_metrics, key=lambda m: m[key], reverse=True)[:top_n]
+
+    deepest = sorted(all_metrics, key=lambda m: m["dependency_depth"], reverse=True)[:top_n]
+    deepest_chains = [
+        {
+            "field": _field_label(graph.fields_by_id[m["id"]]),
+            "depth": m["dependency_depth"],
+            "chain": [_field_label(graph.fields_by_id[c]) for c in graph.longest_chain(m["id"])],
+        }
+        for m in deepest
+        if m["dependency_depth"] > 0
+    ]
+
+    in_scope = [m for m in all_metrics if scoped_table is None or m["table"] == scoped_table.name]
+    in_scope.sort(key=lambda m: m["blast_radius"], reverse=True)
+
+    return {
+        "summary": {
+            "fields_in_graph": len(all_metrics),
+            "fields_in_cycles": sum(1 for m in all_metrics if m["in_cycle"]),
+            "max_depth": max((m["dependency_depth"] for m in all_metrics), default=0),
+            "scoped_to": scoped_table.name if scoped_table else None,
+        },
+        "rankings": {
+            "most_central": [
+                {"field": _field_label(graph.fields_by_id[m["id"]]), "blast_radius": m["blast_radius"], "fan_in": m["fan_in"]}
+                for m in top("blast_radius")
+                if m["blast_radius"] > 0
+            ],
+            "deepest_chains": deepest_chains,
+            "widest_fan_out": [
+                {"field": _field_label(graph.fields_by_id[m["id"]]), "fan_out": m["fan_out"], "type": m["type"]}
+                for m in top("fan_out")
+                if m["fan_out"] > 0
+            ],
+        },
+        "fields": in_scope,
+    }
+
+
 def get_schema() -> dict:
     """Return the full base schema: all tables with their fields and views."""
     base = _get_base()
@@ -1091,4 +1176,5 @@ PUBLIC_TOOLS = [
     get_select_options,
     analyze_type_consistency,
     find_type_ambiguities,
+    dependency_graph_metrics,
 ]
