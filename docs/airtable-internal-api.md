@@ -21,6 +21,90 @@ This document covers two things:
 
 ---
 
+# Spike findings — verified against live traffic 2026-06-10
+
+We ran the POC spike (myairtable-oao6) against our own base. Everything below
+was observed directly; where it contradicts Part 1, **the spike wins**.
+
+## Q1 — Headless scripted login: WORKS, but only via Firefox
+
+- **PerimeterX protects the login page** (`_px*` cookies) and it specifically
+  detects Chromium automation. Vanilla Playwright Chromium, Patchright
+  Chromium, and Patchright + real Chrome (`channel="chrome"`) all got the
+  "Verify it's you" interstitial — **even headful**. The challenge never
+  self-resolves (its widget iframes stay `about:blank` under automation).
+- **Playwright Firefox (headless) gets the real login form** and completes
+  login. The detector appears to be Chromium-automation-specific.
+- Login-form quirks (all required):
+  - `fill()` does not enable the React submit button — use
+    `press_sequentially()` (real keystrokes).
+  - A **Transcend cookie-consent overlay** (`#transcend-shadow-root`)
+    intercepts pointer events on both form steps. Block it at the network
+    level (`ctx.route` on `*transcend*` → abort) and/or remove the element.
+  - The password-step submit button can stay disabled; **press Enter** in the
+    password field instead.
+  - Two-step form: email → Continue → password appears.
+- Login lands on `https://airtable.com/` and the session is immediately valid.
+
+## Q2 — httpx with extracted cookies: WORKS
+
+- Plain httpx with the Firefox session cookies + the §1.5 `x-` headers + a
+  matching Firefox User-Agent is **not blocked** by PerimeterX for `/v0.3/`
+  reads. No TLS impersonation needed. Transport choice **B confirmed**.
+- Use `Accept: application/json`. When a request includes heavy row data
+  (e.g. `application/read` with `includeDataForTableIds: ["tbl..."]`), the
+  server may respond with a **binary (msgpack-like) streaming format**
+  instead of JSON. Schema-only param shapes reliably return JSON. Avoid
+  requesting row data at all.
+
+## Q3 — Endpoint shapes: several divergences from Part 1
+
+- **`GET /v0.3/view/{viwId}/readData` exists** (not in Part 1) and is the
+  best endpoint for view definitions: returns the viewData object
+  **directly** under `data` (not wrapped in `viewDatas[]`), with
+  `stringifiedObjectParams={}`. No cell data — the only heavy key is
+  `rowOrder` (row IDs in view order; ~500 KB for a 5k-row table), which we
+  drop. **Use this for `get_view`.**
+- `application/{appId}/read` **requires** the two `may*` flags; omitting
+  them → `500 SERVER_ERROR` ("Worker responded with {errorCode}..."). Worked:
+  `{"includeDataForTableIds": [], "includeDataForViewIds": null,
+"shouldIncludeSchemaChecksum": false,
+"mayOnlyIncludeRowAndCellDataForIncludedViews": true,
+"mayExcludeCellDataForLargeViews": true}`.
+- The live web client sends `secretSocketId` (prefix `soc`) on read GETs,
+  but it is **not required** — reads succeed without it.
+- `getUserProperties` returns a flat feature-flag map
+  (`{"gemini":true,...}`), not `{ data: { userId } }`. Status-code probing
+  still works (200 vs 401/403).
+- viewData shape divergences:
+  - `lastSortsApplied` is `{ sortSet: [...], shouldAutoSort, appliedTime }` —
+    an object, **not** a bare array.
+  - Extra keys present: `rowOrder`, `sharesById`, `signedUserContentUrls`,
+    `applicationTransactionNumber`.
+  - `rowHeight` / `metadata` were absent on the views we sampled (likely
+    only present when non-default). Model them as optional.
+- `tableSchemas[i]` extra keys vs Part 1: `viewsById`, `columnSetById`,
+  `meaningfulColumnOrder`, `primaryColumnId`, `rowTemplatesById`, `rowUnit`,
+  `isHiddenFromSwitcher`, `dateDependencySettings`. `viewSectionsById` is
+  `{}` on a base with no sidebar sections.
+
+## Q4 — Session longevity: ~1 year
+
+- `__Host-airtable-session` expires **a year out** from login. Auto-login
+  will be rare.
+- Responses set rotating cookies (`AWSALBTG*`, `brw`, `mbpg`) — implement
+  cookie write-back to keep the jar fresh, but the session itself is
+  long-lived.
+
+## Implementation consequences
+
+- Login engine: **Playwright Firefox, headless** (`playwright install firefox`).
+  Patchright/Chromium not needed; msgpack not needed.
+- The spike's live session profile persists at `~/.myairtable/spike-profile-ff`
+  with storage state at `~/.myairtable/spike-state.json`.
+
+---
+
 # Part 1 — Internal API Reference
 
 ## 1. Auth & session model
