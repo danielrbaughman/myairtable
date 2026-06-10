@@ -29,8 +29,13 @@ Provides 24 tools for exploring an Airtable base without modifying it:
 - **Validation**: find_invalid_fields, analyze_type_consistency, find_type_ambiguities
 - **Statistics**: base_stats, find_dead_fields, compare_tables, get_select_options
 - **Visualization**: generate_schema_diagram (Mermaid ER diagram)
+- **Live view state** (internal API): get_view (full filter/sort/group/column config), get_view_sections (sidebar groupings)
 
-Tables and fields can be referenced by name (case-insensitive) or Airtable ID.\
+Tables and fields can be referenced by name (case-insensitive) or Airtable ID.
+
+The live-view-state tools use Airtable's internal (unofficial) API and auto-authenticate
+from AIRTABLE_EMAIL/AIRTABLE_PASSWORD in .env. If they fail, they return a structured
+error explaining how to fix it; all other tools are unaffected.\
 """,
 )
 
@@ -985,6 +990,19 @@ def find_type_ambiguities() -> list[dict]:
                     info["source_type"] = target.type
             ambiguous.append(info)
     return ambiguous
+
+
+# ---------------------------------------------------------------------------
+# Internal (unofficial) API tools — live view state.
+#
+# Everything below this line is backed by Airtable's PRIVATE v0.3 web-client
+# API (src/internal_api/), NOT the public meta API the tools above use. These
+# tools auto-authenticate and return structured errors on failure; they can
+# break without notice if Airtable changes the unofficial endpoints.
+# ---------------------------------------------------------------------------
+from src.internal_api.mcp_tools import register as _register_internal_api_tools  # noqa: E402
+
+_register_internal_api_tools(mcp)
 
 
 if __name__ == "__main__":

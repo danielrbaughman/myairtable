@@ -165,6 +165,25 @@ Add the following to your MCP client config (e.g. `claude_desktop_config.json` f
 
 If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
 
+## Live view state (internal API, optional)
+
+The `get_view` / `get_view_sections` MCP tools and the `myairtable tools ...` CLI commands
+return live view definitions (filters, sorts, grouping, column order/visibility) that the
+public meta API does not expose. They use Airtable's **internal, unofficial** web-client
+API — endpoints can break without notice; failures degrade to structured errors and never
+affect the public-API features above.
+
+Setup (opt-in):
+
+1. `uv sync --group internal && uv run playwright install firefox`
+2. Add `AIRTABLE_EMAIL` and `AIRTABLE_PASSWORD` to `.env` (email+password account, no 2FA).
+   ⚠️ This stores a real password, not a revocable token — use a dedicated account if possible.
+3. That's it — tools auto-authenticate via a scripted headless login and the session
+   persists (~1 year) at `~/.myairtable/internal-session.json`. `uv run main.py login --headful`
+   forces a fresh login with a visible browser for debugging.
+
+See `docs/airtable-internal-api.md` for the endpoint reference and spike findings.
+
 ## License
 
 [MIT](LICENSE)
