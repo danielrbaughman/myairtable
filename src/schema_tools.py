@@ -122,6 +122,124 @@ def _field_detail(field: Field) -> dict:
     return info
 
 
+# ---------------------------------------------------------------------------
+# Field dependency graph (shared substrate for the base-wide analysis tools).
+# ---------------------------------------------------------------------------
+
+
+class FieldDependencyGraph:
+    """The base-wide directed field dependency graph.
+
+    Node = field id. Edge X -> Y means X depends on Y (X references Y in a
+    formula, or X is a lookup/rollup/count over Y via a link). Edges come from
+    the canonical `Field.referenced_fields()` accessor (the same one
+    reverse_dependencies / trace_field_dependencies use), so they span tables
+    wherever a lookup/rollup reaches into a linked table.
+
+    The graph can contain cycles (that's what find_circular_references detects),
+    so every traversal here is cycle-safe.
+    """
+
+    def __init__(self, base: Base):
+        self.base = base
+        self.deps: dict[str, set[str]] = {}  # field id -> ids it depends on
+        self.dependents: dict[str, set[str]] = {}  # field id -> ids that depend on it
+        self.fields_by_id: dict[str, Field] = {}
+
+        for field in base.fields():
+            self.fields_by_id[field.id] = field
+            self.deps.setdefault(field.id, set())
+            self.dependents.setdefault(field.id, set())
+
+        for field in base.fields():
+            for ref in field.referenced_fields():
+                if ref.id == field.id or ref.id not in self.fields_by_id:
+                    continue
+                self.deps[field.id].add(ref.id)
+                self.dependents[ref.id].add(field.id)
+
+        self._closure_cache: dict[tuple[str, bool], set[str]] = {}
+        self._cycle_members: set[str] | None = None
+
+    def _transitive(self, start: str, adjacency: dict[str, set[str]], downstream: bool) -> set[str]:
+        key = (start, downstream)
+        if key in self._closure_cache:
+            return self._closure_cache[key]
+        seen: set[str] = set()
+        stack = list(adjacency.get(start, ()))
+        while stack:
+            nid = stack.pop()
+            if nid in seen or nid == start:
+                continue
+            seen.add(nid)
+            stack.extend(adjacency.get(nid, ()))
+        self._closure_cache[key] = seen
+        return seen
+
+    def transitive_dependents(self, field_id: str) -> set[str]:
+        """All fields affected (directly or transitively) if `field_id` changes — blast radius."""
+        return self._transitive(field_id, self.dependents, downstream=False)
+
+    def transitive_dependencies(self, field_id: str) -> set[str]:
+        """All fields `field_id` derives from, directly or transitively."""
+        return self._transitive(field_id, self.deps, downstream=True)
+
+    def _reaches_self(self, field_id: str) -> bool:
+        stack = list(self.deps.get(field_id, ()))
+        seen: set[str] = set()
+        while stack:
+            nid = stack.pop()
+            if nid == field_id:
+                return True
+            if nid in seen:
+                continue
+            seen.add(nid)
+            stack.extend(self.deps.get(nid, ()))
+        return False
+
+    @property
+    def cycle_members(self) -> set[str]:
+        """Fields that participate in a dependency cycle (reachable from themselves)."""
+        if self._cycle_members is None:
+            self._cycle_members = {fid for fid in self.fields_by_id if self._reaches_self(fid)}
+        return self._cycle_members
+
+    def depth(self, field_id: str) -> int:
+        """Longest dependency chain below `field_id` (edges to raw inputs).
+
+        Path-guarded so cycles terminate; the cycle-closing edge contributes no
+        depth. For fields inside a cycle this is a lower-bound heuristic — use
+        `cycle_members` to know which those are.
+        """
+
+        def walk(fid: str, on_path: frozenset[str]) -> int:
+            extended = on_path | {fid}
+            best = 0
+            for dep in self.deps.get(fid, ()):
+                if dep in extended:  # cycle-closing edge contributes nothing
+                    continue
+                best = max(best, 1 + walk(dep, extended))
+            return best
+
+        return walk(field_id, frozenset())
+
+    def longest_chain(self, field_id: str) -> list[str]:
+        """The actual longest dependency path (field ids) below `field_id`."""
+
+        def walk(fid: str, on_path: tuple[str, ...]) -> list[str]:
+            extended = on_path + (fid,)
+            longest: list[str] = []
+            for dep in self.deps.get(fid, ()):
+                if dep in extended:  # cycle-closing edge — stop
+                    continue
+                sub = walk(dep, extended)
+                if len(sub) > len(longest):
+                    longest = sub
+            return [fid, *longest]
+
+        return walk(field_id, ())
+
+
 def get_schema() -> dict:
     """Return the full base schema: all tables with their fields and views."""
     base = _get_base()
