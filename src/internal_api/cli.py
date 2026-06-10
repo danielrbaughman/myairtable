@@ -17,11 +17,26 @@ from typer import Argument, Exit, Option, Typer
 
 from . import tools
 from .errors import InternalApiError
+from .result_store import offload
 
 tools_app = Typer(help="Schema tools (CLI mirrors of the MCP tools). Internal-API backed commands auto-authenticate from .env.")
 
+_save_state = {"on": False}
 
-def _emit(result: Any, pretty: bool) -> None:
+
+@tools_app.callback()
+def _tools_callback(
+    save: Annotated[
+        bool, Option("--save", help="Offload large results to .data/internal_api/ and print the envelope (mirrors the MCP server)")
+    ] = False,
+):
+    """Internal-API schema tools."""
+    _save_state["on"] = save
+
+
+def _emit(tool_name: str, result: Any, pretty: bool) -> None:
+    if _save_state["on"]:
+        result = offload(tool_name, None, result)
     if pretty:
         rich_print(result)
     else:
@@ -45,7 +60,7 @@ def get_view_command(
     AIRTABLE_EMAIL / AIRTABLE_PASSWORD in .env.
     """
     try:
-        _emit(tools.get_view(table, view), pretty)
+        _emit("get_view", tools.get_view(table, view), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -62,7 +77,7 @@ def find_views_using_field_command(
     table (one request per uncached view). Internal (unofficial) API.
     """
     try:
-        _emit(tools.find_views_using_field(table, field), pretty)
+        _emit("find_views_using_field", tools.find_views_using_field(table, field), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -79,7 +94,7 @@ def count_records_command(
     can't provide without paging. Internal (unofficial) API.
     """
     try:
-        _emit(tools.count_records(table, view or None), pretty)
+        _emit("count_records", tools.count_records(table, view or None), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -97,7 +112,7 @@ def audit_views_command(
     cold cache. Internal (unofficial) API.
     """
     try:
-        _emit(tools.audit_views(table or None, stale_sort_months=stale_sort_months), pretty)
+        _emit("audit_views", tools.audit_views(table or None, stale_sort_months=stale_sort_months), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -114,7 +129,7 @@ def find_unused_fields_command(
     A lead-generator with explicit caveats, not a deletion verdict.
     """
     try:
-        _emit(tools.find_unused_fields(table or None, min_signals=min_signals), pretty)
+        _emit("find_unused_fields", tools.find_unused_fields(table or None, min_signals=min_signals), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -130,7 +145,7 @@ def audit_shares_command(
     Whole-base scans are one request per uncached view. Internal (unofficial) API.
     """
     try:
-        _emit(tools.audit_shares(table or None), pretty)
+        _emit("audit_shares", tools.audit_shares(table or None), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -145,7 +160,7 @@ def list_interfaces_command(
     (single cached schema call).
     """
     try:
-        _emit(tools.list_interfaces(), pretty)
+        _emit("list_interfaces", tools.list_interfaces(), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -162,7 +177,7 @@ def list_automations_command(
     (concurrent); --no-config for a fast inventory. Internal (unofficial) API.
     """
     try:
-        _emit(tools.list_automations(workflow or None, include_config=not no_config), pretty)
+        _emit("list_automations", tools.list_automations(workflow or None, include_config=not no_config), pretty)
     except InternalApiError as e:
         _fail(e)
 
@@ -178,7 +193,7 @@ def get_view_sections_command(
     AIRTABLE_EMAIL / AIRTABLE_PASSWORD in .env.
     """
     try:
-        _emit(tools.get_view_sections(table or None), pretty)
+        _emit("get_view_sections", tools.get_view_sections(table or None), pretty)
     except InternalApiError as e:
         _fail(e)
 
