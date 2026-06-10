@@ -165,6 +165,23 @@ Add the following to your MCP client config (e.g. `claude_desktop_config.json` f
 
 If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
 
+### Tools on the CLI
+
+Every MCP tool is also a CLI subcommand under `myairtable tools` — handy for scripting,
+piping to `jq`, or testing without an MCP client:
+
+```bash
+uv run main.py tools list-tables            # public meta-API tools
+uv run main.py tools transpile Jobs "Total" --language python
+uv run main.py tools get-view Contacts "Active"   # internal-API tools
+uv run main.py tools --help                 # list all commands
+```
+
+Output is JSON by default (`--pretty` for rich rendering). Add `--save` (before the
+subcommand) to offload large results to `.data/internal_api/` and print the envelope,
+mirroring the MCP server. The same `schema_tools.py` / internal `tools.py` functions back
+both the MCP tools and these commands.
+
 ## Live view state (internal API, optional)
 
 The `get_view` / `get_view_sections` MCP tools and the `myairtable tools ...` CLI commands
