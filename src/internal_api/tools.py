@@ -455,7 +455,8 @@ def audit_views(table: str | None = None, stale_sort_months: int = 6) -> dict[st
 
 
 _UNUSED_FIELD_CAVEATS = [
-    "Usage by automations, interfaces, sync targets, and external API consumers is NOT visible to this analysis.",
+    "Automation usage IS checked: a candidate with automation_references is a live dependency despite its unused signals — do not delete it.",
+    "Usage by interfaces, sync targets, and external API consumers is still NOT visible to this analysis.",
     "Signals are independent evidence, not a deletion verdict — verify before removing anything.",
     "Computed fields (formula/lookup/rollup/count) and linked-record fields are excluded: they are consumers or structural.",
 ]
@@ -502,15 +503,18 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
     """Candidate-unused fields, combining public-API formula analysis with
     internal-API view usage.
 
-    Three independent signals per field:
+    Four independent signals per field:
     - no_formula_references (public meta API): not referenced by any formula,
       lookup, rollup, or link configuration anywhere in the base
     - hidden_in_all_views (internal): present in view columnOrders but visible
       in none
     - not_in_view_config (internal): used by no view filter/sort/group/color
+    - not_referenced_by_automations (internal): no automation's trigger or
+      action references the field
 
-    Fields reaching min_signals are reported with all evidence. This is a
-    lead-generator, not a verdict — see the caveats in the output.
+    Fields reaching min_signals are reported with all evidence. A reported
+    field that nonetheless carries `automation_references` is a LIVE
+    dependency — do not delete it. This is a lead-generator, not a verdict.
     """
     from src.meta import Base
 
@@ -529,6 +533,16 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
     public_fields_by_table_id = {t.id: t.fields for t in base.tables}
 
     internal_tables = [_find_table_views(table)] if table else _read_table_views()
+
+    # Automation reference index is base-wide. If it can't be read, skip the
+    # automation signal entirely (don't risk a false "unused" claim) and note it.
+    automation_fields: dict[str, list[dict[str, Any]]] | None
+    automation_index_error: str | None = None
+    try:
+        automation_fields = _automation_reference_index().fields
+    except InternalApiError as e:
+        automation_fields = None
+        automation_index_error = str(e)
 
     reported: list[dict[str, Any]] = []
     fields_scanned = 0
@@ -550,6 +564,7 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
             fields_scanned += 1
 
             u = usage.get(field.id, {"present_in": 0, "visible_in": 0, "config_uses": 0})
+            automation_refs = automation_fields.get(field.id, []) if automation_fields is not None else []
             signals: list[str] = []
             if field.id not in referenced_ids:
                 signals.append("no_formula_references")
@@ -557,30 +572,37 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
                 signals.append("hidden_in_all_views")
             if u["config_uses"] == 0:
                 signals.append("not_in_view_config")
+            if automation_fields is not None and not automation_refs:
+                signals.append("not_referenced_by_automations")
 
             if len(signals) >= min_signals:
-                reported.append(
-                    {
-                        "table_id": t.id,
-                        "table_name": t.name,
-                        "id": field.id,
-                        "name": field.name,
-                        "type": field.type,
-                        "signals": signals,
-                        "evidence": {
-                            "visible_in_views": u["visible_in"],
-                            "present_in_views": u["present_in"],
-                            "view_config_uses": u["config_uses"],
-                        },
-                    }
-                )
+                entry: dict[str, Any] = {
+                    "table_id": t.id,
+                    "table_name": t.name,
+                    "id": field.id,
+                    "name": field.name,
+                    "type": field.type,
+                    "signals": signals,
+                    "evidence": {
+                        "visible_in_views": u["visible_in"],
+                        "present_in_views": u["present_in"],
+                        "view_config_uses": u["config_uses"],
+                        "automation_uses": len(automation_refs),
+                    },
+                }
+                if automation_refs:
+                    # Live automation dependency despite the unused signals — surface loudly.
+                    entry["automation_references"] = automation_refs
+                reported.append(entry)
 
-    reported.sort(key=lambda f: (-len(f["signals"]), f["table_name"], f["name"]))
+    # Live automation dependencies sort last within a signal tier (least safe).
+    reported.sort(key=lambda f: (-len(f["signals"]), bool(f.get("automation_references")), f["table_name"], f["name"]))
     result: dict[str, Any] = {
         "summary": {
             "tables_scanned": len(internal_tables),
             "fields_scanned": fields_scanned,
             "fields_reported": len(reported),
+            "fields_reported_with_automation_dependency": sum(1 for f in reported if f.get("automation_references")),
             "min_signals": min_signals,
         },
         "fields": reported,
@@ -588,6 +610,8 @@ def find_unused_fields(table: str | None = None, min_signals: int = 2) -> dict[s
     }
     if all_scan_errors:
         result["scan_errors"] = all_scan_errors
+    if automation_index_error:
+        result["automation_index_error"] = automation_index_error
     return result
 
 

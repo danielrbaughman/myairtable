@@ -510,6 +510,12 @@ class _FakePublicTable:
         self.fields = fields
 
 
+def _patch_automation_index(monkeypatch, fields_index=None):
+    """Patch _automation_reference_index to a synthetic index (default: empty)."""
+    index = tools.AutomationReferenceIndex(fields=fields_index or {}, tables={}, errors={})
+    monkeypatch.setattr(tools, "_automation_reference_index", lambda force_refresh=False: index)
+
+
 def test_find_unused_fields(fake_schema, monkeypatch):
     fields = [
         _FakePublicField("fldAAAAAAAAAAAAAA", "Name"),  # primary -> skipped
@@ -524,22 +530,67 @@ def test_find_unused_fields(fake_schema, monkeypatch):
     fake = FakeTransport({"data": VIEW_READDATA})
     monkeypatch.setattr(tools, "_get_transport", lambda: fake)
     monkeypatch.setattr(tools, "_view_cache", {})
+    # No automations reference any of these fields -> every field gains the
+    # not_referenced_by_automations signal.
+    _patch_automation_index(monkeypatch)
 
     result = tools.find_unused_fields("Contacts")
     assert result["summary"]["fields_scanned"] == 3  # primary + computed excluded
     by_name = {f["name"]: f for f in result["fields"]}
 
-    # Status: hidden in the view, no formula refs, but IS in a nested filter
-    # (the fake transport serves the same viewData for all 3 views -> 3 uses)
-    assert sorted(by_name["Status"]["signals"]) == ["hidden_in_all_views", "no_formula_references"]
+    # Status: hidden in the view, no formula refs, in a nested filter, no automation use
+    assert sorted(by_name["Status"]["signals"]) == ["hidden_in_all_views", "no_formula_references", "not_referenced_by_automations"]
     assert by_name["Status"]["evidence"]["view_config_uses"] == 3
+    assert by_name["Status"]["evidence"]["automation_uses"] == 0
 
-    # Notes: unreferenced + in no view config (not present in any columnOrder)
-    assert sorted(by_name["Notes"]["signals"]) == ["no_formula_references", "not_in_view_config"]
+    # Notes: unreferenced + not in view config + no automation use
+    assert sorted(by_name["Notes"]["signals"]) == ["no_formula_references", "not_in_view_config", "not_referenced_by_automations"]
 
-    # Amount: referenced by the Calc formula -> 1 signal only, below min_signals=2
-    assert "Amount" not in by_name
+    # Amount: formula-referenced -> only 2 signals now (view config + automations),
+    # which still meets min_signals=2, so it IS reported (no longer below threshold).
+    assert sorted(by_name["Amount"]["signals"]) == ["not_in_view_config", "not_referenced_by_automations"]
     assert result["caveats"]
+
+
+def test_find_unused_fields_automation_dependency_flagged(fake_schema, monkeypatch):
+    """A field used only by an automation is reported (other signals fire) but
+    carries automation_references and is NOT suppressed — option (a)."""
+    fields = [_FakePublicField("fldDDDDDDDDDDDDDD", "Notes")]  # absent from views, unreferenced
+    fake_base = _FakePublicBase([_FakePublicTable("tblAAAAAAAAAAAAAA", fields)])
+    monkeypatch.setattr("src.meta.Base", lambda: fake_base)
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+    _patch_automation_index(
+        monkeypatch,
+        {"fldDDDDDDDDDDDDDD": [{"automation_id": "wflZ", "automation_name": "Notify", "deployment_status": "deployed", "where": "action"}]},
+    )
+
+    result = tools.find_unused_fields("Contacts")
+    [field] = result["fields"]
+    # automation usage means the not_referenced_by_automations signal does NOT fire
+    assert "not_referenced_by_automations" not in field["signals"]
+    assert sorted(field["signals"]) == ["no_formula_references", "not_in_view_config"]
+    assert field["automation_references"][0]["automation_name"] == "Notify"
+    assert result["summary"]["fields_reported_with_automation_dependency"] == 1
+
+
+def test_find_unused_fields_index_unavailable_skips_signal(fake_schema, monkeypatch):
+    """If the automation index can't be read, skip the signal (no false 'unused')."""
+    fields = [_FakePublicField("fldDDDDDDDDDDDDDD", "Notes")]
+    fake_base = _FakePublicBase([_FakePublicTable("tblAAAAAAAAAAAAAA", fields)])
+    monkeypatch.setattr("src.meta.Base", lambda: fake_base)
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    def boom(force_refresh=False):
+        raise InternalApiError("listWorkflows unavailable")
+
+    monkeypatch.setattr(tools, "_automation_reference_index", boom)
+
+    result = tools.find_unused_fields("Contacts")
+    [field] = result["fields"]
+    assert "not_referenced_by_automations" not in field["signals"]
+    assert "automation_index_error" in result
 
 
 def test_find_unused_fields_min_signals_one(fake_schema, monkeypatch):
@@ -548,10 +599,11 @@ def test_find_unused_fields_min_signals_one(fake_schema, monkeypatch):
     monkeypatch.setattr("src.meta.Base", lambda: fake_base)
     monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
     monkeypatch.setattr(tools, "_view_cache", {})
+    _patch_automation_index(monkeypatch)
 
     result = tools.find_unused_fields("Contacts", min_signals=1)
-    [field] = result["fields"]
-    assert field["name"] == "Amount"
+    by_name = {f["name"]: f for f in result["fields"]}
+    assert "Amount" in by_name
 
 
 BASE_SHARE = {
