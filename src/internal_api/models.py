@@ -18,7 +18,7 @@ parse failures surface as EndpointShapeChangedError, not ValidationError.
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from pydantic.alias_generators import to_camel
 
 from .errors import EndpointShapeChangedError
@@ -97,6 +97,20 @@ class ViewDefinition(_InternalModel):
     frozen_column_count: int | None = None
     color_config: dict[str, Any] | None = None
     row_height: str | None = None  # absent when default
+    # Derived: len(rowOrder) captured before the heavy key is discarded.
+    # The number of records the view's filters currently match.
+    row_count: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _capture_row_count(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "rowCount" not in values and "row_count" not in values:
+            row_order = values.get("rowOrder")
+            if isinstance(row_order, list):
+                # entries are {rowId, visibility}; count visible only
+                visible = sum(1 for e in row_order if not isinstance(e, dict) or e.get("visibility", True))
+                values = {**values, "rowCount": visible}
+        return values
 
 
 class ViewInfo(_InternalModel):
@@ -120,8 +134,17 @@ class ViewSection(_InternalModel):
     created_by_user_id: str | None = None
 
 
+class ColumnInfo(_InternalModel):
+    """Static column (field) metadata from tableSchemas[].columns."""
+
+    id: str
+    name: str
+    type: str
+    description: str | None = None
+
+
 class TableViews(_InternalModel):
-    """The view-related slice of a tableSchema from application/read.
+    """The view/column slice of a tableSchema from application/read.
 
     `view_order` interleaves viw... and vsc... IDs in sidebar display order.
     """
@@ -131,6 +154,8 @@ class TableViews(_InternalModel):
     views: list[ViewInfo] = []
     view_order: list[str] = []
     view_sections_by_id: dict[str, ViewSection] = {}
+    columns: list[ColumnInfo] = []
+    primary_column_id: str | None = None
 
 
 def parse_view_definition(data: dict[str, Any]) -> ViewDefinition:

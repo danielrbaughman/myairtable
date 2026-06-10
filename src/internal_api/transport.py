@@ -17,6 +17,7 @@ not change.
 """
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -57,18 +58,26 @@ class InternalApiTransport:
         self._client: httpx.Client | None = None
         self._state: dict[str, Any] | None = None
         self._timezone = _local_timezone()
+        # get() is called concurrently by the view-fetching layer; httpx.Client
+        # is thread-safe for requests, but session (re)builds and cookie
+        # write-back are not — guard them.
+        self._session_lock = threading.Lock()
+        self._cookie_lock = threading.Lock()
 
     # -- session ---------------------------------------------------------
 
     def _ensure_client(self) -> httpx.Client:
         if self._client is not None:
             return self._client
-        state = load_state()
-        if state is None:
-            state = login(headless=True)  # raises NotAuthenticatedError / LoginFailedError
-        self._state = state
-        self._client = self._build_client(state)
-        return self._client
+        with self._session_lock:
+            if self._client is not None:  # another thread won the race
+                return self._client
+            state = load_state()
+            if state is None:
+                state = login(headless=True)  # raises NotAuthenticatedError / LoginFailedError
+            self._state = state
+            self._client = self._build_client(state)
+            return self._client
 
     def _build_client(self, state: dict[str, Any]) -> httpx.Client:
         cookies = httpx.Cookies()
@@ -85,19 +94,31 @@ class InternalApiTransport:
         }
         return httpx.Client(base_url=_BASE_URL, cookies=cookies, headers=headers, timeout=60)
 
-    def _relogin(self) -> None:
-        """Session went stale server-side: force a fresh scripted login."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-        state = login(headless=True)
-        self._state = state
-        self._client = self._build_client(state)
+    def _relogin(self, stale_client: httpx.Client) -> None:
+        """Session went stale server-side: force a fresh scripted login.
+
+        Concurrent threads that hit 401 with the same stale client only
+        trigger one login — later arrivals see the already-swapped client.
+        """
+        with self._session_lock:
+            if self._client is not None and self._client is not stale_client:
+                return  # another thread already re-logged-in
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+            state = login(headless=True)
+            self._state = state
+            self._client = self._build_client(state)
 
     def _write_back_cookies(self, client: httpx.Client) -> None:
         """Persist rotated cookies (AWSALBTG*, brw, mbpg, ...) so the jar stays fresh."""
         if self._state is None:
             return
+        with self._cookie_lock:
+            self._write_back_cookies_locked(client)
+
+    def _write_back_cookies_locked(self, client: httpx.Client) -> None:
+        assert self._state is not None
         by_name = {(c["name"], c.get("domain", "")): c for c in self._state["cookies"]}
         for jar_cookie in client.cookies.jar:
             key = (jar_cookie.name, jar_cookie.domain or "")
@@ -147,7 +168,7 @@ class InternalApiTransport:
 
             if response.status_code in (401, 403) and not relogged_in:
                 relogged_in = True
-                self._relogin()
+                self._relogin(client)
                 client = self._client
                 assert client is not None
                 continue

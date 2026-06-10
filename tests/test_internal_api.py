@@ -72,8 +72,12 @@ TABLE_SCHEMA = {
             "pinnedForUserId": None,
         }
     },
-    # observed extras we ignore
+    "columns": [
+        {"id": "fldAAAAAAAAAAAAAA", "name": "Name", "type": "text"},
+        {"id": "fldBBBBBBBBBBBBBB", "name": "Status", "type": "select", "description": "stage"},
+    ],
     "primaryColumnId": "fldAAAAAAAAAAAAAA",
+    # observed extras we ignore
     "meaningfulColumnOrder": [],
 }
 
@@ -108,6 +112,24 @@ def test_parse_view_definition_dump_excludes_observed_extras():
     assert "sharesById" not in dumped and "shares_by_id" not in dumped
 
 
+def test_row_count_captured_from_row_order():
+    d = parse_view_definition(VIEW_READDATA)
+    assert d.row_count == 1  # one entry in fixture rowOrder
+
+    visible_mix = {
+        **VIEW_READDATA,
+        "rowOrder": [
+            {"rowId": "recAAAAAAAAAAAAAA", "visibility": True},
+            {"rowId": "recBBBBBBBBBBBBBB", "visibility": False},
+            {"rowId": "recCCCCCCCCCCCCCC", "visibility": True},
+        ],
+    }
+    assert parse_view_definition(visible_mix).row_count == 2
+
+    no_row_order = {k: v for k, v in VIEW_READDATA.items() if k != "rowOrder"}
+    assert parse_view_definition(no_row_order).row_count is None
+
+
 def test_parse_view_definition_shape_change_raises():
     with pytest.raises(EndpointShapeChangedError):
         parse_view_definition({"filters": "not-a-view"})
@@ -118,6 +140,11 @@ def test_parse_table_views():
     assert t.name == "Contacts"
     assert [v.name for v in t.views] == ["Grid A", "Grid B", "Cal"]
     assert t.view_sections_by_id["vscAAAAAAAAAAAAAA"].view_order == ["viwAAAAAAAAAAAAAA", "viwBBBBBBBBBBBBBB"]
+    assert [(c.id, c.name, c.type) for c in t.columns] == [
+        ("fldAAAAAAAAAAAAAA", "Name", "text"),
+        ("fldBBBBBBBBBBBBBB", "Status", "select"),
+    ]
+    assert t.primary_column_id == "fldAAAAAAAAAAAAAA"
 
 
 # --- tools (transport monkeypatched) ----------------------------------------
@@ -169,6 +196,43 @@ def test_get_view_unknown_table_lists_available(fake_schema):
 def test_get_view_unknown_view_lists_available(fake_schema):
     with pytest.raises(InternalApiError, match="Available views: Grid A, Grid B, Cal"):
         tools.get_view("Contacts", "Nope")
+
+
+def test_get_all_view_definitions_collects_errors(fake_schema, monkeypatch):
+    """One view 403s -> scan still returns the other definitions plus the error."""
+
+    class PartialTransport:
+        def get(self, path, object_params=None, app_id=None):
+            if "viwBBBBBBBBBBBBBB" in path:
+                raise InternalApiError("simulated failure")
+            return {"data": {**VIEW_READDATA, "id": path.split("/")[3]}}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: PartialTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    [table] = fake_schema
+    definitions, errors = tools.get_all_view_definitions(table)
+    assert set(definitions) == {"viwAAAAAAAAAAAAAA", "viwCCCCCCCCCCCCCC"}
+    assert definitions["viwAAAAAAAAAAAAAA"].name == "Grid A"  # name attached from schema
+    assert list(errors) == ["viwBBBBBBBBBBBBBB"]
+    assert "simulated failure" in errors["viwBBBBBBBBBBBBBB"]
+
+
+def test_fetch_view_definition_uses_cache(fake_schema, monkeypatch):
+    calls = []
+
+    class CountingTransport:
+        def get(self, path, object_params=None, app_id=None):
+            calls.append(path)
+            return {"data": VIEW_READDATA}
+
+    monkeypatch.setattr(tools, "_get_transport", lambda: CountingTransport())
+    monkeypatch.setattr(tools, "_view_cache", {})
+
+    [table] = fake_schema
+    tools._fetch_view_definition(table, "viwAAAAAAAAAAAAAA")
+    tools._fetch_view_definition(table, "viwAAAAAAAAAAAAAA")
+    assert len(calls) == 1  # second call served from cache
 
 
 def test_get_view_sections_assembly(fake_schema):

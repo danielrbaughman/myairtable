@@ -9,6 +9,7 @@ subclasses on failure (adapters convert those to structured error output).
 """
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from src.meta import get_base_id
@@ -22,8 +23,15 @@ from .transport import InternalApiTransport
 # changes between consecutive tool calls, so cache briefly.
 _SCHEMA_CACHE_TTL_SECONDS = 30.0
 
+# Per-view definitions: there is NO batch endpoint (includeDataForViewIds is
+# single-view only — see docs, "Investigation 2026-06-10"), so all-views scans
+# are one GET per view. Cache longer than the schema and fetch concurrently.
+_VIEW_CACHE_TTL_SECONDS = 120.0
+_FETCH_CONCURRENCY = 6
+
 _transport: InternalApiTransport | None = None
 _schema_cache: tuple[float, list[TableViews]] | None = None
+_view_cache: dict[str, tuple[float, ViewDefinition]] = {}
 
 
 def _get_transport() -> InternalApiTransport:
@@ -81,20 +89,19 @@ def _find_view(table_views: TableViews, view: str) -> str:
     raise InternalApiError(f"View '{view}' not found in table '{table_views.name}'. Available views: {available}")
 
 
-def get_view(table: str, view: str) -> dict[str, Any]:
-    """Full live definition of a view: filters, sorts, grouping, column
-    order/visibility, frozen columns, color config, row height.
+def _fetch_view_definition(table_views: TableViews, view_id: str) -> ViewDefinition:
+    """One view's definition via view/{viwId}/readData, with TTL cache.
 
-    Table and view can be referenced by name (case-insensitive) or ID.
-    Uses GET /v0.3/view/{viwId}/readData (spike-discovered endpoint that
-    returns the view definition without any cell data).
+    Name/description are attached from the schema (readData omits them).
     """
-    table_views = _find_table_views(table)
-    view_id = validate_airtable_id(_find_view(table_views, view))
-    base_id = validate_airtable_id(get_base_id())
+    now = time.monotonic()
+    cached = _view_cache.get(view_id)
+    if cached is not None and now - cached[0] < _VIEW_CACHE_TTL_SECONDS:
+        return cached[1]
 
+    base_id = validate_airtable_id(get_base_id())
     payload = _get_transport().get(
-        f"/v0.3/view/{view_id}/readData",
+        f"/v0.3/view/{validate_airtable_id(view_id)}/readData",
         object_params={},
         app_id=base_id,
     )
@@ -102,12 +109,50 @@ def get_view(table: str, view: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise InternalApiError(f"view/{view_id}/readData response has no data object.")
 
-    definition: ViewDefinition = parse_view_definition(data)
-    # readData does not include the name; attach it from the schema
-    info = next(v for v in table_views.views if v.id == view_id)
-    definition.name = info.name
-    if definition.description is None:
-        definition.description = info.description
+    definition = parse_view_definition(data)
+    info = next((v for v in table_views.views if v.id == view_id), None)
+    if info is not None:
+        definition.name = info.name
+        if definition.description is None:
+            definition.description = info.description
+
+    _view_cache[view_id] = (now, definition)
+    return definition
+
+
+def get_all_view_definitions(table_views: TableViews) -> tuple[dict[str, ViewDefinition], dict[str, str]]:
+    """Definitions for every view of a table, fetched concurrently.
+
+    There is no batch endpoint — this is one GET per (uncached) view, bounded
+    at _FETCH_CONCURRENCY. Returns (definitions_by_view_id, errors_by_view_id);
+    individual view failures don't fail the scan.
+    """
+    definitions: dict[str, ViewDefinition] = {}
+    errors: dict[str, str] = {}
+
+    def fetch(view_id: str) -> None:
+        try:
+            definitions[view_id] = _fetch_view_definition(table_views, view_id)
+        except InternalApiError as e:
+            errors[view_id] = str(e)
+
+    view_ids = [v.id for v in table_views.views]
+    with ThreadPoolExecutor(max_workers=_FETCH_CONCURRENCY) as pool:
+        list(pool.map(fetch, view_ids))
+    return definitions, errors
+
+
+def get_view(table: str, view: str) -> dict[str, Any]:
+    """Full live definition of a view: filters, sorts, grouping, column
+    order/visibility, frozen columns, color config, row height, row count.
+
+    Table and view can be referenced by name (case-insensitive) or ID.
+    Uses GET /v0.3/view/{viwId}/readData (spike-discovered endpoint that
+    returns the view definition without any cell data).
+    """
+    table_views = _find_table_views(table)
+    view_id = _find_view(table_views, view)
+    definition = _fetch_view_definition(table_views, view_id)
 
     result = definition.model_dump(mode="json")
     result["table_id"] = table_views.id
