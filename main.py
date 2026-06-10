@@ -20,6 +20,12 @@ from src.utils.verbose import verbose
 
 app = Typer()
 
+# Internal (unofficial) API surface — separate package, see src/internal_api/.
+from src.internal_api.cli import login_command, tools_app  # noqa: E402
+
+app.add_typer(tools_app, name="tools")
+app.command("login")(login_command)
+
 
 @app.callback()
 def main_callback(

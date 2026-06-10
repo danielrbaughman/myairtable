@@ -1,0 +1,84 @@
+"""CLI adapters for the internal-API tools.
+
+Thin adapters only — all logic lives in src/internal_api/tools.py (shared
+with the MCP server, so a CLI invocation verifies MCP behavior too).
+
+Output is JSON on stdout by default (agent-testable, pipeable to jq);
+--pretty renders with rich. Failures print a JSON object with an "error" key
+and exit 1.
+"""
+
+import json
+import sys
+from typing import Annotated, Any
+
+from rich import print as rich_print
+from typer import Argument, Exit, Option, Typer
+
+from . import tools
+from .errors import InternalApiError
+
+tools_app = Typer(help="Schema tools (CLI mirrors of the MCP tools). Internal-API backed commands auto-authenticate from .env.")
+
+
+def _emit(result: Any, pretty: bool) -> None:
+    if pretty:
+        rich_print(result)
+    else:
+        print(json.dumps(result, indent=2))
+
+
+def _fail(error: Exception) -> None:
+    print(json.dumps({"error": type(error).__name__, "message": str(error)}, indent=2), file=sys.stderr)
+    raise Exit(code=1)
+
+
+@tools_app.command("get-view")
+def get_view_command(
+    table: Annotated[str, Argument(help="Table name (case-insensitive) or ID")],
+    view: Annotated[str, Argument(help="View name (case-insensitive) or ID")],
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Full live view definition: filters, sorts, grouping, column order/visibility.
+
+    Uses Airtable's internal (unofficial) API; auto-authenticates from
+    AIRTABLE_EMAIL / AIRTABLE_PASSWORD in .env.
+    """
+    try:
+        _emit(tools.get_view(table, view), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
+@tools_app.command("get-view-sections")
+def get_view_sections_command(
+    table: Annotated[str, Argument(help="Optional table name or ID; all tables if omitted")] = "",
+    pretty: Annotated[bool, Option("--pretty", help="Rich output instead of plain JSON")] = False,
+):
+    """Sidebar view sections per table, with member views in display order.
+
+    Uses Airtable's internal (unofficial) API; auto-authenticates from
+    AIRTABLE_EMAIL / AIRTABLE_PASSWORD in .env.
+    """
+    try:
+        _emit(tools.get_view_sections(table or None), pretty)
+    except InternalApiError as e:
+        _fail(e)
+
+
+def login_command(
+    headful: Annotated[bool, Option("--headful", help="Show the browser window (debugging)")] = False,
+):
+    """Force a fresh Airtable internal-API login (debugging).
+
+    Normal flow never needs this — tools auto-authenticate from .env and the
+    session lives ~1 year. Use --headful to watch the scripted login.
+    """
+    from .auth import STATE_FILE, login
+    from .errors import InternalApiError as _Err
+
+    try:
+        login(headless=not headful)
+        print(json.dumps({"status": "ok", "state_file": str(STATE_FILE)}))
+    except _Err as e:
+        _fail(e)
