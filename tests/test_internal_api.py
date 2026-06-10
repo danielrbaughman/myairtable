@@ -277,9 +277,12 @@ def test_find_views_using_field(fake_schema, monkeypatch):
 
     monkeypatch.setattr(tools, "_get_transport", lambda: MappedTransport())
     monkeypatch.setattr(tools, "_view_cache", {})
+    _patch_automation_index(monkeypatch)
 
     # fldAAA: filter (leaf 'contains') + sort in Grid A; hidden in Grid B
     result = tools.find_views_using_field("Contacts", "Name")
+    assert result["summary"]["automation_uses"] == 0
+    assert result["automations"] == []
     assert result["field"] == {"id": "fldAAAAAAAAAAAAAA", "name": "Name", "type": "text"}
     assert result["summary"]["views_scanned"] == 3
     assert result["summary"]["views_using_field"] == 1
@@ -304,6 +307,21 @@ def test_find_views_using_field(fake_schema, monkeypatch):
 def test_find_views_using_field_unknown_field(fake_schema):
     with pytest.raises(InternalApiError, match="Available fields: Name, Status"):
         tools.find_views_using_field("Contacts", "Nope")
+
+
+def test_find_views_using_field_includes_automations(fake_schema, monkeypatch):
+    monkeypatch.setattr(tools, "_get_transport", lambda: FakeTransport({"data": VIEW_READDATA}))
+    monkeypatch.setattr(tools, "_view_cache", {})
+    _patch_automation_index(
+        monkeypatch,
+        {"fldBBBBBBBBBBBBBB": [{"automation_id": "wflZ", "automation_name": "Sync status", "deployment_status": "deployed", "where": "trigger"}]},
+    )
+
+    result = tools.find_views_using_field("Contacts", "Status")
+    assert result["summary"]["automation_uses"] == 1
+    [auto] = result["automations"]
+    assert auto["automation_name"] == "Sync status"
+    assert auto["where"] == "trigger"
 
 
 def _counting_responses():

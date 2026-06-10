@@ -219,13 +219,15 @@ def _filter_operators_for_field(definition: ViewDefinition, field_id: str) -> li
 
 
 def find_views_using_field(table: str, field: str) -> dict[str, Any]:
-    """Which views reference a field — in filters, sorts, grouping, or color
-    config — plus where the field is visible vs hidden.
+    """Which views AND automations reference a field — views via filters,
+    sorts, grouping, or color (plus visible/hidden); automations via their
+    trigger or actions.
 
-    The view-side complement of reverse_dependencies (which covers formulas):
-    together they answer "what breaks if I change this field?".
+    With reverse_dependencies (formulas), this is the full "what breaks if I
+    change this field?" picture: views + automations + formulas.
 
-    Scans every view of the table (one request per uncached view).
+    Scans every view of the table (one request per uncached view) and reads
+    the base-wide automation index.
     """
     t = _find_table_views(table)
     column = _find_column(t, field)
@@ -274,6 +276,14 @@ def find_views_using_field(table: str, field: str) -> dict[str, Any]:
                 }
             )
 
+    # Automations that reference this field (base-wide). Non-fatal if unreadable.
+    automations: list[dict[str, Any]] = []
+    automation_index_error: str | None = None
+    try:
+        automations = _automation_reference_index().fields.get(column.id, [])
+    except InternalApiError as e:
+        automation_index_error = str(e)
+
     result: dict[str, Any] = {
         "table_id": t.id,
         "table_name": t.name,
@@ -284,11 +294,15 @@ def find_views_using_field(table: str, field: str) -> dict[str, Any]:
             "by_kind": by_kind,
             "visible_in": visible_in,
             "hidden_in": hidden_in,
+            "automation_uses": len(automations),
         },
         "views": views_using,
+        "automations": automations,
     }
     if scan_errors:
         result["scan_errors"] = scan_errors
+    if automation_index_error:
+        result["automation_index_error"] = automation_index_error
     return result
 
 
