@@ -251,7 +251,7 @@ public struct DictTable: Sendable {
 
     private func makeDecoder() -> JSONDecoder {
         let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
+        dec.dateDecodingStrategy = .airtable
         return dec
     }
 }

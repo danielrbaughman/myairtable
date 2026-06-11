@@ -54,7 +54,7 @@ public actor AirtableClient {
         self.encoder = enc
 
         let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
+        dec.dateDecodingStrategy = .airtable
         self.decoder = dec
     }
 

@@ -188,3 +188,42 @@ public enum AirtableJSONValue: Codable, Sendable, Equatable {
         }
     }
 }
+
+// MARK: - Date parsing
+
+/// Parses the date-string shapes Airtable actually returns: full ISO 8601
+/// with fractional seconds (`2024-01-15T10:30:00.000Z`), ISO 8601 without
+/// (`2024-01-15T10:30:00Z`), and date-only fields (`2024-01-15`, decoded as
+/// UTC midnight).
+public enum AirtableDateParser {
+    public static func parse(_ s: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: s) { return d }
+        let dateOnly = DateFormatter()
+        dateOnly.dateFormat = "yyyy-MM-dd"
+        dateOnly.timeZone = TimeZone(identifier: "UTC")
+        dateOnly.locale = Locale(identifier: "en_US_POSIX")
+        return dateOnly.date(from: s)
+    }
+}
+
+extension JSONDecoder.DateDecodingStrategy {
+    /// Decoding strategy for every wire payload: accepts the ISO 8601 and
+    /// date-only string shapes Airtable returns (see `AirtableDateParser`).
+    public static var airtable: JSONDecoder.DateDecodingStrategy {
+        .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let s = try container.decode(String.self)
+            guard let d = AirtableDateParser.parse(s) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Expected ISO 8601 or YYYY-MM-DD date string, got '\(s)'."
+                )
+            }
+            return d
+        }
+    }
+}

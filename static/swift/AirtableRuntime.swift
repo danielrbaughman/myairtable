@@ -83,7 +83,7 @@ public enum AirtableRuntime {
         enc.dateEncodingStrategy = .iso8601
         guard let data = try? enc.encode(v) else { return .null }
         let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
+        dec.dateDecodingStrategy = .airtable
         return (try? dec.decode(AirtableJSONValue.self, from: data)) ?? .null
     }
 
@@ -107,16 +107,7 @@ public enum AirtableRuntime {
     }
 
     private static func _parseIsoDate(_ s: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f.date(from: s) { return d }
-        f.formatOptions = [.withInternetDateTime]
-        if let d = f.date(from: s) { return d }
-        // Date-only (YYYY-MM-DD).
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
-        df.timeZone = TimeZone(identifier: "UTC")
-        return df.date(from: s)
+        AirtableDateParser.parse(s)
     }
 
     // =========================================================================

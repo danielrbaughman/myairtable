@@ -283,7 +283,7 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
     private func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        d.dateDecodingStrategy = .airtable
         return d
     }
 }
