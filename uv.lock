@@ -743,6 +743,9 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+internal = [
+    { name = "playwright" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -764,6 +767,7 @@ dev = [
     { name = "ruff", specifier = ">=0.12.10" },
     { name = "ty", specifier = ">=0.0.1a19" },
 ]
+internal = [{ name = "playwright", specifier = ">=1.49" }]
 
 [[package]]
 name = "openapi-pydantic"

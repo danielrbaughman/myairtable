@@ -21,6 +21,169 @@ This document covers two things:
 
 ---
 
+# Spike findings — verified against live traffic 2026-06-10
+
+We ran the POC spike (myairtable-oao6) against our own base. Everything below
+was observed directly; where it contradicts Part 1, **the spike wins**.
+
+## Q1 — Headless scripted login: WORKS, but only via Firefox
+
+- **PerimeterX protects the login page** (`_px*` cookies) and it specifically
+  detects Chromium automation. Vanilla Playwright Chromium, Patchright
+  Chromium, and Patchright + real Chrome (`channel="chrome"`) all got the
+  "Verify it's you" interstitial — **even headful**. The challenge never
+  self-resolves (its widget iframes stay `about:blank` under automation).
+- **Playwright Firefox (headless) gets the real login form** and completes
+  login. The detector appears to be Chromium-automation-specific.
+- Login-form quirks (all required):
+  - `fill()` does not enable the React submit button — use
+    `press_sequentially()` (real keystrokes).
+  - A **Transcend cookie-consent overlay** (`#transcend-shadow-root`)
+    intercepts pointer events on both form steps. Block it at the network
+    level (`ctx.route` on `*transcend*` → abort) and/or remove the element.
+  - The password-step submit button can stay disabled; **press Enter** in the
+    password field instead.
+  - Two-step form: email → Continue → password appears.
+- Login lands on `https://airtable.com/` and the session is immediately valid.
+
+## Q2 — httpx with extracted cookies: WORKS
+
+- Plain httpx with the Firefox session cookies + the §1.5 `x-` headers + a
+  matching Firefox User-Agent is **not blocked** by PerimeterX for `/v0.3/`
+  reads. No TLS impersonation needed. Transport choice **B confirmed**.
+- Use `Accept: application/json`. When a request includes heavy row data
+  (e.g. `application/read` with `includeDataForTableIds: ["tbl..."]`), the
+  server may respond with a **binary (msgpack-like) streaming format**
+  instead of JSON. Schema-only param shapes reliably return JSON. Avoid
+  requesting row data at all.
+
+## Q3 — Endpoint shapes: several divergences from Part 1
+
+- **`GET /v0.3/view/{viwId}/readData` exists** (not in Part 1) and is the
+  best endpoint for view definitions: returns the viewData object
+  **directly** under `data` (not wrapped in `viewDatas[]`), with
+  `stringifiedObjectParams={}`. No cell data — the only heavy key is
+  `rowOrder` (row IDs in view order; ~500 KB for a 5k-row table), which we
+  drop. **Use this for `get_view`.**
+- `application/{appId}/read` **requires** the two `may*` flags; omitting
+  them → `500 SERVER_ERROR` ("Worker responded with {errorCode}..."). Worked:
+  `{"includeDataForTableIds": [], "includeDataForViewIds": null,
+"shouldIncludeSchemaChecksum": false,
+"mayOnlyIncludeRowAndCellDataForIncludedViews": true,
+"mayExcludeCellDataForLargeViews": true}`.
+- The live web client sends `secretSocketId` (prefix `soc`) on read GETs,
+  but it is **not required** — reads succeed without it.
+- `getUserProperties` returns a flat feature-flag map
+  (`{"gemini":true,...}`), not `{ data: { userId } }`. Status-code probing
+  still works (200 vs 401/403).
+- viewData shape divergences:
+  - `lastSortsApplied` is `{ sortSet: [...], shouldAutoSort, appliedTime }` —
+    an object, **not** a bare array.
+  - Extra keys present: `rowOrder`, `sharesById`, `signedUserContentUrls`,
+    `applicationTransactionNumber`.
+  - `rowHeight` / `metadata` were absent on the views we sampled (likely
+    only present when non-default). Model them as optional.
+- `tableSchemas[i]` extra keys vs Part 1: `viewsById`, `columnSetById`,
+  `meaningfulColumnOrder`, `primaryColumnId`, `rowTemplatesById`, `rowUnit`,
+  `isHiddenFromSwitcher`, `dateDependencySettings`. `viewSectionsById` is
+  `{}` on a base with no sidebar sections.
+
+## Q4 — Session longevity: ~1 year
+
+- `__Host-airtable-session` expires **a year out** from login. Auto-login
+  will be rare.
+- Responses set rotating cookies (`AWSALBTG*`, `brw`, `mbpg`) — implement
+  cookie write-back to keep the jar fresh, but the session itself is
+  long-lived.
+
+## Implementation consequences
+
+- Login engine: **Playwright Firefox, headless** (`playwright install firefox`).
+  Patchright/Chromium not needed; msgpack not needed.
+- The spike's live session profile persists at `~/.myairtable/spike-profile-ff`
+  with storage state at `~/.myairtable/spike-state.json`.
+
+## Investigation 2026-06-10 — batch view fetching (myairtable-vqkq)
+
+For the view-analysis tools we needed all viewDatas of a table/base. Verified
+against the live base:
+
+- **`includeDataForViewIds` accepts exactly ONE view.** Two or more (even
+  same-type, same-table, correct pairs) → `422 FAILED_STATE_CHECK`. There is
+  no batch fetch.
+- **`table/{tblId}/readData` with a view included pulls FULL row/cell data**
+  for that view's rows (13.6 MB for one 9.7k-row calendar view) — never use
+  it for view definitions. `view/{viwId}/readData` (no cell data, only
+  `rowOrder`) is the right path, ~0.01–0.51 MB per view depending on type and
+  row count.
+- **Unknown `stringifiedObjectParams` keys are silently ignored** (tried
+  several invented rowOrder-excluding params — no 422, no effect). There is
+  no known way to drop `rowOrder` server-side; drop it at parse time and keep
+  its length as `row_count`.
+- **All six view types** (grid, form, kanban, calendar, gallery, levels)
+  return the same viewData shape via `view/readData`; form views lack
+  `filters`/`lastSortsApplied` (model them optional). `metadata` appears on
+  some types (calendar, levels, form).
+- **Other users' personal views ARE readable** via `view/readData` (our base
+  has 381 of them) — personal views need no special-casing in coverage
+  claims.
+- **No row-count field exists anywhere** (checked `table/readData`,
+  `getApplicationScaffoldingData` — the latter is tiny: tableById +
+  visibleTableOrder only, no view state). Total table row count: use
+  `max(len(rowOrder))` across the table's views — exact when an unfiltered
+  view exists, a lower bound otherwise.
+- `table/readData` with `includeDataForViewIds: []` still returns one
+  viewData (the session's `lastViewIdUsed`) and one row in `loadedSlices` —
+  don't rely on it returning nothing.
+
+**Chosen fetch strategy:** per-view `GET /v0.3/view/{viwId}/readData`,
+bounded concurrency (threads over the shared httpx client), per-view TTL
+cache; whole-base scans documented as expensive (~1 call/view).
+
+## Investigation 2026-06-10 — automation read endpoints (myairtable-eang)
+
+Automations live at the UI path `/{appId}/automations` (NOT `/workflows` —
+that 404s). "Automations" are "workflows" in the API. Discovered by driving
+the Firefox session to the Automations tab and capturing XHR. Endpoints (all
+GET, `stringifiedObjectParams={}`, like view reads — `secretSocketId` sent by
+the UI but NOT required):
+
+| Endpoint                                                       | Returns                                                                                                                                                              |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `application/{appId}/listWorkflows`                            | `data.workflows[]` — every workflow's id, name, description, deploymentStatus, trigger (type only), graph skeleton (action type ids + wiring). **Configs stripped.** |
+| `workflow/{wflId}/read`                                        | `data.workflow` — FULL config: trigger + each action's `inputExpressions` (table ids, filter objects, Gmail bodies, custom scripts, ...).                            |
+| `workflowDeployment/{wfdId}/read`                              | deployment detail (not needed for inventory)                                                                                                                         |
+| `application/{appId}/readForWorkflows`                         | a workflow-oriented schema variant                                                                                                                                   |
+| `application/{appId}/getWorkflowExecutionCountsInCurrentMonth` | run counts                                                                                                                                                           |
+
+**Verified live (45 workflows in our base):**
+
+- `listWorkflows` returns all 45 in one call; **full config requires per-workflow
+  `workflow/{id}/read`** (configs are stripped from the list). All 45 read OK,
+  including 19 custom-script actions — **full dump is feasible.**
+- **Field/table references are extractable**: 45/45 reference table ids,
+  36/45 reference field ids, as plain `tbl…`/`fld…` literals inside
+  `inputExpressions`. Regex-parseable — this is the future `find_unused_fields`
+  / `find_views_using_field` automation signal.
+- `deploymentStatus`: 30 deployed, 15 undeployed (proxy for on/off).
+- Trigger/action **type ids** are mostly human-readable constants
+  (`wttRECORDMATCHES0`, `wttRECORDCREATED0`, `wttRECORDUPDATED0`,
+  `wttCRON0000000000`; `watUPDATERECORD00`, `watCREATERECORD00`,
+  `watGMAILSENDMAIL0`, `watFINDRECORDS000`, `watCUSTOMSCRIPT00`) — but some are
+  opaque hashes (`wttBRZzRXx3C2jyIc` ×29, `watBETUHIcuho4hit` ×13, likely
+  integration/first-party-app types) and one action had `null` type. Decode the
+  known constants to friendly names; pass unknown ids through verbatim; parse
+  defensively (null type ids exist).
+- Workflow→section grouping comes from `workflowSectionsById` (already in
+  `application/read`; each section has `name` + `workflowOrder`).
+
+**Strategy for list_automations:** `listWorkflows` for the inventory +
+section grouping; concurrent per-workflow `workflow/{id}/read` for full
+config (same bounded-concurrency + TTL-cache pattern as views); decode known
+type ids, pass through unknown; extract referenced table/field ids.
+
+---
+
 # Part 1 — Internal API Reference
 
 ## 1. Auth & session model

@@ -165,6 +165,60 @@ Add the following to your MCP client config (e.g. `claude_desktop_config.json` f
 
 If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
 
+### Tools on the CLI
+
+Every MCP tool is also a CLI subcommand under `myairtable tools` — handy for scripting,
+piping to `jq`, or testing without an MCP client:
+
+```bash
+uv run main.py tools list-tables            # public meta-API tools
+uv run main.py tools transpile Jobs "Total" --language python
+uv run main.py tools get-view Contacts "Active"   # internal-API tools
+uv run main.py tools --help                 # list all commands
+```
+
+Output is JSON by default (`--pretty` for rich rendering). Add `--save` (before the
+subcommand) to offload large results to `.data/internal_api/` and print the envelope,
+mirroring the MCP server. The same `schema_tools.py` / internal `tools.py` functions back
+both the MCP tools and these commands.
+
+## Live view state (internal API, optional)
+
+The `get_view` / `get_view_sections` MCP tools and the `myairtable tools ...` CLI commands
+return live view definitions (filters, sorts, grouping, column order/visibility) that the
+public meta API does not expose. They use Airtable's **internal, unofficial** web-client
+API — endpoints can break without notice; failures degrade to structured errors and never
+affect the public-API features above.
+
+Setup (opt-in):
+
+1. `uv sync --group internal && uv run playwright install firefox`
+2. Add `AIRTABLE_EMAIL` and `AIRTABLE_PASSWORD` to `.env` (email+password account, no 2FA).
+   ⚠️ This stores a real password, not a revocable token — use a dedicated account if possible.
+3. That's it — tools auto-authenticate via a scripted headless login and the session
+   persists (~1 year) at `~/.myairtable/internal-session.json`. `uv run main.py login --headful`
+   forces a fresh login with a visible browser for debugging.
+
+See `docs/airtable-internal-api.md` for the endpoint reference and spike findings.
+
+### Large results are saved to disk
+
+Many tools can return large payloads (whole-base scans, full automation config dumps). When a
+result exceeds the inline limit (default 16 KB; override with `MYAIRTABLE_INLINE_MAX_BYTES`),
+the **full** result is written to a gitignored `.data/internal_api/<tool>__<args>.json` and the
+caller receives a small envelope instead:
+
+```json
+{ "saved_to": "...", "bytes": 412934, "record_count": 287,
+  "summary": { ... }, "schema": { ...compact shape skeleton... }, "note": "..." }
+```
+
+`schema` is a depth-capped structural skeleton of the file (keys → type tags, arrays → length +
+element shape) — enough to `jq`/`grep` the file without re-running the tool. This applies to
+**all** MCP tools via a server middleware. From the CLI, add `--save` (e.g.
+`myairtable tools --save list-automations`) to exercise the same path. Note: `audit_shares`
+writes share-URL tokens to that local file.
+
 ## License
 
 [MIT](LICENSE)
