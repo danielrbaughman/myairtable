@@ -262,7 +262,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_empty()
 
 
-def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten: bool = False) -> None:
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
     """Generate per-table `@Observable final class {Table}Model`.
 
     Layout: `dynamic/models/{Table}Model.swift`. Each file contains a single
@@ -317,12 +317,13 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
 
             # Static: tableId + formula filters
             write.line_indented(f'public static let tableId: String = "{table.id}"')
-            filters_name = f"{prefix}Filters"
-            write.doc_comment(
-                f'Formula builder for filtering. Usage: `{model_name}.f.primaryKey.equals("x")`.',
-                indent=1,
-            )
-            write.line_indented(f"public static let f = {filters_name}()")
+            if formulas:
+                filters_name = f"{prefix}Filters"
+                write.doc_comment(
+                    f'Formula builder for filtering. Usage: `{model_name}.f.primaryKey.equals("x")`.',
+                    indent=1,
+                )
+                write.line_indented(f"public static let f = {filters_name}()")
             write.line_empty()
 
             # ---------- Identity properties ----------
@@ -898,10 +899,6 @@ def generate_swift(
     flatten: bool = False,
 ) -> None:
     """Generate Swift code from Airtable base metadata."""
-    # Formulas/wrappers/runtime/flatten are accepted for parity with other
-    # generators; F3 doesn't act on them yet (F4–F8 introduce the wiring).
-    _ = formulas, wrappers, runtime, flatten
-
     print("Generating Swift code")
 
     # Reset the two top-level subdirectories the generator owns. Leaving
@@ -911,9 +908,9 @@ def generate_swift(
 
     exclude_static: list[str] = []
     if not runtime:
-        # AirtableRuntime.swift will land in F8; kept here so the flag plumbing
-        # is in place on day one.
         exclude_static.append("AirtableRuntime.swift")
+    if not formulas:
+        exclude_static.append("Formula.swift")
 
     copy_static_files(output_folder, "swift", exclude=exclude_static or None)
     if verbose:
@@ -927,18 +924,20 @@ def generate_swift(
     if verbose:
         print("[dim] - Swift field types generated.[/]")
 
-    write_formula_helpers(base, output_folder)
-    if verbose:
-        print("[dim] - Swift formula helpers generated.[/]")
+    if formulas:
+        write_formula_helpers(base, output_folder)
+        if verbose:
+            print("[dim] - Swift formula helpers generated.[/]")
 
-    write_models(base, output_folder, runtime=runtime, flatten=flatten)
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if verbose:
         print("[dim] - Swift models generated.[/]")
 
-    write_tables(base, output_folder)
-    if verbose:
-        print("[dim] - Swift table wrappers generated.[/]")
+    if wrappers:
+        write_tables(base, output_folder)
+        if verbose:
+            print("[dim] - Swift table wrappers generated.[/]")
 
-    write_main(base, output_folder)
-    if verbose:
-        print("[dim] - Swift main Airtable.swift generated.[/]")
+        write_main(base, output_folder)
+        if verbose:
+            print("[dim] - Swift main Airtable.swift generated.[/]")

@@ -1137,3 +1137,65 @@ class TestSwiftOptionsGenerator:
         assert 'case `open` = "Open"' in content  # `open` is a Swift keyword
         assert 'case inProgress = "In Progress"' in content
         assert 'case closed = "Closed"' in content
+
+
+class TestSwiftFlagGating:
+    """generate_swift must honor formulas/wrappers/runtime flags (myairtable-2odn).
+
+    Mirrors the Rust generator's gating: disabling a flag suppresses the
+    corresponding static + dynamic output instead of emitting it anyway.
+    """
+
+    FIELDS_SPEC = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+    ]
+
+    def _generate(self, tmp_path: Path, **flags) -> Path:
+        from src.generators.swift import generate_swift
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS_SPEC)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        map_types(base)
+        generate_swift(base, output_folder, **flags)
+        return output_folder
+
+    def test_default_flags_emit_everything(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        assert (out / "dynamic" / "formulas").is_dir()
+        assert (out / "dynamic" / "tables").is_dir()
+        assert (out / "Airtable.swift").is_file()
+        assert (out / "static" / "Formula.swift").is_file()
+        assert (out / "static" / "AirtableRuntime.swift").is_file()
+        model = (out / "dynamic" / "models" / "TestTableModel.swift").read_text()
+        assert "public static let f = TestTableFilters()" in model
+
+    def test_formulas_false_suppresses_formula_output(self, tmp_path: Path):
+        out = self._generate(tmp_path, formulas=False)
+        assert not (out / "dynamic" / "formulas").exists()
+        assert not (out / "static" / "Formula.swift").exists()
+        model = (out / "dynamic" / "models" / "TestTableModel.swift").read_text()
+        assert "Filters()" not in model
+
+    def test_wrappers_false_suppresses_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path, wrappers=False)
+        assert not (out / "dynamic" / "tables").exists()
+        assert not (out / "Airtable.swift").exists()
+        # Models are still emitted.
+        assert (out / "dynamic" / "models" / "TestTableModel.swift").is_file()
+
+    def test_runtime_false_suppresses_airtable_runtime(self, tmp_path: Path):
+        out = self._generate(tmp_path, runtime=False)
+        assert not (out / "static" / "AirtableRuntime.swift").exists()
+
+    def test_all_flags_false_emits_minimal_output(self, tmp_path: Path):
+        out = self._generate(tmp_path, formulas=False, wrappers=False, runtime=False)
+        assert not (out / "dynamic" / "formulas").exists()
+        assert not (out / "dynamic" / "tables").exists()
+        assert not (out / "Airtable.swift").exists()
+        assert not (out / "static" / "Formula.swift").exists()
+        assert not (out / "static" / "AirtableRuntime.swift").exists()
+        assert (out / "dynamic" / "models" / "TestTableModel.swift").is_file()
+        assert (out / "dynamic" / "types" / "TestTableFields.swift").is_file()
