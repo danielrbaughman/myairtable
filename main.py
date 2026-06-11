@@ -53,23 +53,6 @@ def meta(
     generate_meta(metadata=metadata, folder=folder_path)
 
 
-@app.command("type-map")
-@verbose()
-def type_map(
-    folder: Annotated[str, Argument(help="Folder to write type_map.json into (alongside the codegen CSVs)")],
-):
-    """Resolve computed-field result types via the internal API and persist a type-map.
-
-    Local-only — needs an internal session (auto-authenticates from AIRTABLE_EMAIL/
-    AIRTABLE_PASSWORD). The resulting type_map.json disambiguates formula/lookup/rollup
-    types in generated code; CI codegen reads the file and never touches the internal API.
-    """
-    from src.internal_api.type_resolver import write_type_map
-
-    dest = write_type_map(Path(folder))
-    print(f"[green]Wrote type-map to {dest}[/]")
-
-
 @app.command()
 @verbose()
 def csv(

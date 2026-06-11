@@ -65,27 +65,6 @@ class ApplicationData(NamedTuple):
     workflow_sections: list[WorkflowSection]
 
 
-# The two may* flags are REQUIRED (500 without them); empty includeDataForTableIds
-# keeps the response schema-only JSON. See docs/airtable-internal-api.md.
-_APPLICATION_READ_PARAMS = {
-    "includeDataForTableIds": [],
-    "includeDataForViewIds": None,
-    "shouldIncludeSchemaChecksum": False,
-    "mayOnlyIncludeRowAndCellDataForIncludedViews": True,
-    "mayExcludeCellDataForLargeViews": True,
-}
-
-
-def raw_application_read() -> dict:
-    """The raw application/read payload (uncached).
-
-    The parsed ApplicationData drops per-column typeOptions; callers that need
-    the full schema (e.g. computed-field resultType resolution) use this.
-    """
-    base_id = validate_airtable_id(get_base_id())
-    return _get_transport().get(f"/v0.3/application/{base_id}/read", object_params=_APPLICATION_READ_PARAMS, app_id=base_id)
-
-
 def _read_application_data(force_refresh: bool = False) -> ApplicationData:
     """Base schema (view slice) + base-level shares + interfaces, via application/read. Cached for 30s."""
     global _schema_cache
@@ -93,7 +72,20 @@ def _read_application_data(force_refresh: bool = False) -> ApplicationData:
     if not force_refresh and _schema_cache is not None and now - _schema_cache[0] < _SCHEMA_CACHE_TTL_SECONDS:
         return _schema_cache[1]
 
-    payload = raw_application_read()
+    base_id = validate_airtable_id(get_base_id())
+    # The two may* flags are REQUIRED (500 without them); empty
+    # includeDataForTableIds keeps the response schema-only JSON.
+    payload = _get_transport().get(
+        f"/v0.3/application/{base_id}/read",
+        object_params={
+            "includeDataForTableIds": [],
+            "includeDataForViewIds": None,
+            "shouldIncludeSchemaChecksum": False,
+            "mayOnlyIncludeRowAndCellDataForIncludedViews": True,
+            "mayExcludeCellDataForLargeViews": True,
+        },
+        app_id=base_id,
+    )
     data = payload.get("data") or {}
     table_schemas = data.get("tableSchemas")
     if not isinstance(table_schemas, list):

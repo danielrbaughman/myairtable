@@ -182,47 +182,6 @@ section grouping; concurrent per-workflow `workflow/{id}/read` for full
 config (same bounded-concurrency + TTL-cache pattern as views); decode known
 type ids, pass through unknown; extract referenced table/field ids.
 
-## Investigation 2026-06-10 — computed-field type resolution (myairtable-xby8)
-
-For codegen type disambiguation: does the internal `application/read` schema
-resolve computed-field result types better than the public meta API? **Yes —
-decisively. GO on schema-first.**
-
-- **Every computed container carries `typeOptions.resultType`.** Verified live:
-  formula 609/617, rollup 234/238, count 11/11, lookup all. Overall **1169/1187
-  (98%)** of computed fields have a resolved `resultType`; of the **389**
-  fields the public API leaves ambiguous (our `result_type()` returns
-  `singleLineText`/empty), the internal schema resolves **389/389 (100%)**.
-- **Lookups are internally typed `"lookup"`, NOT `multipleLookupValues`** (the
-  public-API name). They carry `resultType` + `resultIsArray` +
-  `foreignTableRollupColumnType` (the source field's type) + format keys. Any
-  resolver must read internal type `"lookup"`, not the public type name.
-- **`resultType` vocabulary is a small base set**: `text`, `number`, `date`,
-  `checkbox`. Plus **`resultIsArray`** (so `text[]`, `number[]`, `date[]` —
-  e.g. multi-value lookups/rollups). This is the correct _base_ type for
-  language mapping (currency/percent/count all → `number` → float, which is
-  right for Python/TS/Rust types).
-- **Finer semantics ARE recoverable from `typeOptions`**, so coarse
-  `resultType` is not a regression:
-  - date vs dateTime: `isDateTime` (bool), `dateFormat`, `timeFormat`,
-    `timeZone`. (A few date fields lack these keys → default to date.)
-  - currency/percent: `format` (`"currency"`), `precision`, `symbol` on
-    rollups/lookups/formulas.
-    So the resolver can produce `resultType` + `resultIsArray` + the refinements,
-    matching or beating our current inference without losing currency/dateTime.
-- **`getUnsavedColumnConfigResultType` (the validator fallback) is a POST** and
-  404s on GET — it needs the deferred mutation transport (CSRF +
-  secretSocketId, §1.6). Not available now. **But schema coverage is high
-  enough (98% / 100% of ambiguous) that v1 does not need it** — defer the
-  validator fallback until/if write support exists.
-
-**Verdict:** mechanism (1), reading `typeOptions.{resultType, resultIsArray,
-isDateTime, format, ...}` from the internal `application/read` schema (which
-the internal tooling already fetches), fully covers the disambiguation need.
-The resolver normalizes these to the codegen type vocabulary; the persisted
-type-map captures them so CI codegen stays PAT-only. Validator fallback is
-deferred (and gated on the write transport).
-
 ---
 
 # Part 1 — Internal API Reference
