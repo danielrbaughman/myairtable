@@ -79,3 +79,27 @@ def test_resolve_field_types(monkeypatch):
     assert resolved["fldLookup"] == {"result_type": "currency", "is_array": True, "source": "internal_schema"}
     assert "fldPlain" not in resolved  # non-computed excluded
     assert "fldNoResult" not in resolved  # no resultType excluded
+
+
+def test_write_and_load_type_map(monkeypatch, tmp_path):
+    monkeypatch.setattr(type_resolver, "raw_application_read", lambda: _FAKE_SCHEMA)
+    monkeypatch.setattr("src.meta.get_base_id", lambda: "appTESTBASE000000")
+
+    dest = type_resolver.write_type_map(tmp_path)
+    assert dest == tmp_path / "type_map.json"
+    import json
+
+    payload = json.loads(dest.read_text())
+    assert payload["base_id"] == "appTESTBASE000000"
+    assert "generated_at" in payload
+    assert payload["fields"]["fldLookup"]["result_type"] == "currency"
+
+    # load by folder and by direct file path
+    by_folder = type_resolver.load_type_map(tmp_path)
+    assert by_folder["fldRollup"]["result_type"] == "number"
+    assert type_resolver.load_type_map(dest) == by_folder
+
+
+def test_load_type_map_absent_returns_empty(tmp_path):
+    assert type_resolver.load_type_map(tmp_path) == {}
+    assert type_resolver.load_type_map(tmp_path / "nope.json") == {}

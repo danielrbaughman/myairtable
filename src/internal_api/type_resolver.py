@@ -19,12 +19,19 @@ Findings baked in here:
   the deferred write transport — not used here; schema coverage is enough.
 """
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from src.meta_types import FieldType
 
 from .errors import InternalApiError
 from .tools import raw_application_read
+
+# Persisted type-map file (lives alongside the codegen CSVs). Generated locally
+# with an internal session; consumed by CI codegen, which stays PAT-only.
+TYPE_MAP_FILENAME = "type_map.json"
 
 # Internal container types that carry a resolved typeOptions.resultType.
 _COMPUTED_CONTAINERS = {"formula", "rollup", "count", "lookup"}
@@ -101,3 +108,38 @@ def resolve_field_types() -> dict[str, dict[str, Any]]:
             result_type, is_array = norm
             resolved[column["id"]] = {"result_type": result_type, "is_array": is_array, "source": "internal_schema"}
     return resolved
+
+
+def write_type_map(folder: Path) -> Path:
+    """Resolve computed-field types and persist a type-map JSON into `folder`.
+
+    Local-only (needs an internal session). Returns the written file path.
+    """
+    from src.meta import get_base_id
+
+    payload = {
+        "base_id": get_base_id(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "fields": resolve_field_types(),
+    }
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / TYPE_MAP_FILENAME
+    dest.write_text(json.dumps(payload, indent=2))
+    return dest
+
+
+def load_type_map(folder_or_file: Path) -> dict[str, dict[str, Any]]:
+    """Load the persisted {field_id -> resolved-type} map; {} if absent.
+
+    Accepts the codegen folder or a direct path to the JSON file. PAT-only —
+    reads the file, no internal session.
+    """
+    path = folder_or_file / TYPE_MAP_FILENAME if folder_or_file.is_dir() else folder_or_file
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    fields = data.get("fields")
+    return fields if isinstance(fields, dict) else {}
