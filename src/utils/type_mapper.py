@@ -182,7 +182,7 @@ def map_types(base: Base) -> None:
             ts_type = render_type(field, "typescript", resolved=resolved)
             rust_type = render_type(field, "rust", resolved=resolved, is_computed=is_computed)
             rust_type = apply_rust_computed_wrapping(rust_type, field, resolved)
-            swift_type = render_type(field, "swift", resolved=resolved)
+            swift_type = apply_swift_computed_wrapping(render_type(field, "swift", resolved=resolved), field)
 
             field._python_type = py_type
             field._typescript_type = ts_type
@@ -199,7 +199,7 @@ def map_types(base: Base) -> None:
                     field._typescript_type = render_type(field, "typescript", is_list=is_list)
                     rust_type = render_type(field, "rust", is_list=is_list, is_computed=is_computed)
                     field._rust_type = apply_rust_computed_wrapping(rust_type, field, resolved)
-                    field._swift_type = render_type(field, "swift", is_list=is_list)
+                    field._swift_type = apply_swift_computed_wrapping(render_type(field, "swift", is_list=is_list), field)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -510,6 +510,32 @@ def apply_rust_computed_wrapping(rust_type: str, field: Field, resolved: Resolve
     return f"MaybeSpecialOrError<{inner}>"
 
 
+def apply_swift_computed_wrapping(swift_type: str, field: Field) -> str:
+    """Wrap a computed field's Swift type to model Airtable special/error values.
+
+    Mirrors `apply_rust_computed_wrapping`: always `MaybeSpecialOrError<T>` (even
+    for non-numeric fields — Airtable can return `{"specialValue": ...}` for
+    text-like computed fields when a formula uses numeric intermediates), and
+    `VecOrValue<MaybeSpecialOrError<T>>` for lookup/rollup computed fields whose
+    list/scalar shape is not guaranteed per record. No-op when already wrapped.
+    """
+    if not field.is_computed():
+        return swift_type
+
+    if "MaybeSpecialOrError<" in swift_type or "VecOrValue<" in swift_type:
+        return swift_type
+
+    # Strip any disambiguation-applied `[...]` so we wrap the inner primitive.
+    inner = swift_type
+    if inner.startswith("[") and inner.endswith("]"):
+        inner = inner[1:-1]
+
+    if field.involves_lookup() or field.involves_rollup():
+        return f"VecOrValue<MaybeSpecialOrError<{inner}>>"
+
+    return f"MaybeSpecialOrError<{inner}>"
+
+
 def map_rust_type(field: Field) -> str:
     """Calculate the Rust type for a field."""
 
@@ -532,6 +558,7 @@ def map_swift_type(field: Field) -> str:
 
     resolved: ResolvedType = map_type(field)
     swift_type: str = render_type(field, "swift", resolved=resolved)
+    swift_type = apply_swift_computed_wrapping(swift_type, field)
 
     field._swift_type = swift_type
     return swift_type
@@ -710,7 +737,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     field._typescript_type = render_type(field, "typescript", is_list=is_list)
     rust_type = render_type(field, "rust", is_list=is_list, is_computed=field.is_computed())
     field._rust_type = apply_rust_computed_wrapping(rust_type, field)
-    field._swift_type = render_type(field, "swift", is_list=is_list)
+    field._swift_type = apply_swift_computed_wrapping(render_type(field, "swift", is_list=is_list), field)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:

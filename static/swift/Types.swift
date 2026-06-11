@@ -111,11 +111,13 @@ public struct AirtableRecord<Fields: Codable & Sendable>: Codable, Sendable {
 /// from metadata alone. Equivalent to the Rust target's `VecOrValue<T>`.
 public enum VecOrValue<T: Codable & Sendable>: Codable, Sendable {
     case single(T)
-    case multiple([T])
+    case multiple([T?])
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if let arr = try? container.decode([T].self) {
+        // List items are nullable: Airtable rollup/lookup arrays can contain
+        // `null` entries when the source field is missing on a linked record.
+        if let arr = try? container.decode([T?].self) {
             self = .multiple(arr)
         } else {
             self = .single(try container.decode(T.self))
@@ -130,14 +132,28 @@ public enum VecOrValue<T: Codable & Sendable>: Codable, Sendable {
         }
     }
 
-    /// Flatten to `[T]` regardless of encoding.
+    /// The single value, or `nil` if this is the list shape.
+    public var single: T? {
+        if case .single(let v) = self { return v }
+        return nil
+    }
+
+    /// The list of values, or `nil` if this is the single shape.
+    public var multiple: [T?]? {
+        if case .multiple(let arr) = self { return arr }
+        return nil
+    }
+
+    /// Flatten to non-nil values regardless of encoding.
     public var values: [T] {
         switch self {
         case .single(let v): return [v]
-        case .multiple(let v): return v
+        case .multiple(let v): return v.compactMap { $0 }
         }
     }
 }
+
+extension VecOrValue: Equatable where T: Equatable {}
 
 /// A type-erased JSON value used where Airtable's schema doesn't constrain a
 /// field's shape (e.g., `UNKNOWN` fields, raw `DictTable` values). Codable and
@@ -227,3 +243,85 @@ extension JSONDecoder.DateDecodingStrategy {
         }
     }
 }
+
+// MARK: - Computed-field error / special values
+
+/// An Airtable special number value (NaN, Infinity, -Infinity).
+///
+/// Returned by formula fields when the computation produces a non-finite
+/// number. JSON shape: `{"specialValue": "NaN"}`. Only the object form is
+/// accepted — a bare string or lookup-style array must not decode as this.
+public struct SpecialNumber: Codable, Sendable, Equatable {
+    public let specialValue: String
+
+    public init(_ specialValue: String) { self.specialValue = specialValue }
+}
+
+/// An Airtable error value from a failed formula computation.
+///
+/// JSON shape: `{"error": "#ERROR!"}`. Only the object form is accepted.
+public struct ErrorValue: Codable, Sendable, Equatable {
+    public let error: String
+
+    public init(_ error: String) { self.error = error }
+}
+
+/// Wraps a computed field that may be a value, special number, or error.
+///
+/// Airtable returns `{"specialValue": ...}` / `{"error": ...}` objects for
+/// formula / rollup / lookup fields whose computation is non-finite or fails.
+/// Decode order matters: the expected value is tried first so plain values
+/// are never misinterpreted as the object-shaped fallbacks.
+public enum MaybeSpecialOrError<T: Codable & Sendable>: Codable, Sendable {
+    case value(T)
+    case special(SpecialNumber)
+    case error(ErrorValue)
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let v = try? container.decode(T.self) {
+            self = .value(v)
+        } else if let s = try? container.decode(SpecialNumber.self) {
+            self = .special(s)
+        } else if let e = try? container.decode(ErrorValue.self) {
+            self = .error(e)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription:
+                    "Expected \(T.self), {\"specialValue\": ...}, or {\"error\": ...}"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .value(let v): try container.encode(v)
+        case .special(let s): try container.encode(s)
+        case .error(let e): try container.encode(e)
+        }
+    }
+
+    /// The wrapped value, or `nil` for special/error variants.
+    public var value: T? {
+        if case .value(let v) = self { return v }
+        return nil
+    }
+
+    public var special: SpecialNumber? {
+        if case .special(let s) = self { return s }
+        return nil
+    }
+
+    public var errorValue: ErrorValue? {
+        if case .error(let e) = self { return e }
+        return nil
+    }
+
+    public var isValue: Bool { value != nil }
+    public var isSpecial: Bool { special != nil }
+    public var isError: Bool { errorValue != nil }
+}
+
+extension MaybeSpecialOrError: Equatable where T: Equatable {}
