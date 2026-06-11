@@ -135,3 +135,20 @@ struct TestAirtableQueryBuild {
         #expect(items.count == 9)
     }
 }
+
+// MARK: - URL encoding
+
+@Suite("Client URL encoding")
+struct TestClientUrlEncoding {
+    @Test("Plus signs in formulas are percent-encoded (Airtable decodes raw + as space)")
+    func plusSignEncoded() async throws {
+        let client = AirtableClient(baseId: "appTEST", apiKey: "key")
+        let url = try await client.tableURL(
+            "tblTEST",
+            query: [URLQueryItem(name: "filterByFormula", value: "FIND(\"x\",{f})=LEN({f})+1")]
+        )
+        let query = url.query(percentEncoded: true) ?? ""
+        #expect(!query.contains("+"), "raw + must not survive encoding: \(query)")
+        #expect(query.contains("%2B"), "expected %2B in: \(query)")
+    }
+}

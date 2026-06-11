@@ -68,10 +68,18 @@ struct TestFormulaTextField {
         #expect(r.contains("FIND("))
     }
     @Test func startsWithFind1() { #expect(f.startsWith("hel") == "FIND(\"hel\",{fld123})=1") }
+    @Test func notStartsWithFindNot1() {
+        #expect(f.notStartsWith("hel") == "FIND(\"hel\",{fld123})!=1")
+    }
     @Test func endsWithFormula() {
         let r = f.endsWith("lo")
         #expect(r.contains("FIND("))
         #expect(r.contains("LEN("))
+    }
+    @Test func notEndsWithFormula() {
+        let r = f.notEndsWith("lo")
+        #expect(r.contains("FIND("))
+        #expect(r.contains("!=LEN("))
     }
     @Test func phoneEqualsNormalized() {
         let r = f.phoneEquals("+1 (555) 123-4567")
@@ -237,4 +245,76 @@ struct TestFormulaAttachment {
     @Test func attachmentEmpty() { #expect(f.empty() == "LEN({fldA})=0") }
     @Test func attachmentNotEmpty() { #expect(f.notEmpty() == "LEN({fldA})>0") }
     @Test func attachmentCount() { #expect(f.count(3) == "LEN({fldA})=3") }
+}
+
+// MARK: - Lookup Field (parity with tests/test_formula.rs lookup_* tests)
+
+@Suite("Formula Lookup Field")
+struct TestFormulaLookup {
+    let f = FormulaLookupField("fldClient")
+
+    @Test func containsWrapsInArrayjoin() {
+        let r = f.contains("groundwork", caseSensitive: false, trim: true)
+        #expect(r.contains("ARRAYJOIN({fldClient}"), "missing ARRAYJOIN: \(r)")
+        #expect(r.contains("FIND("), "missing FIND: \(r)")
+        #expect(r.contains("LOWER("), "missing LOWER: \(r)")
+    }
+
+    @Test func startsWithWrapsInArrayjoin() {
+        let r = f.startsWith("Ground", caseSensitive: false, trim: true)
+        #expect(r.contains("ARRAYJOIN({fldClient}"), "missing ARRAYJOIN: \(r)")
+    }
+
+    @Test func endsWithWrapsInArrayjoin() {
+        let r = f.endsWith("BioAg", caseSensitive: false, trim: true)
+        #expect(r.contains("ARRAYJOIN({fldClient}"), "missing ARRAYJOIN: \(r)")
+        #expect(r.contains("LEN("), "missing LEN: \(r)")
+    }
+
+    @Test func equalsDoesNotWrapInArrayjoin() {
+        // `=` already coerces arrays to comma-strings — no ARRAYJOIN needed.
+        let r = f.equals("Groundwork Bio Ag")
+        #expect(!r.contains("ARRAYJOIN"), "should not wrap equals: \(r)")
+        #expect(r.contains("{fldClient}"), "missing field: \(r)")
+    }
+
+    @Test func notEmptyDoesNotWrap() {
+        #expect(!f.notEmpty().contains("ARRAYJOIN"))
+    }
+
+    @Test func textFieldUnaffectedRegression() {
+        // Regression: FormulaTextField must still emit a bare {field} reference.
+        let t = FormulaTextField("fldName")
+        #expect(!t.contains("hello", caseSensitive: false, trim: true).contains("ARRAYJOIN"))
+    }
+}
+
+// MARK: - Date field-to-field comparisons
+
+@Suite("Formula Date field operand")
+struct TestFormulaDateFieldOperand {
+    let f = FormulaDateField("fld123")
+    let other = FormulaDateField("fldOther")
+
+    @Test func onAnotherField() {
+        let r = f.on(other)
+        #expect(r == "DATETIME_PARSE({fldOther})=DATETIME_PARSE({fld123})")
+    }
+
+    @Test func afterAnotherField() {
+        #expect(f.after(other).contains("DATETIME_PARSE({fldOther})<DATETIME_PARSE({fld123})"))
+    }
+
+    @Test func betweenMixedOperands() {
+        let r = f.between("2025-01-01", other)
+        #expect(r.hasPrefix("AND("))
+        #expect(r.contains("DATETIME_PARSE('2025-01-01')"))
+        #expect(r.contains("DATETIME_PARSE({fldOther})"))
+    }
+
+    @Test func stringLiteralStillWorks() {
+        let r = f.on("2025-01-15")
+        #expect(r.contains("DATETIME_PARSE('2025-01-15')"))
+        #expect(r.contains("=DATETIME_PARSE({fld123})"))
+    }
 }

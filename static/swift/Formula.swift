@@ -81,10 +81,18 @@ extension FormulaField {
 
 // MARK: - Text operations
 
-/// Text operations shared by text, single-select, and multi-select fields.
-public protocol FormulaTextOps: FormulaField {}
+/// Text operations shared by text, select, and lookup fields.
+public protocol FormulaTextOps: FormulaField {
+    /// Field reference used in string operations (FIND/LEN with LOWER/TRIM).
+    /// Lookup fields override this to wrap the reference in
+    /// `ARRAYJOIN(field, ", ")` so Airtable can coerce the array to a string.
+    var stringField: String { get }
+}
 
 extension FormulaTextOps {
+    /// Defaults to the bare `{field}` reference.
+    public var stringField: String { field }
+
     /// Exact equality.
     public func equals(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
         let f = wrapField(field, caseSensitive: caseSensitive, trim: trim)
@@ -106,7 +114,7 @@ extension FormulaTextOps {
 
     /// Contains substring.
     public func contains(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
-        let f = wrapField(field, caseSensitive: caseSensitive, trim: trim)
+        let f = wrapField(stringField, caseSensitive: caseSensitive, trim: trim)
         let v = wrapValueStr(value, caseSensitive: caseSensitive, trim: trim)
         return "FIND(\(v),\(f))>0"
     }
@@ -128,16 +136,30 @@ extension FormulaTextOps {
 
     /// Starts with the given value.
     public func startsWith(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
-        let f = wrapField(field, caseSensitive: caseSensitive, trim: trim)
+        let f = wrapField(stringField, caseSensitive: caseSensitive, trim: trim)
         let v = wrapValueStr(value, caseSensitive: caseSensitive, trim: trim)
         return "FIND(\(v),\(f))=1"
     }
 
+    /// Does not start with the given value.
+    public func notStartsWith(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
+        let f = wrapField(stringField, caseSensitive: caseSensitive, trim: trim)
+        let v = wrapValueStr(value, caseSensitive: caseSensitive, trim: trim)
+        return "FIND(\(v),\(f))!=1"
+    }
+
     /// Ends with the given value.
     public func endsWith(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
-        let f = wrapField(field, caseSensitive: caseSensitive, trim: trim)
+        let f = wrapField(stringField, caseSensitive: caseSensitive, trim: trim)
         let v = wrapValueStr(value, caseSensitive: caseSensitive, trim: trim)
         return "FIND(\(v),\(f))=LEN(\(f))-LEN(\(v))+1"
+    }
+
+    /// Does not end with the given value.
+    public func notEndsWith(_ value: String, caseSensitive: Bool = true, trim: Bool = false) -> String {
+        let f = wrapField(stringField, caseSensitive: caseSensitive, trim: trim)
+        let v = wrapValueStr(value, caseSensitive: caseSensitive, trim: trim)
+        return "FIND(\(v),\(f))!=LEN(\(f))-LEN(\(v))+1"
     }
 
     /// Phone number equality (strips spaces, dashes, parens, plus, dots).
@@ -183,6 +205,24 @@ public struct FormulaId: Sendable {
 public struct FormulaTextField: FormulaField, FormulaTextOps, Sendable {
     public let fieldId: String
     public init(_ fieldId: String) { self.fieldId = fieldId }
+}
+
+// MARK: - Lookup Field
+
+/// Formula builder for `multipleLookupValues` / lookup fields.
+///
+/// Lookup field values are arrays. Airtable does not auto-coerce arrays through
+/// `LOWER` / `TRIM` / `FIND`, so `contains`, `startsWith` and `endsWith` would
+/// silently match nothing. `stringField` wraps the reference in
+/// `ARRAYJOIN(field, ", ")` so string ops see a string.
+///
+/// Equality (`=`) is unaffected — Airtable coerces array fields to a
+/// comma-joined string under `=`, so direct equality already works.
+public struct FormulaLookupField: FormulaField, FormulaTextOps, Sendable {
+    public let fieldId: String
+    public init(_ fieldId: String) { self.fieldId = fieldId }
+
+    public var stringField: String { "ARRAYJOIN(\(field), \", \")" }
 }
 
 // MARK: - Single Select Field
@@ -270,13 +310,23 @@ public struct FormulaBooleanField: FormulaField, Sendable {
 // MARK: - Date Field
 
 /// Intermediate builder for date "time ago" comparisons.
+/// Either side of a date comparison: a literal date string or another date field.
+public protocol FormulaDateOperand {
+    /// The operand wrapped in `DATETIME_PARSE(...)` for comparison.
+    var datetimeParseExpr: String { get }
+}
+
+extension String: FormulaDateOperand {
+    public var datetimeParseExpr: String { "DATETIME_PARSE('\(self)')" }
+}
+
 public struct FormulaDateComparison: Sendable {
     let fieldId: String
     let op: String
 
-    /// Compare with a specific date string.
-    public func date(_ date: String) -> String {
-        "DATETIME_PARSE('\(date)')\(op)DATETIME_PARSE({\(fieldId)})"
+    /// Compare against a literal date string or another date field.
+    public func date(_ other: some FormulaDateOperand) -> String {
+        "\(other.datetimeParseExpr)\(op)DATETIME_PARSE({\(fieldId)})"
     }
 
     public func millisecondsAgo(_ n: Int) -> String { ago(n, "milliseconds") }
@@ -303,34 +353,40 @@ public struct FormulaDateField: FormulaField, Sendable {
         FormulaDateComparison(fieldId: fieldId, op: op)
     }
 
-    /// Date equals. Pass a date string.
-    public func on(_ date: String) -> String { comparison("=").date(date) }
+    /// Date equals. Pass a date string or another date field.
+    public func on(_ date: some FormulaDateOperand) -> String { comparison("=").date(date) }
     /// Returns a DateComparison for chaining with time-ago methods.
     public func on() -> FormulaDateComparison { comparison("=") }
 
-    public func notOn(_ date: String) -> String { comparison("!=").date(date) }
+    public func notOn(_ date: some FormulaDateOperand) -> String { comparison("!=").date(date) }
     public func notOn() -> FormulaDateComparison { comparison("!=") }
 
-    public func onOrAfter(_ date: String) -> String { comparison("<=").date(date) }
+    public func onOrAfter(_ date: some FormulaDateOperand) -> String { comparison("<=").date(date) }
     public func onOrAfter() -> FormulaDateComparison { comparison("<=") }
 
-    public func onOrBefore(_ date: String) -> String { comparison(">=").date(date) }
+    public func onOrBefore(_ date: some FormulaDateOperand) -> String { comparison(">=").date(date) }
     public func onOrBefore() -> FormulaDateComparison { comparison(">=") }
 
-    public func after(_ date: String) -> String { comparison("<").date(date) }
+    public func after(_ date: some FormulaDateOperand) -> String { comparison("<").date(date) }
     public func after() -> FormulaDateComparison { comparison("<") }
 
-    public func before(_ date: String) -> String { comparison(">").date(date) }
+    public func before(_ date: some FormulaDateOperand) -> String { comparison(">").date(date) }
     public func before() -> FormulaDateComparison { comparison(">") }
 
     /// Date is between start and end. Inclusive by default.
-    public func between(_ start: String, _ end: String, inclusive: Bool = true) -> String {
+    public func between(
+        _ start: some FormulaDateOperand, _ end: some FormulaDateOperand, inclusive: Bool = true
+    ) -> String {
         if inclusive {
             return Formulas.and(onOrAfter(start), onOrBefore(end))
         } else {
             return Formulas.and(after(start), before(end))
         }
     }
+}
+
+extension FormulaDateField: FormulaDateOperand {
+    public var datetimeParseExpr: String { "DATETIME_PARSE(\(field))" }
 }
 
 // MARK: - Attachments Field

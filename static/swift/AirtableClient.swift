@@ -99,6 +99,11 @@ public actor AirtableClient {
         }
         if !query.isEmpty {
             components.queryItems = query
+            // URLComponents leaves `+` unencoded in query values (legal per
+            // RFC 3986), but Airtable's server decodes it as a space — which
+            // corrupts formulas like `...+1`. Force-encode it.
+            components.percentEncodedQuery = components.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B")
         }
         guard let url = components.url else { throw AirtableError.invalidUrl }
         return url
