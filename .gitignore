@@ -8,3 +8,8 @@ node_modules/
 *egg-info*
 target/
 .data/
+
+# Swift
+.build/
+*.xcodeproj/xcuserdata/
+Package.resolved

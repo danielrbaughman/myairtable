@@ -18,7 +18,7 @@ from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 logger = logging.getLogger(__name__)
 
-Language = Literal["typescript", "javascript", "python", "rust"]
+Language = Literal["typescript", "javascript", "python", "rust", "swift"]
 
 
 # region AST Nodes
@@ -279,8 +279,10 @@ class CodeEmitter:
         self.formula_field_ids = formula_field_ids  # set of field IDs that are formula fields
         self.linked_record_field_ids = linked_record_field_ids or set()  # set of field IDs that are linked records (plural, .ids)
         self.single_linked_record_field_ids = single_linked_record_field_ids or set()  # single linked records (.id)
-        self._self = "self" if language in ("python", "rust") else "this"
-        self._runtime = "F"
+        self._self = "self" if language in ("python", "rust", "swift") else "this"
+        # Swift uses the full type name (AirtableRuntime) rather than an alias.
+        # Keeping the name verbose avoids a file-level typealias in every generated model.
+        self._runtime = "AirtableRuntime" if language == "swift" else "F"
 
     @staticmethod
     def _normalize_number(value: str) -> str:
@@ -295,6 +297,9 @@ class CodeEmitter:
             value = self._normalize_number(node.value)
             if self.language == "rust":
                 return f"json!({value})"
+            if self.language == "swift":
+                # AirtableJSONValue.int for whole numbers, .double otherwise.
+                return f".double({value})" if "." in value else f".int({value})"
             return value
 
         if isinstance(node, StringLiteral):
@@ -304,6 +309,11 @@ class CodeEmitter:
                 if val.startswith("'") and val.endswith("'"):
                     val = '"' + val[1:-1].replace('"', '\\"') + '"'
                 return f"json!({val})"
+            if self.language == "swift":
+                val = node.value
+                if val.startswith("'") and val.endswith("'"):
+                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
+                return f".string({val})"
             return node.value
 
         if isinstance(node, FieldRef):
@@ -328,6 +338,12 @@ class CodeEmitter:
 
         if self.language == "rust":
             return f"serde_json::to_value(&{self._self}.{prop_name}).unwrap_or(Value::Null)"
+        if self.language == "swift":
+            # All field accesses flow through V() — raw fields are typed
+            # (String?, Double?, [RecordId]?, etc.) and formula fields resolve
+            # to their result type. V<T: Encodable>() converts any of them to
+            # AirtableJSONValue for runtime composition.
+            return f"{self._runtime}.V({self._self}.{prop_name})"
 
         if field_id in self.formula_field_ids:
             # Formula field -> access as property (getter checks evaluate_formulas_at_runtime)
@@ -391,6 +407,14 @@ class CodeEmitter:
         if self.language == "rust":
             return self._emit_rust_function_call(node)
 
+        # Swift's runtime functions have native variadic + default-param signatures,
+        # so we can just comma-separate the args directly. SWITCH is the exception:
+        # it's a custom handler (see _emit_fn_switch) that emits case-tuples for
+        # Swift's labeled `cases:` parameter.
+        if self.language == "swift":
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f"{self._runtime}.{node.name}({args})"
+
         # Default: runtime function call
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"{self._runtime}.{node.name}({args})"
@@ -432,26 +456,37 @@ class CodeEmitter:
     def _emit_fn_record_id(self, node: FunctionCall) -> str:
         if self.language == "rust":
             return f'json!({self._self}.get_id().as_deref().unwrap_or(""))'
+        if self.language == "swift":
+            return f'.string({self._self}.id ?? "")'
         return f"{self._self}.id"
 
     def _emit_fn_true(self, node: FunctionCall) -> str:
         if self.language == "rust":
             return "json!(true)"
+        if self.language == "swift":
+            return ".bool(true)"
         return "True" if self.language == "python" else "true"
 
     def _emit_fn_false(self, node: FunctionCall) -> str:
         if self.language == "rust":
             return "json!(false)"
+        if self.language == "swift":
+            return ".bool(false)"
         return "False" if self.language == "python" else "false"
 
     def _emit_fn_blank(self, node: FunctionCall) -> str:
         if not node.args:
             if self.language == "rust":
                 return "json!(null)"
+            if self.language == "swift":
+                return ".null"
             return "None" if self.language == "python" else "null"
         arg = self.emit(node.args[0])
         if self.language == "rust":
             return f"Value::Bool({arg}.is_null())"
+        if self.language == "swift":
+            # In Swift, BLANK(x) checks whether x is .null or equivalent empty.
+            return f".bool({arg} == .null)"
         if self.language == "python":
             return f"({arg} is None)"
         return f"({arg} == null)"
@@ -460,6 +495,8 @@ class CodeEmitter:
         arg = self.emit(node.args[0])
         if self.language == "rust":
             return f"Value::Bool(!F::is_truthy(&{arg}))"
+        if self.language == "swift":
+            return f".bool(!{self._runtime}.isTruthy({arg}))"
         return f"not {arg}" if self.language == "python" else f"!{arg}"
 
     def _emit_fn_and(self, node: FunctionCall) -> str:
@@ -467,12 +504,17 @@ class CodeEmitter:
         if len(parts) == 0:
             if self.language == "rust":
                 return "json!(true)"
+            if self.language == "swift":
+                return ".bool(true)"
             return "True" if self.language == "python" else "true"
         if len(parts) == 1:
             return parts[0]
         if self.language == "rust":
             truthy_parts = [f"F::is_truthy(&{p})" for p in parts]
             return f"Value::Bool({' && '.join(truthy_parts)})"
+        if self.language == "swift":
+            truthy_parts = [f"{self._runtime}.isTruthy({p})" for p in parts]
+            return f".bool({' && '.join(truthy_parts)})"
         op = " and " if self.language == "python" else " && "
         return f"({op.join(parts)})"
 
@@ -481,26 +523,31 @@ class CodeEmitter:
         if len(parts) == 0:
             if self.language == "rust":
                 return "json!(false)"
+            if self.language == "swift":
+                return ".bool(false)"
             return "False" if self.language == "python" else "false"
         if len(parts) == 1:
             return parts[0]
         if self.language == "rust":
             truthy_parts = [f"F::is_truthy(&{p})" for p in parts]
             return f"Value::Bool({' || '.join(truthy_parts)})"
+        if self.language == "swift":
+            truthy_parts = [f"{self._runtime}.isTruthy({p})" for p in parts]
+            return f".bool({' || '.join(truthy_parts)})"
         op = " or " if self.language == "python" else " || "
         return f"({op.join(parts)})"
 
     def _emit_fn_len(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::LEN(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to F::LEN(&arg) / AirtableRuntime.LEN(arg)
         arg = self._emit_str(node.args[0])
         if self.language == "python":
             return f"len({arg})"
         return f"{arg}.length"
 
     def _emit_fn_str_method(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::LOWER/UPPER/TRIM(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to LOWER/UPPER/TRIM in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
             method = {"LOWER": "lower", "UPPER": "upper", "TRIM": "strip"}[node.name]
@@ -509,40 +556,40 @@ class CodeEmitter:
         return f"{arg}.{method}()"
 
     def _emit_fn_encode_url_component(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::ENCODE_URL_COMPONENT(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to ENCODE_URL_COMPONENT in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
             return f'urllib.parse.quote({arg}, safe="")'
         return f"encodeURIComponent({arg})"
 
     def _emit_fn_int(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::INT(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime INT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
             return f"math.floor({arg})"
         return f"Math.floor({arg})"
 
     def _emit_fn_abs(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::ABS(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime ABS
         arg = self._emit_num(node.args[0])
         if self.language == "python":
             return f"abs({arg})"
         return f"Math.abs({arg})"
 
     def _emit_fn_sqrt(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::SQRT(&arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime SQRT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
             return f"math.sqrt({arg})"
         return f"Math.sqrt({arg})"
 
     def _emit_fn_exp(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::EXP(&arg) — note: EXP not in runtime yet
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime EXP
         arg = self._emit_num(node.args[0])
         if self.language == "python":
             return f"math.exp({arg})"
@@ -551,14 +598,18 @@ class CodeEmitter:
     def _emit_fn_log10(self, node: FunctionCall) -> str | None:
         if self.language == "rust":
             return None  # Fall through to F::LOG10(&arg) — note: LOG10 not in runtime yet
+        if self.language == "swift":
+            # Swift's runtime exposes LOG(v, base?); LOG10 is LOG(v) with default base 10.
+            arg = self.emit(node.args[0])
+            return f"{self._runtime}.LOG({arg})"
         arg = self._emit_num(node.args[0])
         if self.language == "python":
             return f"math.log10({arg})"
         return f"Math.log10({arg})"
 
     def _emit_fn_power(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::POWER(&arg, &arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime POWER
         base = self._emit_num(node.args[0])
         exp = self._emit_num(node.args[1])
         if self.language == "python":
@@ -566,15 +617,15 @@ class CodeEmitter:
         return f"Math.pow({base}, {exp})"
 
     def _emit_fn_mod(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::MOD(&arg, &arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime MOD
         value = self._emit_num(node.args[0])
         divisor = self._emit_num(node.args[1])
         return f"({value} % {divisor})"
 
     def _emit_fn_regex_extract(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to runtime (if regex support is added)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime REGEX_EXTRACT
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
         if self.language == "python":
@@ -586,6 +637,8 @@ class CodeEmitter:
         right = self.emit(node.args[1])
         if self.language == "rust":
             return f"Value::Bool(F::is_truthy(&{left}) != F::is_truthy(&{right}))"
+        if self.language == "swift":
+            return f".bool({self._runtime}.isTruthy({left}) != {self._runtime}.isTruthy({right}))"
         if self.language == "python":
             return f"((not {left}) != (not {right}))"
         return f"(!{left} !== !{right})"
@@ -593,13 +646,20 @@ class CodeEmitter:
     def _emit_fn_if(self, node: FunctionCall) -> str:
         cond = self.emit(node.args[0])
         if_true = self.emit(node.args[1])
-        if_false = (
-            self.emit(node.args[2])
-            if len(node.args) > 2
-            else ("json!(null)" if self.language == "rust" else "None" if self.language == "python" else "null")
-        )
+        if len(node.args) > 2:
+            if_false = self.emit(node.args[2])
+        elif self.language == "rust":
+            if_false = "json!(null)"
+        elif self.language == "swift":
+            if_false = ".null"
+        elif self.language == "python":
+            if_false = "None"
+        else:
+            if_false = "null"
         if self.language == "rust":
             return f"if F::is_truthy(&{cond}) {{ {if_true} }} else {{ {if_false} }}"
+        if self.language == "swift":
+            return f"({self._runtime}.isTruthy({cond}) ? {if_true} : {if_false})"
         if self.language == "python":
             return f"({if_true} if {cond} else {if_false})"
         return f"({cond} ? {if_true} : {if_false})"
@@ -613,6 +673,11 @@ class CodeEmitter:
             result = fallback
             for cond, val in reversed(pairs):
                 result = f"if F::is_truthy(&{cond}) {{ {val} }} else {{ {result} }}"
+            return result
+        if self.language == "swift":
+            result = ".null"
+            for cond, val in reversed(pairs):
+                result = f"({self._runtime}.isTruthy({cond}) ? {val} : {result})"
             return result
         fallback = "None" if self.language == "python" else "null"
         if self.language == "python":
@@ -633,8 +698,14 @@ class CodeEmitter:
             pairs.append((self.emit(rest[i]), self.emit(rest[i + 1])))
         if len(rest) % 2 == 1:
             fallback = self.emit(rest[-1])
+        elif self.language == "rust":
+            fallback = "json!(null)"
+        elif self.language == "swift":
+            fallback = ".null"
+        elif self.language == "python":
+            fallback = "None"
         else:
-            fallback = "json!(null)" if self.language == "rust" else "None" if self.language == "python" else "null"
+            fallback = "null"
         # Coerce expr to match pattern type when types differ
         first_pattern = rest[0] if rest else None
         expr_type = self._infer_type(expr_node)
@@ -648,6 +719,15 @@ class CodeEmitter:
                 expr = f"json!(F::N(&{self.emit(expr_node)}))"
             else:
                 expr = self.emit(expr_node)
+        elif self.language == "swift":
+            # Swift SWITCH is implemented via labeled `cases:` param + default
+            # below. Coerce the expr to the pattern type for comparison.
+            if pattern_type == "string" and expr_type != "string":
+                expr = f".string({self._runtime}.S({self.emit(expr_node)}))"
+            elif pattern_type == "number" and expr_type != "number":
+                expr = f".double({self._runtime}.N({self.emit(expr_node)}))"
+            else:
+                expr = self.emit(expr_node)
         elif pattern_type == "string" and expr_type != "string":
             expr = f"{self._runtime}.S({self.emit(expr_node)})"
         elif pattern_type == "number" and expr_type != "number":
@@ -659,6 +739,11 @@ class CodeEmitter:
             for pattern, val in reversed(pairs):
                 result = f"if {expr} == {pattern} {{ {val} }} else {{ {result} }}"
             return result
+        if self.language == "swift":
+            # Swift's AirtableRuntime.SWITCH signature:
+            #   SWITCH(_ expr: AirtableJSONValue?, cases: [(AirtableJSONValue, AirtableJSONValue)], default: AirtableJSONValue?)
+            case_tuples = ", ".join(f"({pat}, {val})" for pat, val in pairs)
+            return f"{self._runtime}.SWITCH({expr}, cases: [{case_tuples}], default: {fallback})"
         if self.language == "python":
             result = fallback
             for pattern, val in reversed(pairs):
@@ -670,8 +755,8 @@ class CodeEmitter:
         return f"({result})"
 
     def _emit_fn_min(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::MIN(&[args])
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime MIN
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
             return f"min({self._runtime}.AN(({args},)))"
@@ -679,8 +764,8 @@ class CodeEmitter:
         return f"Math.min(...{an})"
 
     def _emit_fn_max(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::MAX(&[args])
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime MAX
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
             return f"max({self._runtime}.AN(({args},)))"
@@ -688,22 +773,26 @@ class CodeEmitter:
         return f"Math.max(...{an})"
 
     def _emit_fn_sum(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "typescript", "javascript"):
-            return None  # Fall through to F::SUM(&[args]) / F.SUM()
+        if self.language in ("rust", "swift", "typescript", "javascript"):
+            return None  # Fall through to F::SUM(&[args]) / F.SUM() / AirtableRuntime.SUM()
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"sum({self._runtime}.AN(({args},)))"
 
     def _emit_fn_countall(self, node: FunctionCall) -> str | None:
         if self.language == "rust":
             return None  # Fall through to F::COUNTALL(&[args]) — note: COUNTALL not in runtime
+        if self.language == "swift":
+            # Swift doesn't have COUNTALL directly; emit A().count.
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f".int({self._runtime}.A([{args}]).count)"
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
             return f"len({self._runtime}.A(({args},)))"
         return f"{self._runtime}.A([{args}]).length"
 
     def _emit_fn_round(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "typescript", "javascript"):
-            return None  # Fall through to F::ROUND() / F.ROUND()
+        if self.language in ("rust", "swift", "typescript", "javascript"):
+            return None  # Fall through to runtime ROUND
         val = self._emit_num(node.args[0])
         if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
             prec = node.args[1].value
@@ -714,16 +803,16 @@ class CodeEmitter:
         return f"round({val}, {prec})"
 
     def _emit_fn_concatenate(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::CONCATENATE(&[args])
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime CONCATENATE
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
             return f'"".join({self._runtime}.AS(({args},)))'
         return f'{self._runtime}.AS([{args}]).join("")'
 
     def _emit_fn_rept(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::REPT(&arg, &arg)
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime REPT
         text = self._emit_str(node.args[0])
         if self.language == "python":
             if isinstance(node.args[1], NumberLiteral):
@@ -738,8 +827,8 @@ class CodeEmitter:
         return f"{text}.repeat({count})"
 
     def _emit_fn_regex_match(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to runtime
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime REGEX_MATCH
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
         if self.language == "python":
@@ -747,8 +836,8 @@ class CodeEmitter:
         return f"new RegExp({regex}).test({text})"
 
     def _emit_fn_regex_replace(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to runtime
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime REGEX_REPLACE
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
         repl = self._emit_str(node.args[2])
@@ -758,12 +847,12 @@ class CodeEmitter:
 
     def _emit_fn_today(self, node: FunctionCall) -> str | None:
         if self.language != "python":
-            return None  # Fall through to F.TODAY()
+            return None  # Fall through to F.TODAY() / AirtableRuntime.TODAY()
         return 'datetime.now().strftime("%Y-%m-%d")'
 
     def _emit_fn_now(self, node: FunctionCall) -> str | None:
         if self.language != "python":
-            return None  # Fall through to F.NOW()
+            return None  # Fall through to F.NOW() / AirtableRuntime.NOW()
         return "datetime.now().isoformat()"
 
     def _emit_fn_set_locale(self, node: FunctionCall) -> str:
@@ -773,6 +862,9 @@ class CodeEmitter:
         if self.language == "rust":
             # Rust DATETIME_PARSE only takes 1 arg (ignores format string)
             return f"{self._runtime}::DATETIME_PARSE(&{self.emit(node.args[0])})"
+        if self.language == "swift":
+            # Swift DATETIME_PARSE takes 1 arg (ignores format string)
+            return f"{self._runtime}.DATETIME_PARSE({self.emit(node.args[0])})"
         return f"{self._runtime}.D({self.emit(node.args[0])})"
 
     _JS_DATE_GETTERS: dict[str, str] = {
@@ -795,8 +887,8 @@ class CodeEmitter:
     }
 
     def _emit_fn_date_part(self, node: FunctionCall) -> str | None:
-        if self.language == "rust":
-            return None  # Fall through to F::YEAR(&arg), F::MONTH(&arg), etc.
+        if self.language in ("rust", "swift"):
+            return None  # Fall through to runtime YEAR/MONTH/DAY/etc.
         d = f"{self._runtime}.D({self.emit(node.args[0])})"
         if self.language != "python":
             getter = self._JS_DATE_GETTERS.get(node.name)
@@ -812,12 +904,12 @@ class CodeEmitter:
 
     def _emit_fn_datestr(self, node: FunctionCall) -> str | None:
         if self.language != "python":
-            return None  # Fall through to F.DATESTR()
+            return None  # Fall through to runtime DATESTR
         return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%Y-%m-%d")'
 
     def _emit_fn_timestr(self, node: FunctionCall) -> str | None:
         if self.language != "python":
-            return None  # Fall through to F.TIMESTR()
+            return None  # Fall through to runtime TIMESTR
         return f'{self._runtime}.D({self.emit(node.args[0])}).strftime("%H:%M:%S")'
 
     # endregion
@@ -874,8 +966,8 @@ class CodeEmitter:
     def _emit_str(self, node: ASTNode) -> str:
         """Emit node in string context. String literals pass through; concat recurses; others get F.S()."""
         if isinstance(node, StringLiteral):
-            if self.language == "rust":
-                # Ensure double quotes for Rust string literals
+            if self.language in ("rust", "swift"):
+                # Both Rust and Swift use double-quoted string literals.
                 val = node.value
                 if val.startswith("'") and val.endswith("'"):
                     val = '"' + val[1:-1].replace('"', '\\"') + '"'
@@ -886,6 +978,9 @@ class CodeEmitter:
             right = self._emit_str(node.right)
             if self.language == "rust":
                 return f'format!("{{}}{{}}", {left}, {right})'
+            if self.language == "swift":
+                # Swift: "\(left)\(right)" is cleanest, but concat via + works for String pieces.
+                return f"({left} + {right})"
             return f"({left} + {right})"
         if self.language == "rust":
             return f"F::S(&{self.emit(node)})"
@@ -897,6 +992,9 @@ class CodeEmitter:
             value = self._normalize_number(node.value)
             if self.language == "rust":
                 return f"{value}_f64"
+            if self.language == "swift":
+                # Swift Double literal — ensure decimal form so result is Double.
+                return value if "." in value else f"Double({value})"
             return value
         if isinstance(node, BinaryOp) and node.op in ("+", "-", "*", "/"):
             left = self._emit_num(node.left)
@@ -941,6 +1039,12 @@ class CodeEmitter:
             if other_type == "number" and node_type != "number":
                 return f"json!(F::N(&{self.emit(node)}))"
             return self.emit(node)
+        if self.language == "swift":
+            if other_type == "string" and node_type != "string":
+                return f".string({self._runtime}.S({self.emit(node)}))"
+            if other_type == "number" and node_type != "number":
+                return f".double({self._runtime}.N({self.emit(node)}))"
+            return self.emit(node)
         if other_type == "string" and node_type != "string":
             return f"{self._runtime}.S({self.emit(node)})"
         if other_type == "number" and node_type != "number":
@@ -952,12 +1056,17 @@ class CodeEmitter:
             num_expr = self._emit_num(node)
             if self.language == "rust":
                 return f"json!({num_expr})"
+            if self.language == "swift":
+                # Numeric arithmetic in Swift produces Double → wrap back into AirtableJSONValue.
+                return f".double({num_expr})"
             return num_expr
         if node.op in ("<", ">", "<=", ">="):
             left = self._emit_num(node.left)
             right = self._emit_num(node.right)
             if self.language == "rust":
                 return f"Value::Bool({left} {node.op} {right})"
+            if self.language == "swift":
+                return f".bool({left} {node.op} {right})"
             return f"({left} {node.op} {right})"
         if node.op in ("=", "!="):
             left = self._emit_eq_operand(node.left, node.right)
@@ -965,12 +1074,19 @@ class CodeEmitter:
             native_op = "==" if node.op == "=" else "!="
             if self.language == "rust":
                 return f"Value::Bool({left} {native_op} {right})"
+            if self.language == "swift":
+                return f".bool({left} {native_op} {right})"
             return f"({left} {native_op} {right})"
         if node.op == "&":
             if self.language == "rust":
                 left = self._emit_str(node.left)
                 right = self._emit_str(node.right)
                 return f'Value::String(format!("{{}}{{}}", {left}, {right}))'
+            if self.language == "swift":
+                # In a value context, wrap concatenation result in .string(...).
+                left = self._emit_str(node.left)
+                right = self._emit_str(node.right)
+                return f".string({left} + {right})"
             return self._emit_str(node)
         raise ParseError(f"Unknown operator: {node.op}")
 
@@ -979,6 +1095,8 @@ class CodeEmitter:
             num_expr = self._emit_num(node)
             if self.language == "rust":
                 return f"json!({num_expr})"
+            if self.language == "swift":
+                return f".double({num_expr})"
             return num_expr
         raise ParseError(f"Unknown unary operator: {node.op}")
 
