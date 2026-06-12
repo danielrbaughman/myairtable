@@ -183,3 +183,34 @@ class TestTranspiledEqualityShapes {
         assertFalse(S(V("hi")) == S(JsonPrimitive("ho")))
     }
 }
+
+/**
+ * myairtable-w3rk regression — V() must resolve Instant nested inside
+ * generics via the shared serializersModule instead of silently degrading
+ * to JsonNull (which made toRecord() drop computed date fields and formulas
+ * referencing them evaluate as BLANK).
+ */
+class TestVGenericSerializerResolution {
+    private val instant = Instant.ofEpochSecond(1_705_314_600L)
+
+    @Test
+    fun vResolvesInstantInsideMaybeSpecialOrError() {
+        val wrapped: MaybeSpecialOrError<Instant> = MaybeSpecialOrError.Value(instant)
+        assertEquals(JsonPrimitive("2024-01-15T10:30:00Z"), V(wrapped))
+    }
+
+    @Test
+    fun vResolvesInstantInsideVecOrValue() {
+        val wrapped: VecOrValue<MaybeSpecialOrError<Instant>> =
+            VecOrValue.Single(MaybeSpecialOrError.Value(instant))
+        assertEquals(JsonPrimitive("2024-01-15T10:30:00Z"), V(wrapped))
+    }
+
+    @Test
+    fun vStillDegradesUnserializableTypesToNull() {
+        class NotSerializable(
+            val x: Int,
+        )
+        assertEquals(JsonNull, V(NotSerializable(1)))
+    }
+}

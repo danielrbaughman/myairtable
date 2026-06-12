@@ -9,6 +9,7 @@
 
 package myairtable
 
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,6 +19,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
 import kotlinx.serialization.serializer
 import java.time.Instant
 import kotlin.math.abs
@@ -32,6 +35,23 @@ object AirtableJson {
             ignoreUnknownKeys = true
             encodeDefaults = false
             explicitNulls = false
+            serializersModule =
+                SerializersModule {
+                    // Required so reified serializer<T>() lookups resolve Instant
+                    // when it is nested inside generics (MaybeSpecialOrError<Instant>,
+                    // VecOrValue<...>) — bare Instant/Duration fields use the explicit
+                    // V() overloads below, and model properties use
+                    // @file:UseSerializers. Without this, V() on computed date
+                    // fields silently degraded to JsonNull (myairtable-w3rk).
+                    // NOTE kotlin.time.Duration cannot be registered here: its
+                    // BUILT-IN ISO-8601 serializer always wins over contextual,
+                    // so Duration nested in generics emits "PT…" strings — a
+                    // known cross-format quirk affecting only computed duration
+                    // roll-ups (decode of those fields is unaffected;
+                    // AirtableDurationSerializer handles wire decode via
+                    // @file:UseSerializers).
+                    contextual(Instant::class, AirtableInstantSerializer)
+                }
         }
 }
 
@@ -55,7 +75,9 @@ inline fun <reified T> V(value: T?): JsonElement {
     return try {
         val serializer = AirtableJson.instance.serializersModule.serializer<T>()
         AirtableJson.instance.encodeToJsonElement(serializer, value)
-    } catch (_: Exception) {
+    } catch (_: SerializationException) {
+        // Unserializable types degrade to null rather than throwing inside a
+        // formula evaluation (matches the Swift target's V() behavior).
         JsonNull
     }
 }
