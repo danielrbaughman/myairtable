@@ -37,4 +37,28 @@ public sealed interface VecOrValue<T> permits VecOrValue.Single, VecOrValue.Mult
       case Multiple<T> m -> m.values() == null ? List.of() : m.values();
     };
   }
+
+  /**
+   * All clean values — non-null, non-special, non-error — regardless of the single/list shape. A
+   * {@code null} receiver yields an empty list; {@code null} entries and special/error sentinels
+   * are dropped.
+   *
+   * <p>DX helper mirroring Kotlin's {@code VecOrValue<MaybeSpecialOrError<T>>?.cleanValues} for
+   * generated lookup/rollup computed fields: {@code VecOrValue.cleanValues(model.getScores())}
+   * instead of manual null-checks plus sentinel filtering. Static (not a default method) because
+   * Java has no nullable-receiver extensions and the unwrapping is only defined when the element
+   * type is {@link MaybeSpecialOrError}.
+   */
+  static <T> List<T> cleanValues(VecOrValue<MaybeSpecialOrError<T>> field) {
+    if (field == null) {
+      return List.of();
+    }
+    List<T> clean = new java.util.ArrayList<>();
+    for (MaybeSpecialOrError<T> entry : field.values()) {
+      if (entry != null && entry.value() != null) {
+        clean.add(entry.value());
+      }
+    }
+    return List.copyOf(clean);
+  }
 }
