@@ -8,7 +8,6 @@ import io.ktor.http.HttpMethod
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -50,12 +49,6 @@ class DictTable(
     private data class RawListResponse(
         val records: List<RawRecordEnvelope> = emptyList(),
         val offset: String? = null,
-    )
-
-    @Serializable
-    private data class DeleteSingleResponse(
-        val id: String,
-        val deleted: Boolean,
     )
 
     /** A fully-loaded record: id + createdTime + [Fields]. */
