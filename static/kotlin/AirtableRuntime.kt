@@ -245,7 +245,13 @@ object AirtableRuntime {
 
     fun ABS(value: JsonElement?): JsonElement = numValue(abs(N(value)))
 
-    fun EXP(value: JsonElement?): JsonElement = numValue(kotlin.math.exp(N(value)))
+    fun EXP(value: JsonElement?): JsonElement {
+        val n = N(value)
+        // JVM Math.exp(1.0) is one ULP above Math.E (2.7182818284590455 vs
+        // ...45); V8 — and therefore Airtable — returns the correctly-rounded
+        // E. Pin the integer-1 case so local evaluation matches the API.
+        return numValue(if (n == 1.0) kotlin.math.E else kotlin.math.exp(n))
+    }
 
     fun SQRT(value: JsonElement?): JsonElement = numValue(sqrt(N(value)))
 
