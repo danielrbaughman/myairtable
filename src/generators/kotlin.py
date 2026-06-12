@@ -235,8 +235,8 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 view_entries = _deduplicate_entries(raw_entries)
                 write.doc_comment(f"Views for `{sanitize_string(table.name)}`.")
                 write.line(f"enum class {view_name}(")
-                write.line_indented("val id: String,")
-                write.line(") {")
+                write.line_indented("override val id: String,")
+                write.line(") : AirtableView {")
                 for index, (view, entry) in enumerate(zip(table.views, view_entries)):
                     write.doc_comment(f"`{sanitize_string(view.name)}` ({view.type})", indent=1)
                     terminator = ";" if index == len(view_entries) - 1 else ","
@@ -358,7 +358,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 transpiled_formulas = transpile_table_formulas(raw_formulas, "kotlin", field_name_map, formula_field_ids)
 
         with WriteToKotlinFile(path=models_dir / file_name) as write:
-            write.comment("ktlint-disable — generated code is exempt from lint by design")
             write.line("@file:UseSerializers(AirtableInstantSerializer::class, AirtableDurationSerializer::class)")
             write.line_empty()
             write.package_decl()
@@ -372,7 +371,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             if transpiled_formulas:
                 write.import_stmt("kotlinx.serialization.json.JsonPrimitive")
             write.import_stmt("java.time.Instant")
-            write.import_stmt("kotlin.time.Duration")
+            if any("Duration" in f.kotlin_type() for f in table.fields):
+                write.import_stmt("kotlin.time.Duration")
             write.line_empty()
 
             write.doc_comment(
@@ -460,6 +460,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("for (key in snapshot.keys) if (key !in current) dirty[key] = JsonNull", indent=2)
             write.line_indented("return dirty", indent=2)
             write.line_indented("}")
+
+            write.line_empty()
+            write.doc_comment("Debug-friendly rendering; field values stay out of logs by default.", indent=1)
+            write.line_indented(f'override fun toString(): String = "{model_name}(id=$id, ${{toRecord().size}} fields)"')
 
             # ---------- Runtime formula evaluation methods (K8.9) ----------
             if transpiled_formulas:
@@ -598,6 +602,8 @@ def write_main(base: Base, output_folder: Path) -> None:
                 f"Entry point for Airtable base `{base.id}`.",
                 "",
                 "Construct with an API key + base ID; access tables as properties.",
+                "",
+                'NOTE: compiling this generated code REQUIRES the kotlinx.serialization compiler plugin — apply `kotlin("plugin.serialization")` in Gradle.',
             ]
         )
         write.line("class Airtable(")

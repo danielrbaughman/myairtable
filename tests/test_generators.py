@@ -1311,6 +1311,22 @@ class TestKotlinGeneratorOutput:
         assert not (out / "build.gradle.kts").exists()
         assert not (out / "settings.gradle.kts").exists()
 
+    def test_view_enum_implements_airtable_view(self, tmp_path: Path):
+        """Generated `{Table}View` enums implement the static `AirtableView` interface."""
+        from src.generators.kotlin import write_field_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        base.tables[0].views = [View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")]
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        write_field_types(base, output_folder)
+        content = (output_folder / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "enum class TestTableView(" in content
+        assert "override val id: String," in content
+        assert ") : AirtableView {" in content
+        assert 'GRID_VIEW("viw001");' in content
+
 
 class TestKotlinOptionsGenerator:
     """Kotlin select-option enum generation."""
@@ -1768,3 +1784,65 @@ class TestIdentifierCollisionDedup:
         from src.utils.helpers import deduplicate_identifiers
 
         assert deduplicate_identifiers(["myField", "myField", "myField"]) == ["myField", "myFieldV2", "myFieldV3"]
+
+
+class TestKotlinGeneratorEdgeCases:
+    """myairtable-dmiw — generator edge cases flagged by the ultra-review."""
+
+    def _generate_model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.kotlin import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir(exist_ok=True)
+        map_types(base)
+        write_models(base, output_folder)
+        return (output_folder / "dynamic" / "models" / "TestTableModel.kt").read_text()
+
+    def test_keyword_named_field_is_sanitized(self, tmp_path: Path):
+        # The shared property map suffixes hard keywords with `_` (object -> object_)
+        # so derived names (object_Id, evaluateObject_) stay backtick-free.
+        content = self._generate_model([("Object", "fld001", "singleLineText")], tmp_path)
+        assert "var object_: String? = null," in content
+        assert "`object`" not in content
+
+    def test_keyword_named_field_in_formula_reference(self, tmp_path: Path):
+        from src.formulas.formula_transpiler import transpile_formula
+
+        result = transpile_formula('{fld001} & "!"', "kotlin", {"fld001": "`object`"}, set())
+        assert result == 'JsonPrimitive(S(V(this.`object`)) + "!")'
+
+    def test_zero_writable_fields_omits_create_object_and_empty_create_map(self, tmp_path: Path):
+        from src.generators.kotlin import write_field_types
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("My Formula", "fld001", "formula")])
+        out = tmp_path / "kotlin_output"
+        out.mkdir()
+        map_types(base)
+        write_field_types(base, out)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+        assert "CreateTestTableFields" not in content
+
+        model = self._generate_model([("My Formula", "fld001", "formula")], tmp_path)
+        assert "override fun toCreateFields(): Map<String, JsonElement> =" in model
+
+    def test_duration_import_only_when_needed(self, tmp_path: Path):
+        without = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "import kotlin.time.Duration" not in without
+
+    def test_model_has_tostring(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert 'override fun toString(): String = "TestTableModel(id=$id, ${toRecord().size} fields)"' in content
+
+    def test_choice_to_entry_edges(self):
+        from src.utils.write_to_kotlin_file import _choice_to_entry
+
+        assert _choice_to_entry("3rd Party") == "N_3RD_PARTY"
+        assert _choice_to_entry("") == "EMPTY"
+        # Pure punctuation sanitizes through sanitize_property_name's char map.
+        import re
+
+        assert re.fullmatch(r"[A-Z][A-Z0-9_]*", _choice_to_entry("!!!"))
+        assert _choice_to_entry("openInvoices") == "OPEN_INVOICES"

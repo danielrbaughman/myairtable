@@ -7,8 +7,6 @@ Modeled after WriteToSwiftFile, but emits Kotlin syntax (// region markers,
 import re
 from pathlib import Path
 
-from pydantic.alias_generators import to_pascal
-
 from ..meta import Field, Table
 from .helpers import sanitize_property_name, sanitize_string
 from .write_to_file import WriteToFile
@@ -94,22 +92,6 @@ def _choice_to_entry(choice: str) -> str:
     return text
 
 
-def _choice_to_camel(choice: str) -> str:
-    """Convert an Airtable name to lowerCamelCase (for properties derived from names)."""
-    text = sanitize_property_name(choice)
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return "empty"
-    text = re.sub(r"_+", "_", text.replace(" ", "_")).strip("_")
-    if not text:
-        return "empty"
-    if text[0].isdigit():
-        text = f"n_{text}"
-    pascal = to_pascal(text)
-    camel = pascal[0].lower() + pascal[1:] if pascal else "empty"
-    return _kotlin_ident(camel)
-
-
 class WriteToKotlinFile(WriteToFile):
     """Kotlin-aware writer with // region markers, /** KDoc */ comments, and
     helpers for emitting class/object/enum/interface/fun declarations.
@@ -181,11 +163,6 @@ class WriteToKotlinFile(WriteToFile):
         """Open a class declaration (no primary constructor). Caller must emit close()."""
         self._type_open("class", name, supertypes, modifiers, indent)
 
-    def data_class_header(self, name: str, modifiers: list[str] | None = None, indent: int = 0):
-        """Emit `data class Name(` — caller writes constructor params then closes with `)`."""
-        prefix = " ".join((modifiers or []) + ["data class"])
-        self.line_indented(f"{prefix} {_kotlin_ident(name)}(", indent)
-
     def object_open(self, name: str, supertypes: list[str] | None = None, indent: int = 0):
         """Open an `object` declaration."""
         self._type_open("object", name, supertypes, None, indent)
@@ -193,10 +170,6 @@ class WriteToKotlinFile(WriteToFile):
     def companion_object_open(self, indent: int = 1):
         """Open a `companion object {` block."""
         self.line_indented("companion object {", indent)
-
-    def interface_open(self, name: str, supertypes: list[str] | None = None, indent: int = 0):
-        """Open an interface declaration."""
-        self._type_open("interface", name, supertypes, None, indent)
 
     def enum_class_open(self, name: str, supertypes: list[str] | None = None, indent: int = 0):
         """Open an enum class declaration."""
@@ -212,33 +185,10 @@ class WriteToKotlinFile(WriteToFile):
         self.line_indented("}", indent)
 
     # ---- properties -----------------------------------------------------------
-    def val_property(self, name: str, type: str, default: str | None = None, modifiers: list[str] | None = None, indent: int = 1):
-        """Emit `val name: type [= default]` (public by default in Kotlin)."""
-        prefix = " ".join((modifiers or []) + ["val"])
-        suffix = f" = {default}" if default is not None else ""
-        self.line_indented(f"{prefix} {_kotlin_ident(name)}: {type}{suffix}", indent)
-
-    def var_property(self, name: str, type: str, default: str | None = None, modifiers: list[str] | None = None, indent: int = 1):
-        """Emit `var name: type [= default]`."""
-        prefix = " ".join((modifiers or []) + ["var"])
-        suffix = f" = {default}" if default is not None else ""
-        self.line_indented(f"{prefix} {_kotlin_ident(name)}: {type}{suffix}", indent)
-
-    def const_val(self, name: str, type: str, value: str, indent: int = 1):
-        """Emit `const val name: type = value` (compile-time constant inside an object)."""
-        self.line_indented(f"const val {_kotlin_ident(name)}: {type} = {value}", indent)
 
     # ---- constructor parameters (for class headers spanning multiple lines) ----
-    def ctor_param(self, name: str, type: str, keyword: str, default: str | None = None, indent: int = 1, last: bool = False):
-        """Emit a primary-constructor property param: `[val|var] name: type [= default],`."""
-        suffix = f" = {default}" if default is not None else ""
-        comma = "" if last else ","
-        self.line_indented(f"{keyword} {_kotlin_ident(name)}: {type}{suffix}{comma}", indent)
 
     # ---- functions --------------------------------------------------------------
-    def fun_def(self, signature: str, indent: int = 1):
-        """Emit a function header `fun signature {` — caller provides body + close()."""
-        self.line_indented(f"fun {signature} {{", indent)
 
     # ---- enum entries ------------------------------------------------------------
     def enum_entry(self, name: str, serial_name: str | None = None, indent: int = 1, last: bool = False):
@@ -269,8 +219,12 @@ class WriteToKotlinFile(WriteToFile):
         if formula:
             lines: list[str] = [base_info, ""]
             lines.append("```text")
-            for line in field.formula(sanitized=True, format=True).splitlines():
-                lines.append(line)
+            # Cap the embedded formula so IDE hovers stay readable; the full
+            # text lives in the generated Markdown/HTML docs (myairtable-dmiw).
+            formula_lines = field.formula(sanitized=True, format=True).splitlines()
+            if len(formula_lines) > 15:
+                formula_lines = formula_lines[:15] + ["… (truncated)"]
+            lines.extend(formula_lines)
             lines.append("```")
             self.doc_comment(lines, indent=indent_level)
         else:

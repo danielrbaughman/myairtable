@@ -37,6 +37,16 @@ import kotlin.time.toDuration
  */
 typealias RecordId = String
 
+/**
+ * Implemented by every generated `{Table}View` enum, exposing the view's
+ * Airtable ID (`viwXXXXXXXXXXXXXX`). Lets [AirtableQuery.withView] accept a
+ * view constant directly — no reaching for `.id` at the call site.
+ */
+interface AirtableView {
+    /** The Airtable view ID. */
+    val id: String
+}
+
 /** Sort direction for Airtable list queries. */
 @Serializable
 enum class SortDirection(
@@ -255,6 +265,25 @@ sealed interface MaybeSpecialOrError<T> {
 }
 
 /**
+ * The wrapped value, or `null` when the receiver is `null` **or** holds a
+ * special/error sentinel. Nullable-receiver sugar over [MaybeSpecialOrError.valueOrNull]
+ * for generated computed-field properties, which are themselves nullable:
+ * `model.total.value` instead of `model.total?.valueOrNull`.
+ */
+val <T> MaybeSpecialOrError<T>?.value: T?
+    get() = this?.valueOrNull
+
+/**
+ * All clean values — non-null, non-special, non-error — regardless of the
+ * single/list shape. A `null` receiver yields an empty list; sentinel and
+ * `null` entries are dropped. Nullable-receiver sugar for generated
+ * lookup/rollup computed fields: `model.scores.cleanValues` instead of
+ * `model.scores?.values?.mapNotNull { it.valueOrNull } ?: emptyList()`.
+ */
+val <T> VecOrValue<MaybeSpecialOrError<T>>?.cleanValues: List<T>
+    get() = this?.values?.mapNotNull { it.valueOrNull } ?: emptyList()
+
+/**
  * JSON-format serializer for [MaybeSpecialOrError]: peeks at the raw element.
  * Objects carrying exactly the sentinel keys (`specialValue` / `error`)
  * dispatch to the special/error variants; everything else decodes as `T`.
@@ -269,10 +298,13 @@ class MaybeSpecialOrErrorSerializer<T>(
         val jsonDecoder = decoder as? JsonDecoder ?: error("MaybeSpecialOrError supports JSON only")
         val element = jsonDecoder.decodeJsonElement()
         if (element is JsonObject) {
-            if (element.keys == setOf("specialValue")) {
+            // Containment (not exact-key) match: tolerate sibling keys the way
+            // Swift's Codable decode does, so a sentinel object gaining a new
+            // field server-side keeps decoding (myairtable-dmiw).
+            if ("specialValue" in element.keys) {
                 return MaybeSpecialOrError.Special(jsonDecoder.json.decodeFromJsonElement(SpecialNumber.serializer(), element))
             }
-            if (element.keys == setOf("error")) {
+            if ("error" in element.keys) {
                 return MaybeSpecialOrError.Error(jsonDecoder.json.decodeFromJsonElement(ErrorValue.serializer(), element))
             }
         }

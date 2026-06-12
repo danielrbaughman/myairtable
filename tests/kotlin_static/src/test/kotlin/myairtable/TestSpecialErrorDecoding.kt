@@ -214,3 +214,23 @@ class TestSpecialErrorDecoding {
 
     // endregion
 }
+
+/**
+ * myairtable-dmiw — sentinel objects with sibling keys still decode as
+ * Special/Error (containment match, mirroring Swift's lenient Codable).
+ */
+class TestSentinelSiblingKeys {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    @Test
+    fun specialWithSiblingKeyStillDecodesAsSpecial() {
+        val v = json.decodeFromString<MaybeSpecialOrError<Double>>("""{"specialValue":"NaN","future":1}""")
+        assertEquals("NaN", v.specialOrNull?.specialValue)
+    }
+
+    @Test
+    fun errorWithSiblingKeyStillDecodesAsError() {
+        val v = json.decodeFromString<MaybeSpecialOrError<Double>>("""{"error":"#ERROR!","detail":"x"}""")
+        assertEquals("#ERROR!", v.errorOrNull?.error)
+    }
+}

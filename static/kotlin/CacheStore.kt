@@ -58,12 +58,15 @@ class CacheStore(
         val insertedAtMillis: Long,
     )
 
-    private val mutex = Mutex()
-    private val storage = mutableMapOf<Key, Entry>()
+    init {
+        require(maxEntries == null || maxEntries > 0) { "maxEntries must be positive (got $maxEntries); use null to disable the cap" }
+    }
 
-    // Recency tracker for LRU eviction: least-recently-used key first.
-    // Hit + set both move the key to the back via touch().
-    private val recencyOrder = ArrayDeque<Key>()
+    private val mutex = Mutex()
+
+    // Access-ordered LinkedHashMap gives O(1) LRU recency on both get and put
+    // (the previous explicit recency deque was an O(n) scan per access).
+    private val storage = LinkedHashMap<Key, Entry>(16, 0.75f, true)
 
     /**
      * Look up a payload by key. Returns `null` if absent or expired (and
@@ -82,14 +85,13 @@ class CacheStore(
                 val ageSeconds = (nowMillis() - entry.insertedAtMillis) / 1000.0
                 if (ageSeconds > effectiveTtl) {
                     storage.remove(key)
-                    recencyOrder.remove(key)
                     return null
                 }
             } else {
                 // TTL of 0 means caching is off — never serve cached data.
                 return null
             }
-            touch(key)
+            // The access-ordered map already refreshed recency on the lookup.
             entry.payload
         }
 
@@ -105,19 +107,13 @@ class CacheStore(
         if (defaultTtlSeconds <= 0) return
         mutex.withLock {
             storage[key] = Entry(payload, nowMillis())
-            touch(key)
             val cap = maxEntries
             if (cap != null && storage.size > cap) {
-                val leastRecent = recencyOrder.removeFirst()
+                // Eldest = least-recently-accessed (access-ordered map).
+                val leastRecent = storage.keys.first()
                 storage.remove(leastRecent)
             }
         }
-    }
-
-    /** Move `key` to the most-recently-used end of the recency order. */
-    private fun touch(key: Key) {
-        recencyOrder.remove(key)
-        recencyOrder.addLast(key)
     }
 
     /** Invalidate by scope. */
@@ -126,12 +122,10 @@ class CacheStore(
             when (scope) {
                 is Scope.All -> {
                     storage.clear()
-                    recencyOrder.clear()
                 }
 
                 is Scope.Table -> {
                     storage.keys.removeAll { it.tableId == scope.tableId }
-                    recencyOrder.removeAll { it.tableId == scope.tableId }
                 }
             }
         }

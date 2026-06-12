@@ -39,6 +39,13 @@ data class AirtableQuery(
     ): AirtableQuery = copy(sort = sort + Sort(field, direction))
 
     /**
+     * Scope the query to a generated view constant (chainable convenience over
+     * `copy`): `AirtableQuery().withView(ContactsView.ACTIVE)` instead of
+     * `AirtableQuery(view = ContactsView.ACTIVE.id)`.
+     */
+    fun withView(view: AirtableView): AirtableQuery = copy(view = view.id)
+
+    /**
      * Convert to query parameters using Airtable's list-records shape:
      * `filterByFormula`, `fields[]`, `sort[i][field]`, `sort[i][direction]`,
      * `maxRecords`, `pageSize`, `view`, `returnFieldsByFieldId`, `cellFormat`,

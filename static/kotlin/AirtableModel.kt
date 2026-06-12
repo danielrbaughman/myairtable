@@ -64,6 +64,16 @@ interface AirtableModel {
     fun toCreateFields(): Map<String, JsonElement>
 }
 
+/**
+ * The server-assigned record ID, or an UNSAVED_MODEL error.
+ *
+ * Replaces the `created.id!!` pattern: every model returned by a table's
+ * `create(...)` / `get(...)` carries an ID, so prefer this over the unchecked
+ * `!!` — a `null` ID raises a descriptive [AirtableException.Api] instead of a
+ * bare [NullPointerException].
+ */
+fun AirtableModel.requireId(): RecordId = id ?: throw AirtableException.Api("UNSAVED_MODEL", "Model has no server-assigned id yet")
+
 /** The attached client, or a DETACHED_MODEL error. */
 fun AirtableModel.requireAttachedClient(): AirtableClient =
     attachedClient

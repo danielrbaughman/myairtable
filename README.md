@@ -14,6 +14,30 @@ Languages supported:
 - Swift (via a custom-built client)
 - Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
 
+### Kotlin
+
+The generated Kotlin code uses `@Serializable` models, so the **kotlinx.serialization compiler plugin is REQUIRED** — without `kotlin("plugin.serialization")` the generated code will not compile. A known-good Gradle setup (`build.gradle.kts`):
+
+```kotlin
+plugins {
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "2.2.20" // REQUIRED for the generated @Serializable models
+}
+
+sourceSets {
+    main {
+        kotlin.srcDir("path/to/generated/output") // wherever you generate into
+    }
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("io.ktor:ktor-client-core:3.2.3")
+    implementation("io.ktor:ktor-client-cio:3.2.3")
+}
+```
+
 ## Features
 
 The following examples are in Python, but most features are supported in every language. See notes in each section for language-specific differences.

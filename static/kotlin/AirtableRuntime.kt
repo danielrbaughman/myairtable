@@ -3,7 +3,8 @@
 // All operators route through this object for correct Airtable semantics:
 // - BLANK() is null (treated as 0 numerically, "" as string)
 // - Type coercion follows Airtable rules (booleans → 1/0, strings parsed to numbers, etc.)
-// - Division by zero returns NaN for consistency
+// - MOD by zero returns NaN; raw `/` follows IEEE 754 (x/0 = Infinity) —
+//   division is emitted as native Kotlin arithmetic by the transpiler
 //
 // Values flow as `JsonElement?` so functions compose naturally. Coercion
 // helpers (V/N/S/A/AN/AS/D/isTruthy) live in AirtableJson.kt as top-level

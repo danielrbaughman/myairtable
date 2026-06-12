@@ -278,8 +278,12 @@ class WriteToSwiftFile(WriteToFile):
         if formula:
             lines: list[str] = [base_info, ""]
             lines.append("```text")
-            for line in field.formula(sanitized=True, format=True).splitlines():
-                lines.append(line)
+            # Cap the embedded formula so IDE hovers stay readable; the full
+            # text lives in the generated Markdown/HTML docs (myairtable-dmiw).
+            formula_lines = field.formula(sanitized=True, format=True).splitlines()
+            if len(formula_lines) > 15:
+                formula_lines = formula_lines[:15] + ["… (truncated)"]
+            lines.extend(formula_lines)
             lines.append("```")
             self.doc_comment(lines, indent=indent_level)
         else:

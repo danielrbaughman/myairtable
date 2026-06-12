@@ -27,6 +27,9 @@ import kotlinx.serialization.json.longOrNull
  * constants so call sites can use whichever is ergonomic — without sacrificing
  * ID-stability across field renames.
  *
+ * Not thread-safe: a `Fields` instance is a plain mutable container (unlike
+ * Swift's value-semantics struct) — confine each instance to one coroutine.
+ *
  * Matches the Rust target's `Fields` helper and the Swift `Fields` struct.
  * Decoded form: JSON object keyed by field IDs (because
  * [AirtableQuery.returnFieldsByFieldId] defaults to `true`). Name-based lookups

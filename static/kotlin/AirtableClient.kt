@@ -19,6 +19,7 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
@@ -247,10 +248,12 @@ class AirtableClient(
 
     /** Compose a stable, deterministic cache key from [AirtableQuery]. */
     private fun cacheKeyForQuery(query: AirtableQuery): String {
+        // Encode both halves so a formula containing `=`/`&` cannot collide
+        // with a structurally different query's key (myairtable-dmiw).
         val items =
             query
                 .toParameters()
-                .map { "${it.first}=${it.second}" }
+                .map { "${it.first.encodeURLParameter()}=${it.second.encodeURLParameter()}" }
                 .sorted()
                 .joinToString("&")
         return "list?$items"
