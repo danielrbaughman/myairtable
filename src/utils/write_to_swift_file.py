@@ -146,10 +146,19 @@ class WriteToSwiftFile(WriteToFile):
 
     # ---- comments ---------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write /// doc comment(s). Strips bare \\r that Airtable descriptions may contain."""
-        lines = text if isinstance(text, list) else [text]
-        for line in lines:
-            self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
+        """Write /// doc comment(s).
+
+        Sanitizes each line so the comment can't be broken by hostile content:
+        strips bare \\r (Airtable descriptions may contain them), neutralizes
+        `*/` (so lines stay safe if ever embedded in a block comment), and
+        splits embedded newlines into separate /// lines (a raw newline would
+        spill the rest of the text out of the comment).
+        """
+        raw_lines = text if isinstance(text, list) else [text]
+        for raw in raw_lines:
+            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            for line in cleaned.split("\n"):
+                self.line_indented(f"/// {line}", indent)
 
     def comment(self, text: str, indent: int = 0):
         """Write `// text`."""
@@ -269,8 +278,12 @@ class WriteToSwiftFile(WriteToFile):
         if formula:
             lines: list[str] = [base_info, ""]
             lines.append("```text")
-            for line in field.formula(sanitized=True, format=True).splitlines():
-                lines.append(line)
+            # Cap the embedded formula so IDE hovers stay readable; the full
+            # text lives in the generated Markdown/HTML docs (myairtable-dmiw).
+            formula_lines = field.formula(sanitized=True, format=True).splitlines()
+            if len(formula_lines) > 15:
+                formula_lines = formula_lines[:15] + ["… (truncated)"]
+            lines.extend(formula_lines)
             lines.append("```")
             self.doc_comment(lines, indent=indent_level)
         else:

@@ -1,0 +1,9 @@
+# ktlint configuration (Kotlin static runtime + kotlin_static tests).
+# Generated Kotlin output is never linted — only hand-written sources.
+root = true
+
+[*.kt]
+ktlint_code_style = ktlint_official
+max_line_length = 160
+indent_size = 4
+insert_final_newline = true

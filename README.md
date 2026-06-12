@@ -11,6 +11,32 @@ Languages supported:
 - TypeScript (via [airtable.js](https://github.com/Airtable/airtable.js))
 - JavaScript (via [airtable.js](https://github.com/Airtable/airtable.js))
 - Rust (via a custom-built client)
+- Swift (via a custom-built client)
+- Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
+
+### Kotlin
+
+The generated Kotlin code uses `@Serializable` models, so the **kotlinx.serialization compiler plugin is REQUIRED** — without `kotlin("plugin.serialization")` the generated code will not compile. A known-good Gradle setup (`build.gradle.kts`):
+
+```kotlin
+plugins {
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "2.2.20" // REQUIRED for the generated @Serializable models
+}
+
+sourceSets {
+    main {
+        kotlin.srcDir("path/to/generated/output") // wherever you generate into
+    }
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("io.ktor:ktor-client-core:3.2.3")
+    implementation("io.ktor:ktor-client-cio:3.2.3")
+}
+```
 
 ## Features
 
@@ -42,7 +68,7 @@ name = contact.name
 > [!NOTE]
 > For JavaScript & TypeScript, the ORM models are custom to myAirtable, though they still use the Airtable.js client for save/delete, and contain methods for conversion to/from Airtable.js's "Record" class. Also, they use [Zod](https://zod.dev) validation under-the-hood.
 >
-> For Rust, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in Rust.
+> For Rust, Swift, and Kotlin, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
 
 ### Formula Builders
 
@@ -63,7 +89,7 @@ Airtable().contacts.get(formula=formula)
 ```
 
 > [!NOTE]
-> For JavaScript, TypeScript, and Rust, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same.
+> For JavaScript, TypeScript, Rust, Swift, and Kotlin, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin names the equality pair `eq`/`neq` — `equals` collides with `Any.equals` on the JVM.)
 
 ### Table/CRUD Wrappers
 

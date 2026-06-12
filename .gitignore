@@ -13,3 +13,8 @@ target/
 .build/
 *.xcodeproj/xcuserdata/
 Package.resolved
+
+# Gradle (Kotlin projects)
+.gradle/
+**/build/
+.kotlin/

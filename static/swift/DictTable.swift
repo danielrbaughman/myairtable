@@ -101,17 +101,47 @@ public struct DictTable: Sendable {
         return toRecord(env)
     }
 
-    /// Fetch many records by ID (parallel). Preserves caller-supplied order.
+    /// Max in-flight requests for the multi-ID `get` fan-out. Kept just
+    /// under Airtable's 5-requests-per-second limit so large ID lists don't
+    /// trigger a synchronized 429 storm.
+    public static var maxConcurrentGets: Int { 4 }
+
+    /// Fetch many records by ID (parallel, bounded to `maxConcurrentGets`
+    /// in flight). Preserves caller-supplied order.
     public func get(_ recordIds: [String]) async throws -> [Record] {
         if recordIds.isEmpty { return [] }
         return try await withThrowingTaskGroup(of: (Int, Record).self) { group in
-            for (index, id) in recordIds.enumerated() {
+            var slots = [Record?](repeating: nil, count: recordIds.count)
+            var nextIndex = 0
+            // Windowed submission: seed the group with the first window, then
+            // add one task per completion so at most `maxConcurrentGets` are
+            // ever in flight.
+            while nextIndex < recordIds.count && nextIndex < Self.maxConcurrentGets {
+                let index = nextIndex
+                let id = recordIds[index]
                 group.addTask { (index, try await self.get(id)) }
+                nextIndex += 1
             }
-            var slots: [(Int, Record)] = []
-            for try await pair in group { slots.append(pair) }
-            slots.sort { $0.0 < $1.0 }
-            return slots.map { $0.1 }
+            while let (index, record) = try await group.next() {
+                slots[index] = record
+                if nextIndex < recordIds.count {
+                    let next = nextIndex
+                    let id = recordIds[next]
+                    group.addTask { (next, try await self.get(id)) }
+                    nextIndex += 1
+                }
+            }
+            // Every slot must be filled — compactMap would silently drop
+            // records if the windowed submission ever regressed (PR #21 review).
+            return try slots.enumerated().map { index, slot in
+                guard let record = slot else {
+                    throw AirtableError.api(
+                        code: "INTERNAL_ERROR",
+                        message: "multi-get left slot \(index) unfilled"
+                    )
+                }
+                return record
+            }
         }
     }
 

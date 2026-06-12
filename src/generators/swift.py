@@ -27,6 +27,9 @@ from ..meta import Base, Table
 from ..utils.helpers import (
     Paths,
     copy_static_files,
+    deduplicate_identifiers,
+    deduplicated_field_property_map,
+    deduplicated_table_prefix_map,
     reset_folder,
     sanitize_string,
 )
@@ -62,16 +65,8 @@ def _create_swift_dynamic_subdir(output_folder: Path, subdir: str) -> Path:
 
 
 def _deduplicate_cases(cases: list[str]) -> list[str]:
-    """Ensure enum case names are unique by appending v2, v3, etc."""
-    counts: dict[str, int] = {}
-    out: list[str] = []
-    for name in cases:
-        counts[name] = counts.get(name, 0) + 1
-        if counts[name] > 1:
-            out.append(f"{name}V{counts[name]}")
-        else:
-            out.append(name)
-    return out
+    """Ensure enum case names are unique by appending V2, V3, etc."""
+    return deduplicate_identifiers(cases, suffix="V")
 
 
 def _view_case(view_name: str) -> str:
@@ -80,18 +75,37 @@ def _view_case(view_name: str) -> str:
 
 
 def _escape_string_literal(text: str) -> str:
-    """Escape a string for inclusion in a Swift string literal (" delimiter)."""
-    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    """Escape a string for inclusion in a Swift string literal (" delimiter).
+
+    Backslash FIRST (so later escapes aren't double-escaped), then the quote
+    and the control characters Airtable names/descriptions can carry.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
+def _field_property_map(table: Table) -> dict[str, str]:
+    """`{field_id: deduplicated lowerCamelCase property name}` for one table.
+
+    Every writer (models, Fields consts, Create*Fields, Filters, evaluate*
+    methods, and the transpiler's field_name_map) consumes this same map so
+    colliding field names ("My Field" / "my field") deduplicate consistently
+    to `myField` / `myFieldV2`. Keyword backticking is applied at call sites.
+    """
+    return deduplicated_field_property_map(table)
 
 
 def _table_type_prefix(table: Table) -> str:
-    """PascalCase prefix used for generated types (e.g. `Primary`)."""
-    return table.name_pascal()
+    """PascalCase prefix used for generated types (e.g. `Primary`), deduplicated per base.
+
+    Recomputed from the base's table list on each call (cheap and deterministic),
+    so every writer — file names, type names, and `Airtable` accessors — agrees.
+    """
+    return deduplicated_table_prefix_map(table.base)[table.id]
 
 
 def _table_property(table: Table) -> str:
     """lowerCamelCase property used on the Airtable actor (e.g. `primary`)."""
-    pascal = table.name_pascal()
+    pascal = _table_type_prefix(table)
     if not pascal:
         return "table"
     return _swift_ident(pascal[0].lower() + pascal[1:])
@@ -163,6 +177,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
     types_dir = _create_swift_dynamic_subdir(output_folder, _DIR_TYPES)
 
     for table in base.tables:
+        prop_names = _field_property_map(table)
         fields_name = f"{_table_type_prefix(table)}Fields"
         file_name = f"{fields_name}.swift"
         with WriteToSwiftFile(path=types_dir / file_name) as write:
@@ -176,7 +191,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             # Per-field id + name constants
             for field in table.fields:
                 escaped_name = _escape_string_literal(sanitize_string(field.name))
-                camel = field.name_camel()
+                camel = prop_names[field.id]
                 prop = _swift_ident(camel)
                 id_name = _swift_ident(f"{camel}Id")
                 name_name = _swift_ident(f"{camel}Name")
@@ -251,7 +266,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.enum_open(create_name)
                 for field in writable_fields:
                     escaped_name = _escape_string_literal(sanitize_string(field.name))
-                    camel = field.name_camel()
+                    camel = prop_names[field.id]
                     id_name = _swift_ident(f"{camel}Id")
                     name_name = _swift_ident(f"{camel}Name")
                     write.doc_comment(f"`{sanitize_string(field.name)}` (field ID)", indent=1)
@@ -283,6 +298,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
         model_name = f"{prefix}Model"
         file_name = f"{model_name}.swift"
 
@@ -295,7 +311,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         raw_formulas: dict[str, str] = {}
         if runtime:
             formula_field_ids = table.formula_field_ids()
-            field_name_map = {f.id: _swift_ident(f.name_camel()) for f in table.fields}
+            # Same deduplicated names as the emitted properties, so formula
+            # references resolve to declarations that actually exist.
+            field_name_map = {f.id: _swift_ident(prop_names[f.id]) for f in table.fields}
             raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
             if flatten and raw_formulas:
                 formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -339,7 +357,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.mark_section("Computed fields (server-owned)", indent=1)
                 for field in computed_fields:
                     write.property_docstring(field, table, indent_level=1)
-                    prop = _swift_ident(field.name_camel())
+                    prop = _swift_ident(prop_names[field.id])
                     ty = field.swift_type()
                     # Every field is optional — Airtable responses are sparse.
                     write.line_indented(f"public let {prop}: {ty}?")
@@ -350,7 +368,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.mark_section("Writable fields", indent=1)
                 for field in writable_fields:
                     write.property_docstring(field, table, indent_level=1)
-                    prop = _swift_ident(field.name_camel())
+                    prop = _swift_ident(prop_names[field.id])
                     ty = field.swift_type()
                     write.line_indented(f"public var {prop}: {ty}?")
                 write.line_empty()
@@ -390,7 +408,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.line_indented("public init(")
                 init_params: list[str] = []
                 for field in writable_fields:
-                    prop = _swift_ident(field.name_camel())
+                    prop = _swift_ident(prop_names[field.id])
                     ty = field.swift_type()
                     init_params.append(f"{prop}: {ty}? = nil")
                 for i, param in enumerate(init_params):
@@ -403,11 +421,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("self.id = nil", indent=2)
             write.line_indented("self.createdTime = nil", indent=2)
             for field in computed_fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 write.line_indented(f"self.{prop} = nil", indent=2)
             # Writable fields pulled from init params.
             for field in writable_fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 write.line_indented(f"self.{prop} = {prop}", indent=2)
             write.line_indented("}")
             write.line_empty()
@@ -424,7 +442,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # FieldsCodingKeys — maps Swift property → Airtable field ID.
             write.line_indented("private enum FieldsCodingKeys: String, CodingKey {")
             for field in table.fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 write.line_indented(f'case {prop} = "{field.id}"', indent=2)
             write.line_indented("}")
             write.line_empty()
@@ -443,7 +461,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 indent=2,
             )
             for field in table.fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 ty = field.swift_type()
                 write.line_indented(
                     f"self.{prop} = try fields.decodeIfPresent({ty}.self, forKey: .{prop})",
@@ -451,7 +469,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 )
             write.line_indented("} else {", indent=2)
             for field in table.fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 write.line_indented(f"self.{prop} = nil", indent=3)
             write.line_indented("}", indent=2)
             write.line_indented("self.takeSnapshot()", indent=2)
@@ -474,7 +492,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 indent=2,
             )
             for field in writable_fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 write.line_indented(f"try fields.encodeIfPresent({prop}, forKey: .{prop})", indent=2)
             write.line_indented("}")
             write.line_empty()
@@ -539,12 +557,16 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 for field in table.fields:
                     if field.id not in transpiled_formulas:
                         continue
-                    prop = _swift_ident(field.name_camel())
+                    prop = _swift_ident(prop_names[field.id])
                     formula_code = transpiled_formulas[field.id]
                     raw = raw_formulas.get(field.id, "")
                     preview = sanitize_string(raw).replace("\n", " ")[:80]
                     write.doc_comment(f"Evaluate formula locally: `{preview}...`", indent=1)
-                    write.line_indented(f"public func evaluate{field.name_pascal()}() -> AirtableJSONValue {{")
+                    # Method name derived from the deduplicated property name so
+                    # colliding fields get evaluateMyField / evaluateMyFieldV2.
+                    camel = prop_names[field.id]
+                    method_pascal = camel[0].upper() + camel[1:] if camel else field.name_pascal()
+                    write.line_indented(f"public func evaluate{method_pascal}() -> AirtableJSONValue {{")
                     write.line_indented(f"return {formula_code}", indent=2)
                     write.line_indented("}")
 
@@ -579,6 +601,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
         filters_name = f"{prefix}Filters"
         file_name = f"{filters_name}.swift"
 
@@ -594,7 +617,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line_indented("public let id: FormulaId")
 
             for field in table.fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 formula_class = field.formula_class()
                 swift_type = _SWIFT_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
                 write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
@@ -606,7 +629,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line_indented("public init() {")
             write.line_indented("self.id = FormulaId()", indent=2)
             for field in table.fields:
-                prop = _swift_ident(field.name_camel())
+                prop = _swift_ident(prop_names[field.id])
                 formula_class = field.formula_class()
                 swift_type = _SWIFT_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
                 write.line_indented(f'self.{prop} = {swift_type}("{field.id}")', indent=2)

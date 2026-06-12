@@ -80,6 +80,7 @@ def make_test_base(fields_spec: list[tuple[str, str, FieldType]], formula_map: d
             "_python_type": None,
             "_typescript_type": None,
             "_zod_type": None,
+            "_kotlin_type": None,
             "_snake": None,
             "_pascal": None,
             "_model": None,
@@ -471,6 +472,7 @@ def _make_base_with_select_field(table_name: str, field_name: str, field_id: str
         "_python_type": None,
         "_typescript_type": None,
         "_zod_type": None,
+        "_kotlin_type": None,
         "_snake": None,
         "_pascal": None,
         "_model": None,
@@ -1199,3 +1201,648 @@ class TestSwiftFlagGating:
         assert not (out / "static" / "AirtableRuntime.swift").exists()
         assert (out / "dynamic" / "models" / "TestTableModel.swift").is_file()
         assert (out / "dynamic" / "types" / "TestTableFields.swift").is_file()
+
+
+class TestKotlinGeneratorOutput:
+    """Kotlin generator (K-F3 — dict-only path) content assertions.
+
+    Verifies the generator emits the expected file structure and key code
+    snippets without shelling out to Gradle. Compilation is separately
+    verified by ``tests/kotlin_static/`` + the integration tests in
+    ``myairtable-tests``.
+    """
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        """Generate Kotlin code to a fresh tmp dir and return the output folder."""
+        from src.generators.kotlin import write_field_types, write_main, write_options, write_tables
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        write_field_types(base, output_folder)
+        write_tables(base, output_folder)
+        write_main(base, output_folder)
+        return output_folder
+
+    def test_field_types_emit_dual_id_and_name_constants(self, tmp_path: Path):
+        """Every field must get both a `{field}Id` and `{field}Name` constant."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "object TestTableFields" in content
+        assert 'const val primaryKeyId: String = "fld001"' in content
+        assert 'const val primaryKeyName: String = "Primary Key"' in content
+
+    def test_field_types_emit_name_to_id_and_id_to_name_maps(self, tmp_path: Path):
+        """The nameToId / idToName maps enable dual-access lookup at runtime."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "val nameToId: Map<String, String>" in content
+        assert "val idToName: Map<String, String>" in content
+        assert '"Primary Key" to "fld001"' in content
+        assert '"fld001" to "Primary Key"' in content
+        assert "fun idByName(name: String): String? = nameToId[name]" in content
+        assert "fun nameById(id: String): String? = idToName[id]" in content
+
+    def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
+        """allIds should list every field ID in schema order."""
+        fields_spec = [
+            ("A", "fld001", "singleLineText"),
+            ("B", "fld002", "number"),
+            ("C", "fld003", "checkbox"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert 'val allIds: List<String> = listOf("fld001", "fld002", "fld003")' in content
+
+    def test_writable_fields_exclude_computed_from_create_object(self, tmp_path: Path):
+        """Create{Table}Fields object omits computed fields (formula, createdTime, etc.)."""
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+            ("Created", "fld003", "createdTime"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "object CreateTestTableFields" in content
+        create_block = content.split("object CreateTestTableFields")[1]
+        assert "myTextId" in create_block
+        assert "myFormulaId" not in create_block
+        assert "createdId" not in create_block
+
+    def test_tables_class_exposes_dict_accessor(self, tmp_path: Path):
+        """Each table gets a {Table}Table class with a `.dict: DictTable` accessor."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.kt").read_text()
+
+        assert "class TestTableTable(" in content
+        assert 'const val TABLE_ID: String = "tblTEST123"' in content
+        assert "val dict: DictTable" in content
+        assert "nameToId = TestTableFields.nameToId" in content
+
+    def test_main_airtable_exposes_per_table_accessors(self, tmp_path: Path):
+        """Airtable.kt should expose each table as a lowerCamelCase property."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "Airtable.kt").read_text()
+
+        assert "class Airtable(" in content
+        assert "val client: AirtableClient," in content
+        assert "val testTable: TestTableTable = TestTableTable(client)" in content
+        # Secondary constructor with embedded default baseId.
+        assert "constructor(" in content
+        assert 'baseId: String = "appTEST123",' in content
+        assert "suspend fun invalidateAllCaches()" in content
+
+    def test_every_generated_file_declares_the_flat_package(self, tmp_path: Path):
+        """All generated files live in the flat `myairtable` package."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        for path in out.rglob("*.kt"):
+            assert "package myairtable" in path.read_text(), f"{path} missing package decl"
+
+    def test_no_build_files_are_emitted(self, tmp_path: Path):
+        """The generator never emits Gradle build files (matches no-Package.swift)."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        assert not (out / "build.gradle.kts").exists()
+        assert not (out / "settings.gradle.kts").exists()
+
+    def test_view_enum_implements_airtable_view(self, tmp_path: Path):
+        """Generated `{Table}View` enums implement the static `AirtableView` interface."""
+        from src.generators.kotlin import write_field_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        base.tables[0].views = [View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")]
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        write_field_types(base, output_folder)
+        content = (output_folder / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "enum class TestTableView(" in content
+        assert "override val id: String," in content
+        assert ") : AirtableView {" in content
+        assert 'GRID_VIEW("viw001");' in content
+
+
+class TestKotlinOptionsGenerator:
+    """Kotlin select-option enum generation."""
+
+    def _generate_with_options(self, tmp_path: Path) -> str:
+        """Build a table with a singleSelect field and return its options file content."""
+        from src.generators.kotlin import write_options
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        field = base.tables[0].fields[0]
+        assert field.options is not None
+        field.options.choices = [
+            Choice.model_construct(id="sel1", name="Open"),
+            Choice.model_construct(id="sel2", name="In Progress"),
+            Choice.model_construct(id="sel3", name="Closed"),
+        ]
+        assert field.__pydantic_private__ is not None
+        field.__pydantic_private__["_select_options_cache"] = None
+
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        return (output_folder / "dynamic" / "options" / "TestTableOptions.kt").read_text()
+
+    def test_options_enum_is_serializable(self, tmp_path: Path):
+        """Each options enum carries @Serializable so it decodes from wire values."""
+        content = self._generate_with_options(tmp_path)
+        assert "@Serializable" in content
+        assert "enum class" in content
+
+    def test_options_entries_are_screaming_snake_with_serial_names(self, tmp_path: Path):
+        """Choices map to SCREAMING_SNAKE_CASE entries with @SerialName raw values.
+
+        Entry order follows select_options() (alphabetical), so assertions are
+        order-agnostic: each @SerialName must be immediately followed by its entry.
+        """
+        import re
+
+        content = self._generate_with_options(tmp_path)
+        for raw, entry in [("Open", "OPEN"), ("In Progress", "IN_PROGRESS"), ("Closed", "CLOSED")]:
+            assert re.search(rf'@SerialName\("{raw}"\)\s+{entry}[,;]', content), f"missing {raw} -> {entry}"
+        # The final entry is terminated with `;`.
+        assert re.search(r"\w+;\n}", content)
+
+
+class TestKotlinFlagGating:
+    """generate_kotlin must honor the wrappers flag (formulas/runtime gating
+    is exercised once Formula.kt / AirtableRuntime.kt exist in K-F7/K-F8)."""
+
+    def _generate(self, tmp_path: Path, **flags) -> Path:
+        from src.generators.kotlin import generate_kotlin
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        generate_kotlin(base, output_folder, **flags)
+        return output_folder
+
+    def test_default_flags_emit_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        assert (out / "dynamic" / "tables" / "TestTableTable.kt").is_file()
+        assert (out / "Airtable.kt").is_file()
+        assert (out / "static" / "DictTable.kt").is_file()
+
+    def test_wrappers_false_suppresses_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path, wrappers=False)
+        assert not (out / "dynamic" / "tables").exists()
+        assert not (out / "Airtable.kt").exists()
+        # Field types are still emitted.
+        assert (out / "dynamic" / "types" / "TestTableFields.kt").is_file()
+
+
+class TestKotlinComputedFields:
+    """Kotlin model generation: constructor-property val/var split (plan §2.3.1)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.kotlin import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+        return (output_folder / "dynamic" / "models" / "TestTableModel.kt").read_text()
+
+    def test_computed_fields_are_val_constructor_params(self, tmp_path: Path):
+        """Computed fields are decode-only `val` params (mutation = compile error)."""
+        content = self._generate([("My Formula", "fld001", "formula")], tmp_path)
+        assert "val myFormula: MaybeSpecialOrError<Double>? = null," in content
+        assert "var myFormula" not in content
+
+    def test_writable_fields_are_var_constructor_params(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "var myText: String? = null," in content
+
+    def test_model_is_serializable_with_field_id_serial_names(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "@Serializable" in content
+        assert '@SerialName("fld001")' in content
+        assert "@file:UseSerializers(AirtableInstantSerializer::class, AirtableDurationSerializer::class)" in content
+
+    def test_model_implements_airtable_model_with_transients(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert ") : AirtableModel {" in content
+        assert "override var id: RecordId? = null" in content
+        assert "override var createdTime: Instant? = null" in content
+        assert "override var attachedClient: AirtableClient? = null" in content
+        assert "private var snapshot: Map<String, JsonElement> = emptyMap()" in content
+        # All four are @Transient (never serialized).
+        assert content.count("@Transient") == 4
+        assert 'const val TABLE_ID: String = "tblTEST123"' in content
+        assert "override val tableId: String get() = TABLE_ID" in content
+
+    def test_create_fields_exclude_computed_but_to_record_includes_all(self, tmp_path: Path):
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+
+        create_block = content.split("override fun toCreateFields()")[1].split("override fun toRecord()")[0]
+        record_block = content.split("override fun toRecord()")[1].split("override fun takeSnapshot()")[0]
+
+        assert '"fld001"' in create_block
+        assert '"fld002"' not in create_block, "computed fields must never reach create payloads"
+        assert '"fld001"' in record_block
+        assert '"fld002"' in record_block
+
+    def test_dirty_fields_diff_against_snapshot_with_jsonnull_clears(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "override fun dirtyFields(): Map<String, JsonElement> {" in content
+        assert "if (snapshot[key] != value) dirty[key] = value" in content
+        assert "dirty[key] = JsonNull" in content
+        assert "snapshot = toCreateFields()" in content
+
+    def test_linked_record_fields_are_record_id_lists(self, tmp_path: Path):
+        content = self._generate([("Links", "fld001", "multipleRecordLinks")], tmp_path)
+        assert "var links: List<RecordId>? = null," in content
+
+    def test_tables_forward_orm_methods(self, tmp_path: Path):
+        """ORM is the default: get/create/update/upsert/delete live on the table."""
+        from src.generators.kotlin import write_tables
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_tables(base, output_folder)
+        content = (output_folder / "dynamic" / "tables" / "TestTableTable.kt").read_text()
+
+        assert "private val orm: OrmTable<TestTableModel> = OrmTable(TABLE_ID, TestTableModel.serializer(), client)" in content
+        assert "suspend fun get(recordId: String): TestTableModel" in content
+        assert "suspend fun get(recordIds: List<String>): List<TestTableModel>" in content
+        assert "suspend fun get(query: AirtableQuery = AirtableQuery()): List<TestTableModel>" in content
+        assert "suspend fun create(model: TestTableModel)" in content
+        assert "suspend fun create(models: List<TestTableModel>)" in content
+        assert "suspend fun update(model: TestTableModel)" in content
+        assert "suspend fun updateFields(recordId: String, fields: Map<String, JsonElement>)" in content
+        assert "suspend fun upsert(model: TestTableModel, fieldsToMergeOn: List<String>)" in content
+        assert "suspend fun delete(recordId: String)" in content
+        assert '@JvmName("deleteModels")' in content
+        # No public orm accessor.
+        assert "val orm" in content and "private val orm" in content
+
+
+class TestKotlinFormulas:
+    """Kotlin formula-builder + runtime-evaluation generation (K-F7/K-F8)."""
+
+    def _generate(self, tmp_path: Path, formula: str | None = None, **flags) -> Path:
+        from src.generators.kotlin import write_formula_helpers, write_models
+        from src.utils.type_mapper import map_types
+
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Text", "fld001", "singleLineText")]
+        formula_map = None
+        if formula is not None:
+            fields_spec.append(("My Formula", "fld002", "formula"))
+            formula_map = {"fld002": formula}
+        base = make_test_base(fields_spec, formula_map=formula_map)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_formula_helpers(base, output_folder)
+        write_models(base, output_folder, **flags)
+        return output_folder
+
+    def test_filters_class_has_typed_formula_fields(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "formulas" / "TestTableFilters.kt").read_text()
+        assert "class TestTableFilters {" in content
+        assert "val id: FormulaId = FormulaId()" in content
+        assert 'val myText: FormulaTextField = FormulaTextField("fld001")' in content
+
+    def test_model_companion_exposes_filters_as_f(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "val f: TestTableFilters = TestTableFilters()" in content
+
+    def test_formulas_false_omits_companion_f(self, tmp_path: Path):
+        out = self._generate(tmp_path, formulas=False)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "val f:" not in content
+
+    def test_runtime_true_emits_evaluate_methods(self, tmp_path: Path):
+        out = self._generate(tmp_path, formula='{fld001} & "!"')
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "fun evaluateMyFormula(): JsonElement = " in content
+        assert 'JsonPrimitive(S(V(this.myText)) + "!")' in content
+
+    def test_runtime_false_omits_evaluate_methods(self, tmp_path: Path):
+        out = self._generate(tmp_path, formula='{fld001} & "!"', runtime=False)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "fun evaluate" not in content
+
+
+class TestGeneratedCommentAndLiteralEscaping:
+    """KDoc/doc-comment sanitization + string-literal escaping (myairtable-ydk1).
+
+    A hostile field name must not be able to terminate a generated comment
+    block early (`*/`) or produce illegal string-literal escapes ($, tab,
+    newline, quote).
+    """
+
+    EVIL = 'evil */ name $x "q"'
+    CONTROL = "Tab\there\nNewline"
+
+    def _generate(self, language: str, tmp_path: Path) -> Path:
+        if language == "kotlin":
+            from src.generators.kotlin import write_field_types, write_models
+        else:
+            from src.generators.swift import write_field_types, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [
+                (self.EVIL, "fld001", "singleLineText"),
+                (self.CONTROL, "fld002", "singleLineText"),
+            ]
+        )
+        output_folder = tmp_path / f"{language}_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        write_models(base, output_folder)
+        return output_folder
+
+    @staticmethod
+    def _comment_lines(content: str) -> list[str]:
+        return [ln.strip() for ln in content.splitlines() if ln.strip().startswith(("/**", "*", "///", "//"))]
+
+    def test_kotlin_comments_cannot_be_terminated_early(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        for rel in ("dynamic/types/TestTableFields.kt", "dynamic/models/TestTableModel.kt"):
+            content = (out / rel).read_text()
+            for line in self._comment_lines(content):
+                assert "evil */" not in line, f"raw */ inside a comment line: {line!r}"
+            assert "evil * / name" in content
+
+    def test_kotlin_model_kdoc_blocks_are_balanced(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        # Field names only appear in comments in the model file, so any stray
+        # terminator would unbalance the KDoc blocks.
+        assert content.count("/**") == content.count("*/")
+
+    def test_kotlin_string_literals_are_escaped(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        # sanitize_string turns the inner double quotes into single quotes;
+        # $ must be escaped for Kotlin string templates.
+        assert "\"evil */ name \\$x 'q'\"" in content
+        assert '"Tab\\there\\nNewline" to "fld002",' in content
+
+    def test_kotlin_doc_comment_splits_embedded_newlines(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        assert " * Newline` (field ID)" in content
+
+    def test_swift_comments_cannot_be_terminated_early(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        for rel in ("dynamic/types/TestTableFields.swift", "dynamic/models/TestTableModel.swift"):
+            content = (out / rel).read_text()
+            for line in self._comment_lines(content):
+                assert "evil */" not in line, f"raw */ inside a comment line: {line!r}"
+            assert "evil * / name" in content
+
+    def test_swift_string_literals_are_escaped(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        # Swift has no $ templates, so $ stays raw; tab/newline must be escaped.
+        assert "\"evil */ name $x 'q'\"" in content
+        assert '"Tab\\there\\nNewline": "fld002",' in content
+
+    def test_swift_doc_comment_splits_embedded_newlines(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        assert "/// Newline` (field ID)" in content
+
+
+class TestIdentifierCollisionDedup:
+    """Distinct field/table names that collapse to the same identifier must be
+    deduplicated consistently across every generated declaration (myairtable-w42e)."""
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("My Field", "fld001", "singleLineText"),
+        ("my field", "fld002", "singleLineText"),
+        ("Calc", "fld003", "formula"),
+    ]
+    FORMULA_MAP = {"fld003": "{fld002}"}
+
+    def _generate(self, language: str, tmp_path: Path) -> Path:
+        if language == "kotlin":
+            from src.generators.kotlin import write_field_types, write_formula_helpers, write_models
+        else:
+            from src.generators.swift import write_field_types, write_formula_helpers, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        output_folder = tmp_path / f"{language}_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        write_formula_helpers(base, output_folder)
+        write_models(base, output_folder)
+        return output_folder
+
+    # ---- Kotlin ----
+
+    def test_kotlin_model_dedups_colliding_properties(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        assert "var myField: String? = null," in content
+        assert "var myFieldV2: String? = null," in content
+        # No duplicate declarations.
+        assert content.count("var myField: ") == 1
+        assert content.count("var myFieldV2: ") == 1
+
+    def test_kotlin_fields_consts_dedup(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        assert 'const val myFieldId: String = "fld001"' in content
+        assert 'const val myFieldV2Id: String = "fld002"' in content
+        assert content.count("const val myFieldId: ") == 2  # Fields + CreateFields
+        assert content.count("const val myFieldV2Id: ") == 2
+
+    def test_kotlin_filters_dedup(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/formulas/TestTableFilters.kt").read_text()
+        assert 'val myField: FormulaTextField = FormulaTextField("fld001")' in content
+        assert 'val myFieldV2: FormulaTextField = FormulaTextField("fld002")' in content
+
+    def test_kotlin_formula_field_name_map_uses_deduped_name(self, tmp_path: Path):
+        """A formula referencing the second colliding field must transpile to the deduped property."""
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        assert "fun evaluateCalc(): JsonElement = V(this.myFieldV2)" in content
+
+    # ---- Swift ----
+
+    def test_swift_model_dedups_colliding_properties(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.swift").read_text()
+        assert "public var myField: String?" in content
+        assert "public var myFieldV2: String?" in content
+        assert 'case myField = "fld001"' in content
+        assert 'case myFieldV2 = "fld002"' in content
+        # No duplicate declarations.
+        assert content.count("public var myField: ") == 1
+        assert content.count("public var myFieldV2: ") == 1
+
+    def test_swift_fields_consts_dedup(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        assert 'public static let myFieldId: String = "fld001"' in content
+        assert 'public static let myFieldV2Id: String = "fld002"' in content
+
+    def test_swift_filters_dedup(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/formulas/TestTableFilters.swift").read_text()
+        assert "public let myField: FormulaTextField" in content
+        assert "public let myFieldV2: FormulaTextField" in content
+        assert 'self.myFieldV2 = FormulaTextField("fld002")' in content
+
+    def test_swift_formula_field_name_map_uses_deduped_name(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.swift").read_text()
+        assert "public func evaluateCalc() -> AirtableJSONValue {" in content
+        assert "AirtableRuntime.V(self.myFieldV2)" in content
+
+    # ---- Table-name collisions ----
+
+    @staticmethod
+    def _add_colliding_table(base: Base) -> None:
+        """Add a second table whose name collapses to the same PascalCase prefix."""
+        table = Table.model_construct(
+            id="tblTEST456",
+            name="test table",
+            primary_field_id="fld100",
+            fields=[],
+            views=[],
+            base=base,
+            _field_id_to_name_cache=None,
+        )
+        table.__pydantic_private__ = {
+            "_field_id_to_name_cache": None,
+            "_snake": None,
+            "_pascal": None,
+            "_model": None,
+            "_upper": None,
+            "_name_cache": {},
+        }
+        base.tables.append(table)
+        base._table_index[table.id] = table
+
+    def test_kotlin_table_name_collision_dedup(self, tmp_path: Path):
+        from src.generators.kotlin import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        self._add_colliding_table(base)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.kt").read_text()
+        assert "val testTable: TestTableTable = TestTableTable(client)" in content
+        assert "val testTableV2: TestTableV2Table = TestTableV2Table(client)" in content
+
+    def test_swift_table_name_collision_dedup(self, tmp_path: Path):
+        from src.generators.swift import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        self._add_colliding_table(base)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.swift").read_text()
+        assert "public let testTable: TestTableTable" in content
+        assert "public let testTableV2: TestTableV2Table" in content
+
+    # ---- Shared dedup helper ----
+
+    def test_deduplicate_identifiers_residual_collision(self):
+        """["A", "A", "A_V2"] must not yield two A_V2 — suffixes bump until free."""
+        from src.utils.helpers import deduplicate_identifiers
+
+        result = deduplicate_identifiers(["A", "A", "A_V2"], suffix="_V")
+        assert result == ["A", "A_V3", "A_V2"]
+        assert len(set(result)) == len(result)
+
+    def test_deduplicate_identifiers_camel_suffix(self):
+        from src.utils.helpers import deduplicate_identifiers
+
+        assert deduplicate_identifiers(["myField", "myField", "myField"]) == ["myField", "myFieldV2", "myFieldV3"]
+
+
+class TestKotlinGeneratorEdgeCases:
+    """myairtable-dmiw — generator edge cases flagged by the ultra-review."""
+
+    def _generate_model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.kotlin import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir(exist_ok=True)
+        map_types(base)
+        write_models(base, output_folder)
+        return (output_folder / "dynamic" / "models" / "TestTableModel.kt").read_text()
+
+    def test_keyword_named_field_is_sanitized(self, tmp_path: Path):
+        # The shared property map suffixes hard keywords with `_` (object -> object_)
+        # so derived names (object_Id, evaluateObject_) stay backtick-free.
+        content = self._generate_model([("Object", "fld001", "singleLineText")], tmp_path)
+        assert "var object_: String? = null," in content
+        assert "`object`" not in content
+
+    def test_keyword_named_field_in_formula_reference(self, tmp_path: Path):
+        from src.formulas.formula_transpiler import transpile_formula
+
+        result = transpile_formula('{fld001} & "!"', "kotlin", {"fld001": "`object`"}, set())
+        assert result == 'JsonPrimitive(S(V(this.`object`)) + "!")'
+
+    def test_zero_writable_fields_omits_create_object_and_empty_create_map(self, tmp_path: Path):
+        from src.generators.kotlin import write_field_types
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("My Formula", "fld001", "formula")])
+        out = tmp_path / "kotlin_output"
+        out.mkdir()
+        map_types(base)
+        write_field_types(base, out)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+        assert "CreateTestTableFields" not in content
+
+        model = self._generate_model([("My Formula", "fld001", "formula")], tmp_path)
+        assert "override fun toCreateFields(): Map<String, JsonElement> =" in model
+
+    def test_duration_import_only_when_needed(self, tmp_path: Path):
+        without = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "import kotlin.time.Duration" not in without
+
+    def test_model_has_tostring(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert 'override fun toString(): String = "TestTableModel(id=$id, ${toRecord().size} fields)"' in content
+
+    def test_choice_to_entry_edges(self):
+        from src.utils.write_to_kotlin_file import _choice_to_entry
+
+        assert _choice_to_entry("3rd Party") == "N_3RD_PARTY"
+        assert _choice_to_entry("") == "EMPTY"
+        # Pure punctuation sanitizes through sanitize_property_name's char map.
+        import re
+
+        assert re.fullmatch(r"[A-Z][A-Z0-9_]*", _choice_to_entry("!!!"))
+        assert _choice_to_entry("openInvoices") == "OPEN_INVOICES"

@@ -37,8 +37,10 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     }
 
     /// Fetch many records by ID. Sequential because `Model` (an `@Observable`
-    /// class) isn't `Sendable` and can't cross task boundaries. Airtable has
-    /// no bulk-get endpoint; preserving order is cheap in sequence.
+    /// class) isn't `Sendable` and can't cross task boundaries — unlike
+    /// `DictTable.get(_:)`, whose `Sendable` records allow a bounded-parallel
+    /// fan-out. Airtable has no bulk-get endpoint; preserving order is cheap
+    /// in sequence.
     public func get(_ recordIds: [String]) async throws -> [Model] {
         if recordIds.isEmpty { return [] }
         var collected: [Model] = []
@@ -121,25 +123,45 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
 
     /// Update many models in a single call. Chunks into Airtable's batch
     /// limit (10). Each model's dirty-field diff is used as the patch set.
+    /// Models with no dirty fields already match server state, so they are
+    /// never PATCHed — they come back unchanged, in their original positions.
     public func update(_ models: [Model]) async throws -> [Model] {
         if models.isEmpty { return [] }
+        var results = [Model?](repeating: nil, count: models.count)
+        var dirtyIndices: [Int] = []
         var patches: [AirtableUpdateBody.Record] = []
-        patches.reserveCapacity(models.count)
-        for model in models {
+        for (index, model) in models.enumerated() {
             guard let recordId = model.id, !recordId.isEmpty else {
                 throw AirtableError.api(
                     code: "UNSAVED_MODEL",
                     message: "Cannot update a model without an id"
                 )
             }
-            patches.append(.init(id: recordId, fields: model.dirtyFields()))
+            let dirty = model.dirtyFields()
+            if dirty.isEmpty {
+                results[index] = model
+            } else {
+                dirtyIndices.append(index)
+                patches.append(.init(id: recordId, fields: dirty))
+            }
         }
 
-        var collected: [Model] = []
+        var updated: [Model] = []
         for chunk in patches.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await updateBatch(chunk))
+            updated.append(contentsOf: try await updateBatch(chunk))
         }
-        return collected
+        for (slot, model) in zip(dirtyIndices, updated) {
+            results[slot] = model
+        }
+        return try results.map { model in
+            guard let model = model else {
+                throw AirtableError.api(
+                    code: "UNEXPECTED_RESPONSE",
+                    message: "update returned fewer records than requested"
+                )
+            }
+            return model
+        }
     }
 
     /// Update a record with an explicit field dict (bypasses dirty tracking).

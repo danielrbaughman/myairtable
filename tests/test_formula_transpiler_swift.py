@@ -40,6 +40,14 @@ class TestSwiftEmitter:
     def test_string_literal(self):
         assert self._transpile('"hello"') == '.string("hello")'
 
+    def test_single_quoted_literal_converted_to_double_quoted(self):
+        # Backslash-free single-quoted literals convert without other changes.
+        assert self._transpile("'hello'") == '.string("hello")'
+
+    def test_single_quoted_literal_with_backslash_doubles_it(self):
+        # 'C:\path' — a bare backslash must be doubled or Swift sees an illegal \p escape.
+        assert self._transpile("'C:\\path'") == '.string("C:\\\\path")'
+
     # --- Field refs ---
 
     def test_field_ref_wraps_in_v(self):
@@ -72,13 +80,22 @@ class TestSwiftEmitter:
     # --- Comparisons ---
 
     def test_numeric_equality(self):
-        # Both sides wrapped as AirtableJSONValue so the == compares enums.
+        # Numeric equality compares through N() on BOTH sides — AirtableJSONValue
+        # enum equality made .double(5.0) != .int(5) (myairtable-02fg).
         result = self._transpile("{fld1} = 5")
-        assert result == (".bool(.double(AirtableRuntime.N(AirtableRuntime.V(self.myField))) == .int(5))")
+        assert result == (".bool(AirtableRuntime.N(AirtableRuntime.V(self.myField)) == AirtableRuntime.N(.int(5)))")
 
     def test_string_equality(self):
         result = self._transpile('{fld1} = "hi"')
-        assert result == ('.bool(.string(AirtableRuntime.S(AirtableRuntime.V(self.myField))) == .string("hi"))')
+        assert result == ('.bool(AirtableRuntime.S(AirtableRuntime.V(self.myField)) == AirtableRuntime.S(.string("hi")))')
+
+    def test_numeric_inequality_coerces_both_sides(self):
+        result = self._transpile("{fld1} != 5")
+        assert result == (".bool(AirtableRuntime.N(AirtableRuntime.V(self.myField)) != AirtableRuntime.N(.int(5)))")
+
+    def test_field_vs_field_equality_without_inferable_type_stays_raw(self):
+        result = self._transpile("{fld1} = {fld2}")
+        assert result == (".bool(AirtableRuntime.V(self.myField) == AirtableRuntime.V(self.otherField))")
 
     def test_greater_than(self):
         # Numeric comparisons unwrap both sides to Double.

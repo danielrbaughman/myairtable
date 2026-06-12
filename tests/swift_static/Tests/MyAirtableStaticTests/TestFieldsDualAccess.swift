@@ -125,3 +125,29 @@ struct TestFieldsDualAccess {
         #expect(arr[0] == .string("a"))
     }
 }
+
+// myairtable-hwqs — set() is ID-first like get() (parity with Kotlin PR #19 fix).
+@Suite("Fields set ID-first")
+struct TestFieldsSetIdFirst {
+    @Test("Set is ID-first when a name and an unrelated ID collide")
+    func setIdFirstOnCollision() {
+        var fields = Fields(
+            ["fldX": .string("by-id"), "fldY": .string("by-name")],
+            nameToId: ["fldX": "fldY"]
+        )
+        fields.set("fldX", .string("updated"))
+        #expect(fields.get("fldX") == .string("updated"))
+        #expect(fields.get("fldY") == .string("by-name"))
+    }
+
+    @Test("A known field ID absent from storage is still never name-translated")
+    func setKnownIdSparseStorage() {
+        var fields = Fields(
+            [:],
+            nameToId: ["fldABC": "fldDEF", "Real Name": "fldABC"]
+        )
+        fields.set("fldABC", .int(1))
+        #expect(fields.get("fldABC") == .int(1))
+        #expect(fields.get("fldDEF") == nil)
+    }
+}

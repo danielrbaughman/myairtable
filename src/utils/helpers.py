@@ -156,6 +156,61 @@ def escape_for_double_quoted_string(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
+def deduplicate_identifiers(names: list[str], suffix: str = "V") -> list[str]:
+    """Ensure identifier uniqueness by appending `{suffix}2`, `{suffix}3`, ... to duplicates.
+
+    Shared by the Kotlin (`suffix="_V"` for SCREAMING_SNAKE enum entries, `"V"` for
+    camelCase properties) and Swift (`suffix="V"`) generators. Unlike a naive
+    occurrence counter, every name in the input and every name already emitted is
+    tracked, so a pre-existing suffixed name can't be re-assigned: with
+    `["A", "A", "A_V2"]` and `suffix="_V"`, the second "A" becomes "A_V3" (not a
+    second "A_V2"). Deterministic: output depends only on input order.
+    """
+    taken: set[str] = set(names)
+    emitted: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        if name not in emitted:
+            emitted.add(name)
+            out.append(name)
+            continue
+        n = 2
+        while (candidate := f"{name}{suffix}{n}") in taken or candidate in emitted:
+            n += 1
+        emitted.add(candidate)
+        out.append(candidate)
+    return out
+
+
+def deduplicated_field_property_map(table) -> dict[str, str]:
+    """Per-table `{field_id: deduplicated lowerCamelCase property name}`.
+
+    Distinct Airtable field names can collapse to the same camelCase identifier
+    ("My Field" / "my field" -> `myField`), which would emit duplicate
+    declarations. Computed ONCE per table (deterministically, in schema order)
+    and consumed by every writer — model properties, `{Table}Fields` constants,
+    `Create{Table}Fields`, `{Table}Filters`, `evaluate*` methods, and the
+    formula transpiler's `field_name_map` — so all sites agree on the
+    deduplicated names (`myField`, `myFieldV2`, ...).
+
+    Keyword escaping (backticks) is NOT applied here; call sites wrap with
+    their language's identifier escaper.
+    """
+    deduped = deduplicate_identifiers([field.name_camel() for field in table.fields], suffix="V")
+    return {field.id: name for field, name in zip(table.fields, deduped)}
+
+
+def deduplicated_table_prefix_map(base) -> dict[str, str]:
+    """Per-base `{table_id: deduplicated PascalCase type prefix}`.
+
+    Mirrors `deduplicated_field_property_map` for table-level names: two tables
+    whose names collapse to the same PascalCase prefix would otherwise generate
+    colliding type/file names and `Airtable` accessor properties.
+    """
+    deduped = deduplicate_identifiers([table.name_pascal() for table in base.tables], suffix="V")
+    return {table.id: name for table, name in zip(base.tables, deduped)}
+
+
 def deduplicate_names(names: list[str]) -> list[str]:
     """Append ' (2)', ' (3)', etc. to duplicate names to ensure uniqueness."""
     counts: dict[str, int] = {}

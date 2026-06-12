@@ -52,9 +52,25 @@ private func wrapField(_ field: String, caseSensitive: Bool, trim: Bool) -> Stri
     return v
 }
 
+/// Escape a value for an Airtable double-quoted formula string. Backslashes
+/// are escaped FIRST, then quotes — otherwise a trailing `\` leaves the
+/// closing quote live and the remainder of the value executes as formula
+/// code (myairtable-53ip).
+func escapeFormulaString(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+}
+
+/// Escape a value for an Airtable single-quoted formula string.
+func escapeFormulaStringSingle(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "'", with: "\\'")
+}
+
 private func wrapValueStr(_ value: String, caseSensitive: Bool, trim: Bool) -> String {
-    let escaped = value.replacingOccurrences(of: "\"", with: "\\\"")
-    var v = "\"\(escaped)\""
+    var v = "\"\(escapeFormulaString(value))\""
     if trim { v = "TRIM(\(v))" }
     if !caseSensitive { v = "LOWER(\(v))" }
     return v
@@ -168,13 +184,15 @@ extension FormulaTextOps {
         let strip = { (s: String) -> String in
             "SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(\(s),\" \",\"\"),\"-\",\"\"),\"(\",\"\"),\")\",\"\"),\"+\",\"\"),\".\",\"\")"
         }
-        return "\(strip(field))=\"\(normalized)\""
+        return "\(strip(field))=\"\(escapeFormulaString(normalized))\""
     }
 
     /// Regex match.
     public func regexMatch(_ pattern: String) -> String {
-        let escaped = pattern.replacingOccurrences(of: "\"", with: "\\\"")
-        return "REGEX_MATCH(\(field),\"\(escaped)\")"
+        // Escape for the formula-string context only; regex escapes like \\d
+        // become \\\\d in the formula source, which Airtable's parser unescapes
+        // back before handing the pattern to the regex engine.
+        return "REGEX_MATCH(\(field),\"\(escapeFormulaString(pattern))\")"
     }
 }
 
@@ -186,7 +204,7 @@ public struct FormulaId: Sendable {
 
     /// Match a specific record ID.
     public func equals(_ id: String) -> String {
-        "RECORD_ID()='\(id)'"
+        "RECORD_ID()='\(escapeFormulaStringSingle(id))'"
     }
 
     /// Match any of the given record IDs.
@@ -317,7 +335,7 @@ public protocol FormulaDateOperand {
 }
 
 extension String: FormulaDateOperand {
-    public var datetimeParseExpr: String { "DATETIME_PARSE('\(self)')" }
+    public var datetimeParseExpr: String { "DATETIME_PARSE('\(escapeFormulaStringSingle(self))')" }
 }
 
 public struct FormulaDateComparison: Sendable {
