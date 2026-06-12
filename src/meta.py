@@ -380,6 +380,7 @@ class Field(Named):
     _rust_type: str | None = PrivateAttr(default=None)
     _swift_type: str | None = PrivateAttr(default=None)
     _kotlin_type: str | None = PrivateAttr(default=None)
+    _java_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -599,6 +600,14 @@ class Field(Named):
         from src.utils.type_mapper import map_kotlin_type
 
         return map_kotlin_type(self)
+
+    def java_type(self) -> str:
+        """Returns the Java type for this field."""
+        if self._java_type:
+            return self._java_type
+        from src.utils.type_mapper import map_java_type
+
+        return map_java_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""
