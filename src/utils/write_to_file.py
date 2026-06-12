@@ -46,7 +46,7 @@ class WriteToFile(BaseModel):
 
     path: Path
     lines: list[str] = []
-    language: Literal["python", "typescript", "javascript", "markdown", "mermaid", "rust", "html", "swift", "kotlin"]
+    language: Literal["python", "typescript", "javascript", "markdown", "mermaid", "rust", "html", "swift", "kotlin", "java"]
 
     # Deferred-import state. Imports are registered as candidates, then resolved against actual
     # body usage at flush time so each file only imports symbols it references.
@@ -71,7 +71,7 @@ class WriteToFile(BaseModel):
                         "# Auto-generated file. Do not edit directly.\n"
                         "# ==========================================\n\n"
                     )
-                case "typescript" | "javascript" | "rust" | "swift" | "kotlin":
+                case "typescript" | "javascript" | "rust" | "swift" | "kotlin" | "java":
                     header: str = (
                         "// ==========================================\n"
                         "// Auto-generated file. Do not edit directly.\n"
