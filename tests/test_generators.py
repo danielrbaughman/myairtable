@@ -2457,19 +2457,27 @@ class TestJavaModels:
 
     # ---- formula gating (J-F7/J8.8 not yet landed) ----
 
-    def test_no_evaluate_methods_while_transpiler_lacks_java(self, tmp_path: Path):
-        """Until the transpiler grows Java arms (J8.8), no evaluate* methods are
-        emitted even with runtime=True and a transpilable formula present."""
+    def test_evaluate_methods_emitted_with_runtime_and_gated_off_without(self, tmp_path: Path):
+        """The transpiler has Java arms (J8.8): runtime=True emits evaluate* methods
+        returning JsonNode; runtime=False suppresses them."""
         from src.generators.java import _transpiler_supports_java
 
-        assert not _transpiler_supports_java(), "transpiler gained java support — assert evaluate* output instead (J8.8)"
+        assert _transpiler_supports_java()
         content = self._generate_model(
             self.MIXED_SPEC,
             tmp_path,
             formula_map={"fld002": '{fld001} & "!"'},
             runtime=True,
         )
-        assert "evaluate" not in content
+        assert "public JsonNode evaluate" in content
+        assert "AirtableRuntime.V(" in content
+        content_off = self._generate_model(
+            self.MIXED_SPEC,
+            tmp_path,
+            formula_map={"fld002": '{fld001} & "!"'},
+            runtime=False,
+        )
+        assert "evaluate" not in content_off
 
     def test_filters_static_present_when_formulas_enabled(self, tmp_path: Path):
         """Models expose the {Table}Filters accessor `f` (J-F7); gated off with formulas=False."""
