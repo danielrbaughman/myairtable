@@ -18,13 +18,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * <ul>
  *   <li>Unknown wire properties are ignored (Airtable adds fields without notice).
- *   <li>Field-access mode: properties are discovered from {@code private} fields annotated {@code
- *       @JsonProperty}; getters/setters/creators are invisible. Generated models therefore need a
- *       public no-arg constructor and nothing else for decoding.
+ *   <li>Field-access mode: properties are discovered from {@code private} fields annotated
+ *       {@code @JsonProperty}; getters/setters/creators are invisible. Generated models therefore
+ *       need a public no-arg constructor and nothing else for decoding.
  *   <li>{@code null} values are omitted on encode (Airtable treats absent and null differently).
- *   <li>Only {@link AirtableJacksonModule} is registered — never {@code
- *       findAndRegisterModules()}, which could pull in {@code jackson-datatype-jsr310} and shadow
- *       the numeric-seconds Duration codec.
+ *   <li>Only {@link AirtableJacksonModule} is registered — never {@code findAndRegisterModules()},
+ *       which could pull in {@code jackson-datatype-jsr310} and shadow the numeric-seconds Duration
+ *       codec.
  * </ul>
  */
 public final class AirtableJson {

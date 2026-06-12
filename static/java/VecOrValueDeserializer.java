@@ -21,8 +21,8 @@ import java.util.List;
  * VecOrValue.Multiple} (element-by-element so {@code null} entries survive), anything else as
  * {@link VecOrValue.Single}.
  *
- * <p>Element type capture mirrors {@link MaybeSpecialOrErrorDeserializer}; when the element type
- * is itself {@code MaybeSpecialOrError<...>}, per-element decoding flows through {@code
+ * <p>Element type capture mirrors {@link MaybeSpecialOrErrorDeserializer}; when the element type is
+ * itself {@code MaybeSpecialOrError<...>}, per-element decoding flows through {@code
  * readTreeAsValue}, which contextualizes the inner deserializer (the nested {@code
  * VecOrValue<MaybeSpecialOrError<T>>} path).
  */

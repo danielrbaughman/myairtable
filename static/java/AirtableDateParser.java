@@ -19,8 +19,8 @@ import java.time.format.DateTimeParseException;
  *   <li>Date-only ({@code 2024-01-15}) — decoded as midnight UTC
  * </ol>
  *
- * <p>Port of the Kotlin {@code AirtableDateParser} (decode order locked by the Swift/Kotlin
- * efforts against live data).
+ * <p>Port of the Kotlin {@code AirtableDateParser} (decode order locked by the Swift/Kotlin efforts
+ * against live data).
  */
 public final class AirtableDateParser {
 

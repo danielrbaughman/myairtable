@@ -15,9 +15,9 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
  * Mirrors the Rust/Swift/Kotlin {@code MaybeSpecialOrError<T>} by name and shape.
  *
  * <p>The class-level {@code @JsonDeserialize} makes the type resolvable when it appears NESTED
- * (e.g. as the element of {@code VecOrValue<MaybeSpecialOrError<T>>}); generated model fields
- * ALSO carry a field-level {@code @JsonDeserialize} so top-level contextualization is never left
- * to interface-level resolution alone (java-plan-v2 §2.3.4).
+ * (e.g. as the element of {@code VecOrValue<MaybeSpecialOrError<T>>}); generated model fields ALSO
+ * carry a field-level {@code @JsonDeserialize} so top-level contextualization is never left to
+ * interface-level resolution alone (java-plan-v2 §2.3.4).
  */
 @JsonDeserialize(using = MaybeSpecialOrErrorDeserializer.class)
 @JsonSerialize(using = MaybeSpecialOrErrorSerializer.class)

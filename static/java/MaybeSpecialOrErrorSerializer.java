@@ -17,7 +17,8 @@ import java.io.IOException;
 public final class MaybeSpecialOrErrorSerializer extends JsonSerializer<MaybeSpecialOrError<?>> {
 
   @Override
-  public void serialize(MaybeSpecialOrError<?> value, JsonGenerator gen, SerializerProvider provider)
+  public void serialize(
+      MaybeSpecialOrError<?> value, JsonGenerator gen, SerializerProvider provider)
       throws IOException {
     switch (value) {
       case MaybeSpecialOrError.Value<?> v -> provider.defaultSerializeValue(v.value(), gen);

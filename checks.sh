@@ -72,3 +72,22 @@ if [ -x tests/kotlin_static/gradlew ] && command -v java &> /dev/null; then
 else
     echo "[warn] Java/gradlew not available; skipping Kotlin checks."
 fi
+
+# Java
+# The static runtime unit tests live in a Gradle project at tests/java_static/
+# whose main source set points directly at static/java/.
+if [ -x tests/java_static/gradlew ] && command -v java &> /dev/null; then
+    echo "--- Java checks ---"
+    (cd tests/java_static && ./gradlew test)
+    if command -v google-java-format &> /dev/null; then
+        # Format the hand-written runtime + tests; generated output is exempt by design.
+        JAVA_SOURCES=$(find static/java tests/java_static/src -name '*.java')
+        if [ -n "$JAVA_SOURCES" ]; then
+            echo "$JAVA_SOURCES" | xargs google-java-format --replace
+        fi
+    else
+        echo "[warn] google-java-format not installed; skipping format step. (brew install google-java-format)"
+    fi
+else
+    echo "[warn] Java/gradlew not available; skipping Java checks."
+fi

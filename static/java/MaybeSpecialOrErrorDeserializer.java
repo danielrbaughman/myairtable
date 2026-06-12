@@ -24,8 +24,8 @@ import java.io.IOException;
  * {@code decodeJsonElement()} peek pattern.
  *
  * <p>The element type is captured via {@link ContextualDeserializer}: Jackson calls {@link
- * #createContextual} with the declared field type (which carries the concrete generic argument),
- * or with the contextual type when resolved from inside another deserializer (the nested {@code
+ * #createContextual} with the declared field type (which carries the concrete generic argument), or
+ * with the contextual type when resolved from inside another deserializer (the nested {@code
  * VecOrValue<MaybeSpecialOrError<T>>} path).
  */
 public final class MaybeSpecialOrErrorDeserializer extends JsonDeserializer<MaybeSpecialOrError<?>>

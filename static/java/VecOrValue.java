@@ -32,7 +32,8 @@ public sealed interface VecOrValue<T> permits VecOrValue.Single, VecOrValue.Mult
    */
   default List<T> values() {
     return switch (this) {
-      case Single<T> s -> s.value() == null ? List.of() : java.util.Collections.singletonList(s.value());
+      case Single<T> s ->
+          s.value() == null ? List.of() : java.util.Collections.singletonList(s.value());
       case Multiple<T> m -> m.values() == null ? List.of() : m.values();
     };
   }

@@ -8,9 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -23,10 +23,10 @@ import org.junit.jupiter.api.Test;
  * generator templating:
  *
  * <p>(a) public no-arg ctor + field-access decode of @JsonProperty field-ID keys, including
- * computed (no-setter) fields; (b) field-level @JsonDeserialize ContextualDeserializer
- * round-trips, including the nested VecOrValue&lt;MaybeSpecialOrError&lt;String&gt;&gt; case,
- * decode AND encode; (c) Duration encodes as numeric seconds, never ISO "PT30S"; (d) @JsonIgnore
- * snapshot + writable-only payload builders; (e) package-vs-directory compile proof.
+ * computed (no-setter) fields; (b) field-level @JsonDeserialize ContextualDeserializer round-trips,
+ * including the nested VecOrValue&lt;MaybeSpecialOrError&lt;String&gt;&gt; case, decode AND encode;
+ * (c) Duration encodes as numeric seconds, never ISO "PT30S"; (d) @JsonIgnore snapshot +
+ * writable-only payload builders; (e) package-vs-directory compile proof.
  */
 class TestPojoModel {
 
@@ -188,10 +188,12 @@ class TestPojoModel {
   @Test
   void computedSpecialValueDecodes() throws Exception {
     ProtoModel model =
-        AirtableJson.MAPPER.readValue("{\"fldAuto\": {\"specialValue\": \"NaN\"}}", ProtoModel.class);
+        AirtableJson.MAPPER.readValue(
+            "{\"fldAuto\": {\"specialValue\": \"NaN\"}}", ProtoModel.class);
     assertInstanceOf(MaybeSpecialOrError.Special.class, model.getAutoNumber());
     assertEquals(
-        "NaN", ((MaybeSpecialOrError.Special<Long>) model.getAutoNumber()).special().specialValue());
+        "NaN",
+        ((MaybeSpecialOrError.Special<Long>) model.getAutoNumber()).special().specialValue());
     assertNull(model.getAutoNumber().value());
   }
 
@@ -200,7 +202,8 @@ class TestPojoModel {
     ProtoModel model =
         AirtableJson.MAPPER.readValue("{\"fldAuto\": {\"error\": \"#ERROR!\"}}", ProtoModel.class);
     assertInstanceOf(MaybeSpecialOrError.Error.class, model.getAutoNumber());
-    assertEquals("#ERROR!", ((MaybeSpecialOrError.Error<Long>) model.getAutoNumber()).error().error());
+    assertEquals(
+        "#ERROR!", ((MaybeSpecialOrError.Error<Long>) model.getAutoNumber()).error().error());
   }
 
   @Test
@@ -223,7 +226,9 @@ class TestPojoModel {
   void nestedVecOrValueOfMaybeSpecialDecodesScalarForm() throws Exception {
     ProtoModel model = AirtableJson.MAPPER.readValue("{\"fldLookup\": \"solo\"}", ProtoModel.class);
     assertInstanceOf(VecOrValue.Single.class, model.getLookup());
-    assertEquals("solo", ((VecOrValue.Single<MaybeSpecialOrError<String>>) model.getLookup()).value().value());
+    assertEquals(
+        "solo",
+        ((VecOrValue.Single<MaybeSpecialOrError<String>>) model.getLookup()).value().value());
   }
 
   @Test
@@ -273,10 +278,8 @@ class TestPojoModel {
 
   @Test
   void durationDecodesFromNumericSeconds() throws Exception {
-    assertEquals(
-        Duration.ofSeconds(90), AirtableJson.MAPPER.readValue("90", Duration.class));
-    assertEquals(
-        Duration.ofMillis(1500), AirtableJson.MAPPER.readValue("1.5", Duration.class));
+    assertEquals(Duration.ofSeconds(90), AirtableJson.MAPPER.readValue("90", Duration.class));
+    assertEquals(Duration.ofMillis(1500), AirtableJson.MAPPER.readValue("1.5", Duration.class));
   }
 
   @Test
