@@ -600,3 +600,33 @@ class TestRustStringLiteralConversion:
 
 
 # endregion
+
+
+class TestRustEqualityCoercion:
+    """myairtable-02fg — Rust =/!= route through F::N/F::S when either side's
+    type is inferable (serde Number f64 vs i64 variants are not cross-equal)."""
+
+    def _transpile(self, formula: str) -> str | None:
+        from src.formulas.formula_transpiler import transpile_formula
+
+        return transpile_formula(formula, "rust", {"fld1": "my_field", "fld2": "other_field"}, set())
+
+    def test_numeric_equality_coerces_both_sides(self):
+        result = self._transpile("{fld1} = 5")
+        assert result == ("Value::Bool(F::N(&serde_json::to_value(&self.my_field).unwrap_or(Value::Null)) == F::N(&json!(5)))")
+
+    def test_numeric_inequality_coerces_both_sides(self):
+        result = self._transpile("{fld1} != 5")
+        assert "F::N(" in result
+        assert " != " in result
+
+    def test_string_equality_coerces_both_sides(self):
+        result = self._transpile('{fld1} = "hi"')
+        assert result == ('Value::Bool(F::S(&serde_json::to_value(&self.my_field).unwrap_or(Value::Null)) == F::S(&json!("hi")))')
+
+    def test_field_vs_field_equality_without_inferable_type_stays_raw(self):
+        result = self._transpile("{fld1} = {fld2}")
+        assert result == (
+            "Value::Bool(serde_json::to_value(&self.my_field).unwrap_or(Value::Null) == "
+            "serde_json::to_value(&self.other_field).unwrap_or(Value::Null))"
+        )

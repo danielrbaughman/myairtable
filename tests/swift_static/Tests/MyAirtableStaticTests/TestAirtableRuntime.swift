@@ -214,3 +214,25 @@ struct TestRuntimeRegex {
         )
     }
 }
+
+// myairtable-02fg regression — the emitted equality shapes must EVALUATE
+// correctly: AirtableJSONValue enum equality made .double(5.0) != .int(5),
+// so =/!= route through N()/S() coercion on both sides.
+@Suite("Transpiled equality shapes")
+struct TestTranspiledEqualityShapes {
+    @Test func numericEqualityShapeIsTrueForWholeNumberFields() {
+        #expect(AirtableRuntime.N(AirtableRuntime.V(5.0)) == AirtableRuntime.N(.int(5)))
+        #expect(AirtableRuntime.N(AirtableRuntime.V(5)) == AirtableRuntime.N(.int(5)))
+        #expect(AirtableRuntime.N(AirtableRuntime.V(4.0)) != AirtableRuntime.N(.int(5)))
+    }
+
+    @Test func preFixShapeWasConstantFalse() {
+        // Documents the bug the coercion fix removes.
+        #expect(AirtableJSONValue.double(5.0) != AirtableJSONValue.int(5))
+    }
+
+    @Test func stringEqualityShapeCoercesBothSides() {
+        #expect(AirtableRuntime.S(AirtableRuntime.V("hi")) == AirtableRuntime.S(.string("hi")))
+        #expect(AirtableRuntime.S(AirtableRuntime.V(5.0)) == AirtableRuntime.S(.int(5)))
+    }
+}

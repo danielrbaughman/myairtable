@@ -978,3 +978,25 @@ fn datetime_parse_basic() {
         json!("2024-01-15T00:00:00.000Z")
     );
 }
+
+// myairtable-02fg regression — the emitted equality shapes must EVALUATE
+// correctly: serde_json Number variants are not cross-equal (f64 5.0 != i64 5),
+// so =/!= route through F::N/F::S coercion on both sides.
+#[test]
+fn transpiled_numeric_equality_shape_is_true_for_whole_numbers() {
+    assert!(N(&json!(5.0)) == N(&json!(5)));
+    assert!(N(&serde_json::to_value(5.0_f64).unwrap()) == N(&json!(5)));
+    assert!(N(&json!(4.0)) != N(&json!(5)));
+}
+
+#[test]
+fn pre_fix_shape_was_constant_false() {
+    // Documents the bug the coercion fix removes.
+    assert!(json!(5.0_f64) != json!(5));
+}
+
+#[test]
+fn transpiled_string_equality_shape_coerces_both_sides() {
+    assert!(S(&json!("hi")) == S(&json!("hi")));
+    assert!(S(&json!(5.0)) == S(&json!(5)));
+}

@@ -1137,18 +1137,6 @@ class CodeEmitter:
             return self.emit(node)
         node_type = self._infer_type(node)
         other_type = self._infer_type(other)
-        if self.language == "rust":
-            if other_type == "string" and node_type != "string":
-                return f"json!(F::S(&{self.emit(node)}))"
-            if other_type == "number" and node_type != "number":
-                return f"json!(F::N(&{self.emit(node)}))"
-            return self.emit(node)
-        if self.language == "swift":
-            if other_type == "string" and node_type != "string":
-                return f".string({self._runtime}.S({self.emit(node)}))"
-            if other_type == "number" and node_type != "number":
-                return f".double({self._runtime}.N({self.emit(node)}))"
-            return self.emit(node)
         if other_type == "string" and node_type != "string":
             return f"{self._runtime}.S({self.emit(node)})"
         if other_type == "number" and node_type != "number":
@@ -1178,24 +1166,39 @@ class CodeEmitter:
             return f"({left} {node.op} {right})"
         if node.op in ("=", "!="):
             native_op = "==" if node.op == "=" else "!="
-            if self.language == "kotlin":
-                # JsonPrimitive equality compares content STRINGS, so a Double
-                # side ("5.0") never equals an Int literal ("5"). When either
+            if self.language in ("kotlin", "swift", "rust"):
+                # The custom-runtime targets compare typed JSON values whose
+                # numeric variants are NOT cross-equal (kotlinx JsonPrimitive
+                # "5.0" vs "5"; Swift .double vs .int; serde f64 vs i64), so a
+                # Double-coerced side never equals an Int literal. When either
                 # side's type is inferable, compare through the N()/S()
-                # coercions instead of raw JsonElement equality (myairtable-4929).
+                # coercions instead (myairtable-4929 / myairtable-02fg).
                 left_type = self._infer_type(node.left)
                 right_type = self._infer_type(node.right)
+                left_raw = self.emit(node.left)
+                right_raw = self.emit(node.right)
+                if self.language == "kotlin":
+                    if "number" in (left_type, right_type):
+                        return f"JsonPrimitive(N({left_raw}) {native_op} N({right_raw}))"
+                    if "string" in (left_type, right_type):
+                        return f"JsonPrimitive(S({left_raw}) {native_op} S({right_raw}))"
+                    return f"JsonPrimitive({left_raw} {native_op} {right_raw})"
+                if self.language == "swift":
+                    rt = self._runtime
+                    if "number" in (left_type, right_type):
+                        return f".bool({rt}.N({left_raw}) {native_op} {rt}.N({right_raw}))"
+                    if "string" in (left_type, right_type):
+                        return f".bool({rt}.S({left_raw}) {native_op} {rt}.S({right_raw}))"
+                    return f".bool({left_raw} {native_op} {right_raw})"
+                # rust
+                rt = self._runtime
                 if "number" in (left_type, right_type):
-                    return f"JsonPrimitive(N({self.emit(node.left)}) {native_op} N({self.emit(node.right)}))"
+                    return f"Value::Bool({rt}::N(&{left_raw}) {native_op} {rt}::N(&{right_raw}))"
                 if "string" in (left_type, right_type):
-                    return f"JsonPrimitive(S({self.emit(node.left)}) {native_op} S({self.emit(node.right)}))"
-                return f"JsonPrimitive({self.emit(node.left)} {native_op} {self.emit(node.right)})"
+                    return f"Value::Bool({rt}::S(&{left_raw}) {native_op} {rt}::S(&{right_raw}))"
+                return f"Value::Bool({left_raw} {native_op} {right_raw})"
             left = self._emit_eq_operand(node.left, node.right)
             right = self._emit_eq_operand(node.right, node.left)
-            if self.language == "rust":
-                return f"Value::Bool({left} {native_op} {right})"
-            if self.language == "swift":
-                return f".bool({left} {native_op} {right})"
             return f"({left} {native_op} {right})"
         if node.op == "&":
             if self.language == "rust":
