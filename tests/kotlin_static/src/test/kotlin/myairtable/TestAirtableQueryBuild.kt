@@ -79,6 +79,23 @@ class TestAirtableQueryBuild {
     }
 
     @Test
+    fun combinedQueryEmitsExpectedParameterCount() {
+        val q =
+            AirtableQuery(
+                formula = "X",
+                fields = listOf("fldA", "fldB"),
+                maxRecords = 10,
+                pageSize = 5,
+                view = "Grid",
+                timeZone = "America/Chicago",
+                userLocale = "en-us",
+            ).withSort("Name")
+        // formula + 2 fields + 2 sort items + maxRecords + pageSize + view +
+        // returnFieldsByFieldId + timeZone + userLocale = 11
+        assertEquals(11, q.toParameters().size)
+    }
+
+    @Test
     fun copySemanticsProduceIndependentQueries() {
         val base = AirtableQuery(formula = "X")
         val modified = base.copy(maxRecords = 1)
