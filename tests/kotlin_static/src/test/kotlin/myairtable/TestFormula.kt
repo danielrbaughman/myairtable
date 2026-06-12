@@ -485,3 +485,53 @@ class TestFormulaDateFieldOperand {
 }
 
 // endregion
+
+/**
+ * myairtable-53ip — formula-string injection hardening. A value may not break
+ * out of its quoted context regardless of embedded quotes/backslashes.
+ */
+class TestFormulaEscaping {
+    private val text = FormulaTextField("fldT")
+    private val id = FormulaId()
+
+    @Test
+    fun quoteInValueStaysInsideTheString() {
+        assertEquals("""{fldT}="a \"quoted\" b"""", text.eq("a \"quoted\" b"))
+    }
+
+    @Test
+    fun trailingBackslashCannotEscapeTheClosingQuote() {
+        // Pre-fix: ...="x\" left the quote live and leaked formula code.
+        assertEquals("""{fldT}="x\\"""", text.eq("x\\"))
+    }
+
+    @Test
+    fun backslashThenQuotePayloadIsNeutralized() {
+        val evil = "x\\\", TRUE(), \""
+        val formula = text.eq(evil)
+        // Every backslash doubled, every quote escaped — the payload cannot
+        // terminate the string literal. (Built programmatically: nested-quote
+        // raw strings are unreadable here.)
+        val expected = "{fldT}=\"" + escapeFormulaString(evil) + "\""
+        assertEquals(expected, formula)
+        assertEquals("x\\\\\\\", TRUE(), \\\"", escapeFormulaString(evil))
+    }
+
+    @Test
+    fun recordIdSingleQuoteIsEscaped() {
+        assertEquals("""RECORD_ID()='rec\' OR TRUE() OR \''""", id.eq("rec' OR TRUE() OR '"))
+    }
+
+    @Test
+    fun regexBackslashSurvivesRoundTrip() {
+        // \d in the pattern -> \\d in formula source; Airtable's string parser
+        // unescapes it back to \d for the regex engine.
+        assertEquals("""REGEX_MATCH({fldT},"\\d+")""", text.regexMatch("\\d+"))
+    }
+
+    @Test
+    fun phoneEqualsEscapesResidualQuotes() {
+        val formula = text.phoneEquals("555\"1234")
+        assertTrue(formula.endsWith("=\"555\\\"1234\""), formula)
+    }
+}

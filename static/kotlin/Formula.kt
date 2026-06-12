@@ -65,13 +65,23 @@ private fun wrapField(
     return v
 }
 
+/**
+ * Escape a value for an Airtable double-quoted formula string. Backslashes are
+ * escaped FIRST, then quotes — otherwise a trailing `\` leaves the closing
+ * quote live and the remainder of the value executes as formula code
+ * (myairtable-53ip).
+ */
+internal fun escapeFormulaString(value: String): String = value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+/** Escape a value for an Airtable single-quoted formula string. */
+internal fun escapeFormulaStringSingle(value: String): String = value.replace("\\", "\\\\").replace("'", "\\'")
+
 private fun wrapValueStr(
     value: String,
     caseSensitive: Boolean,
     trim: Boolean,
 ): String {
-    val escaped = value.replace("\"", "\\\"")
-    var v = "\"$escaped\""
+    var v = "\"${escapeFormulaString(value)}\""
     if (trim) v = "TRIM($v)"
     if (!caseSensitive) v = "LOWER($v)"
     return v
@@ -233,13 +243,15 @@ interface FormulaTextOps : FormulaField {
         val strip = { s: String ->
             "SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($s,\" \",\"\"),\"-\",\"\"),\"(\",\"\"),\")\",\"\"),\"+\",\"\"),\".\",\"\")"
         }
-        return "${strip(field)}=\"$normalized\""
+        return "${strip(field)}=\"${escapeFormulaString(normalized)}\""
     }
 
     /** Regex match. */
     fun regexMatch(pattern: String): String {
-        val escaped = pattern.replace("\"", "\\\"")
-        return "REGEX_MATCH($field,\"$escaped\")"
+        // Escape for the formula-string context only; regex escapes like \\d
+        // become \\\\d in the formula source, which Airtable's parser unescapes
+        // back to \\d before handing the pattern to the regex engine.
+        return "REGEX_MATCH($field,\"${escapeFormulaString(pattern)}\")"
     }
 }
 
@@ -251,7 +263,7 @@ interface FormulaTextOps : FormulaField {
 /** Formula builder for record IDs. */
 class FormulaId {
     /** Match a specific record ID. */
-    fun eq(id: String): String = "RECORD_ID()='$id'"
+    fun eq(id: String): String = "RECORD_ID()='${escapeFormulaStringSingle(id)}'"
 
     /** Match any of the given record IDs. */
     fun inList(ids: List<String>): String =
@@ -392,7 +404,7 @@ interface FormulaDateOperand {
 private class FormulaDateLiteral(
     private val value: String,
 ) : FormulaDateOperand {
-    override val datetimeParseExpr: String get() = "DATETIME_PARSE('$value')"
+    override val datetimeParseExpr: String get() = "DATETIME_PARSE('${escapeFormulaStringSingle(value)}')"
 }
 
 /** Intermediate builder for date "time ago" comparisons. */

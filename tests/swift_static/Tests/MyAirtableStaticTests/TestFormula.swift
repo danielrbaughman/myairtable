@@ -318,3 +318,34 @@ struct TestFormulaDateFieldOperand {
         #expect(r.contains("=DATETIME_PARSE({fld123})"))
     }
 }
+
+// myairtable-53ip — formula-string injection hardening (parity with Kotlin
+// TestFormulaEscaping). A value may not break out of its quoted context.
+@Suite("Formula escaping")
+struct TestFormulaEscaping {
+    private let text = FormulaTextField("fldT")
+    private let id = FormulaId()
+
+    @Test func quoteInValueStaysInsideTheString() {
+        #expect(text.equals("a \"quoted\" b") == #"{fldT}="a \"quoted\" b""#)
+    }
+
+    @Test func trailingBackslashCannotEscapeTheClosingQuote() {
+        #expect(text.equals("x\\") == #"{fldT}="x\\""#)
+    }
+
+    @Test func backslashThenQuotePayloadIsNeutralized() {
+        let evil = "x\\\", TRUE(), \""
+        let expected = "{fldT}=\"" + escapeFormulaString(evil) + "\""
+        #expect(text.equals(evil) == expected)
+        #expect(escapeFormulaString(evil) == "x\\\\\\\", TRUE(), \\\"")
+    }
+
+    @Test func recordIdSingleQuoteIsEscaped() {
+        #expect(id.equals("rec' OR TRUE() OR '") == #"RECORD_ID()='rec\' OR TRUE() OR \''"#)
+    }
+
+    @Test func regexBackslashSurvivesRoundTrip() {
+        #expect(text.regexMatch("\\d+") == #"REGEX_MATCH({fldT},"\\d+")"#)
+    }
+}
