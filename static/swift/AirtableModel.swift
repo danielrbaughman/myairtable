@@ -36,7 +36,7 @@ public protocol AirtableModel: AnyObject, Codable {
     func takeSnapshot()
 
     /// Fields that changed since the last snapshot, keyed by field ID.
-    /// Used by `OrmTable.updateOne` to send only what changed.
+    /// Used by `OrmTable.update(_:)` to send only what changed.
     func dirtyFields() -> [String: AirtableJSONValue]
 
     /// All current field values, keyed by field ID. Used for test assertions,
@@ -103,7 +103,7 @@ extension AirtableModel {
             throw AirtableError.api(
                 code: "DETACHED_MODEL",
                 message:
-                    "Model must be obtained via a table (getOne / createOne / upsertOne / getMany) before calling save() / fetch() / delete()"
+                    "Model must be obtained via a table (get / create / upsert) before calling save() / fetch() / delete()"
             )
         }
         return client

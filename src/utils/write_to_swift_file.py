@@ -95,7 +95,8 @@ def _choice_to_case(choice: str) -> str:
     """Convert an Airtable select choice to a Swift enum case name (lowerCamelCase).
 
     Swift enum cases are lowerCamelCase by convention (SE-0006). Falls back to
-    `case1`, `case2`... for names that sanitize to empty.
+    `empty` for names that sanitize to nothing; collisions (including multiple
+    `empty` fallbacks) are disambiguated later by `_deduplicate_cases`.
     """
     text = sanitize_property_name(choice)
     text = re.sub(r"\s+", " ", text).strip()

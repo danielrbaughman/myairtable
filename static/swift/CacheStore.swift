@@ -7,8 +7,9 @@ import Foundation
 /// Semantics:
 /// - **TTL**: `defaultTtl` (seconds). 0 disables caching. Per-call TTL
 ///   overrides are supported via the `ttl:` parameter on `get(_:ttl:)`.
-/// - **LRU**: optional `maxEntries` cap. When set, the oldest-inserted
-///   entry is evicted once the cap is exceeded.
+/// - **LRU**: optional `maxEntries` cap. When set, the least-recently-used
+///   entry is evicted once the cap is exceeded. Both hits and writes refresh
+///   an entry's recency.
 /// - **Scope invalidation**: cascade by table, or wipe everything.
 /// - **Stale reads**: entries past their TTL are removed on access
 ///   (lazy expiry).
@@ -46,8 +47,9 @@ public actor CacheStore {
     public let maxEntries: Int?
 
     private var storage: [Key: Entry] = [:]
-    // Insertion-order tracker for LRU eviction. Hit + set both touch this.
-    private var insertionOrder: [Key] = []
+    // Recency tracker for LRU eviction: least-recently-used key first.
+    // Hit + set both move the key to the back via `touch(_:)`.
+    private var recencyOrder: [Key] = []
 
     public init(defaultTtl: TimeInterval = 0, maxEntries: Int? = nil) {
         self.defaultTtl = defaultTtl
@@ -66,28 +68,34 @@ public actor CacheStore {
             let age = Date().timeIntervalSince(entry.insertedAt)
             if age > effectiveTtl {
                 storage.removeValue(forKey: key)
-                insertionOrder.removeAll { $0 == key }
+                recencyOrder.removeAll { $0 == key }
                 return nil
             }
         } else if effectiveTtl == 0 {
             // TTL of 0 means caching is off — never serve cached data.
             return nil
         }
+        touch(key)
         return entry.payload
     }
 
-    /// Store `payload` at `key`. Evicts the oldest entry if `maxEntries` is set
-    /// and the cap is exceeded. A no-op when `defaultTtl` is 0 — cache is off.
+    /// Store `payload` at `key`. Evicts the least-recently-used entry if
+    /// `maxEntries` is set and the cap is exceeded. A no-op when `defaultTtl`
+    /// is 0 — cache is off.
     public func set(_ key: Key, payload: Data) {
         guard defaultTtl > 0 else { return }
-        if storage[key] == nil {
-            insertionOrder.append(key)
-        }
         storage[key] = Entry(payload: payload, insertedAt: Date())
+        touch(key)
         if let cap = maxEntries, storage.count > cap {
-            let oldest = insertionOrder.removeFirst()
-            storage.removeValue(forKey: oldest)
+            let leastRecent = recencyOrder.removeFirst()
+            storage.removeValue(forKey: leastRecent)
         }
+    }
+
+    /// Move `key` to the most-recently-used end of the recency order.
+    private func touch(_ key: Key) {
+        recencyOrder.removeAll { $0 == key }
+        recencyOrder.append(key)
     }
 
     /// Invalidate by scope.
@@ -95,10 +103,10 @@ public actor CacheStore {
         switch scope {
         case .all:
             storage.removeAll()
-            insertionOrder.removeAll()
+            recencyOrder.removeAll()
         case .table(let tableId):
             storage = storage.filter { $0.key.tableId != tableId }
-            insertionOrder.removeAll { $0.tableId == tableId }
+            recencyOrder.removeAll { $0.tableId == tableId }
         }
     }
 
