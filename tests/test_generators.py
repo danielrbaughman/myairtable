@@ -1201,3 +1201,187 @@ class TestSwiftFlagGating:
         assert not (out / "static" / "AirtableRuntime.swift").exists()
         assert (out / "dynamic" / "models" / "TestTableModel.swift").is_file()
         assert (out / "dynamic" / "types" / "TestTableFields.swift").is_file()
+
+
+class TestKotlinGeneratorOutput:
+    """Kotlin generator (K-F3 — dict-only path) content assertions.
+
+    Verifies the generator emits the expected file structure and key code
+    snippets without shelling out to Gradle. Compilation is separately
+    verified by ``tests/kotlin_static/`` + the integration tests in
+    ``myairtable-tests``.
+    """
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        """Generate Kotlin code to a fresh tmp dir and return the output folder."""
+        from src.generators.kotlin import write_field_types, write_main, write_options, write_tables
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        write_field_types(base, output_folder)
+        write_tables(base, output_folder)
+        write_main(base, output_folder)
+        return output_folder
+
+    def test_field_types_emit_dual_id_and_name_constants(self, tmp_path: Path):
+        """Every field must get both a `{field}Id` and `{field}Name` constant."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "object TestTableFields" in content
+        assert 'const val primaryKeyId: String = "fld001"' in content
+        assert 'const val primaryKeyName: String = "Primary Key"' in content
+
+    def test_field_types_emit_name_to_id_and_id_to_name_maps(self, tmp_path: Path):
+        """The nameToId / idToName maps enable dual-access lookup at runtime."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "val nameToId: Map<String, String>" in content
+        assert "val idToName: Map<String, String>" in content
+        assert '"Primary Key" to "fld001"' in content
+        assert '"fld001" to "Primary Key"' in content
+        assert "fun idByName(name: String): String? = nameToId[name]" in content
+        assert "fun nameById(id: String): String? = idToName[id]" in content
+
+    def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
+        """allIds should list every field ID in schema order."""
+        fields_spec = [
+            ("A", "fld001", "singleLineText"),
+            ("B", "fld002", "number"),
+            ("C", "fld003", "checkbox"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert 'val allIds: List<String> = listOf("fld001", "fld002", "fld003")' in content
+
+    def test_writable_fields_exclude_computed_from_create_object(self, tmp_path: Path):
+        """Create{Table}Fields object omits computed fields (formula, createdTime, etc.)."""
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+            ("Created", "fld003", "createdTime"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.kt").read_text()
+
+        assert "object CreateTestTableFields" in content
+        create_block = content.split("object CreateTestTableFields")[1]
+        assert "myTextId" in create_block
+        assert "myFormulaId" not in create_block
+        assert "createdId" not in create_block
+
+    def test_tables_class_exposes_dict_accessor(self, tmp_path: Path):
+        """Each table gets a {Table}Table class with a `.dict: DictTable` accessor."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.kt").read_text()
+
+        assert "class TestTableTable(" in content
+        assert 'const val TABLE_ID: String = "tblTEST123"' in content
+        assert "val dict: DictTable" in content
+        assert "nameToId = TestTableFields.nameToId" in content
+
+    def test_main_airtable_exposes_per_table_accessors(self, tmp_path: Path):
+        """Airtable.kt should expose each table as a lowerCamelCase property."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "Airtable.kt").read_text()
+
+        assert "class Airtable(" in content
+        assert "val client: AirtableClient," in content
+        assert "val testTable: TestTableTable = TestTableTable(client)" in content
+        # Secondary constructor with embedded default baseId.
+        assert "constructor(" in content
+        assert 'baseId: String = "appTEST123",' in content
+        assert "suspend fun invalidateAllCaches()" in content
+
+    def test_every_generated_file_declares_the_flat_package(self, tmp_path: Path):
+        """All generated files live in the flat `myairtable` package."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        for path in out.rglob("*.kt"):
+            assert "package myairtable" in path.read_text(), f"{path} missing package decl"
+
+    def test_no_build_files_are_emitted(self, tmp_path: Path):
+        """The generator never emits Gradle build files (matches no-Package.swift)."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        assert not (out / "build.gradle.kts").exists()
+        assert not (out / "settings.gradle.kts").exists()
+
+
+class TestKotlinOptionsGenerator:
+    """Kotlin select-option enum generation."""
+
+    def _generate_with_options(self, tmp_path: Path) -> str:
+        """Build a table with a singleSelect field and return its options file content."""
+        from src.generators.kotlin import write_options
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        field = base.tables[0].fields[0]
+        assert field.options is not None
+        field.options.choices = [
+            Choice.model_construct(id="sel1", name="Open"),
+            Choice.model_construct(id="sel2", name="In Progress"),
+            Choice.model_construct(id="sel3", name="Closed"),
+        ]
+        assert field.__pydantic_private__ is not None
+        field.__pydantic_private__["_select_options_cache"] = None
+
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        return (output_folder / "dynamic" / "options" / "TestTableOptions.kt").read_text()
+
+    def test_options_enum_is_serializable(self, tmp_path: Path):
+        """Each options enum carries @Serializable so it decodes from wire values."""
+        content = self._generate_with_options(tmp_path)
+        assert "@Serializable" in content
+        assert "enum class" in content
+
+    def test_options_entries_are_screaming_snake_with_serial_names(self, tmp_path: Path):
+        """Choices map to SCREAMING_SNAKE_CASE entries with @SerialName raw values.
+
+        Entry order follows select_options() (alphabetical), so assertions are
+        order-agnostic: each @SerialName must be immediately followed by its entry.
+        """
+        import re
+
+        content = self._generate_with_options(tmp_path)
+        for raw, entry in [("Open", "OPEN"), ("In Progress", "IN_PROGRESS"), ("Closed", "CLOSED")]:
+            assert re.search(rf'@SerialName\("{raw}"\)\s+{entry}[,;]', content), f"missing {raw} -> {entry}"
+        # The final entry is terminated with `;`.
+        assert re.search(r"\w+;\n}", content)
+
+
+class TestKotlinFlagGating:
+    """generate_kotlin must honor the wrappers flag (formulas/runtime gating
+    is exercised once Formula.kt / AirtableRuntime.kt exist in K-F7/K-F8)."""
+
+    def _generate(self, tmp_path: Path, **flags) -> Path:
+        from src.generators.kotlin import generate_kotlin
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        generate_kotlin(base, output_folder, **flags)
+        return output_folder
+
+    def test_default_flags_emit_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        assert (out / "dynamic" / "tables" / "TestTableTable.kt").is_file()
+        assert (out / "Airtable.kt").is_file()
+        assert (out / "static" / "DictTable.kt").is_file()
+
+    def test_wrappers_false_suppresses_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path, wrappers=False)
+        assert not (out / "dynamic" / "tables").exists()
+        assert not (out / "Airtable.kt").exists()
+        # Field types are still emitted.
+        assert (out / "dynamic" / "types" / "TestTableFields.kt").is_file()
