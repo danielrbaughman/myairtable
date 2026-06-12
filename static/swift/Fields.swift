@@ -70,7 +70,14 @@ public struct Fields: Codable, Sendable, Equatable {
     /// as-is (Airtable will reject names on write when `returnFieldsByFieldId`
     /// is true, so this mirrors the Rust behavior of "store what you got").
     public mutating func set(_ key: String, _ value: AirtableJSONValue?) {
-        let resolved = nameToId[key] ?? key
+        // ID-first, mirroring get(): a key that is already a known field ID
+        // (present in storage or among nameToId's values) is never treated as
+        // a name, even if a pathological field name collides with it
+        // (myairtable-hwqs; parity with the Kotlin fix from PR #19).
+        let resolved =
+            (storage[key] != nil || nameToId.values.contains(key))
+            ? key
+            : (nameToId[key] ?? key)
         if let value = value {
             storage[resolved] = value
         } else {
