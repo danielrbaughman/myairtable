@@ -19,6 +19,7 @@ import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * HTTP client for the Airtable REST API, built on Ktor's coroutine-native
@@ -125,7 +126,7 @@ class AirtableClient(
             val retryAfterHeader = response.headers["Retry-After"]?.toDoubleOrNull()
             if (isRetryable && attempt < maxRetries) {
                 val waitSeconds = retryAfterHeader ?: (baseRetryDelaySeconds * 2.0.pow(attempt))
-                delay((waitSeconds * 1000).toLong())
+                delay(waitSeconds.seconds)
                 attempt += 1
                 continue
             }
