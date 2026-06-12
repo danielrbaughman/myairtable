@@ -2471,14 +2471,15 @@ class TestJavaModels:
         )
         assert "evaluate" not in content
 
-    def test_no_filters_static_while_formula_helpers_unimplemented(self, tmp_path: Path):
-        """Models must not reference the not-yet-generated {Table}Filters classes."""
+    def test_filters_static_present_when_formulas_enabled(self, tmp_path: Path):
+        """Models expose the {Table}Filters accessor `f` (J-F7); gated off with formulas=False."""
         from src.generators import java as java_gen
 
-        assert not java_gen._FORMULA_HELPERS_IMPLEMENTED, "formula helpers landed — assert the `f` static instead (J-F7)"
+        assert java_gen._FORMULA_HELPERS_IMPLEMENTED
         content = self._generate_model(self.MIXED_SPEC, tmp_path, formulas=True)
-        assert "public static final TestTableFilters f" not in content
-        assert "Filters" not in content
+        assert "public static final TestTableFilters f = new TestTableFilters();" in content
+        content_off = self._generate_model(self.MIXED_SPEC, tmp_path, formulas=False)
+        assert "Filters" not in content_off
 
     # ---- keyword-named fields ----
 

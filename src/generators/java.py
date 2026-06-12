@@ -77,9 +77,38 @@ def _deduplicate_entries(entries: list[str]) -> list[str]:
 # Single shared Java string-literal escaper (also backs @JsonProperty values).
 _escape_string_literal = _java_string_literal
 
-# Flipped in J-F7 when write_formula_helpers lands — until then models must not
-# reference the (not yet generated) {Table}Filters classes.
-_FORMULA_HELPERS_IMPLEMENTED = False
+# Models reference the generated {Table}Filters classes (J-F7).
+_FORMULA_HELPERS_IMPLEMENTED = True
+
+_JAVA_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "LookupField": "FormulaLookupField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
+
+# Static formula-DSL files excluded from the copy when formulas=False.
+_FORMULA_STATIC_FILES = [
+    "Formulas.java",
+    "FormulaField.java",
+    "FormulaTextOps.java",
+    "FormulaId.java",
+    "FormulaTextField.java",
+    "FormulaLookupField.java",
+    "FormulaSingleSelectField.java",
+    "FormulaMultiSelectField.java",
+    "FormulaNumberField.java",
+    "FormulaBooleanField.java",
+    "FormulaDateOperand.java",
+    "FormulaDateLiteral.java",
+    "FormulaDateComparison.java",
+    "FormulaDateField.java",
+    "FormulaAttachmentsField.java",
+]
 
 
 def _field_property_map(table: Table) -> dict[str, str]:
@@ -292,6 +321,41 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                     write.doc_comment(f"{{@code {_javadoc_escape(sanitize_string(field.name))}}} (field name)", indent=1)
                     write.line_indented(f'public static final String {_java_ident(f"{camel}Name")} = "{escaped_name}";')
                 write.close()
+
+
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Filters` class accessed via `{Table}Model.f`.
+
+    Layout: `dynamic/formulas/{Table}Filters.java`. Each class has one final
+    field per table field, typed to the appropriate Formula*Field class, plus
+    an `id` FormulaId for record-ID filters.
+
+    Shape matches the cross-language API (with the locked eq/neq deviation):
+        `PrimaryModel.f.primaryKey.eq("x")`
+    """
+    formulas_dir = _create_java_dynamic_subdir(output_folder, _DIR_FORMULAS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
+        filters_name = f"{prefix}Filters"
+
+        with WriteToJavaFile(path=formulas_dir / f"{filters_name}.java") as write:
+            write.package_decl()
+            write.line_empty()
+            write.doc_comment(f"Formula builder for {{@code {_javadoc_escape(sanitize_string(table.name))}}}.")
+            write.class_open(filters_name)
+            write.line_empty()
+            write.doc_comment("Record ID formula.", indent=1)
+            write.line_indented("public final FormulaId id = new FormulaId();")
+            write.line_empty()
+            for field in table.fields:
+                prop = _java_ident(prop_names[field.id])
+                formula_class = field.formula_class()
+                java_type = _JAVA_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.doc_comment(f"{{@code {_javadoc_escape(sanitize_string(field.name))}}}", indent=1)
+                write.line_indented(f'public final {java_type} {prop} = new {java_type}("{field.id}");')
+            write.close()
 
 
 def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
@@ -819,6 +883,8 @@ def generate_java(
     exclude_static: list[str] = []
     if not runtime:
         exclude_static.append("AirtableRuntime.java")
+    if not formulas:
+        exclude_static.extend(_FORMULA_STATIC_FILES)
 
     copy_static_files(output_folder, "java", exclude=exclude_static or None)
     if verbose:
@@ -832,6 +898,11 @@ def generate_java(
     if verbose:
         print("[dim] - Java field types generated.[/]")
 
+    if formulas:
+        write_formula_helpers(base, output_folder)
+        if verbose:
+            print("[dim] - Java formula helpers generated.[/]")
+
     write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if verbose:
         print("[dim] - Java models generated.[/]")
@@ -844,8 +915,6 @@ def generate_java(
         write_main(base, output_folder)
         if verbose:
             print("[dim] - Java main Airtable.java generated.[/]")
-
-    # J-F4+: write_models; J-F7+: write_formula_helpers
 
     print("[dim] - Java generation complete.[/]")
 
