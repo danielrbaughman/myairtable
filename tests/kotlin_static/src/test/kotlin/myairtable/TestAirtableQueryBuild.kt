@@ -3,7 +3,7 @@ package myairtable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 /**
  * K2.4 — AirtableQuery → list-records parameter encoding for every option.
@@ -99,7 +99,7 @@ class TestAirtableQueryBuild {
     fun copySemanticsProduceIndependentQueries() {
         val base = AirtableQuery(formula = "X")
         val modified = base.copy(maxRecords = 1)
-        assertTrue(params(base)["maxRecords"] == null)
+        assertNull(params(base)["maxRecords"])
         assertEquals(listOf("1"), params(modified)["maxRecords"])
         assertEquals(listOf("X"), params(modified)["filterByFormula"])
     }

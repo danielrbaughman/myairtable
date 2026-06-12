@@ -135,7 +135,7 @@ class TestSpecialErrorDecoding {
 
     @Test
     fun vecOrValueEmpty() {
-        assertTrue(decode<VecOrValue<MaybeSpecialOrError<String>>>("[]").multiple?.isEmpty() == true)
+        assertEquals(true, decode<VecOrValue<MaybeSpecialOrError<String>>>("[]").multiple?.isEmpty())
     }
 
     @Test
