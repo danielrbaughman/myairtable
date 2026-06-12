@@ -62,16 +62,19 @@ class Fields(
     operator fun get(key: String): JsonElement? = storage[key] ?: nameToId[key]?.let { storage[it] }
 
     /**
-     * Store by field ID or field name. IDs pass through; names are translated
-     * via [nameToId] — if no translation is available, the name is stored
-     * as-is ("store what you got", mirroring the Rust behavior). A `null`
-     * value removes the entry.
+     * Store by field ID or field name. IDs are tried first (mirroring [get]):
+     * a key that is already a known field ID is never treated as a name, even
+     * if a pathological field name collides with it. Otherwise names are
+     * translated via [nameToId] — if no translation is available, the key is
+     * stored as-is ("store what you got", mirroring the Rust behavior). A
+     * `null` value removes the entry.
      */
     operator fun set(
         key: String,
         value: JsonElement?,
     ) {
-        val resolved = nameToId[key] ?: key
+        val resolved =
+            if (key in storage || nameToId.containsValue(key)) key else nameToId[key] ?: key
         if (value != null) {
             storage[resolved] = value
         } else {

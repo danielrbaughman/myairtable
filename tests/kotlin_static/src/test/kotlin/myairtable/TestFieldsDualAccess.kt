@@ -44,6 +44,34 @@ class TestFieldsDualAccess {
     }
 
     @Test
+    fun setIsIdFirstWhenANameAndAnUnrelatedIdCollide() {
+        // A key that is BOTH a real ID and someone's name: the ID wins on
+        // write, mirroring get() (PR #19 review).
+        val fields =
+            Fields(
+                storage = mapOf("fldX" to JsonPrimitive("by-id"), "fldY" to JsonPrimitive("by-name")),
+                nameToId = mapOf("fldX" to "fldY"),
+            )
+        fields["fldX"] = JsonPrimitive("updated")
+        assertEquals(JsonPrimitive("updated"), fields["fldX"])
+        assertEquals(JsonPrimitive("by-name"), fields["fldY"], "the colliding name's target is untouched")
+    }
+
+    @Test
+    fun setTreatsKnownIdAsIdEvenWhenAbsentFromStorage() {
+        // Sparse record: the ID isn't in storage yet, but it IS a known field
+        // ID (a value in nameToId) — still never name-translated.
+        val fields =
+            Fields(
+                storage = emptyMap(),
+                nameToId = mapOf("fldABC" to "fldDEF", "Real Name" to "fldABC"),
+            )
+        fields["fldABC"] = JsonPrimitive(1)
+        assertEquals(JsonPrimitive(1), fields.toMap()["fldABC"])
+        assertNull(fields.toMap()["fldDEF"])
+    }
+
+    @Test
     fun setByNameStoresUnderTheTranslatedIdNotTheNameItself() {
         val fields = makeFields()
         fields["Primary Key"] = JsonPrimitive("updated")
