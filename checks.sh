@@ -56,3 +56,19 @@ if command -v swift &> /dev/null; then
 else
     echo "[warn] Swift not on PATH; skipping Swift checks."
 fi
+
+# Kotlin
+# The static runtime unit tests live in a Gradle project at tests/kotlin_static/
+# whose main source set points directly at static/kotlin/.
+if [ -x tests/kotlin_static/gradlew ] && command -v java &> /dev/null; then
+    echo "--- Kotlin checks ---"
+    (cd tests/kotlin_static && ./gradlew test)
+    if command -v ktlint &> /dev/null; then
+        # Format the hand-written runtime + tests; generated output is exempt by design.
+        ktlint --format "static/kotlin/**/*.kt" "tests/kotlin_static/src/**/*.kt"
+    else
+        echo "[warn] ktlint not installed; skipping format step. (brew install ktlint)"
+    fi
+else
+    echo "[warn] Java/gradlew not available; skipping Kotlin checks."
+fi
