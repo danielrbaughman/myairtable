@@ -5,6 +5,11 @@
 package myairtable
 
 import io.ktor.http.HttpMethod
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -29,6 +34,13 @@ class OrmTable<T : AirtableModel>(
     companion object {
         /** Airtable's hard cap for create / update / delete batches. */
         const val BATCH_SIZE: Int = 10
+
+        /**
+         * Max in-flight requests for the multi-ID [get] fan-out. Kept just
+         * under Airtable's 5-requests-per-second limit so large ID lists
+         * don't trigger a synchronized 429 storm. Matches [DictTable].
+         */
+        const val MAX_CONCURRENT_GETS: Int = 4
     }
 
     /** Result of [upsert]: the merged model plus whether it was inserted. */
@@ -85,8 +97,18 @@ class OrmTable<T : AirtableModel>(
     /** Fetch one record by ID. */
     suspend fun get(recordId: String): T = decodeRecordPayload(client.getRecord(tableId, recordId))
 
-    /** Fetch many records by ID, in order. */
-    suspend fun get(recordIds: List<String>): List<T> = recordIds.map { get(it) }
+    /**
+     * Fetch many records by ID (concurrently, bounded to
+     * [MAX_CONCURRENT_GETS] in flight). Preserves caller-supplied order.
+     * Models are plain classes, so concurrent construction is safe.
+     */
+    suspend fun get(recordIds: List<String>): List<T> {
+        if (recordIds.isEmpty()) return emptyList()
+        val semaphore = Semaphore(MAX_CONCURRENT_GETS)
+        return coroutineScope {
+            recordIds.map { id -> async { semaphore.withPermit { get(id) } } }.awaitAll()
+        }
+    }
 
     /**
      * Fetch records matching the query. Paginates internally via the `offset`
@@ -163,17 +185,36 @@ class OrmTable<T : AirtableModel>(
         update(listOf(model)).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records")
 
-    /** Update many models (dirty fields only). Chunks into the batch limit. */
+    /**
+     * Update many models (dirty fields only). Chunks into the batch limit.
+     * Models with no dirty fields already match server state, so they are
+     * never PATCHed — they come back unchanged, in their original positions.
+     */
     suspend fun update(models: List<T>): List<T> {
-        val patches =
-            models.map { model ->
-                val recordId = model.id
-                if (recordId.isNullOrEmpty()) {
-                    throw AirtableException.Api("UNSAVED_MODEL", "Cannot update a model without an id")
-                }
-                recordId to model.dirtyFields()
+        if (models.isEmpty()) return emptyList()
+        val results = MutableList<T?>(models.size) { null }
+        val dirtyIndices = mutableListOf<Int>()
+        val dirtyPatches = mutableListOf<Pair<String, Map<String, JsonElement>>>()
+        for ((index, model) in models.withIndex()) {
+            val recordId = model.id
+            if (recordId.isNullOrEmpty()) {
+                throw AirtableException.Api("UNSAVED_MODEL", "Cannot update a model without an id")
             }
-        return patches.chunked(BATCH_SIZE).flatMap { updateBatch(it) }
+            val dirty = model.dirtyFields()
+            if (dirty.isEmpty()) {
+                results[index] = model
+            } else {
+                dirtyIndices.add(index)
+                dirtyPatches.add(recordId to dirty)
+            }
+        }
+        val updated = dirtyPatches.chunked(BATCH_SIZE).flatMap { updateBatch(it) }
+        for ((slot, model) in dirtyIndices.zip(updated)) {
+            results[slot] = model
+        }
+        return results.map {
+            it ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "update returned fewer records than requested")
+        }
     }
 
     /** Update a record's fields directly by ID (no model required). */

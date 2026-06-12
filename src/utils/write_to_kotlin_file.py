@@ -58,6 +58,18 @@ def _kotlin_ident(name: str) -> str:
     return name
 
 
+def _kotlin_string_literal(text: str) -> str:
+    """Escape text for inclusion in a double-quoted Kotlin string literal.
+
+    The single shared Kotlin escaper — used for @SerialName values here and for
+    every generated string literal in the Kotlin generator. Escapes the
+    backslash FIRST (so later escapes aren't double-escaped), then the quote,
+    the `$` template marker, and the control characters Airtable names and
+    descriptions can carry.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 def _choice_to_entry(choice: str) -> str:
     """Convert an Airtable select choice to a Kotlin enum entry name (SCREAMING_SNAKE_CASE).
 
@@ -128,9 +140,18 @@ class WriteToKotlinFile(WriteToFile):
 
     # ---- comments -----------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a /** KDoc */ block. Strips bare \\r that Airtable descriptions may contain."""
-        lines = text if isinstance(text, list) else [text]
-        lines = [line.replace(chr(13), "") for line in lines]
+        """Write a /** KDoc */ block.
+
+        Sanitizes each line so the block can't be broken by hostile content:
+        strips bare \\r (Airtable descriptions may contain them), neutralizes
+        `*/` (which would terminate the KDoc early), and splits embedded
+        newlines into separate comment lines.
+        """
+        raw_lines = text if isinstance(text, list) else [text]
+        lines: list[str] = []
+        for raw in raw_lines:
+            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            lines.extend(cleaned.split("\n"))
         if len(lines) == 1:
             self.line_indented(f"/** {lines[0]} */", indent)
             return
@@ -152,7 +173,7 @@ class WriteToKotlinFile(WriteToFile):
 
     def serial_name(self, raw: str, indent: int = 0):
         """Write `@SerialName("raw")`, escaping the raw value as a Kotlin string literal."""
-        escaped = raw.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+        escaped = _kotlin_string_literal(raw)
         self.line_indented(f'@SerialName("{escaped}")', indent)
 
     # ---- declarations ---------------------------------------------------------

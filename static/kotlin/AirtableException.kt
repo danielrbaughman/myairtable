@@ -66,6 +66,20 @@ sealed class AirtableException(
     }
 
     /**
+     * A transport-level failure (connect, DNS, socket, request timeout) — the
+     * request never produced an HTTP response. [cause] is the underlying I/O
+     * or timeout exception. Coroutine cancellation is never wrapped here.
+     */
+    class Network(
+        cause: Throwable,
+    ) : AirtableException("AirtableException.Network: ${cause.message}", cause) {
+        // Underlying transport errors are not comparable; treat all network errors as equal.
+        override fun equals(other: Any?): Boolean = other is Network
+
+        override fun hashCode(): Int = javaClass.hashCode()
+    }
+
+    /**
      * Airtable returned 429 Too Many Requests. [retryAfterSeconds] is the
      * `Retry-After` header value in seconds if present.
      */

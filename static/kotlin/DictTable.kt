@@ -8,6 +8,8 @@ import io.ktor.http.HttpMethod
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -33,6 +35,13 @@ class DictTable(
     companion object {
         /** Airtable's hard cap for create / update / delete batches. */
         const val BATCH_SIZE: Int = 10
+
+        /**
+         * Max in-flight requests for the multi-ID [get] fan-out. Kept just
+         * under Airtable's 5-requests-per-second limit so large ID lists
+         * don't trigger a synchronized 429 storm.
+         */
+        const val MAX_CONCURRENT_GETS: Int = 4
     }
 
     // region Wire envelopes
@@ -87,11 +96,15 @@ class DictTable(
         return toRecord(envelope)
     }
 
-    /** Fetch many records by ID (concurrently). Preserves caller-supplied order. */
+    /**
+     * Fetch many records by ID (concurrently, bounded to
+     * [MAX_CONCURRENT_GETS] in flight). Preserves caller-supplied order.
+     */
     suspend fun get(recordIds: List<String>): List<Record> {
         if (recordIds.isEmpty()) return emptyList()
+        val semaphore = Semaphore(MAX_CONCURRENT_GETS)
         return coroutineScope {
-            recordIds.map { id -> async { get(id) } }.awaitAll()
+            recordIds.map { id -> async { semaphore.withPermit { get(id) } } }.awaitAll()
         }
     }
 

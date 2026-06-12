@@ -44,6 +44,20 @@ class TestKotlinEmitter:
         # Kotlin string templates: a raw $ must be escaped.
         assert self._transpile('"cost: $5"') == 'JsonPrimitive("cost: \\$5")'
 
+    def test_single_quoted_literal_converted_to_double_quoted(self):
+        # Backslash-free single-quoted literals convert without other changes.
+        assert self._transpile("'hello'") == 'JsonPrimitive("hello")'
+
+    def test_single_quoted_literal_with_backslash_doubles_it(self):
+        # 'C:\path' — a bare backslash must be doubled or Kotlin sees an illegal \p escape.
+        assert self._transpile("'C:\\path'") == 'JsonPrimitive("C:\\\\path")'
+
+    def test_single_quoted_literal_with_backslash_in_string_context(self):
+        # _emit_str path (function args in string context) gets the same conversion.
+        result = self._transpile("UPPER('C:\\path')")
+        assert result is not None
+        assert '"C:\\\\path"' in result
+
     # --- Field refs ---
 
     def test_field_ref_wraps_in_v(self):

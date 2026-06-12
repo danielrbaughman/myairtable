@@ -262,6 +262,47 @@ _NUMBER_RETURNING_FUNCTIONS: set[str] = {
 # endregion
 
 
+# Escape sequences valid in Rust, Swift, AND Kotlin double-quoted string
+# literals. A backslash followed by anything else (e.g. the `\p` in 'C:\path')
+# would make the generated literal fail to compile, so it gets doubled.
+# (`\0` is deliberately absent — Kotlin has no `\0` escape.)
+_TARGET_STRING_ESCAPES = frozenset({"\\", '"', "'", "n", "r", "t"})
+
+
+def _airtable_literal_to_double_quoted(val: str) -> str:
+    """Convert an Airtable string literal to a double-quoted Rust/Swift/Kotlin literal.
+
+    Airtable formulas allow single-quoted literals; the target languages only
+    have double-quoted strings. Double-quoted input passes through unchanged
+    (preserving existing emission for those literals). Inside a converted
+    literal, bare double quotes are escaped and any backslash that doesn't
+    already form a valid target escape sequence is doubled, so e.g.
+    `'C:\\path'` emits `"C:\\\\path"` instead of an illegal `\\p` escape.
+    """
+    if not (len(val) >= 2 and val.startswith("'") and val.endswith("'")):
+        return val
+    inner = val[1:-1]
+    out: list[str] = []
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if ch == "\\":
+            nxt = inner[i + 1] if i + 1 < len(inner) else None
+            if nxt is not None and nxt in _TARGET_STRING_ESCAPES:
+                out.append(ch + nxt)
+                i += 2
+            else:
+                out.append("\\\\")
+                i += 1
+        elif ch == '"':
+            out.append('\\"')
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return '"' + "".join(out) + '"'
+
+
 # region Code Emitter
 class CodeEmitter:
     """Walks AST and emits language-specific code."""
@@ -309,19 +350,11 @@ class CodeEmitter:
         if isinstance(node, StringLiteral):
             if self.language == "rust":
                 # Ensure double quotes for Rust json!() macro (Airtable uses single quotes)
-                val = node.value
-                if val.startswith("'") and val.endswith("'"):
-                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
-                return f"json!({val})"
+                return f"json!({_airtable_literal_to_double_quoted(node.value)})"
             if self.language == "swift":
-                val = node.value
-                if val.startswith("'") and val.endswith("'"):
-                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
-                return f".string({val})"
+                return f".string({_airtable_literal_to_double_quoted(node.value)})"
             if self.language == "kotlin":
-                val = node.value
-                if val.startswith("'") and val.endswith("'"):
-                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
+                val = _airtable_literal_to_double_quoted(node.value)
                 # Kotlin string templates: escape $ so literals stay literal.
                 val = val.replace("$", "\\$")
                 return f"JsonPrimitive({val})"
@@ -1032,9 +1065,7 @@ class CodeEmitter:
         if isinstance(node, StringLiteral):
             if self.language in ("rust", "swift", "kotlin"):
                 # Rust/Swift/Kotlin use double-quoted string literals.
-                val = node.value
-                if val.startswith("'") and val.endswith("'"):
-                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
+                val = _airtable_literal_to_double_quoted(node.value)
                 if self.language == "kotlin":
                     val = val.replace("$", "\\$")
                 return val

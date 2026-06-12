@@ -30,11 +30,14 @@ from ..meta import Base, Table
 from ..utils.helpers import (
     Paths,
     copy_static_files,
+    deduplicate_identifiers,
+    deduplicated_field_property_map,
+    deduplicated_table_prefix_map,
     reset_folder,
     sanitize_string,
 )
 from ..utils.verbose import verbose
-from ..utils.write_to_kotlin_file import WriteToKotlinFile, _choice_to_entry, _kotlin_ident
+from ..utils.write_to_kotlin_file import WriteToKotlinFile, _choice_to_entry, _kotlin_ident, _kotlin_string_literal
 
 # =============================================================================
 # Kotlin layout
@@ -62,30 +65,36 @@ def _create_kotlin_dynamic_subdir(output_folder: Path, name: str) -> Path:
 
 def _deduplicate_entries(entries: list[str]) -> list[str]:
     """Ensure enum entry names are unique by appending _V2, _V3, etc."""
-    counts: dict[str, int] = {}
-    out: list[str] = []
-    for name in entries:
-        counts[name] = counts.get(name, 0) + 1
-        if counts[name] > 1:
-            out.append(f"{name}_V{counts[name]}")
-        else:
-            out.append(name)
-    return out
+    return deduplicate_identifiers(entries, suffix="_V")
 
 
-def _escape_string_literal(text: str) -> str:
-    """Escape a string for inclusion in a Kotlin string literal (" delimiter)."""
-    return text.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("\n", "\\n")
+# Single shared Kotlin string-literal escaper (also backs @SerialName values).
+_escape_string_literal = _kotlin_string_literal
+
+
+def _field_property_map(table: Table) -> dict[str, str]:
+    """`{field_id: deduplicated lowerCamelCase property name}` for one table.
+
+    Every writer (models, Fields consts, Create*Fields, Filters, evaluate*
+    methods, and the transpiler's field_name_map) consumes this same map so
+    colliding field names ("My Field" / "my field") deduplicate consistently
+    to `myField` / `myFieldV2`. Keyword backticking is applied at call sites.
+    """
+    return deduplicated_field_property_map(table)
 
 
 def _table_type_prefix(table: Table) -> str:
-    """PascalCase prefix used for generated types (e.g. `Primary`)."""
-    return table.name_pascal()
+    """PascalCase prefix used for generated types (e.g. `Primary`), deduplicated per base.
+
+    Recomputed from the base's table list on each call (cheap and deterministic),
+    so every writer — file names, type names, and `Airtable` accessors — agrees.
+    """
+    return deduplicated_table_prefix_map(table.base)[table.id]
 
 
 def _table_property(table: Table) -> str:
     """lowerCamelCase property used on the Airtable class (e.g. `primary`)."""
-    pascal = table.name_pascal()
+    pascal = _table_type_prefix(table)
     if not pascal:
         return "table"
     return _kotlin_ident(pascal[0].lower() + pascal[1:])
@@ -166,6 +175,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
         fields_name = f"{prefix}Fields"
         file_name = f"{fields_name}.kt"
         with WriteToKotlinFile(path=types_dir / file_name) as write:
@@ -178,7 +188,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
 
             for field in table.fields:
                 escaped_name = _escape_string_literal(sanitize_string(field.name))
-                camel = field.name_camel()
+                camel = prop_names[field.id]
                 id_name = _kotlin_ident(f"{camel}Id")
                 name_name = _kotlin_ident(f"{camel}Name")
                 write.doc_comment(f"`{sanitize_string(field.name)}` (field ID)", indent=1)
@@ -242,7 +252,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.object_open(create_name)
                 for field in writable_fields:
                     escaped_name = _escape_string_literal(sanitize_string(field.name))
-                    camel = field.name_camel()
+                    camel = prop_names[field.id]
                     id_name = _kotlin_ident(f"{camel}Id")
                     name_name = _kotlin_ident(f"{camel}Name")
                     write.doc_comment(f"`{sanitize_string(field.name)}` (field ID)", indent=1)
@@ -279,6 +289,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
         filters_name = f"{prefix}Filters"
         file_name = f"{filters_name}.kt"
 
@@ -293,7 +304,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line_indented("val id: FormulaId = FormulaId()")
 
             for field in table.fields:
-                prop = _kotlin_ident(field.name_camel())
+                prop = _kotlin_ident(prop_names[field.id])
                 formula_class = field.formula_class()
                 kotlin_type = _KOTLIN_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
                 write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
@@ -326,6 +337,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
         model_name = f"{prefix}Model"
         file_name = f"{model_name}.kt"
         writable_fields = [f for f in table.fields if not f.is_computed()]
@@ -335,7 +347,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         raw_formulas: dict[str, str] = {}
         if runtime:
             formula_field_ids = table.formula_field_ids()
-            field_name_map = {f.id: _kotlin_ident(f.name_camel()) for f in table.fields}
+            # Same deduplicated names as the emitted properties, so formula
+            # references resolve to declarations that actually exist.
+            field_name_map = {f.id: _kotlin_ident(prop_names[f.id]) for f in table.fields}
             raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
             if flatten and raw_formulas:
                 formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -376,7 +390,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.property_docstring(field, table, indent_level=1)
                 write.serial_name(field.id, indent=1)
                 keyword = "var" if not field.is_computed() else "val"
-                prop = _kotlin_ident(field.name_camel())
+                prop = _kotlin_ident(prop_names[field.id])
                 write.line_indented(f"{keyword} {prop}: {field.kotlin_type()}? = null,")
             write.line(") : AirtableModel {")
 
@@ -411,7 +425,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("override fun toCreateFields(): Map<String, JsonElement> =")
             write.line_indented("buildMap {", indent=2)
             for field in writable_fields:
-                prop = _kotlin_ident(field.name_camel())
+                prop = _kotlin_ident(prop_names[field.id])
                 write.line_indented(f'{prop}?.let {{ put("{field.id}", V(it)) }}', indent=3)
             write.line_indented("}", indent=2)
             write.line_empty()
@@ -421,7 +435,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("override fun toRecord(): Map<String, JsonElement> =")
             write.line_indented("buildMap {", indent=2)
             for field in table.fields:
-                prop = _kotlin_ident(field.name_camel())
+                prop = _kotlin_ident(prop_names[field.id])
                 write.line_indented(f'{prop}?.let {{ put("{field.id}", V(it)) }}', indent=3)
             write.line_indented("}", indent=2)
             write.line_empty()
@@ -459,7 +473,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     preview = sanitize_string(raw).replace("\n", " ")[:80]
                     write.line_empty()
                     write.doc_comment(f"Evaluate formula locally: `{preview}`", indent=1)
-                    write.line_indented(f"fun evaluate{field.name_pascal()}(): JsonElement = {formula_code}")
+                    # Method name derived from the deduplicated property name so
+                    # colliding fields get evaluateMyField / evaluateMyFieldV2.
+                    camel = prop_names[field.id]
+                    method_pascal = camel[0].upper() + camel[1:] if camel else field.name_pascal()
+                    write.line_indented(f"fun evaluate{method_pascal}(): JsonElement = {formula_code}")
                 write.line_empty()
                 write.endregion(indent=1)
 

@@ -6,6 +6,8 @@ package myairtable
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -17,9 +19,17 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
+import java.io.Closeable
+import java.io.IOException
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -34,6 +44,11 @@ import kotlin.time.Duration.Companion.seconds
  * as `%2B` (verified by `TestClientUrlEncoding`) — formulas like `LEN({f})+1`
  * survive the round-trip. (The Swift target needed a manual fix for this.)
  *
+ * Lifecycle: implements [Closeable]. When no [httpClient] is injected, the
+ * client constructs (and owns) a CIO-backed engine whose threads are released
+ * by [close]. Injected clients are the caller's to close — [close] never
+ * touches them.
+ *
  * Airtable REST reference: https://airtable.com/developers/web/api/
  */
 class AirtableClient(
@@ -47,8 +62,23 @@ class AirtableClient(
      */
     val maxRetries: Int = 3,
     val baseRetryDelaySeconds: Double = 0.5,
+    /**
+     * Upper bound (seconds) on any single retry wait. Applies to both the
+     * computed exponential backoff and a server-provided `Retry-After`.
+     */
+    val maxRetryDelaySeconds: Double = 30.0,
+    /**
+     * Per-request timeout (seconds) installed on the default-constructed
+     * engine. Ignored when an [httpClient] is injected — configure timeouts
+     * on the injected client instead.
+     */
+    val requestTimeoutSeconds: Double = 30.0,
     httpClient: HttpClient? = null,
-) {
+) : Closeable {
+    init {
+        if (apiKey.isBlank() || baseId.isBlank()) throw AirtableException.MissingCredentials()
+    }
+
     /**
      * Convenience constructor wiring a cache with the given TTL (seconds).
      * Matches the other targets' `with_cache(apiKey, baseId, seconds)` shape.
@@ -60,7 +90,24 @@ class AirtableClient(
         maxEntries: Int? = null,
     ) : this(baseId = baseId, apiKey = apiKey, cache = CacheStore(defaultTtlSeconds = cacheSeconds, maxEntries = maxEntries))
 
-    private val http: HttpClient = httpClient ?: HttpClient(CIO)
+    /** True when this instance constructed (and therefore owns) its [HttpClient]. */
+    private val ownsHttp = httpClient == null
+
+    private val http: HttpClient =
+        httpClient ?: HttpClient(CIO) {
+            install(HttpTimeout) {
+                requestTimeoutMillis = (requestTimeoutSeconds * 1000).toLong()
+            }
+        }
+
+    /**
+     * Close the underlying [HttpClient] when this instance created it (no
+     * [httpClient] was injected). Injected clients are the caller's to close;
+     * this is a no-op for them. Safe to call more than once.
+     */
+    override fun close() {
+        if (ownsHttp) http.close()
+    }
 
     // region Cache controls
 
@@ -101,7 +148,13 @@ class AirtableClient(
 
     // region Request execution
 
-    /** Send a request with bearer auth and automatic retry on 429/5xx. */
+    /**
+     * Send a request with bearer auth and automatic retry on 429/5xx.
+     *
+     * Transport failures (connect/DNS/socket errors, request timeouts) are
+     * wrapped as [AirtableException.Network] so `catch (e: AirtableException)`
+     * covers every failure mode; coroutine cancellation is rethrown untouched.
+     */
     internal suspend fun send(
         method: HttpMethod,
         url: Url,
@@ -110,34 +163,56 @@ class AirtableClient(
         var attempt = 0
         while (true) {
             val response =
-                http.request(url) {
-                    this.method = method
-                    header(HttpHeaders.Authorization, "Bearer $apiKey")
-                    if (body != null) {
-                        contentType(ContentType.Application.Json)
-                        setBody(body)
+                try {
+                    http.request(url) {
+                        this.method = method
+                        header(HttpHeaders.Authorization, "Bearer $apiKey")
+                        if (body != null) {
+                            contentType(ContentType.Application.Json)
+                            setBody(body)
+                        }
                     }
+                } catch (e: HttpRequestTimeoutException) {
+                    // Ktor's request timeout must be wrapped *before* the
+                    // CancellationException rethrow below: depending on Ktor
+                    // version it can subclass CancellationException.
+                    throw AirtableException.Network(e)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    throw AirtableException.Network(e)
                 }
             val status = response.status.value
             if (status in 200..299) {
                 return response.bodyAsText()
             }
 
+            // Consume the error body exactly once, up front. Ktor 3.2 bodies
+            // are lazy: an unread body can pin its pooled connection, so
+            // retried and terminal responses alike must be drained here.
+            val bodyText = runCatching { response.bodyAsText() }.getOrNull()
+
+            val retryAfterSeconds = parseRetryAfter(response.headers["Retry-After"])
             val isRetryable = status == 429 || status in 500..599
-            val retryAfterHeader = response.headers["Retry-After"]?.toDoubleOrNull()
             if (isRetryable && attempt < maxRetries) {
-                val waitSeconds = retryAfterHeader ?: (baseRetryDelaySeconds * 2.0.pow(attempt))
+                val waitSeconds =
+                    if (retryAfterSeconds != null) {
+                        // Honor a server-provided Retry-After exactly (no jitter), capped.
+                        min(retryAfterSeconds, maxRetryDelaySeconds)
+                    } else {
+                        val backoff = baseRetryDelaySeconds * 2.0.pow(attempt)
+                        min(backoff * (0.5 + Random.nextDouble() * 0.5), maxRetryDelaySeconds)
+                    }
                 delay(waitSeconds.seconds)
                 attempt += 1
                 continue
             }
 
             if (status == 429) {
-                throw AirtableException.RateLimited(retryAfterHeader)
+                throw AirtableException.RateLimited(retryAfterSeconds)
             }
 
             // Try to decode a structured error envelope.
-            val bodyText = runCatching { response.bodyAsText() }.getOrNull()
             if (bodyText != null) {
                 val envelope = runCatching { AirtableJson.instance.decodeFromString(AirtableErrorEnvelope.serializer(), bodyText) }.getOrNull()
                 if (envelope != null) {
@@ -146,6 +221,20 @@ class AirtableClient(
             }
             throw AirtableException.Http(statusCode = status, body = bodyText)
         }
+    }
+
+    /**
+     * Parse a `Retry-After` header: either delay-seconds (`"1.5"`) or an
+     * RFC 9110 HTTP-date (`"Wed, 21 Oct 2026 07:28:00 GMT"`, converted to a
+     * delta from now, floored at 0). Returns null when absent or unparseable.
+     */
+    private fun parseRetryAfter(headerValue: String?): Double? {
+        if (headerValue == null) return null
+        headerValue.toDoubleOrNull()?.let { return it }
+        return runCatching {
+            val target = ZonedDateTime.parse(headerValue, DateTimeFormatter.RFC_1123_DATE_TIME)
+            max(0.0, (target.toInstant().toEpochMilli() - System.currentTimeMillis()) / 1000.0)
+        }.getOrNull()
     }
 
     // endregion

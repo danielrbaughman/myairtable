@@ -146,10 +146,19 @@ class WriteToSwiftFile(WriteToFile):
 
     # ---- comments ---------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write /// doc comment(s). Strips bare \\r that Airtable descriptions may contain."""
-        lines = text if isinstance(text, list) else [text]
-        for line in lines:
-            self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
+        """Write /// doc comment(s).
+
+        Sanitizes each line so the comment can't be broken by hostile content:
+        strips bare \\r (Airtable descriptions may contain them), neutralizes
+        `*/` (so lines stay safe if ever embedded in a block comment), and
+        splits embedded newlines into separate /// lines (a raw newline would
+        spill the rest of the text out of the comment).
+        """
+        raw_lines = text if isinstance(text, list) else [text]
+        for raw in raw_lines:
+            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            for line in cleaned.split("\n"):
+                self.line_indented(f"/// {line}", indent)
 
     def comment(self, text: str, indent: int = 0):
         """Write `// text`."""

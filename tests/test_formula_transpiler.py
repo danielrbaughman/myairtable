@@ -581,3 +581,22 @@ class TestRealWorldFormulas:
 
 
 # endregion
+
+
+# region Rust string literal conversion
+class TestRustStringLiteralConversion:
+    """Single-quoted Airtable literals must become valid Rust double-quoted literals."""
+
+    def _transpile(self, formula: str) -> str | None:
+        return transpile_formula(formula, "rust", {"fld1": "my_field"}, set())
+
+    def test_single_quoted_literal_converted_to_double_quoted(self):
+        # Backslash-free single-quoted literals convert without other changes.
+        assert self._transpile("'hello'") == 'json!("hello")'
+
+    def test_single_quoted_literal_with_backslash_doubles_it(self):
+        # 'C:\path' — a bare backslash must be doubled or Rust sees an illegal \p escape.
+        assert self._transpile("'C:\\path'") == 'json!("C:\\\\path")'
+
+
+# endregion

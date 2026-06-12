@@ -1529,3 +1529,242 @@ class TestKotlinFormulas:
         out = self._generate(tmp_path, formula='{fld001} & "!"', runtime=False)
         content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
         assert "fun evaluate" not in content
+
+
+class TestGeneratedCommentAndLiteralEscaping:
+    """KDoc/doc-comment sanitization + string-literal escaping (myairtable-ydk1).
+
+    A hostile field name must not be able to terminate a generated comment
+    block early (`*/`) or produce illegal string-literal escapes ($, tab,
+    newline, quote).
+    """
+
+    EVIL = 'evil */ name $x "q"'
+    CONTROL = "Tab\there\nNewline"
+
+    def _generate(self, language: str, tmp_path: Path) -> Path:
+        if language == "kotlin":
+            from src.generators.kotlin import write_field_types, write_models
+        else:
+            from src.generators.swift import write_field_types, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [
+                (self.EVIL, "fld001", "singleLineText"),
+                (self.CONTROL, "fld002", "singleLineText"),
+            ]
+        )
+        output_folder = tmp_path / f"{language}_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        write_models(base, output_folder)
+        return output_folder
+
+    @staticmethod
+    def _comment_lines(content: str) -> list[str]:
+        return [ln.strip() for ln in content.splitlines() if ln.strip().startswith(("/**", "*", "///", "//"))]
+
+    def test_kotlin_comments_cannot_be_terminated_early(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        for rel in ("dynamic/types/TestTableFields.kt", "dynamic/models/TestTableModel.kt"):
+            content = (out / rel).read_text()
+            for line in self._comment_lines(content):
+                assert "evil */" not in line, f"raw */ inside a comment line: {line!r}"
+            assert "evil * / name" in content
+
+    def test_kotlin_model_kdoc_blocks_are_balanced(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        # Field names only appear in comments in the model file, so any stray
+        # terminator would unbalance the KDoc blocks.
+        assert content.count("/**") == content.count("*/")
+
+    def test_kotlin_string_literals_are_escaped(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        # sanitize_string turns the inner double quotes into single quotes;
+        # $ must be escaped for Kotlin string templates.
+        assert "\"evil */ name \\$x 'q'\"" in content
+        assert '"Tab\\there\\nNewline" to "fld002",' in content
+
+    def test_kotlin_doc_comment_splits_embedded_newlines(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        assert " * Newline` (field ID)" in content
+
+    def test_swift_comments_cannot_be_terminated_early(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        for rel in ("dynamic/types/TestTableFields.swift", "dynamic/models/TestTableModel.swift"):
+            content = (out / rel).read_text()
+            for line in self._comment_lines(content):
+                assert "evil */" not in line, f"raw */ inside a comment line: {line!r}"
+            assert "evil * / name" in content
+
+    def test_swift_string_literals_are_escaped(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        # Swift has no $ templates, so $ stays raw; tab/newline must be escaped.
+        assert "\"evil */ name $x 'q'\"" in content
+        assert '"Tab\\there\\nNewline": "fld002",' in content
+
+    def test_swift_doc_comment_splits_embedded_newlines(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        assert "/// Newline` (field ID)" in content
+
+
+class TestIdentifierCollisionDedup:
+    """Distinct field/table names that collapse to the same identifier must be
+    deduplicated consistently across every generated declaration (myairtable-w42e)."""
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("My Field", "fld001", "singleLineText"),
+        ("my field", "fld002", "singleLineText"),
+        ("Calc", "fld003", "formula"),
+    ]
+    FORMULA_MAP = {"fld003": "{fld002}"}
+
+    def _generate(self, language: str, tmp_path: Path) -> Path:
+        if language == "kotlin":
+            from src.generators.kotlin import write_field_types, write_formula_helpers, write_models
+        else:
+            from src.generators.swift import write_field_types, write_formula_helpers, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        output_folder = tmp_path / f"{language}_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        write_formula_helpers(base, output_folder)
+        write_models(base, output_folder)
+        return output_folder
+
+    # ---- Kotlin ----
+
+    def test_kotlin_model_dedups_colliding_properties(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        assert "var myField: String? = null," in content
+        assert "var myFieldV2: String? = null," in content
+        # No duplicate declarations.
+        assert content.count("var myField: ") == 1
+        assert content.count("var myFieldV2: ") == 1
+
+    def test_kotlin_fields_consts_dedup(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.kt").read_text()
+        assert 'const val myFieldId: String = "fld001"' in content
+        assert 'const val myFieldV2Id: String = "fld002"' in content
+        assert content.count("const val myFieldId: ") == 2  # Fields + CreateFields
+        assert content.count("const val myFieldV2Id: ") == 2
+
+    def test_kotlin_filters_dedup(self, tmp_path: Path):
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/formulas/TestTableFilters.kt").read_text()
+        assert 'val myField: FormulaTextField = FormulaTextField("fld001")' in content
+        assert 'val myFieldV2: FormulaTextField = FormulaTextField("fld002")' in content
+
+    def test_kotlin_formula_field_name_map_uses_deduped_name(self, tmp_path: Path):
+        """A formula referencing the second colliding field must transpile to the deduped property."""
+        out = self._generate("kotlin", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.kt").read_text()
+        assert "fun evaluateCalc(): JsonElement = V(this.myFieldV2)" in content
+
+    # ---- Swift ----
+
+    def test_swift_model_dedups_colliding_properties(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.swift").read_text()
+        assert "public var myField: String?" in content
+        assert "public var myFieldV2: String?" in content
+        assert 'case myField = "fld001"' in content
+        assert 'case myFieldV2 = "fld002"' in content
+        # No duplicate declarations.
+        assert content.count("public var myField: ") == 1
+        assert content.count("public var myFieldV2: ") == 1
+
+    def test_swift_fields_consts_dedup(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/types/TestTableFields.swift").read_text()
+        assert 'public static let myFieldId: String = "fld001"' in content
+        assert 'public static let myFieldV2Id: String = "fld002"' in content
+
+    def test_swift_filters_dedup(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/formulas/TestTableFilters.swift").read_text()
+        assert "public let myField: FormulaTextField" in content
+        assert "public let myFieldV2: FormulaTextField" in content
+        assert 'self.myFieldV2 = FormulaTextField("fld002")' in content
+
+    def test_swift_formula_field_name_map_uses_deduped_name(self, tmp_path: Path):
+        out = self._generate("swift", tmp_path)
+        content = (out / "dynamic/models/TestTableModel.swift").read_text()
+        assert "public func evaluateCalc() -> AirtableJSONValue {" in content
+        assert "AirtableRuntime.V(self.myFieldV2)" in content
+
+    # ---- Table-name collisions ----
+
+    @staticmethod
+    def _add_colliding_table(base: Base) -> None:
+        """Add a second table whose name collapses to the same PascalCase prefix."""
+        table = Table.model_construct(
+            id="tblTEST456",
+            name="test table",
+            primary_field_id="fld100",
+            fields=[],
+            views=[],
+            base=base,
+            _field_id_to_name_cache=None,
+        )
+        table.__pydantic_private__ = {
+            "_field_id_to_name_cache": None,
+            "_snake": None,
+            "_pascal": None,
+            "_model": None,
+            "_upper": None,
+            "_name_cache": {},
+        }
+        base.tables.append(table)
+        base._table_index[table.id] = table
+
+    def test_kotlin_table_name_collision_dedup(self, tmp_path: Path):
+        from src.generators.kotlin import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        self._add_colliding_table(base)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.kt").read_text()
+        assert "val testTable: TestTableTable = TestTableTable(client)" in content
+        assert "val testTableV2: TestTableV2Table = TestTableV2Table(client)" in content
+
+    def test_swift_table_name_collision_dedup(self, tmp_path: Path):
+        from src.generators.swift import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        self._add_colliding_table(base)
+        output_folder = tmp_path / "swift_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.swift").read_text()
+        assert "public let testTable: TestTableTable" in content
+        assert "public let testTableV2: TestTableV2Table" in content
+
+    # ---- Shared dedup helper ----
+
+    def test_deduplicate_identifiers_residual_collision(self):
+        """["A", "A", "A_V2"] must not yield two A_V2 — suffixes bump until free."""
+        from src.utils.helpers import deduplicate_identifiers
+
+        result = deduplicate_identifiers(["A", "A", "A_V2"], suffix="_V")
+        assert result == ["A", "A_V3", "A_V2"]
+        assert len(set(result)) == len(result)
+
+    def test_deduplicate_identifiers_camel_suffix(self):
+        from src.utils.helpers import deduplicate_identifiers
+
+        assert deduplicate_identifiers(["myField", "myField", "myField"]) == ["myField", "myFieldV2", "myFieldV3"]
