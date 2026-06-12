@@ -8,8 +8,6 @@ import io.ktor.http.HttpMethod
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -98,15 +96,16 @@ class OrmTable<T : AirtableModel>(
     suspend fun get(recordId: String): T = decodeRecordPayload(client.getRecord(tableId, recordId))
 
     /**
-     * Fetch many records by ID (concurrently, bounded to
-     * [MAX_CONCURRENT_GETS] in flight). Preserves caller-supplied order.
-     * Models are plain classes, so concurrent construction is safe.
+     * Fetch many records by ID in windows of [MAX_CONCURRENT_GETS]. Chunking
+     * bounds both in-flight requests and live coroutines (a semaphore alone
+     * would still suspend one coroutine per ID up-front — PR #21 review).
+     * Preserves caller-supplied order; models are plain classes, so concurrent
+     * construction is safe.
      */
     suspend fun get(recordIds: List<String>): List<T> {
         if (recordIds.isEmpty()) return emptyList()
-        val semaphore = Semaphore(MAX_CONCURRENT_GETS)
-        return coroutineScope {
-            recordIds.map { id -> async { semaphore.withPermit { get(id) } } }.awaitAll()
+        return recordIds.chunked(MAX_CONCURRENT_GETS).flatMap { window ->
+            coroutineScope { window.map { id -> async { get(id) } }.awaitAll() }
         }
     }
 

@@ -131,7 +131,17 @@ public struct DictTable: Sendable {
                     nextIndex += 1
                 }
             }
-            return slots.compactMap { $0 }
+            // Every slot must be filled — compactMap would silently drop
+            // records if the windowed submission ever regressed (PR #21 review).
+            return try slots.enumerated().map { index, slot in
+                guard let record = slot else {
+                    throw AirtableError.api(
+                        code: "INTERNAL_ERROR",
+                        message: "multi-get left slot \(index) unfilled"
+                    )
+                }
+                return record
+            }
         }
     }
 
