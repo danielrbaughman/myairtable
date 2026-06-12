@@ -24,6 +24,8 @@ from pathlib import Path
 
 from rich import print
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Table
 from ..utils.helpers import (
     Paths,
@@ -251,6 +253,55 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_empty()
 
 
+_KOTLIN_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "LookupField": "FormulaLookupField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
+
+
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Filters` class accessed via `{Table}Model.f`.
+
+    Layout: `dynamic/formulas/{Table}Filters.kt`. Each class has one property
+    per field, typed to the appropriate Formula*Field class, plus an
+    `id: FormulaId` for record-ID filters.
+
+    Shape matches the cross-language API (with the locked eq/neq deviation):
+        `PrimaryModel.f.primaryKey.eq("x")`
+    """
+    formulas_dir = _create_kotlin_dynamic_subdir(output_folder, _DIR_FORMULAS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        filters_name = f"{prefix}Filters"
+        file_name = f"{filters_name}.kt"
+
+        with WriteToKotlinFile(path=formulas_dir / file_name) as write:
+            write.package_decl()
+            write.line_empty()
+
+            write.doc_comment(f"Formula builder for `{sanitize_string(table.name)}`.")
+            write.class_open(filters_name)
+
+            write.doc_comment("Record ID formula.", indent=1)
+            write.line_indented("val id: FormulaId = FormulaId()")
+
+            for field in table.fields:
+                prop = _kotlin_ident(field.name_camel())
+                formula_class = field.formula_class()
+                kotlin_type = _KOTLIN_FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
+                write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
+                write.line_indented(f'val {prop}: {kotlin_type} = {kotlin_type}("{field.id}")')
+
+            write.close()
+
+
 def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
     """Generate per-table `{Table}Model` class.
 
@@ -271,7 +322,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     The kotlinx plugin serializer decodes only the record's `fields` object;
     create/update payloads come from the hand-rolled writable-only builders.
     """
-    _ = formulas, runtime, flatten  # evaluate-method emission lands in K-F8
     models_dir = _create_kotlin_dynamic_subdir(output_folder, _DIR_MODELS)
 
     for table in base.tables:
@@ -279,6 +329,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         model_name = f"{prefix}Model"
         file_name = f"{model_name}.kt"
         writable_fields = [f for f in table.fields if not f.is_computed()]
+
+        # Pre-transpile formula fields for this table (K8.9).
+        transpiled_formulas: dict[str, str] = {}
+        raw_formulas: dict[str, str] = {}
+        if runtime:
+            formula_field_ids = table.formula_field_ids()
+            field_name_map = {f.id: _kotlin_ident(f.name_camel()) for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            if flatten and raw_formulas:
+                formula_map_tuple = table.base.get_formula_field_map_tuple()
+                raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
+            if raw_formulas:
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "kotlin", field_name_map, formula_field_ids)
 
         with WriteToKotlinFile(path=models_dir / file_name) as write:
             write.comment("ktlint-disable — generated code is exempt from lint by design")
@@ -292,6 +355,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.import_stmt("kotlinx.serialization.UseSerializers")
             write.import_stmt("kotlinx.serialization.json.JsonElement")
             write.import_stmt("kotlinx.serialization.json.JsonNull")
+            if transpiled_formulas:
+                write.import_stmt("kotlinx.serialization.json.JsonPrimitive")
             write.import_stmt("java.time.Instant")
             write.import_stmt("kotlin.time.Duration")
             write.line_empty()
@@ -317,6 +382,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
             write.companion_object_open()
             write.line_indented(f'const val TABLE_ID: String = "{table.id}"', indent=2)
+            if formulas:
+                filters_name = f"{prefix}Filters"
+                write.line_empty()
+                write.doc_comment(f'Formula builder for filtering. Usage: `{model_name}.f.primaryKey.eq("x")`.', indent=2)
+                write.line_indented(f"val f: {filters_name} = {filters_name}()", indent=2)
             write.close(indent=1)
             write.line_empty()
 
@@ -376,6 +446,22 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("for (key in snapshot.keys) if (key !in current) dirty[key] = JsonNull", indent=2)
             write.line_indented("return dirty", indent=2)
             write.line_indented("}")
+
+            # ---------- Runtime formula evaluation methods (K8.9) ----------
+            if transpiled_formulas:
+                write.line_empty()
+                write.region("Runtime formula evaluation", indent=1)
+                for field in table.fields:
+                    if field.id not in transpiled_formulas:
+                        continue
+                    formula_code = transpiled_formulas[field.id]
+                    raw = raw_formulas.get(field.id, "")
+                    preview = sanitize_string(raw).replace("\n", " ")[:80]
+                    write.line_empty()
+                    write.doc_comment(f"Evaluate formula locally: `{preview}`", indent=1)
+                    write.line_indented(f"fun evaluate{field.name_pascal()}(): JsonElement = {formula_code}")
+                write.line_empty()
+                write.endregion(indent=1)
 
             write.close()
 
@@ -569,6 +655,11 @@ def generate_kotlin(
     write_field_types(base, output_folder)
     if verbose:
         print("[dim] - Kotlin field types generated.[/]")
+
+    if formulas:
+        write_formula_helpers(base, output_folder)
+        if verbose:
+            print("[dim] - Kotlin formula helpers generated.[/]")
 
     write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if verbose:

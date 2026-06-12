@@ -18,7 +18,7 @@ from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 logger = logging.getLogger(__name__)
 
-Language = Literal["typescript", "javascript", "python", "rust", "swift"]
+Language = Literal["typescript", "javascript", "python", "rust", "swift", "kotlin"]
 
 
 # region AST Nodes
@@ -279,10 +279,10 @@ class CodeEmitter:
         self.formula_field_ids = formula_field_ids  # set of field IDs that are formula fields
         self.linked_record_field_ids = linked_record_field_ids or set()  # set of field IDs that are linked records (plural, .ids)
         self.single_linked_record_field_ids = single_linked_record_field_ids or set()  # single linked records (.id)
-        self._self = "self" if language in ("python", "rust", "swift") else "this"
+        self._self = "self" if language in ("python", "rust", "swift") else "this"  # kotlin uses "this"
         # Swift uses the full type name (AirtableRuntime) rather than an alias.
         # Keeping the name verbose avoids a file-level typealias in every generated model.
-        self._runtime = "AirtableRuntime" if language == "swift" else "F"
+        self._runtime = "AirtableRuntime" if language in ("swift", "kotlin") else "F"
 
     @staticmethod
     def _normalize_number(value: str) -> str:
@@ -300,6 +300,10 @@ class CodeEmitter:
             if self.language == "swift":
                 # AirtableJSONValue.int for whole numbers, .double otherwise.
                 return f".double({value})" if "." in value else f".int({value})"
+            if self.language == "kotlin":
+                # JsonPrimitive(Int) for whole numbers, JsonPrimitive(Double) otherwise
+                # (Kotlin literal type carries the distinction).
+                return f"JsonPrimitive({value})"
             return value
 
         if isinstance(node, StringLiteral):
@@ -314,6 +318,13 @@ class CodeEmitter:
                 if val.startswith("'") and val.endswith("'"):
                     val = '"' + val[1:-1].replace('"', '\\"') + '"'
                 return f".string({val})"
+            if self.language == "kotlin":
+                val = node.value
+                if val.startswith("'") and val.endswith("'"):
+                    val = '"' + val[1:-1].replace('"', '\\"') + '"'
+                # Kotlin string templates: escape $ so literals stay literal.
+                val = val.replace("$", "\\$")
+                return f"JsonPrimitive({val})"
             return node.value
 
         if isinstance(node, FieldRef):
@@ -344,6 +355,10 @@ class CodeEmitter:
             # to their result type. V<T: Encodable>() converts any of them to
             # AirtableJSONValue for runtime composition.
             return f"{self._runtime}.V({self._self}.{prop_name})"
+        if self.language == "kotlin":
+            # All field accesses flow through the top-level V() helper (flat
+            # package — no qualifier), which converts typed fields to JsonElement.
+            return f"V({self._self}.{prop_name})"
 
         if field_id in self.formula_field_ids:
             # Formula field -> access as property (getter checks evaluate_formulas_at_runtime)
@@ -411,7 +426,7 @@ class CodeEmitter:
         # so we can just comma-separate the args directly. SWITCH is the exception:
         # it's a custom handler (see _emit_fn_switch) that emits case-tuples for
         # Swift's labeled `cases:` parameter.
-        if self.language == "swift":
+        if self.language in ("swift", "kotlin"):
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f"{self._runtime}.{node.name}({args})"
 
@@ -458,6 +473,8 @@ class CodeEmitter:
             return f'json!({self._self}.get_id().as_deref().unwrap_or(""))'
         if self.language == "swift":
             return f'.string({self._self}.id ?? "")'
+        if self.language == "kotlin":
+            return f'JsonPrimitive({self._self}.id ?: "")'
         return f"{self._self}.id"
 
     def _emit_fn_true(self, node: FunctionCall) -> str:
@@ -465,6 +482,8 @@ class CodeEmitter:
             return "json!(true)"
         if self.language == "swift":
             return ".bool(true)"
+        if self.language == "kotlin":
+            return "JsonPrimitive(true)"
         return "True" if self.language == "python" else "true"
 
     def _emit_fn_false(self, node: FunctionCall) -> str:
@@ -472,6 +491,8 @@ class CodeEmitter:
             return "json!(false)"
         if self.language == "swift":
             return ".bool(false)"
+        if self.language == "kotlin":
+            return "JsonPrimitive(false)"
         return "False" if self.language == "python" else "false"
 
     def _emit_fn_blank(self, node: FunctionCall) -> str:
@@ -480,6 +501,8 @@ class CodeEmitter:
                 return "json!(null)"
             if self.language == "swift":
                 return ".null"
+            if self.language == "kotlin":
+                return "JsonNull"
             return "None" if self.language == "python" else "null"
         arg = self.emit(node.args[0])
         if self.language == "rust":
@@ -487,6 +510,8 @@ class CodeEmitter:
         if self.language == "swift":
             # In Swift, BLANK(x) checks whether x is .null or equivalent empty.
             return f".bool({arg} == .null)"
+        if self.language == "kotlin":
+            return f"JsonPrimitive({arg} == JsonNull)"
         if self.language == "python":
             return f"({arg} is None)"
         return f"({arg} == null)"
@@ -497,6 +522,8 @@ class CodeEmitter:
             return f"Value::Bool(!F::is_truthy(&{arg}))"
         if self.language == "swift":
             return f".bool(!{self._runtime}.isTruthy({arg}))"
+        if self.language == "kotlin":
+            return f"JsonPrimitive(!isTruthy({arg}))"
         return f"not {arg}" if self.language == "python" else f"!{arg}"
 
     def _emit_fn_and(self, node: FunctionCall) -> str:
@@ -506,6 +533,8 @@ class CodeEmitter:
                 return "json!(true)"
             if self.language == "swift":
                 return ".bool(true)"
+            if self.language == "kotlin":
+                return "JsonPrimitive(true)"
             return "True" if self.language == "python" else "true"
         if len(parts) == 1:
             return parts[0]
@@ -515,6 +544,9 @@ class CodeEmitter:
         if self.language == "swift":
             truthy_parts = [f"{self._runtime}.isTruthy({p})" for p in parts]
             return f".bool({' && '.join(truthy_parts)})"
+        if self.language == "kotlin":
+            truthy_parts = [f"isTruthy({p})" for p in parts]
+            return f"JsonPrimitive({' && '.join(truthy_parts)})"
         op = " and " if self.language == "python" else " && "
         return f"({op.join(parts)})"
 
@@ -525,6 +557,8 @@ class CodeEmitter:
                 return "json!(false)"
             if self.language == "swift":
                 return ".bool(false)"
+            if self.language == "kotlin":
+                return "JsonPrimitive(false)"
             return "False" if self.language == "python" else "false"
         if len(parts) == 1:
             return parts[0]
@@ -534,11 +568,14 @@ class CodeEmitter:
         if self.language == "swift":
             truthy_parts = [f"{self._runtime}.isTruthy({p})" for p in parts]
             return f".bool({' || '.join(truthy_parts)})"
+        if self.language == "kotlin":
+            truthy_parts = [f"isTruthy({p})" for p in parts]
+            return f"JsonPrimitive({' || '.join(truthy_parts)})"
         op = " or " if self.language == "python" else " || "
         return f"({op.join(parts)})"
 
     def _emit_fn_len(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to F::LEN(&arg) / AirtableRuntime.LEN(arg)
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -546,7 +583,7 @@ class CodeEmitter:
         return f"{arg}.length"
 
     def _emit_fn_str_method(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to LOWER/UPPER/TRIM in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -556,7 +593,7 @@ class CodeEmitter:
         return f"{arg}.{method}()"
 
     def _emit_fn_encode_url_component(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to ENCODE_URL_COMPONENT in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -564,7 +601,7 @@ class CodeEmitter:
         return f"encodeURIComponent({arg})"
 
     def _emit_fn_int(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime INT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -572,7 +609,7 @@ class CodeEmitter:
         return f"Math.floor({arg})"
 
     def _emit_fn_abs(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime ABS
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -580,7 +617,7 @@ class CodeEmitter:
         return f"Math.abs({arg})"
 
     def _emit_fn_sqrt(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime SQRT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -588,7 +625,7 @@ class CodeEmitter:
         return f"Math.sqrt({arg})"
 
     def _emit_fn_exp(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime EXP
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -598,8 +635,8 @@ class CodeEmitter:
     def _emit_fn_log10(self, node: FunctionCall) -> str | None:
         if self.language == "rust":
             return None  # Fall through to F::LOG10(&arg) — note: LOG10 not in runtime yet
-        if self.language == "swift":
-            # Swift's runtime exposes LOG(v, base?); LOG10 is LOG(v) with default base 10.
+        if self.language in ("swift", "kotlin"):
+            # The runtime exposes LOG(v, base?); LOG10 is LOG(v) with default base 10.
             arg = self.emit(node.args[0])
             return f"{self._runtime}.LOG({arg})"
         arg = self._emit_num(node.args[0])
@@ -608,7 +645,7 @@ class CodeEmitter:
         return f"Math.log10({arg})"
 
     def _emit_fn_power(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime POWER
         base = self._emit_num(node.args[0])
         exp = self._emit_num(node.args[1])
@@ -617,14 +654,14 @@ class CodeEmitter:
         return f"Math.pow({base}, {exp})"
 
     def _emit_fn_mod(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime MOD
         value = self._emit_num(node.args[0])
         divisor = self._emit_num(node.args[1])
         return f"({value} % {divisor})"
 
     def _emit_fn_regex_extract(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime REGEX_EXTRACT
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -639,6 +676,8 @@ class CodeEmitter:
             return f"Value::Bool(F::is_truthy(&{left}) != F::is_truthy(&{right}))"
         if self.language == "swift":
             return f".bool({self._runtime}.isTruthy({left}) != {self._runtime}.isTruthy({right}))"
+        if self.language == "kotlin":
+            return f"JsonPrimitive(isTruthy({left}) != isTruthy({right}))"
         if self.language == "python":
             return f"((not {left}) != (not {right}))"
         return f"(!{left} !== !{right})"
@@ -652,6 +691,8 @@ class CodeEmitter:
             if_false = "json!(null)"
         elif self.language == "swift":
             if_false = ".null"
+        elif self.language == "kotlin":
+            if_false = "JsonNull"
         elif self.language == "python":
             if_false = "None"
         else:
@@ -660,6 +701,8 @@ class CodeEmitter:
             return f"if F::is_truthy(&{cond}) {{ {if_true} }} else {{ {if_false} }}"
         if self.language == "swift":
             return f"({self._runtime}.isTruthy({cond}) ? {if_true} : {if_false})"
+        if self.language == "kotlin":
+            return f"(if (isTruthy({cond})) {if_true} else {if_false})"
         if self.language == "python":
             return f"({if_true} if {cond} else {if_false})"
         return f"({cond} ? {if_true} : {if_false})"
@@ -678,6 +721,11 @@ class CodeEmitter:
             result = ".null"
             for cond, val in reversed(pairs):
                 result = f"({self._runtime}.isTruthy({cond}) ? {val} : {result})"
+            return result
+        if self.language == "kotlin":
+            result = "JsonNull"
+            for cond, val in reversed(pairs):
+                result = f"(if (isTruthy({cond})) {val} else {result})"
             return result
         fallback = "None" if self.language == "python" else "null"
         if self.language == "python":
@@ -702,6 +750,8 @@ class CodeEmitter:
             fallback = "json!(null)"
         elif self.language == "swift":
             fallback = ".null"
+        elif self.language == "kotlin":
+            fallback = "JsonNull"
         elif self.language == "python":
             fallback = "None"
         else:
@@ -728,6 +778,13 @@ class CodeEmitter:
                 expr = f".double({self._runtime}.N({self.emit(expr_node)}))"
             else:
                 expr = self.emit(expr_node)
+        elif self.language == "kotlin":
+            if pattern_type == "string" and expr_type != "string":
+                expr = f"JsonPrimitive(S({self.emit(expr_node)}))"
+            elif pattern_type == "number" and expr_type != "number":
+                expr = f"JsonPrimitive(N({self.emit(expr_node)}))"
+            else:
+                expr = self.emit(expr_node)
         elif pattern_type == "string" and expr_type != "string":
             expr = f"{self._runtime}.S({self.emit(expr_node)})"
         elif pattern_type == "number" and expr_type != "number":
@@ -744,6 +801,10 @@ class CodeEmitter:
             #   SWITCH(_ expr: AirtableJSONValue?, cases: [(AirtableJSONValue, AirtableJSONValue)], default: AirtableJSONValue?)
             case_tuples = ", ".join(f"({pat}, {val})" for pat, val in pairs)
             return f"{self._runtime}.SWITCH({expr}, cases: [{case_tuples}], default: {fallback})"
+        if self.language == "kotlin":
+            # Kotlin AirtableRuntime.SWITCH(expr, cases: List<Pair<JsonElement, JsonElement>>, default)
+            case_pairs = ", ".join(f"({pat} to {val})" for pat, val in pairs)
+            return f"{self._runtime}.SWITCH({expr}, listOf({case_pairs}), {fallback})"
         if self.language == "python":
             result = fallback
             for pattern, val in reversed(pairs):
@@ -755,7 +816,7 @@ class CodeEmitter:
         return f"({result})"
 
     def _emit_fn_min(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime MIN
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
@@ -764,7 +825,7 @@ class CodeEmitter:
         return f"Math.min(...{an})"
 
     def _emit_fn_max(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime MAX
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
@@ -773,7 +834,7 @@ class CodeEmitter:
         return f"Math.max(...{an})"
 
     def _emit_fn_sum(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "typescript", "javascript"):
+        if self.language in ("rust", "swift", "kotlin", "typescript", "javascript"):
             return None  # Fall through to F::SUM(&[args]) / F.SUM() / AirtableRuntime.SUM()
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"sum({self._runtime}.AN(({args},)))"
@@ -785,13 +846,16 @@ class CodeEmitter:
             # Swift doesn't have COUNTALL directly; emit A().count.
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f".int({self._runtime}.A([{args}]).count)"
+        if self.language == "kotlin":
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f"JsonPrimitive(A(listOf({args})).size)"
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
             return f"len({self._runtime}.A(({args},)))"
         return f"{self._runtime}.A([{args}]).length"
 
     def _emit_fn_round(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "typescript", "javascript"):
+        if self.language in ("rust", "swift", "kotlin", "typescript", "javascript"):
             return None  # Fall through to runtime ROUND
         val = self._emit_num(node.args[0])
         if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
@@ -803,7 +867,7 @@ class CodeEmitter:
         return f"round({val}, {prec})"
 
     def _emit_fn_concatenate(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime CONCATENATE
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
@@ -811,7 +875,7 @@ class CodeEmitter:
         return f'{self._runtime}.AS([{args}]).join("")'
 
     def _emit_fn_rept(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime REPT
         text = self._emit_str(node.args[0])
         if self.language == "python":
@@ -827,7 +891,7 @@ class CodeEmitter:
         return f"{text}.repeat({count})"
 
     def _emit_fn_regex_match(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime REGEX_MATCH
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -836,7 +900,7 @@ class CodeEmitter:
         return f"new RegExp({regex}).test({text})"
 
     def _emit_fn_regex_replace(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime REGEX_REPLACE
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -862,8 +926,8 @@ class CodeEmitter:
         if self.language == "rust":
             # Rust DATETIME_PARSE only takes 1 arg (ignores format string)
             return f"{self._runtime}::DATETIME_PARSE(&{self.emit(node.args[0])})"
-        if self.language == "swift":
-            # Swift DATETIME_PARSE takes 1 arg (ignores format string)
+        if self.language in ("swift", "kotlin"):
+            # Swift/Kotlin DATETIME_PARSE takes 1 arg (ignores format string)
             return f"{self._runtime}.DATETIME_PARSE({self.emit(node.args[0])})"
         return f"{self._runtime}.D({self.emit(node.args[0])})"
 
@@ -887,7 +951,7 @@ class CodeEmitter:
     }
 
     def _emit_fn_date_part(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift"):
+        if self.language in ("rust", "swift", "kotlin"):
             return None  # Fall through to runtime YEAR/MONTH/DAY/etc.
         d = f"{self._runtime}.D({self.emit(node.args[0])})"
         if self.language != "python":
@@ -966,11 +1030,13 @@ class CodeEmitter:
     def _emit_str(self, node: ASTNode) -> str:
         """Emit node in string context. String literals pass through; concat recurses; others get F.S()."""
         if isinstance(node, StringLiteral):
-            if self.language in ("rust", "swift"):
-                # Both Rust and Swift use double-quoted string literals.
+            if self.language in ("rust", "swift", "kotlin"):
+                # Rust/Swift/Kotlin use double-quoted string literals.
                 val = node.value
                 if val.startswith("'") and val.endswith("'"):
                     val = '"' + val[1:-1].replace('"', '\\"') + '"'
+                if self.language == "kotlin":
+                    val = val.replace("$", "\\$")
                 return val
             return node.value
         if isinstance(node, BinaryOp) and node.op == "&":
@@ -984,6 +1050,8 @@ class CodeEmitter:
             return f"({left} + {right})"
         if self.language == "rust":
             return f"F::S(&{self.emit(node)})"
+        if self.language == "kotlin":
+            return f"S({self.emit(node)})"
         return f"{self._runtime}.S({self.emit(node)})"
 
     def _emit_num(self, node: ASTNode) -> str:
@@ -995,6 +1063,9 @@ class CodeEmitter:
             if self.language == "swift":
                 # Swift Double literal — ensure decimal form so result is Double.
                 return value if "." in value else f"Double({value})"
+            if self.language == "kotlin":
+                # Kotlin Double literal — ensure decimal form so result is Double.
+                return value if "." in value else f"{value}.0"
             return value
         if isinstance(node, BinaryOp) and node.op in ("+", "-", "*", "/"):
             left = self._emit_num(node.left)
@@ -1004,6 +1075,8 @@ class CodeEmitter:
             return f"(-{self._emit_num(node.operand)})"
         if self.language == "rust":
             return f"F::N(&{self.emit(node)})"
+        if self.language == "kotlin":
+            return f"N({self.emit(node)})"
         return f"{self._runtime}.N({self.emit(node)})"
 
     @staticmethod
@@ -1045,6 +1118,12 @@ class CodeEmitter:
             if other_type == "number" and node_type != "number":
                 return f".double({self._runtime}.N({self.emit(node)}))"
             return self.emit(node)
+        if self.language == "kotlin":
+            if other_type == "string" and node_type != "string":
+                return f"JsonPrimitive(S({self.emit(node)}))"
+            if other_type == "number" and node_type != "number":
+                return f"JsonPrimitive(N({self.emit(node)}))"
+            return self.emit(node)
         if other_type == "string" and node_type != "string":
             return f"{self._runtime}.S({self.emit(node)})"
         if other_type == "number" and node_type != "number":
@@ -1059,6 +1138,8 @@ class CodeEmitter:
             if self.language == "swift":
                 # Numeric arithmetic in Swift produces Double → wrap back into AirtableJSONValue.
                 return f".double({num_expr})"
+            if self.language == "kotlin":
+                return f"JsonPrimitive({num_expr})"
             return num_expr
         if node.op in ("<", ">", "<=", ">="):
             left = self._emit_num(node.left)
@@ -1067,6 +1148,8 @@ class CodeEmitter:
                 return f"Value::Bool({left} {node.op} {right})"
             if self.language == "swift":
                 return f".bool({left} {node.op} {right})"
+            if self.language == "kotlin":
+                return f"JsonPrimitive({left} {node.op} {right})"
             return f"({left} {node.op} {right})"
         if node.op in ("=", "!="):
             left = self._emit_eq_operand(node.left, node.right)
@@ -1076,6 +1159,8 @@ class CodeEmitter:
                 return f"Value::Bool({left} {native_op} {right})"
             if self.language == "swift":
                 return f".bool({left} {native_op} {right})"
+            if self.language == "kotlin":
+                return f"JsonPrimitive({left} {native_op} {right})"
             return f"({left} {native_op} {right})"
         if node.op == "&":
             if self.language == "rust":
@@ -1087,6 +1172,10 @@ class CodeEmitter:
                 left = self._emit_str(node.left)
                 right = self._emit_str(node.right)
                 return f".string({left} + {right})"
+            if self.language == "kotlin":
+                left = self._emit_str(node.left)
+                right = self._emit_str(node.right)
+                return f"JsonPrimitive({left} + {right})"
             return self._emit_str(node)
         raise ParseError(f"Unknown operator: {node.op}")
 
@@ -1097,6 +1186,8 @@ class CodeEmitter:
                 return f"json!({num_expr})"
             if self.language == "swift":
                 return f".double({num_expr})"
+            if self.language == "kotlin":
+                return f"JsonPrimitive({num_expr})"
             return num_expr
         raise ParseError(f"Unknown unary operator: {node.op}")
 

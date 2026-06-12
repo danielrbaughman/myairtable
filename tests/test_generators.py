@@ -1480,3 +1480,52 @@ class TestKotlinComputedFields:
         assert '@JvmName("deleteModels")' in content
         # No public orm accessor.
         assert "val orm" in content and "private val orm" in content
+
+
+class TestKotlinFormulas:
+    """Kotlin formula-builder + runtime-evaluation generation (K-F7/K-F8)."""
+
+    def _generate(self, tmp_path: Path, formula: str | None = None, **flags) -> Path:
+        from src.generators.kotlin import write_formula_helpers, write_models
+        from src.utils.type_mapper import map_types
+
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Text", "fld001", "singleLineText")]
+        formula_map = None
+        if formula is not None:
+            fields_spec.append(("My Formula", "fld002", "formula"))
+            formula_map = {"fld002": formula}
+        base = make_test_base(fields_spec, formula_map=formula_map)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_formula_helpers(base, output_folder)
+        write_models(base, output_folder, **flags)
+        return output_folder
+
+    def test_filters_class_has_typed_formula_fields(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "formulas" / "TestTableFilters.kt").read_text()
+        assert "class TestTableFilters {" in content
+        assert "val id: FormulaId = FormulaId()" in content
+        assert 'val myText: FormulaTextField = FormulaTextField("fld001")' in content
+
+    def test_model_companion_exposes_filters_as_f(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "val f: TestTableFilters = TestTableFilters()" in content
+
+    def test_formulas_false_omits_companion_f(self, tmp_path: Path):
+        out = self._generate(tmp_path, formulas=False)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "val f:" not in content
+
+    def test_runtime_true_emits_evaluate_methods(self, tmp_path: Path):
+        out = self._generate(tmp_path, formula='{fld001} & "!"')
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "fun evaluateMyFormula(): JsonElement = " in content
+        assert 'JsonPrimitive(S(V(this.myText)) + "!")' in content
+
+    def test_runtime_false_omits_evaluate_methods(self, tmp_path: Path):
+        out = self._generate(tmp_path, formula='{fld001} & "!"', runtime=False)
+        content = (out / "dynamic" / "models" / "TestTableModel.kt").read_text()
+        assert "fun evaluate" not in content
