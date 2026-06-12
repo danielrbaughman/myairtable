@@ -1385,3 +1385,98 @@ class TestKotlinFlagGating:
         assert not (out / "Airtable.kt").exists()
         # Field types are still emitted.
         assert (out / "dynamic" / "types" / "TestTableFields.kt").is_file()
+
+
+class TestKotlinComputedFields:
+    """Kotlin model generation: constructor-property val/var split (plan §2.3.1)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.kotlin import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+        return (output_folder / "dynamic" / "models" / "TestTableModel.kt").read_text()
+
+    def test_computed_fields_are_val_constructor_params(self, tmp_path: Path):
+        """Computed fields are decode-only `val` params (mutation = compile error)."""
+        content = self._generate([("My Formula", "fld001", "formula")], tmp_path)
+        assert "val myFormula: MaybeSpecialOrError<Double>? = null," in content
+        assert "var myFormula" not in content
+
+    def test_writable_fields_are_var_constructor_params(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "var myText: String? = null," in content
+
+    def test_model_is_serializable_with_field_id_serial_names(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "@Serializable" in content
+        assert '@SerialName("fld001")' in content
+        assert "@file:UseSerializers(AirtableInstantSerializer::class, AirtableDurationSerializer::class)" in content
+
+    def test_model_implements_airtable_model_with_transients(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert ") : AirtableModel {" in content
+        assert "override var id: RecordId? = null" in content
+        assert "override var createdTime: Instant? = null" in content
+        assert "override var attachedClient: AirtableClient? = null" in content
+        assert "private var snapshot: Map<String, JsonElement> = emptyMap()" in content
+        # All four are @Transient (never serialized).
+        assert content.count("@Transient") == 4
+        assert 'const val TABLE_ID: String = "tblTEST123"' in content
+        assert "override val tableId: String get() = TABLE_ID" in content
+
+    def test_create_fields_exclude_computed_but_to_record_includes_all(self, tmp_path: Path):
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+
+        create_block = content.split("override fun toCreateFields()")[1].split("override fun toRecord()")[0]
+        record_block = content.split("override fun toRecord()")[1].split("override fun takeSnapshot()")[0]
+
+        assert '"fld001"' in create_block
+        assert '"fld002"' not in create_block, "computed fields must never reach create payloads"
+        assert '"fld001"' in record_block
+        assert '"fld002"' in record_block
+
+    def test_dirty_fields_diff_against_snapshot_with_jsonnull_clears(self, tmp_path: Path):
+        content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "override fun dirtyFields(): Map<String, JsonElement> {" in content
+        assert "if (snapshot[key] != value) dirty[key] = value" in content
+        assert "dirty[key] = JsonNull" in content
+        assert "snapshot = toCreateFields()" in content
+
+    def test_linked_record_fields_are_record_id_lists(self, tmp_path: Path):
+        content = self._generate([("Links", "fld001", "multipleRecordLinks")], tmp_path)
+        assert "var links: List<RecordId>? = null," in content
+
+    def test_tables_forward_orm_methods(self, tmp_path: Path):
+        """ORM is the default: get/create/update/upsert/delete live on the table."""
+        from src.generators.kotlin import write_tables
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        output_folder = tmp_path / "kotlin_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_tables(base, output_folder)
+        content = (output_folder / "dynamic" / "tables" / "TestTableTable.kt").read_text()
+
+        assert "private val orm: OrmTable<TestTableModel> = OrmTable(TABLE_ID, TestTableModel.serializer(), client)" in content
+        assert "suspend fun get(recordId: String): TestTableModel" in content
+        assert "suspend fun get(recordIds: List<String>): List<TestTableModel>" in content
+        assert "suspend fun get(query: AirtableQuery = AirtableQuery()): List<TestTableModel>" in content
+        assert "suspend fun create(model: TestTableModel)" in content
+        assert "suspend fun create(models: List<TestTableModel>)" in content
+        assert "suspend fun update(model: TestTableModel)" in content
+        assert "suspend fun updateFields(recordId: String, fields: Map<String, JsonElement>)" in content
+        assert "suspend fun upsert(model: TestTableModel, fieldsToMergeOn: List<String>)" in content
+        assert "suspend fun delete(recordId: String)" in content
+        assert '@JvmName("deleteModels")' in content
+        # No public orm accessor.
+        assert "val orm" in content and "private val orm" in content

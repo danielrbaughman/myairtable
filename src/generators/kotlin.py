@@ -251,11 +251,141 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line_empty()
 
 
-def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate per-table `{Table}Table` class (K-F3: dict accessor only).
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
+    """Generate per-table `{Table}Model` class.
 
-    The typed ORM forwarding methods land with K-F4; raw-dict access lives
-    under `.dict` for parity with the Rust target.
+    Layout: `dynamic/models/{Table}Model.kt`. Shape (plan §2.3.1, validated by
+    the Phase 0 gate TestSerializableModel.kt):
+
+        @file:UseSerializers(AirtableInstantSerializer::class, AirtableDurationSerializer::class)
+        @Serializable
+        class {Table}Model(
+            @SerialName("fldX") val computedField: T? = null,   // computed: val
+            @SerialName("fldY") var writableField: T? = null,   // writable: var
+        ) : AirtableModel {
+            @Transient override var id / createdTime / attachedClient
+            @Transient private var snapshot
+            toCreateFields() / toRecord() / takeSnapshot() / dirtyFields()
+        }
+
+    The kotlinx plugin serializer decodes only the record's `fields` object;
+    create/update payloads come from the hand-rolled writable-only builders.
+    """
+    _ = formulas, runtime, flatten  # evaluate-method emission lands in K-F8
+    models_dir = _create_kotlin_dynamic_subdir(output_folder, _DIR_MODELS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        model_name = f"{prefix}Model"
+        file_name = f"{model_name}.kt"
+        writable_fields = [f for f in table.fields if not f.is_computed()]
+
+        with WriteToKotlinFile(path=models_dir / file_name) as write:
+            write.comment("ktlint-disable — generated code is exempt from lint by design")
+            write.line("@file:UseSerializers(AirtableInstantSerializer::class, AirtableDurationSerializer::class)")
+            write.line_empty()
+            write.package_decl()
+            write.line_empty()
+            write.import_stmt("kotlinx.serialization.SerialName")
+            write.import_stmt("kotlinx.serialization.Serializable")
+            write.import_stmt("kotlinx.serialization.Transient")
+            write.import_stmt("kotlinx.serialization.UseSerializers")
+            write.import_stmt("kotlinx.serialization.json.JsonElement")
+            write.import_stmt("kotlinx.serialization.json.JsonNull")
+            write.import_stmt("java.time.Instant")
+            write.import_stmt("kotlin.time.Duration")
+            write.line_empty()
+
+            write.doc_comment(
+                [
+                    f"Typed model for the `{sanitize_string(table.name)}` Airtable table.",
+                    "",
+                    "Computed fields are `val` (server-owned, decode-only); writable fields",
+                    "are `var`. All default to `null`, so creation reads naturally with",
+                    f"named arguments: `{model_name}(...)`.",
+                ]
+            )
+            write.annotation("Serializable")
+            write.line(f"class {model_name}(")
+            for field in table.fields:
+                write.property_docstring(field, table, indent_level=1)
+                write.serial_name(field.id, indent=1)
+                keyword = "var" if not field.is_computed() else "val"
+                prop = _kotlin_ident(field.name_camel())
+                write.line_indented(f"{keyword} {prop}: {field.kotlin_type()}? = null,")
+            write.line(") : AirtableModel {")
+
+            write.companion_object_open()
+            write.line_indented(f'const val TABLE_ID: String = "{table.id}"', indent=2)
+            write.close(indent=1)
+            write.line_empty()
+
+            write.line_indented("@Transient")
+            write.line_indented("override var id: RecordId? = null")
+            write.line_empty()
+            write.line_indented("@Transient")
+            write.line_indented("override var createdTime: Instant? = null")
+            write.line_empty()
+            write.line_indented("@Transient")
+            write.line_indented("override var attachedClient: AirtableClient? = null")
+            write.line_empty()
+            write.line_indented("@Transient")
+            write.line_indented("private var snapshot: Map<String, JsonElement> = emptyMap()")
+            write.line_empty()
+
+            write.line_indented("override val tableId: String get() = TABLE_ID")
+            write.line_empty()
+
+            # toCreateFields — writable only
+            write.doc_comment("Non-null writable field values keyed by field ID (create payloads).", indent=1)
+            write.line_indented("override fun toCreateFields(): Map<String, JsonElement> =")
+            write.line_indented("buildMap {", indent=2)
+            for field in writable_fields:
+                prop = _kotlin_ident(field.name_camel())
+                write.line_indented(f'{prop}?.let {{ put("{field.id}", V(it)) }}', indent=3)
+            write.line_indented("}", indent=2)
+            write.line_empty()
+
+            # toRecord — all fields
+            write.doc_comment("All non-null field values keyed by field ID.", indent=1)
+            write.line_indented("override fun toRecord(): Map<String, JsonElement> =")
+            write.line_indented("buildMap {", indent=2)
+            for field in table.fields:
+                prop = _kotlin_ident(field.name_camel())
+                write.line_indented(f'{prop}?.let {{ put("{field.id}", V(it)) }}', indent=3)
+            write.line_indented("}", indent=2)
+            write.line_empty()
+
+            # snapshot + dirty
+            write.line_indented("override fun takeSnapshot() {")
+            write.line_indented("snapshot = toCreateFields()", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment(
+                [
+                    "Changed-or-cleared writable fields since the last snapshot.",
+                    "Cleared fields are emitted as JsonNull so the API clears them server-side.",
+                ],
+                indent=1,
+            )
+            write.line_indented("override fun dirtyFields(): Map<String, JsonElement> {")
+            write.line_indented("val current = toCreateFields()", indent=2)
+            write.line_indented("val dirty = mutableMapOf<String, JsonElement>()", indent=2)
+            write.line_indented("for ((key, value) in current) if (snapshot[key] != value) dirty[key] = value", indent=2)
+            write.line_indented("for (key in snapshot.keys) if (key !in current) dirty[key] = JsonNull", indent=2)
+            write.line_indented("return dirty", indent=2)
+            write.line_indented("}")
+
+            write.close()
+
+
+def write_tables(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Table` class.
+
+    The ORM is the default — `airtable.primary.get(id)` calls through to the
+    typed `OrmTable<PrimaryModel>`. Raw-dict access lives under `.dict` for
+    parity with the Rust target. Matches the Rust / TS / Py API shape.
     """
     tables_dir = _create_kotlin_dynamic_subdir(output_folder, _DIR_TABLES)
 
@@ -263,9 +393,12 @@ def write_tables(base: Base, output_folder: Path) -> None:
         prefix = _table_type_prefix(table)
         type_name = f"{prefix}Table"
         fields_name = f"{prefix}Fields"
+        model_name = f"{prefix}Model"
         file_name = f"{type_name}.kt"
         with WriteToKotlinFile(path=tables_dir / file_name) as write:
             write.package_decl()
+            write.line_empty()
+            write.import_stmt("kotlinx.serialization.json.JsonElement")
             write.line_empty()
 
             write.doc_comment(f"Accessor for the `{sanitize_string(table.name)}` Airtable table.")
@@ -279,6 +412,64 @@ def write_tables(base: Base, output_folder: Path) -> None:
 
             write.doc_comment("Raw (dict-style) access — decoded fields keyed by ID.", indent=1)
             write.line_indented(f"val dict: DictTable = DictTable(tableId = TABLE_ID, nameToId = {fields_name}.nameToId, client = client)")
+            write.line_empty()
+            write.line_indented(f"private val orm: OrmTable<{model_name}> = OrmTable(TABLE_ID, {model_name}.serializer(), client)")
+            write.line_empty()
+
+            write.region("ORM access (default)", indent=1)
+            write.line_empty()
+
+            write.doc_comment("Fetch one record by ID.", indent=1)
+            write.line_indented(f"suspend fun get(recordId: String): {model_name} = orm.get(recordId)")
+            write.line_empty()
+            write.doc_comment("Fetch many records by ID, in order.", indent=1)
+            write.line_indented(f"suspend fun get(recordIds: List<String>): List<{model_name}> = orm.get(recordIds)")
+            write.line_empty()
+            write.doc_comment("Fetch records matching the query (paginates internally). Default fetches all.", indent=1)
+            write.line_indented(f"suspend fun get(query: AirtableQuery = AirtableQuery()): List<{model_name}> = orm.get(query)")
+            write.line_empty()
+
+            write.doc_comment("Create one record from a fresh model (writable fields only).", indent=1)
+            write.line_indented(f"suspend fun create(model: {model_name}): {model_name} = orm.create(model)")
+            write.line_empty()
+            write.doc_comment("Create many records. Chunks into Airtable's 10-per-call batch limit.", indent=1)
+            write.line_indented(f"suspend fun create(models: List<{model_name}>): List<{model_name}> = orm.create(models)")
+            write.line_empty()
+
+            write.doc_comment("Update a model's dirty fields (diffed against its snapshot).", indent=1)
+            write.line_indented(f"suspend fun update(model: {model_name}): {model_name} = orm.update(model)")
+            write.line_empty()
+            write.doc_comment("Update many models (dirty fields only). Chunked.", indent=1)
+            write.line_indented(f"suspend fun update(models: List<{model_name}>): List<{model_name}> = orm.update(models)")
+            write.line_empty()
+            write.doc_comment("Update a record's fields directly by ID (no model required).", indent=1)
+            write.line_indented(
+                f"suspend fun updateFields(recordId: String, fields: Map<String, JsonElement>): {model_name} = orm.updateFields(recordId, fields)"
+            )
+            write.line_empty()
+
+            write.doc_comment("Upsert a record, matching on the supplied field IDs.", indent=1)
+            write.line_indented(
+                f"suspend fun upsert(model: {model_name}, fieldsToMergeOn: List<String>): OrmTable.UpsertResult<{model_name}> = "
+                "orm.upsert(model, fieldsToMergeOn)"
+            )
+            write.line_empty()
+
+            write.doc_comment("Delete one record by ID.", indent=1)
+            write.line_indented("suspend fun delete(recordId: String) = orm.delete(recordId)")
+            write.line_empty()
+            write.doc_comment("Delete many records by ID. Chunked.", indent=1)
+            write.line_indented("suspend fun delete(recordIds: List<String>) = orm.delete(recordIds)")
+            write.line_empty()
+            write.doc_comment("Delete the record referenced by this model's id.", indent=1)
+            write.line_indented(f"suspend fun delete(model: {model_name}) = orm.delete(model)")
+            write.line_empty()
+            write.doc_comment("Delete many records by passing their models.", indent=1)
+            write.line_indented('@JvmName("deleteModels")')
+            write.line_indented(f"suspend fun delete(models: List<{model_name}>) = orm.delete(models)")
+            write.line_empty()
+
+            write.endregion(indent=1)
             write.close()
 
 
@@ -378,6 +569,10 @@ def generate_kotlin(
     write_field_types(base, output_folder)
     if verbose:
         print("[dim] - Kotlin field types generated.[/]")
+
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
+    if verbose:
+        print("[dim] - Kotlin models generated.[/]")
 
     if wrappers:
         write_tables(base, output_folder)
