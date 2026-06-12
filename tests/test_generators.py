@@ -1849,3 +1849,441 @@ class TestKotlinGeneratorEdgeCases:
 
         assert re.fullmatch(r"[A-Z][A-Z0-9_]*", _choice_to_entry("!!!"))
         assert _choice_to_entry("openInvoices") == "OPEN_INVOICES"
+
+
+# =============================================================================
+# Java generator (J-F3)
+# =============================================================================
+
+
+class TestJavaOptionsGenerator:
+    """Java select-option enum generation (one public enum per file)."""
+
+    def _generate_options(self, choices: list[str], tmp_path: Path) -> Path:
+        """Build a table with a singleSelect field and return the options dir."""
+        from src.generators.java import write_options
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        field = base.tables[0].fields[0]
+        assert field.options is not None
+        field.options.choices = [Choice.model_construct(id=f"sel{i:03d}", name=name) for i, name in enumerate(choices)]
+        assert field.__pydantic_private__ is not None
+        field.__pydantic_private__["_select_options_cache"] = None
+
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        return output_folder / "dynamic" / "options"
+
+    def test_one_public_enum_file_per_select_field(self, tmp_path: Path):
+        """Java requires one public type per file — the enum gets its own file."""
+        options_dir = self._generate_options(["Open", "Closed"], tmp_path)
+        enum_file = options_dir / "TestTableStatusOption.java"
+        assert enum_file.is_file()
+        content = enum_file.read_text()
+        assert "package myairtable;" in content
+        assert "public enum TestTableStatusOption {" in content
+
+    def test_entries_are_screaming_snake_with_raw_values(self, tmp_path: Path):
+        """Choices map to SCREAMING_SNAKE_CASE constants carrying the raw string.
+
+        Entry order follows select_options() (alphabetical), so assertions are
+        order-agnostic; the final constant is terminated with `;`.
+        """
+        import re
+
+        options_dir = self._generate_options(["Open", "In Progress", "Closed"], tmp_path)
+        content = (options_dir / "TestTableStatusOption.java").read_text()
+        for raw, entry in [("Open", "OPEN"), ("In Progress", "IN_PROGRESS"), ("Closed", "CLOSED")]:
+            assert re.search(rf'{entry}\("{raw}"\)[,;]', content), f"missing {raw} -> {entry}"
+        # The final entry is terminated with `;` so the value field can follow.
+        assert re.search(r'\w+\("[^"]*"\);', content)
+
+    def test_json_value_and_json_creator_round_trip(self, tmp_path: Path):
+        """The enum exposes @JsonValue value() + @JsonCreator fromValue() for Jackson."""
+        options_dir = self._generate_options(["Open"], tmp_path)
+        content = (options_dir / "TestTableStatusOption.java").read_text()
+        assert "import com.fasterxml.jackson.annotation.JsonValue;" in content
+        assert "import com.fasterxml.jackson.annotation.JsonCreator;" in content
+        assert "@JsonValue" in content
+        assert "public String value() {" in content
+        assert "@JsonCreator" in content
+        assert "public static TestTableStatusOption fromValue(String value) {" in content
+
+    def test_raw_value_strings_are_escaped(self, tmp_path: Path):
+        """Choice names containing quotes must be escaped in the constructor literal."""
+        options_dir = self._generate_options(['"Bucyrus, OH"'], tmp_path)
+        content = (options_dir / "TestTableStatusOption.java").read_text()
+        assert '("\\"Bucyrus, OH\\"")' in content
+
+    def test_colliding_entries_get_v2_suffix(self, tmp_path: Path):
+        """Distinct choices that collapse to the same constant deduplicate via _V2."""
+        options_dir = self._generate_options(["Open", "open"], tmp_path)
+        content = (options_dir / "TestTableStatusOption.java").read_text()
+        assert 'OPEN("' in content
+        assert 'OPEN_V2("' in content
+
+
+class TestJavaFieldTypes:
+    """Java `{Table}Fields` / `{Table}View` / `Create{Table}Fields` generation."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        from src.generators.java import write_field_types
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        return output_folder
+
+    def test_field_types_emit_dual_id_and_name_constants(self, tmp_path: Path):
+        """Every field must get both a `{field}Id` and `{field}Name` constant."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+
+        assert "public final class TestTableFields {" in content
+        assert 'public static final String primaryKeyId = "fld001";' in content
+        assert 'public static final String primaryKeyName = "Primary Key";' in content
+
+    def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
+        """allIds should list every field ID in schema order."""
+        fields_spec = [
+            ("A", "fld001", "singleLineText"),
+            ("B", "fld002", "number"),
+            ("C", "fld003", "checkbox"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+
+        assert 'public static final List<String> allIds = List.of("fld001", "fld002", "fld003");' in content
+
+    def test_field_types_emit_name_to_id_and_id_to_name_maps(self, tmp_path: Path):
+        """The nameToId / idToName maps enable dual-access lookup at runtime."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+
+        assert "public static final Map<String, String> nameToId =" in content
+        assert "public static final Map<String, String> idToName =" in content
+        assert 'Map.entry("Primary Key", "fld001")' in content
+        assert 'Map.entry("fld001", "Primary Key")' in content
+        assert "public static String idByName(String name) {" in content
+        assert "public static String nameById(String id) {" in content
+
+    def test_no_trailing_comma_before_map_of_entries_close(self, tmp_path: Path):
+        """Map.ofEntries blocks must not leave a trailing comma before `);`."""
+        import re
+
+        fields_spec = [
+            ("A", "fld001", "singleLineText"),
+            ("B", "fld002", "number"),
+            ("C", "fld003", "checkbox"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+
+        assert "Map.ofEntries(" in content
+        assert not re.search(r",\s*\n\s*\);", content), "trailing comma before `);` is a Java syntax error"
+
+    def test_create_fields_excludes_computed(self, tmp_path: Path):
+        """Create{Table}Fields lists writable fields only (formula/createdTime omitted)."""
+        fields_spec = [
+            ("My Text", "fld001", "singleLineText"),
+            ("My Formula", "fld002", "formula"),
+            ("Created", "fld003", "createdTime"),
+        ]
+        out = self._generate(fields_spec, tmp_path)
+        content = (out / "dynamic" / "types" / "CreateTestTableFields.java").read_text()
+
+        assert "public final class CreateTestTableFields {" in content
+        assert "myTextId" in content
+        assert "myFormulaId" not in content
+        assert "createdId" not in content
+
+    def test_zero_writable_fields_omits_create_file(self, tmp_path: Path):
+        """A computed-only table must not emit a Create{Table}Fields file at all."""
+        out = self._generate([("My Formula", "fld001", "formula")], tmp_path)
+        assert not (out / "dynamic" / "types" / "CreateTestTableFields.java").exists()
+
+    def test_view_enum_implements_airtable_view(self, tmp_path: Path):
+        """Generated `{Table}View` enums implement the static `AirtableView` interface."""
+        from src.generators.java import write_field_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        base.tables[0].views = [View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")]
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        write_field_types(base, output_folder)
+        content = (output_folder / "dynamic" / "types" / "TestTableView.java").read_text()
+
+        assert "public enum TestTableView implements AirtableView {" in content
+        assert 'GRID_VIEW("viw001");' in content
+        assert "@Override" in content
+        assert "public String getId() {" in content
+
+    def test_no_views_omits_view_file(self, tmp_path: Path):
+        """A table without views must not emit a {Table}View file."""
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        assert not (out / "dynamic" / "types" / "TestTableView.java").exists()
+
+
+class TestJavaTablesAndMain:
+    """generate_java must honor the wrappers/runtime flags (J-F3 dict-only scope)."""
+
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+    ]
+
+    def _generate(self, tmp_path: Path, **flags) -> Path:
+        from src.generators.java import generate_java
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS_SPEC)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        generate_java(base, output_folder, **flags)
+        return output_folder
+
+    def test_default_flags_emit_tables_main_and_static(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        assert (out / "dynamic" / "tables" / "TestTableTable.java").is_file()
+        assert (out / "Airtable.java").is_file()
+        assert (out / "static" / "DictTable.java").is_file()
+        assert (out / "static" / "AirtableRuntime.java").is_file()
+
+    def test_wrappers_false_suppresses_tables_and_main(self, tmp_path: Path):
+        out = self._generate(tmp_path, wrappers=False)
+        assert not (out / "dynamic" / "tables").exists()
+        assert not (out / "Airtable.java").exists()
+        # Field types are still emitted.
+        assert (out / "dynamic" / "types" / "TestTableFields.java").is_file()
+
+    def test_runtime_false_excludes_airtable_runtime(self, tmp_path: Path):
+        out = self._generate(tmp_path, runtime=False)
+        assert not (out / "static" / "AirtableRuntime.java").exists()
+        # Other static files are still copied.
+        assert (out / "static" / "DictTable.java").is_file()
+
+    def test_table_class_exposes_dict_accessor(self, tmp_path: Path):
+        """Each table gets a {Table}Table class with a `.dict()` accessor."""
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.java").read_text()
+
+        assert "public final class TestTableTable {" in content
+        assert 'public static final String TABLE_ID = "tblTEST123";' in content
+        assert "public DictTable dict() {" in content
+        assert "new DictTable(TABLE_ID, TestTableFields.nameToId, client);" in content
+
+    def test_main_contains_base_id_and_per_table_accessors(self, tmp_path: Path):
+        """Airtable.java should expose BASE_ID and one accessor method per table."""
+        out = self._generate(tmp_path)
+        content = (out / "Airtable.java").read_text()
+
+        assert "public final class Airtable implements AutoCloseable {" in content
+        assert 'public static final String BASE_ID = "appTEST123";' in content
+        assert "public TestTableTable testTable() {" in content
+        assert "public Airtable(AirtableClient client) {" in content
+        assert "public Airtable(String baseId, String apiKey) {" in content
+        assert "public void invalidateAllCaches() {" in content
+        assert "public void close() {" in content
+
+
+class TestJavaStringEscaping:
+    """Javadoc sanitization + string-literal escaping for hostile Airtable names.
+
+    A hostile field name must not be able to terminate a generated Javadoc
+    block early (`*/`) or produce illegal string-literal escapes (quote, tab,
+    newline). `<`, `>`, `&` must be HTML-entity-escaped in Javadoc prose.
+    """
+
+    EVIL = 'evil */ name $x "q"'
+    CONTROL = "Tab\there\nNewline"
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.java import write_field_types
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        return (output_folder / "dynamic" / "types" / "TestTableFields.java").read_text()
+
+    @staticmethod
+    def _comment_lines(content: str) -> list[str]:
+        return [ln.strip() for ln in content.splitlines() if ln.strip().startswith(("/**", "*", "//"))]
+
+    def test_javadoc_cannot_be_terminated_early(self, tmp_path: Path):
+        content = self._generate([(self.EVIL, "fld001", "singleLineText")], tmp_path)
+        for line in self._comment_lines(content):
+            assert "evil */" not in line, f"raw */ inside a comment line: {line!r}"
+        assert "evil * / name" in content
+
+    def test_javadoc_blocks_are_balanced(self, tmp_path: Path):
+        import re
+
+        content = self._generate([(self.EVIL, "fld001", "singleLineText"), (self.CONTROL, "fld002", "singleLineText")], tmp_path)
+        # `*/` inside a Java string literal is legal — blank out literals before
+        # counting so only comment delimiters are compared.
+        without_literals = re.sub(r'"(?:\\.|[^"\\])*"', '""', content)
+        assert without_literals.count("/**") == without_literals.count("*/")
+
+    def test_string_literals_are_escaped(self, tmp_path: Path):
+        content = self._generate([(self.EVIL, "fld001", "singleLineText"), (self.CONTROL, "fld002", "singleLineText")], tmp_path)
+        # sanitize_string turns the inner double quotes into single quotes;
+        # Java has no $ templates, so $ stays raw (unlike Kotlin).
+        assert "\"evil */ name $x 'q'\"" in content
+        assert 'Map.entry("Tab\\there\\nNewline", "fld002")' in content
+
+    def test_doc_comment_splits_embedded_newlines(self, tmp_path: Path):
+        content = self._generate([(self.CONTROL, "fld001", "singleLineText")], tmp_path)
+        assert " * Newline} (field ID)" in content
+
+    def test_javadoc_html_entities_escaped(self, tmp_path: Path):
+        """`<`, `>`, `&` are entity-escaped in Javadoc prose but raw in string literals."""
+        content = self._generate([("A <b> & B", "fld001", "singleLineText")], tmp_path)
+        assert "A &lt;b&gt; &amp; B" in content
+        # The string literal keeps the raw characters.
+        assert '= "A <b> & B";' in content
+
+    def test_java_ident_renames_keywords_with_underscore_suffix(self):
+        """Java has no identifier escaping — keywords/literals get a `_` suffix."""
+        from src.utils.write_to_java_file import _java_ident
+
+        for kw in ("class", "switch", "true", "false", "null", "_", "var", "yield"):
+            assert _java_ident(kw) == f"{kw}_"
+        assert _java_ident("status") == "status"
+
+    def test_keyword_table_name_gets_suffixed_accessor(self, tmp_path: Path):
+        """A table named `Switch` yields a `switch_()` accessor on Airtable.java."""
+        from src.generators.java import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        base.tables[0].name = "Switch"
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.java").read_text()
+
+        assert "public SwitchTable switch_() {" in content
+        assert "this.switch_ = new SwitchTable(client);" in content
+
+
+class TestDedupJava:
+    """Colliding field/table names must deduplicate consistently in Java output
+    (Java analog of TestIdentifierCollisionDedup's Kotlin/Swift assertions)."""
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("My Field", "fld001", "singleLineText"),
+        ("my field", "fld002", "singleLineText"),
+    ]
+
+    def _generate(self, tmp_path: Path) -> Path:
+        from src.generators.java import write_field_types
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_field_types(base, output_folder)
+        return output_folder
+
+    def test_fields_consts_dedup(self, tmp_path: Path):
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+        assert 'public static final String myFieldId = "fld001";' in content
+        assert 'public static final String myFieldV2Id = "fld002";' in content
+        # No duplicate declarations.
+        assert content.count("public static final String myFieldId = ") == 1
+        assert content.count("public static final String myFieldV2Id = ") == 1
+
+    def test_create_fields_dedup_consistently(self, tmp_path: Path):
+        """Create{Table}Fields must use the same deduplicated property names."""
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "types" / "CreateTestTableFields.java").read_text()
+        assert 'public static final String myFieldId = "fld001";' in content
+        assert 'public static final String myFieldV2Id = "fld002";' in content
+
+    def test_name_maps_keep_distinct_raw_names(self, tmp_path: Path):
+        """The raw Airtable names stay distinct in nameToId — only identifiers dedup."""
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+        assert 'Map.entry("My Field", "fld001")' in content
+        assert 'Map.entry("my field", "fld002")' in content
+
+    def test_table_name_collision_dedup(self, tmp_path: Path):
+        from src.generators.java import write_main
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        TestIdentifierCollisionDedup._add_colliding_table(base)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        write_main(base, output_folder)
+        content = (output_folder / "Airtable.java").read_text()
+        assert "public TestTableTable testTable() {" in content
+        assert "public TestTableV2Table testTableV2() {" in content
+
+
+class TestJavaComputedTypes:
+    """map_java_type wrapping for computed fields (pure type_mapper assertions)."""
+
+    @staticmethod
+    def _field(name: str, field_id: str, field_type: FieldType):
+        return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
+
+    def test_formula_number_wraps_maybe_special_or_error_double(self):
+        from src.utils.type_mapper import map_java_type
+
+        assert map_java_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<Double>"
+
+    def test_auto_number_wraps_maybe_special_or_error_long(self):
+        from src.utils.type_mapper import map_java_type
+
+        assert map_java_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<Long>"
+
+    def test_lookup_wraps_vec_or_value(self):
+        """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_java_computed_wrapping
+
+        field = self._field("Look", "fld001", "multipleLookupValues")
+        assert apply_java_computed_wrapping("Double", field) == "VecOrValue<MaybeSpecialOrError<Double>>"
+        # Disambiguation-applied List<...> is stripped so the inner primitive is wrapped.
+        assert apply_java_computed_wrapping("List<String>", field) == "VecOrValue<MaybeSpecialOrError<String>>"
+
+    def test_lookup_with_unresolvable_inner_falls_back_to_json_node(self):
+        """An unresolvable lookup renders as VecOrValue<JsonNode> end-to-end."""
+        from src.utils.type_mapper import map_java_type
+
+        assert map_java_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<JsonNode>"
+
+    def test_rollup_wraps_vec_or_value(self):
+        """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_java_computed_wrapping
+
+        field = self._field("Roll", "fld001", "rollup")
+        assert apply_java_computed_wrapping("Double", field) == "VecOrValue<MaybeSpecialOrError<Double>>"
+
+    def test_already_wrapped_type_is_left_alone(self):
+        """apply_java_computed_wrapping is a no-op on already-wrapped types."""
+        from src.utils.type_mapper import apply_java_computed_wrapping
+
+        field = self._field("Calc", "fld001", "formula")
+        assert apply_java_computed_wrapping("MaybeSpecialOrError<Double>", field) == "MaybeSpecialOrError<Double>"
+
+    def test_writable_field_is_never_wrapped(self):
+        from src.utils.type_mapper import apply_java_computed_wrapping
+
+        field = self._field("My Text", "fld001", "singleLineText")
+        assert apply_java_computed_wrapping("String", field) == "String"
+
+    def test_writable_text_is_plain_string(self):
+        from src.utils.type_mapper import map_java_type
+
+        assert map_java_type(self._field("My Text", "fld001", "singleLineText")) == "String"
