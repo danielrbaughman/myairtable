@@ -2287,3 +2287,229 @@ class TestJavaComputedTypes:
         from src.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("My Text", "fld001", "singleLineText")) == "String"
+
+
+class TestJavaModels:
+    """Java `{Table}Model` generation (J4 — content assertions only, no javac).
+
+    Java analog of TestKotlinComputedFields/TestKotlinFormulas model assertions:
+    computed fields are getter-only POJO fields (no setter, absent from the
+    Builder); writable fields get setters + Builder methods. Compilation is
+    separately verified by the static-source gate + integration tests.
+    """
+
+    MIXED_SPEC: list[tuple[str, str, FieldType]] = [
+        ("My Text", "fld001", "singleLineText"),
+        ("My Formula", "fld002", "formula"),
+        ("Look", "fld003", "multipleLookupValues"),
+    ]
+
+    def _generate(
+        self,
+        fields_spec: list[tuple[str, str, FieldType]],
+        tmp_path: Path,
+        formula_map: dict[str, str] | None = None,
+        **flags,
+    ) -> Path:
+        from src.generators.java import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec, formula_map=formula_map)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir(exist_ok=True)
+        map_types(base)
+        write_models(base, output_folder, **flags)
+        return output_folder
+
+    def _generate_model(
+        self,
+        fields_spec: list[tuple[str, str, FieldType]],
+        tmp_path: Path,
+        formula_map: dict[str, str] | None = None,
+        **flags,
+    ) -> str:
+        out = self._generate(fields_spec, tmp_path, formula_map=formula_map, **flags)
+        return (out / "dynamic" / "models" / "TestTableModel.java").read_text()
+
+    @staticmethod
+    def _builder_block(content: str) -> str:
+        """The nested `Builder` class body (everything after its declaration)."""
+        assert "public static final class Builder {" in content
+        return content.split("public static final class Builder {")[1]
+
+    # ---- file layout + class header ----
+
+    def test_model_file_generated_per_table_with_class_header(self, tmp_path: Path):
+        """One dynamic/models/{Table}Model.java per table, implementing AirtableModel."""
+        from src.generators.java import write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("My Text", "fld001", "singleLineText")])
+        TestIdentifierCollisionDedup._add_colliding_table(base)
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_models(base, output_folder)
+
+        model_file = output_folder / "dynamic" / "models" / "TestTableModel.java"
+        assert model_file.is_file()
+        content = model_file.read_text()
+        assert "package myairtable;" in content
+        assert "public final class TestTableModel implements AirtableModel {" in content
+        # The colliding second table gets its own deduplicated model file.
+        assert (output_folder / "dynamic" / "models" / "TestTableV2Model.java").is_file()
+
+    # ---- computed vs writable accessors ----
+
+    def test_computed_field_is_getter_only_and_absent_from_builder(self, tmp_path: Path):
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert "public MaybeSpecialOrError<Double> getMyFormula() {" in content
+        assert "setMyFormula" not in content
+        builder = self._builder_block(content)
+        assert "myFormula" not in builder
+        assert "look" not in builder
+
+    def test_writable_field_has_getter_setter_and_builder_method(self, tmp_path: Path):
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert "public String getMyText() {" in content
+        assert "public void setMyText(String value) {" in content
+        builder = self._builder_block(content)
+        assert "public Builder myText(String value) {" in builder
+        assert "public TestTableModel build() {" in builder
+
+    # ---- Jackson annotations ----
+
+    def test_json_property_raw_values_are_field_ids(self, tmp_path: Path):
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        for field_id in ("fld001", "fld002", "fld003"):
+            assert f'@JsonProperty("{field_id}")' in content
+
+    def test_wrapper_typed_fields_carry_the_right_deserializer(self, tmp_path: Path):
+        """MaybeSpecialOrError<...> fields use MaybeSpecialOrErrorDeserializer;
+        VecOrValue<...> fields use VecOrValueDeserializer."""
+        import re
+
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert "import com.fasterxml.jackson.databind.annotation.JsonDeserialize;" in content
+        assert re.search(
+            r"@JsonDeserialize\(using = MaybeSpecialOrErrorDeserializer\.class\)\s*\n\s*private MaybeSpecialOrError<Double> myFormula;",
+            content,
+        )
+        assert re.search(
+            r"@JsonDeserialize\(using = VecOrValueDeserializer\.class\)\s*\n\s*private VecOrValue<JsonNode> look;",
+            content,
+        )
+        # The plain writable field carries no deserializer override.
+        assert re.search(r'@JsonProperty\("fld001"\)\s*\n\s*private String myText;', content)
+
+    def test_no_wrapper_fields_omits_json_deserialize_import(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "JsonDeserialize" not in content
+
+    # ---- constructor + plumbing ----
+
+    def test_public_no_arg_constructor_present(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "public TestTableModel() {}" in content
+
+    def test_json_ignore_plumbing_fields_present(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "@JsonIgnore private String id;" in content
+        assert "@JsonIgnore private Instant createdTime;" in content
+        assert "@JsonIgnore private AirtableClient attachedClient;" in content
+        assert "@JsonIgnore private Map<String, JsonNode> snapshot = Map.of();" in content
+
+    # ---- payloads ----
+
+    def test_create_fields_exclude_computed_but_to_record_includes_all(self, tmp_path: Path):
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+
+        create_block = content.split("public Map<String, JsonNode> toCreateFields() {")[1].split("public Map<String, JsonNode> toRecord() {")[0]
+        record_block = content.split("public Map<String, JsonNode> toRecord() {")[1].split("public void takeSnapshot() {")[0]
+
+        assert '"fld001"' in create_block
+        assert '"fld002"' not in create_block, "computed fields must never reach create payloads"
+        assert '"fld003"' not in create_block
+        for field_id in ("fld001", "fld002", "fld003"):
+            assert f'"{field_id}"' in record_block
+
+    def test_snapshot_and_dirty_tracking_present(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "snapshot = toCreateFields();" in content
+        assert "public Map<String, JsonNode> dirtyFields() {" in content
+        assert "dirty.put(key, NullNode.getInstance());" in content
+
+    # ---- TABLE_ID + fluent CRUD ----
+
+    def test_table_id_constant_matches_table_id(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert 'public static final String TABLE_ID = "tblTEST123";' in content
+        assert "public String getTableId() {" in content
+
+    def test_fluent_crud_methods_have_covariant_returns(self, tmp_path: Path):
+        content = self._generate_model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "public TestTableModel save() {" in content
+        assert "return ModelOps.save(this, TestTableModel.class);" in content
+        assert "public TestTableModel fetch() {" in content
+        assert "return ModelOps.fetch(this, TestTableModel.class);" in content
+        assert "public void delete() {" in content
+        assert "ModelOps.delete(this);" in content
+
+    # ---- formula gating (J-F7/J8.8 not yet landed) ----
+
+    def test_no_evaluate_methods_while_transpiler_lacks_java(self, tmp_path: Path):
+        """Until the transpiler grows Java arms (J8.8), no evaluate* methods are
+        emitted even with runtime=True and a transpilable formula present."""
+        from src.generators.java import _transpiler_supports_java
+
+        assert not _transpiler_supports_java(), "transpiler gained java support — assert evaluate* output instead (J8.8)"
+        content = self._generate_model(
+            self.MIXED_SPEC,
+            tmp_path,
+            formula_map={"fld002": '{fld001} & "!"'},
+            runtime=True,
+        )
+        assert "evaluate" not in content
+
+    def test_no_filters_static_while_formula_helpers_unimplemented(self, tmp_path: Path):
+        """Models must not reference the not-yet-generated {Table}Filters classes."""
+        from src.generators import java as java_gen
+
+        assert not java_gen._FORMULA_HELPERS_IMPLEMENTED, "formula helpers landed — assert the `f` static instead (J-F7)"
+        content = self._generate_model(self.MIXED_SPEC, tmp_path, formulas=True)
+        assert "public static final TestTableFilters f" not in content
+        assert "Filters" not in content
+
+    # ---- keyword-named fields ----
+
+    def test_keyword_named_field_uses_underscore_suffix_consistently(self, tmp_path: Path):
+        """A field named `class` renames to `class_` across field, accessors,
+        toCreateFields, and Builder (a raw getClass() would clash with the
+        final Object.getClass())."""
+        content = self._generate_model([("class", "fld001", "singleLineText")], tmp_path)
+        assert "private String class_;" in content
+        assert "public String getClass_() {" in content
+        assert "public void setClass_(String value) {" in content
+        assert "public Builder class_(String value) {" in content
+        assert 'fields.put("fld001", AirtableRuntime.V(class_));' in content
+        assert "public String getClass() {" not in content
+
+    # ---- Javadoc ----
+
+    def test_javadoc_per_field_includes_field_id(self, tmp_path: Path):
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert "/** My Text {@code fld001} */" in content
+        assert "My Formula {@code fld002} - {@code Read-Only}" in content
+        assert "/** Look {@code fld003} - {@code Read-Only} */" in content
+
+    def test_formula_javadoc_embeds_html_escaped_formula_in_pre_block(self, tmp_path: Path):
+        content = self._generate_model(
+            self.MIXED_SPEC,
+            tmp_path,
+            formula_map={"fld002": '{fld001} & "<b>!"'},
+        )
+        assert "<pre>" in content
+        assert "</pre>" in content
+        # Field references render by name; <, >, & are HTML-entity-escaped.
+        assert '{My Text} &amp; "&lt;b&gt;!"' in content
+        assert '& "<b>!"' not in content

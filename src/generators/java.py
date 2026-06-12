@@ -398,7 +398,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # ---------- accessors ----------
             for field in table.fields:
                 prop = _java_ident(prop_names[field.id])
-                pascal = _accessor_pascal(prop_names[field.id])
+                pascal = _accessor_pascal(prop)
                 java_type = field.java_type()
                 write.property_docstring(field, table, indent_level=1)
                 write.line_indented(f"public {java_type} get{pascal}() {{")
@@ -526,7 +526,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     preview = _javadoc_escape(sanitize_string(raw).replace("\n", " ")[:80])
                     write.line_empty()
                     write.doc_comment(f"Evaluate formula locally: {{@code {preview}}}", indent=1)
-                    pascal = _accessor_pascal(prop_names[field.id])
+                    pascal = _accessor_pascal(_java_ident(prop_names[field.id]))
                     write.line_indented(f"public JsonNode evaluate{pascal}() {{")
                     write.line_indented(f"return {formula_code};", indent=2)
                     write.line_indented("}")
@@ -569,7 +569,9 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
 
 def _accessor_pascal(camel: str) -> str:
-    """PascalCase accessor suffix from a deduplicated camelCase property name."""
+    """PascalCase accessor suffix from a deduplicated, keyword-renamed camelCase
+    property name (pass the `_java_ident` output so a field named `class` yields
+    `getClass_`, not a clash with the final `Object.getClass()`)."""
     if not camel:
         return camel
     return camel[0].upper() + camel[1:]
