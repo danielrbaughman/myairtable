@@ -13,6 +13,7 @@ Languages supported:
 - Rust (via a custom-built client)
 - Swift (via a custom-built client)
 - Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
+- Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
 
 ### Kotlin
 
@@ -37,6 +38,31 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.2.3")
 }
 ```
+
+### Java
+
+The generated Java code targets **Java 21+** (sealed interfaces, records, pattern-matching switch) and is a plain blocking API (cheap on virtual threads). It only needs Jackson databind on the classpath:
+
+```kotlin
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+sourceSets {
+    main {
+        java.srcDir("path/to/generated/output") // wherever you generate into
+    }
+}
+
+dependencies {
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+}
+```
+
+> [!IMPORTANT]
+> Do NOT register `jackson-datatype-jsr310` (or call `findAndRegisterModules()`) on the runtime's mapper — the bundled `AirtableJacksonModule` owns `Instant`/`Duration` encoding (Airtable durations are numeric seconds, not ISO `PT…` strings).
+
+Models are mutable POJOs created through a generated `Builder` (the Java analog of the other targets' named arguments): `PrimaryModel.builder().primaryKey("x").build()`. Bulk deletes are named `deleteAll(ids)` / `deleteModels(models)` because Java's type erasure forbids overloading `delete(List<String>)` against `delete(List<Model>)`.
 
 ## Features
 
@@ -68,7 +94,7 @@ name = contact.name
 > [!NOTE]
 > For JavaScript & TypeScript, the ORM models are custom to myAirtable, though they still use the Airtable.js client for save/delete, and contain methods for conversion to/from Airtable.js's "Record" class. Also, they use [Zod](https://zod.dev) validation under-the-hood.
 >
-> For Rust, Swift, and Kotlin, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
+> For Rust, Swift, Kotlin, and Java, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
 
 ### Formula Builders
 
@@ -89,7 +115,7 @@ Airtable().contacts.get(formula=formula)
 ```
 
 > [!NOTE]
-> For JavaScript, TypeScript, Rust, Swift, and Kotlin, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin names the equality pair `eq`/`neq` — `equals` collides with `Any.equals` on the JVM.)
+> For JavaScript, TypeScript, Rust, Swift, Kotlin, and Java, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin and Java name the equality pair `eq`/`neq` — `equals` collides with `Any.equals`/`Object.equals` on the JVM.)
 
 ### Table/CRUD Wrappers
 
