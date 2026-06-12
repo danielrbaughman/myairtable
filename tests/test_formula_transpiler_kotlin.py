@@ -72,13 +72,14 @@ class TestKotlinEmitter:
     # --- Comparisons ---
 
     def test_numeric_equality(self):
-        # Both sides wrapped as JsonElement so == compares JSON values.
+        # Numeric equality compares through N() on BOTH sides — JsonPrimitive
+        # content equality would make Double "5.0" != Int "5" (myairtable-4929).
         result = self._transpile("{fld1} = 5")
-        assert result == "JsonPrimitive(JsonPrimitive(N(V(this.myField))) == JsonPrimitive(5))"
+        assert result == "JsonPrimitive(N(V(this.myField)) == N(JsonPrimitive(5)))"
 
     def test_string_equality(self):
         result = self._transpile('{fld1} = "hi"')
-        assert result == 'JsonPrimitive(JsonPrimitive(S(V(this.myField))) == JsonPrimitive("hi"))'
+        assert result == 'JsonPrimitive(S(V(this.myField)) == S(JsonPrimitive("hi")))'
 
     def test_greater_than(self):
         # Numeric comparisons unwrap both sides to Double.
@@ -202,3 +203,18 @@ class TestKotlinEmitter:
     def test_log10_maps_to_log(self):
         result = self._transpile("LOG10({fld1})")
         assert result == "AirtableRuntime.LOG(V(this.myField))"
+
+    def test_numeric_inequality_coerces_both_sides(self):
+        result = self._transpile("{fld1} != 5")
+        assert result == "JsonPrimitive(N(V(this.myField)) != N(JsonPrimitive(5)))"
+
+    def test_field_vs_field_equality_without_inferable_type_stays_raw(self):
+        # Neither side is inferable — falls back to raw JsonElement equality
+        # (cross-target parity with Swift/Rust raw comparisons).
+        result = self._transpile("{fld1} = {fld2}")
+        assert result == "JsonPrimitive(V(this.myField) == V(this.otherField))"
+
+    def test_field_vs_numeric_expression_equality_coerces(self):
+        # An arithmetic side infers numeric -> both sides N-coerced.
+        result = self._transpile("{fld1} = {fld2} + 1")
+        assert "JsonPrimitive(N(V(this.myField)) == N(" in result

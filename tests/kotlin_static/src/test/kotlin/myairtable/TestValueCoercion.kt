@@ -155,3 +155,31 @@ class TestValueCoercion {
 
     // endregion
 }
+
+/**
+ * myairtable-4929 regression — the emitted equality shapes must EVALUATE
+ * correctly: JsonPrimitive content equality made Double "5.0" != Int "5",
+ * so =/!= route through N()/S() coercion on both sides.
+ */
+class TestTranspiledEqualityShapes {
+    @Test
+    fun numericEqualityShapeIsTrueForWholeNumberFields() {
+        // {field} = 5 with field holding 5.0 — the pre-fix shape was constant-false.
+        assertTrue(N(V(5.0)) == N(JsonPrimitive(5)))
+        assertTrue(N(V(5)) == N(JsonPrimitive(5)))
+        assertFalse(N(V(4.0)) == N(JsonPrimitive(5)))
+    }
+
+    @Test
+    fun numericInequalityShapeIsFalseForEqualValues() {
+        assertFalse(N(V(5.0)) != N(JsonPrimitive(5)))
+        assertTrue(N(V(4.0)) != N(JsonPrimitive(5)))
+    }
+
+    @Test
+    fun stringEqualityShapeCoercesBothSides() {
+        assertTrue(S(V("hi")) == S(JsonPrimitive("hi")))
+        assertTrue(S(V(5.0)) == S(JsonPrimitive(5)), "S() collapses 5.0 to '5'")
+        assertFalse(S(V("hi")) == S(JsonPrimitive("ho")))
+    }
+}

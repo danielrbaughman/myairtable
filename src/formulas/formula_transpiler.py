@@ -1118,12 +1118,6 @@ class CodeEmitter:
             if other_type == "number" and node_type != "number":
                 return f".double({self._runtime}.N({self.emit(node)}))"
             return self.emit(node)
-        if self.language == "kotlin":
-            if other_type == "string" and node_type != "string":
-                return f"JsonPrimitive(S({self.emit(node)}))"
-            if other_type == "number" and node_type != "number":
-                return f"JsonPrimitive(N({self.emit(node)}))"
-            return self.emit(node)
         if other_type == "string" and node_type != "string":
             return f"{self._runtime}.S({self.emit(node)})"
         if other_type == "number" and node_type != "number":
@@ -1152,15 +1146,25 @@ class CodeEmitter:
                 return f"JsonPrimitive({left} {node.op} {right})"
             return f"({left} {node.op} {right})"
         if node.op in ("=", "!="):
+            native_op = "==" if node.op == "=" else "!="
+            if self.language == "kotlin":
+                # JsonPrimitive equality compares content STRINGS, so a Double
+                # side ("5.0") never equals an Int literal ("5"). When either
+                # side's type is inferable, compare through the N()/S()
+                # coercions instead of raw JsonElement equality (myairtable-4929).
+                left_type = self._infer_type(node.left)
+                right_type = self._infer_type(node.right)
+                if "number" in (left_type, right_type):
+                    return f"JsonPrimitive(N({self.emit(node.left)}) {native_op} N({self.emit(node.right)}))"
+                if "string" in (left_type, right_type):
+                    return f"JsonPrimitive(S({self.emit(node.left)}) {native_op} S({self.emit(node.right)}))"
+                return f"JsonPrimitive({self.emit(node.left)} {native_op} {self.emit(node.right)})"
             left = self._emit_eq_operand(node.left, node.right)
             right = self._emit_eq_operand(node.right, node.left)
-            native_op = "==" if node.op == "=" else "!="
             if self.language == "rust":
                 return f"Value::Bool({left} {native_op} {right})"
             if self.language == "swift":
                 return f".bool({left} {native_op} {right})"
-            if self.language == "kotlin":
-                return f"JsonPrimitive({left} {native_op} {right})"
             return f"({left} {native_op} {right})"
         if node.op == "&":
             if self.language == "rust":
