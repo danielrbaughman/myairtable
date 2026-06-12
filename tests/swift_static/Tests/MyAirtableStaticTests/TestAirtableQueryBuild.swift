@@ -152,3 +152,18 @@ struct TestClientUrlEncoding {
         #expect(query.contains("%2B"), "expected %2B in: \(query)")
     }
 }
+
+// myairtable-p7eb — multi-page payloads (live offset token) must not be cached.
+@Suite("List-cache offset probe")
+struct TestContinuationOffsetProbe {
+    @Test func payloadWithOffsetIsDetected() {
+        let data = Data(#"{"records": [], "offset": "itrAbc/recDef"}"#.utf8)
+        #expect(AirtableClient.hasContinuationOffset(data))
+    }
+
+    @Test func completePayloadIsNotFlagged() {
+        #expect(!AirtableClient.hasContinuationOffset(Data(#"{"records": []}"#.utf8)))
+        #expect(!AirtableClient.hasContinuationOffset(Data(#"{"records": [], "offset": ""}"#.utf8)))
+        #expect(!AirtableClient.hasContinuationOffset(Data("not json".utf8)))
+    }
+}

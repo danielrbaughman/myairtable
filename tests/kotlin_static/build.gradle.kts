@@ -33,6 +33,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.2.3")
 
     testImplementation(kotlin("test"))
+    testImplementation("io.ktor:ktor-client-mock:3.2.3")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
 

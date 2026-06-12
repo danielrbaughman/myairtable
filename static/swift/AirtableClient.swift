@@ -195,8 +195,24 @@ public actor AirtableClient {
         let url = try tableURL(tableId, query: query.toQueryItems())
         let req = authorized(url)
         let data = try await send(req)
-        await cache.set(key, payload: data)
+        // Multi-page payloads carry a server-side `offset` continuation token
+        // that expires after a few minutes — caching one would serve a dead
+        // token on the next hit (myairtable-p7eb). Cache single pages only.
+        if !Self.hasContinuationOffset(data) {
+            await cache.set(key, payload: data)
+        }
         return data
+    }
+
+    private struct OffsetProbe: Decodable {
+        let offset: String?
+    }
+
+    static func hasContinuationOffset(_ payload: Data) -> Bool {
+        guard let probe = try? JSONDecoder().decode(OffsetProbe.self, from: payload) else {
+            return false
+        }
+        return (probe.offset?.isEmpty == false)
     }
 
     /// GET a single record. Returns raw response bytes (envelope:

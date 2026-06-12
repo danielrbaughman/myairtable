@@ -18,6 +18,7 @@ import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
 import kotlinx.coroutines.delay
+import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import kotlin.time.Duration.Companion.seconds
 
@@ -178,9 +179,26 @@ class AirtableClient(
         val key = CacheStore.Key(tableId = tableId, keyedOn = cacheKeyForQuery(query))
         cache.get(key)?.let { return it }
         val payload = send(HttpMethod.Get, tableUrl(tableId, query.toParameters()))
-        cache.set(key, payload)
+        // Multi-page payloads carry a server-side `offset` continuation token
+        // that expires after a few minutes — caching one would serve a dead
+        // token on the next hit and fail the follow-up page fetch
+        // (myairtable-p7eb). Cache complete single-page payloads only.
+        if (!hasContinuationOffset(payload)) {
+            cache.set(key, payload)
+        }
         return payload
     }
+
+    @Serializable
+    private data class OffsetProbe(
+        val offset: String? = null,
+    )
+
+    private fun hasContinuationOffset(payload: String): Boolean =
+        runCatching { AirtableJson.instance.decodeFromString<OffsetProbe>(payload).offset }
+            .getOrNull()
+            .isNullOrEmpty()
+            .not()
 
     /**
      * GET a single record. Returns the raw response (envelope:
