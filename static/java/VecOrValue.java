@@ -23,25 +23,22 @@ public sealed interface VecOrValue<T> permits VecOrValue.Single, VecOrValue.Mult
   /** A single scalar value. */
   record Single<T>(T value) implements VecOrValue<T> {}
 
-  /** A list of values; entries can be {@code null} (Airtable emits sparse lookup arrays). */
-  record Multiple<T>(List<T> values) implements VecOrValue<T> {}
-
   /**
-   * All values as a list: a {@link Single} yields a one-element list, a {@link Multiple} yields its
-   * entries (including {@code null}s). DX helper mirroring Kotlin's {@code VecOrValue<T>.values}.
+   * A list of values whose entries can be {@code null} — Airtable emits sparse lookup arrays. The
+   * {@code values()} record accessor returns the RAW list (nulls preserved); for the null- and
+   * sentinel-free path use {@link VecOrValue#cleanValues}.
+   *
+   * <p>(There is intentionally no uniform filtered {@code values()} on the interface: a record
+   * component named {@code values} already owns that method, so a same-named interface default
+   * would be shadowed on {@code Multiple} — JR-M7. Access raw entries by pattern-matching the two
+   * shapes, or use {@code cleanValues} for the common typed-unwrap.)
    */
-  default List<T> values() {
-    return switch (this) {
-      case Single<T> s ->
-          s.value() == null ? List.of() : java.util.Collections.singletonList(s.value());
-      case Multiple<T> m -> m.values() == null ? List.of() : m.values();
-    };
-  }
+  record Multiple<T>(List<T> values) implements VecOrValue<T> {}
 
   /**
    * All clean values — non-null, non-special, non-error — regardless of the single/list shape. A
    * {@code null} receiver yields an empty list; {@code null} entries and special/error sentinels
-   * are dropped.
+   * are dropped, so the result is always safe to iterate.
    *
    * <p>DX helper mirroring Kotlin's {@code VecOrValue<MaybeSpecialOrError<T>>?.cleanValues} for
    * generated lookup/rollup computed fields: {@code VecOrValue.cleanValues(model.getScores())}
@@ -53,8 +50,14 @@ public sealed interface VecOrValue<T> permits VecOrValue.Single, VecOrValue.Mult
     if (field == null) {
       return List.of();
     }
+    List<MaybeSpecialOrError<T>> raw =
+        switch (field) {
+          case Single<MaybeSpecialOrError<T>> s ->
+              s.value() == null ? List.of() : java.util.Collections.singletonList(s.value());
+          case Multiple<MaybeSpecialOrError<T>> m -> m.values() == null ? List.of() : m.values();
+        };
     List<T> clean = new java.util.ArrayList<>();
-    for (MaybeSpecialOrError<T> entry : field.values()) {
+    for (MaybeSpecialOrError<T> entry : raw) {
       if (entry != null && entry.value() != null) {
         clean.add(entry.value());
       }

@@ -1,6 +1,7 @@
 package myairtable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -159,6 +160,26 @@ class TestDxHelpers {
                   new MaybeSpecialOrError.Value<>(2.0),
                   new MaybeSpecialOrError.Error<>(new ErrorValue("#ERROR!"))));
       assertEquals(List.of(1.0, 2.0), VecOrValue.cleanValues(field));
+    }
+
+    @Test
+    void multipleValuesIsRawAndCleanValuesIsNullSafe() {
+      // JR-M7: the Multiple record accessor returns the RAW list (nulls kept) —
+      // a same-named filtered interface default is impossible (shadowed). The
+      // null-safe path is cleanValues, which drops null/special/error entries.
+      VecOrValue.Multiple<String> raw = new VecOrValue.Multiple<>(Arrays.asList("a", null, "b"));
+      assertEquals(Arrays.asList("a", null, "b"), raw.values());
+
+      VecOrValue<MaybeSpecialOrError<String>> field =
+          new VecOrValue.Multiple<>(
+              Arrays.asList(
+                  new MaybeSpecialOrError.Value<>("a"),
+                  null,
+                  new MaybeSpecialOrError.Value<>("b")));
+      for (String v : VecOrValue.cleanValues(field)) {
+        assertNotNull(v);
+      }
+      assertEquals(List.of("a", "b"), VecOrValue.cleanValues(field));
     }
   }
 

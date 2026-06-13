@@ -225,6 +225,12 @@ public final class AirtableQuery {
     return withView(view.getId());
   }
 
+  /**
+   * Whether the response keys fields by ID (default {@code true}). <b>Leave this {@code true} for
+   * typed ORM reads</b> — generated models decode by field ID ({@code @JsonProperty("fld...")}), so
+   * a name-keyed response (false) silently decodes every field to {@code null}. Set {@code false}
+   * only when reading raw name-keyed {@link Fields} via the dict layer.
+   */
   public AirtableQuery withReturnFieldsByFieldId(boolean returnFieldsByFieldId) {
     return new AirtableQuery(
         formula,
@@ -239,6 +245,11 @@ public final class AirtableQuery {
         userLocale);
   }
 
+  /**
+   * Cell value format (default {@link CellFormat#JSON}). <b>Leave this JSON for typed ORM reads</b>
+   * — {@code STRING} returns every cell as a formatted string, which won't decode into the typed
+   * model fields. Use {@code STRING} only with the raw dict layer.
+   */
   public AirtableQuery withCellFormat(CellFormat cellFormat) {
     return new AirtableQuery(
         formula,

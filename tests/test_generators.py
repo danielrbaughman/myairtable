@@ -2618,6 +2618,58 @@ class TestJavaModels:
         assert 'fields.put("fld001", AirtableRuntime.V(class_));' in content
         assert "public String getClass() {" not in content
 
+    def test_reserved_model_member_names_are_renamed(self, tmp_path: Path):
+        """JR-M2: a field whose camel collides with a generated model member
+        (`f` static Filters accessor, `snapshot`/`attachedClient`/`id`/
+        `createdTime` plumbing) is suffixed `Field` so it can't be a duplicate
+        field; a name that camels to empty falls back to `field`."""
+        import re
+
+        content = self._generate_model(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("f", "fld002", "singleLineText"),
+                ("Snapshot", "fld003", "singleLineText"),
+                ("Attached Client", "fld004", "singleLineText"),
+                ("_", "fld005", "singleLineText"),
+            ],
+            tmp_path,
+            formulas=True,
+        )
+        # No duplicate private field declaration (the bug would emit two `f` etc.).
+        decls = re.findall(r"private \S+ (\w+);", content)
+        assert len(decls) == len(set(decls)), f"duplicate field decls: {decls}"
+        assert "private String fField;" in content
+        assert "private String snapshotField;" in content
+        assert "private String attachedClientField;" in content
+        assert "private String field;" in content  # `_` -> field
+        # The static Filters accessor `f` still exists, now unambiguous.
+        assert "public static final TestTableFilters f = new TestTableFilters();" in content
+
+    def test_builder_build_returns_an_independent_instance(self, tmp_path: Path):
+        """JR-M3: build() must copy into a fresh model so a reused builder is a
+        safe template — the old `return model;` aliased every build()."""
+        content = self._generate_model(
+            [("Primary Key", "fld001", "singleLineText"), ("My Text", "fld002", "singleLineText")],
+            tmp_path,
+        )
+        assert "private final TestTableModel template = new TestTableModel();" in content
+        assert "TestTableModel result = new TestTableModel();" in content
+        assert "result.primaryKey = template.primaryKey;" in content
+        assert "result.myText = template.myText;" in content
+        assert "return result;" in content
+        assert "return model;" not in content
+
+    def test_reserved_table_accessor_renamed(self, tmp_path: Path):
+        """JR-M2: a table named `Client` would give the Airtable class a table
+        accessor `client` colliding with its `AirtableClient client` field."""
+        from src.generators.java import _table_property
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        base.tables[0].name = "Client"
+        base.tables[0].__pydantic_private__["_pascal"] = None
+        assert _table_property(base.tables[0]) == "clientTable"
+
     # ---- Javadoc ----
 
     def test_javadoc_per_field_includes_field_id(self, tmp_path: Path):

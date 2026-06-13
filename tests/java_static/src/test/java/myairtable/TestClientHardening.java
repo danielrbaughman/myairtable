@@ -124,7 +124,50 @@ class TestClientHardening {
     assertThrows(AirtableException.MissingCredentials.class, () -> new AirtableClient("  ", "key"));
   }
 
+  @Test
+  void nonPositiveTimeoutThrowsAtConstruction() {
+    // JR-M11: validate up front so a bad config fails here with a clear message,
+    // not as a raw IllegalArgumentException from inside send().
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new AirtableClient(
+                "appX",
+                "key",
+                "https://api.airtable.com/v0",
+                new CacheStore(),
+                3,
+                0.5,
+                30.0,
+                0.0,
+                null));
+  }
+
+  @Test
+  void nullCacheThrowsAtConstruction() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new AirtableClient(
+                "appX", "key", "https://api.airtable.com/v0", null, 3, 0.5, 30.0, 30.0, null));
+  }
+
   // ---- Retry behavior ----
+
+  @Test
+  void negativeRetryAfterIsFlooredAndDoesNotThrow() {
+    // JR-M4: a negative numeric Retry-After must never reach Thread.sleep (which
+    // would throw IllegalArgumentException and escape the AirtableException
+    // contract). It is floored to 0 → immediate retry, then success.
+    FakeTransport transport = flakyTransport(1, "-5");
+    AirtableClient client = client(transport, 3, 0.1, 30.0);
+    long start = System.nanoTime();
+    String payload = client.listRecords("tbl1", new AirtableQuery());
+    long elapsed = elapsedMillis(start);
+    assertEquals(OK_BODY, payload);
+    assertEquals(2, transport.callCount());
+    assertTrue(elapsed < 5000, "floored Retry-After must retry promptly, got " + elapsed + "ms");
+  }
 
   @Test
   void rateLimitedThenSuccessRetriesWithJitteredBackoff() {

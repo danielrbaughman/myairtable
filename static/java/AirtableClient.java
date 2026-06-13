@@ -93,6 +93,27 @@ public final class AirtableClient implements AutoCloseable {
     if (apiKey == null || apiKey.isBlank() || baseId == null || baseId.isBlank()) {
       throw new AirtableException.MissingCredentials();
     }
+    // Validate numeric config up front so a bad value fails at construction with
+    // a clear message, rather than as a raw IllegalArgumentException from inside
+    // send() (e.g. HttpRequest.timeout rejects a non-positive Duration) (JR-M11).
+    if (cache == null) {
+      throw new IllegalArgumentException(
+          "cache must not be null; use new CacheStore() to disable caching");
+    }
+    if (requestTimeoutSeconds <= 0) {
+      throw new IllegalArgumentException(
+          "requestTimeoutSeconds must be positive, got " + requestTimeoutSeconds);
+    }
+    if (maxRetries < 0) {
+      throw new IllegalArgumentException("maxRetries must be >= 0, got " + maxRetries);
+    }
+    if (baseRetryDelaySeconds < 0 || maxRetryDelaySeconds < 0) {
+      throw new IllegalArgumentException(
+          "retry delays must be >= 0, got base="
+              + baseRetryDelaySeconds
+              + " max="
+              + maxRetryDelaySeconds);
+    }
     this.baseId = baseId;
     this.apiKey = apiKey;
     this.apiBase = apiBase;
@@ -244,8 +265,11 @@ public final class AirtableClient implements AutoCloseable {
       if (isRetryable && attempt < maxRetries) {
         double waitSeconds;
         if (retryAfterSeconds != null) {
-          // Honor a server-provided Retry-After exactly (no jitter), capped.
-          waitSeconds = Math.min(retryAfterSeconds, maxRetryDelaySeconds);
+          // Honor a server-provided Retry-After exactly (no jitter), capped, and
+          // floored at 0 — a negative/garbage numeric header must never reach
+          // Thread.sleep, which would throw IllegalArgumentException and escape
+          // the "catch AirtableException covers every failure" contract (JR-M4).
+          waitSeconds = Math.min(Math.max(0.0, retryAfterSeconds), maxRetryDelaySeconds);
         } else {
           double backoff = baseRetryDelaySeconds * Math.pow(2.0, attempt);
           waitSeconds = Math.min(backoff * (0.5 + random.nextDouble() * 0.5), maxRetryDelaySeconds);

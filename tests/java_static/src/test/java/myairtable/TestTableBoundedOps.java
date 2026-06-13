@@ -297,4 +297,56 @@ class TestTableBoundedOps {
       assertSame(model, result);
     }
   }
+
+  @Nested
+  class TestPagination {
+    /** Page 1 carries an offset token; page 2 is the final page (no offset). */
+    private FakeTransport pagedTransport() {
+      return new FakeTransport(
+          (request, callIndex) -> {
+            if (callIndex == 0) {
+              return FakeTransport.Canned.ok(
+                  "{\"records\": [{\"id\": \"rec01\", \"fields\": {\"fldName\": \"a\"}},"
+                      + " {\"id\": \"rec02\", \"fields\": {\"fldName\": \"b\"}}],"
+                      + " \"offset\": \"tok-page2\"}");
+            }
+            return FakeTransport.Canned.ok(
+                "{\"records\": [{\"id\": \"rec03\", \"fields\": {\"fldName\": \"c\"}}]}");
+          });
+    }
+
+    @Test
+    void ormGetFollowsOffsetMergesPagesInOrderAndTerminates() {
+      // JR-M9: the offset loop must page until no offset, carrying the original
+      // query params alongside the continuation token, and merge in arrival order.
+      FakeTransport transport = pagedTransport();
+      OrmTable<BoundedOpsStubModel> table =
+          new OrmTable<>("tblStub", BoundedOpsStubModel.class, clientWith(transport));
+
+      List<BoundedOpsStubModel> models =
+          table.get(new AirtableQuery().withFormula("{fldName}!=BLANK()"));
+
+      assertEquals(
+          List.of("rec01", "rec02", "rec03"),
+          models.stream().map(BoundedOpsStubModel::getId).toList());
+      assertEquals(2, transport.requestHistory().size(), "exactly two pages fetched");
+      // Page 2 carries the continuation token AND the original filter.
+      String page2 = transport.requestHistory().get(1).uri().toString();
+      assertTrue(page2.contains("offset=tok-page2"), "page 2 must carry the offset: " + page2);
+      assertTrue(
+          page2.contains("filterByFormula"), "page 2 must keep the original query: " + page2);
+    }
+
+    @Test
+    void dictGetFollowsOffsetAndTerminates() {
+      FakeTransport transport = pagedTransport();
+      DictTable table = new DictTable("tblStub", Map.of(), clientWith(transport));
+
+      List<DictTable.Record> records = table.get(new AirtableQuery());
+
+      assertEquals(
+          List.of("rec01", "rec02", "rec03"), records.stream().map(DictTable.Record::id).toList());
+      assertEquals(2, transport.requestHistory().size());
+    }
+  }
 }

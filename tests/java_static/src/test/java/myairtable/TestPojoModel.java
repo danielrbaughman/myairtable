@@ -165,7 +165,8 @@ class TestPojoModel {
     assertEquals(Instant.parse("2024-01-15T10:30:00Z"), model.getDate());
     assertEquals(Duration.ofSeconds(90), model.getDuration());
     assertEquals(7L, model.getAutoNumber().value());
-    assertEquals(2, model.getLookup().values().size());
+    assertEquals(
+        2, ((VecOrValue.Multiple<MaybeSpecialOrError<String>>) model.getLookup()).values().size());
   }
 
   @Test

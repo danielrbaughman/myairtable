@@ -151,11 +151,12 @@ class TestSpecialErrorDecoding {
     assertEquals(1, ((VecOrValue.Multiple<MaybeSpecialOrError<String>>) v).values().size());
     assertEquals(
         List.of("Stukenholtz Laboratory Inc"),
-        v.values().stream()
-            .filter(Objects::nonNull)
-            .map(MaybeSpecialOrError::value)
-            .filter(Objects::nonNull)
-            .toList());
+        ((VecOrValue.Multiple<MaybeSpecialOrError<String>>) v)
+            .values().stream()
+                .filter(Objects::nonNull)
+                .map(MaybeSpecialOrError::value)
+                .filter(Objects::nonNull)
+                .toList());
   }
 
   @Test
@@ -175,7 +176,9 @@ class TestSpecialErrorDecoding {
     assertEquals(2, items.size());
     // Java's values() preserves null entries (unlike Kotlin's filterNotNull helper):
     // the flattened non-null view is empty.
-    assertTrue(v.values().stream().filter(Objects::nonNull).toList().isEmpty());
+    assertTrue(
+        ((VecOrValue.Multiple<MaybeSpecialOrError<String>>) v)
+            .values().stream().filter(Objects::nonNull).toList().isEmpty());
   }
 
   @Test

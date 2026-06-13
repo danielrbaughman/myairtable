@@ -41,6 +41,14 @@ public final class CacheStore {
    */
   private record Entry(String payload, long insertedAtMillis) {}
 
+  /**
+   * Default LRU cap for the TTL-only constructor. Expiry is lazy (an entry is only reclaimed on
+   * access), so without a cap a long-lived client that issues many distinct queries would
+   * accumulate raw JSON payloads indefinitely (JR-M5). The full constructor still accepts {@code
+   * null} to opt into an unbounded cache deliberately.
+   */
+  public static final int DEFAULT_MAX_ENTRIES = 10_000;
+
   private final double defaultTtlSeconds;
   private final Integer maxEntries;
   private final LongSupplier nowMillis;
@@ -54,8 +62,9 @@ public final class CacheStore {
     this(0.0, null);
   }
 
+  /** A TTL cache with the {@link #DEFAULT_MAX_ENTRIES} LRU cap. */
   public CacheStore(double defaultTtlSeconds) {
-    this(defaultTtlSeconds, null);
+    this(defaultTtlSeconds, DEFAULT_MAX_ENTRIES);
   }
 
   public CacheStore(double defaultTtlSeconds, Integer maxEntries) {

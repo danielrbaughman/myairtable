@@ -31,7 +31,6 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     deduplicate_identifiers,
-    deduplicated_field_property_map,
     deduplicated_table_prefix_map,
     reset_folder,
     sanitize_string,
@@ -111,6 +110,21 @@ _FORMULA_STATIC_FILES = [
 ]
 
 
+# Generated-model member names a field property must not collide with. Java
+# puts fields in ONE namespace regardless of `static`, so a field whose camel is
+# `f` (the static {Table}Filters accessor) or one of the @JsonIgnore plumbing
+# fields would be a duplicate-field compile error. id/createdTime are normally
+# pre-renamed by sanitize_reserved_names but are reserved here defensively.
+# (Generated METHODS like builder/save/toRecord share Java's separate method
+# namespace, so a same-named field is legal and needs no reservation.)
+_JAVA_RESERVED_MODEL_MEMBERS = frozenset({"f", "snapshot", "attachedClient", "id", "createdTime"})
+
+# Airtable-class field names a table accessor must not collide with. `client` is
+# a field; `close`/`invalidateAllCaches` are methods whose signatures a same-named
+# table accessor would clash with (different return type, same erasure).
+_JAVA_RESERVED_TABLE_PROPS = frozenset({"client", "close", "invalidateAllCaches"})
+
+
 def _field_property_map(table: Table) -> dict[str, str]:
     """`{field_id: deduplicated lowerCamelCase property name}` for one table.
 
@@ -118,21 +132,30 @@ def _field_property_map(table: Table) -> dict[str, str]:
     transpiler's field_name_map) consumes this same map so colliding field
     names ("My Field" / "my field") deduplicate consistently to `myField` /
     `myFieldV2`. Keyword renaming (`_java_ident`) is applied at call sites.
+
+    Java-local (not the shared helper) because it additionally (a) suffixes
+    names colliding with generated model members (JR-M2) and (b) falls back to
+    `field` for a name that camels to empty (e.g. `_`/`.`), then re-deduplicates
+    so a rename can't re-collide with another field.
     """
-    return deduplicated_field_property_map(table)
+    raw = [field.name_camel() or "field" for field in table.fields]
+    adjusted = [f"{c}Field" if c in _JAVA_RESERVED_MODEL_MEMBERS else c for c in raw]
+    deduped = deduplicate_identifiers(adjusted, suffix="V")
+    return {field.id: name for field, name in zip(table.fields, deduped)}
 
 
 def _table_type_prefix(table: Table) -> str:
     """PascalCase prefix used for generated types (e.g. `Primary`), deduplicated per base."""
-    return deduplicated_table_prefix_map(table.base)[table.id]
+    return deduplicated_table_prefix_map(table.base)[table.id] or "Table"
 
 
 def _table_property(table: Table) -> str:
     """lowerCamelCase accessor-method name on the Airtable class (e.g. `primary`)."""
     pascal = _table_type_prefix(table)
-    if not pascal:
-        return "table"
-    return _java_ident(pascal[0].lower() + pascal[1:])
+    prop = pascal[0].lower() + pascal[1:]
+    if prop in _JAVA_RESERVED_TABLE_PROPS:
+        prop = f"{prop}Table"
+    return _java_ident(prop)
 
 
 # =============================================================================
@@ -564,7 +587,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_empty()
 
             # ---------- fluent CRUD ----------
-            write.doc_comment("Persist this model's dirty fields back to Airtable (requires a saved record).", indent=1)
+            write.doc_comment(
+                [
+                    "Persist this model's dirty fields back to Airtable (requires a saved record).",
+                    "Returns a FRESH instance with a reset snapshot; this receiver keeps its",
+                    "pre-save snapshot, so continue with the returned model.",
+                ],
+                indent=1,
+            )
             write.line_indented(f"public {model_name} save() {{")
             write.line_indented(f"return ModelOps.save(this, {model_name}.class);", indent=2)
             write.line_indented("}")
@@ -617,11 +647,15 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     f"Builder for fresh {{@code {model_name}}} instances — writable fields only",
                     "(computed fields are server-owned). The Java analog of the other targets'",
                     "named-argument construction.",
+                    "",
+                    "Each {@code build()} returns an INDEPENDENT instance, so a builder may be",
+                    "reused as a template and mutating it afterwards never affects already-built",
+                    "models.",
                 ],
                 indent=1,
             )
             write.line_indented("public static final class Builder {")
-            write.line_indented(f"private final {model_name} model = new {model_name}();", indent=2)
+            write.line_indented(f"private final {model_name} template = new {model_name}();", indent=2)
             write.line_empty()
             write.line_indented("private Builder() {}", indent=2)
             for field in writable_fields:
@@ -629,12 +663,17 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.line_empty()
                 write.property_docstring(field, table, indent_level=2)
                 write.line_indented(f"public Builder {prop}({field.java_type()} value) {{", indent=2)
-                write.line_indented(f"model.{prop} = value;", indent=3)
+                write.line_indented(f"template.{prop} = value;", indent=3)
                 write.line_indented("return this;", indent=3)
                 write.line_indented("}", indent=2)
             write.line_empty()
+            write.doc_comment("A fresh model carrying the builder's current writable values.", indent=2)
             write.line_indented(f"public {model_name} build() {{", indent=2)
-            write.line_indented("return model;", indent=3)
+            write.line_indented(f"{model_name} result = new {model_name}();", indent=3)
+            for field in writable_fields:
+                prop = _java_ident(prop_names[field.id])
+                write.line_indented(f"result.{prop} = template.{prop};", indent=3)
+            write.line_indented("return result;", indent=3)
             write.line_indented("}", indent=2)
             write.line_indented("}", indent=1)
             write.close()

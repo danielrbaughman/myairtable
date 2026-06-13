@@ -48,9 +48,13 @@ public interface AirtableModel {
   }
 
   /**
-   * Capture the current writable field values as a snapshot. Called after decode and after a
-   * successful save so subsequent {@link #dirtyFields()} computes the diff relative to server
-   * state.
+   * Capture the current writable field values as a snapshot, so subsequent {@link #dirtyFields()}
+   * computes the diff relative to this point. The table takes a snapshot on every decode (after
+   * {@code get}/{@code create}/{@code update}), so a model obtained from a table starts clean.
+   *
+   * <p>Note: a save returns a FRESH, freshly-snapshotted instance; the model you called {@code
+   * save()} on keeps its pre-save snapshot, so re-saving it re-sends the same changes. Use the
+   * returned instance for further edits.
    */
   void takeSnapshot();
 

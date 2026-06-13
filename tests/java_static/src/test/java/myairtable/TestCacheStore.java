@@ -42,6 +42,14 @@ class TestCacheStore {
   }
 
   @Test
+  void ttlOnlyConstructorAppliesADefaultLruCap() {
+    // JR-M5: a long-lived TTL cache must be bounded — the TTL-only ctor applies
+    // DEFAULT_MAX_ENTRIES rather than growing without limit (expiry is lazy).
+    CacheStore cache = new CacheStore(60.0);
+    assertEquals(CacheStore.DEFAULT_MAX_ENTRIES, cache.getMaxEntries());
+  }
+
+  @Test
   void expiredEntryIsEvictedOnAccess() {
     AtomicLong now = new AtomicLong(0L);
     CacheStore cache = new CacheStore(1.0, null, now::get);
