@@ -1430,6 +1430,28 @@ class TestKotlinComputedFields:
         content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
         assert "var myText: String? = null," in content
 
+    def test_reserved_model_member_names_are_renamed(self, tmp_path: Path):
+        """JR follow-up: a field whose camel collides with a plumbing member
+        (`snapshot`/`attachedClient`) is suffixed `Field` so it isn't a Kotlin
+        redeclaration error; a fully-symbolic name falls back to `field`."""
+        import re
+
+        content = self._generate(
+            [
+                ("Snapshot", "fld001", "singleLineText"),
+                ("Attached Client", "fld002", "singleLineText"),
+                ("_", "fld003", "singleLineText"),
+            ],
+            tmp_path,
+        )
+        # The plumbing members appear exactly once each (the field versions are renamed).
+        assert len(re.findall(r"\bvar snapshot\b", content)) == 1
+        assert len(re.findall(r"\bvar attachedClient\b", content)) == 1
+        assert "var snapshotField: String? = null," in content
+        assert "var attachedClientField: String? = null," in content
+        assert "var field: String? = null," in content  # `_` -> field
+        assert "``" not in content  # no empty backtick identifier
+
     def test_model_is_serializable_with_field_id_serial_names(self, tmp_path: Path):
         content = self._generate([("My Text", "fld001", "singleLineText")], tmp_path)
         assert "@Serializable" in content
