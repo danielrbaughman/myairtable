@@ -13,6 +13,7 @@ Languages supported:
 - Rust (via a custom-built client)
 - Swift (via a custom-built client)
 - Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
+- Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
 
 ### Kotlin
 
@@ -35,6 +36,122 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("io.ktor:ktor-client-core:3.2.3")
     implementation("io.ktor:ktor-client-cio:3.2.3")
+}
+```
+
+### Java
+
+The generated Java code targets **Java 21+** (sealed interfaces, records, pattern-matching switch) and is a plain blocking API (cheap on virtual threads). It only needs Jackson databind on the classpath:
+
+```kotlin
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+sourceSets {
+    main {
+        java.srcDir("path/to/generated/output") // wherever you generate into
+    }
+}
+
+dependencies {
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+}
+```
+
+> [!IMPORTANT]
+> Do NOT register `jackson-datatype-jsr310` (or call `findAndRegisterModules()`) on the runtime's mapper — the bundled `AirtableJacksonModule` owns `Instant`/`Duration` encoding (Airtable durations are numeric seconds, not ISO `PT…` strings).
+
+Models are mutable POJOs created through a generated `Builder` (the Java analog of the other targets' named arguments): `PrimaryModel.builder().primaryKey("x").build()`. Bulk deletes are named `deleteAll(ids)` / `deleteModels(models)` because Java's type erasure forbids overloading `delete(List<String>)` against `delete(List<Model>)`.
+
+#### Error handling
+
+Every failure is an `AirtableException` — a sealed, **unchecked** hierarchy (checked exceptions would poison every generated signature). The subtypes are `Http` (non-2xx, with `statusCode()`/`body()`), `Api` (a structured Airtable error envelope, with `code()`/`apiMessage()`), `RateLimited` (429, with `retryAfterSeconds()`), `Decoding`, `Network`, `InvalidUrl`, and `MissingCredentials`. Catch the base type for everything, or a specific subtype for targeted handling:
+
+```java
+try {
+    var contacts = airtable.primary().get();
+} catch (AirtableException.RateLimited e) {
+    // Only reached after retries are exhausted (see below).
+    log.warn("rate limited; retry after {}s", e.retryAfterSeconds());
+} catch (AirtableException e) {
+    log.error("airtable call failed", e);
+}
+```
+
+Because the hierarchy is sealed, you can also pattern-match exhaustively with a `switch` (Java 21):
+
+```java
+String describe(AirtableException e) {
+    return switch (e) {
+        case AirtableException.Http h -> "HTTP " + h.statusCode();
+        case AirtableException.Api a -> a.code() + ": " + a.apiMessage();
+        case AirtableException.RateLimited r -> "rate limited (" + r.retryAfterSeconds() + "s)";
+        case AirtableException.Decoding d -> "decode error";
+        case AirtableException.Network n -> "network error";
+        case AirtableException.InvalidUrl u -> "bad url";
+        case AirtableException.MissingCredentials m -> "missing credentials";
+    };
+}
+```
+
+> [!NOTE]
+> 429 and 5xx responses are **automatically retried** with exponential backoff (plus jitter, honoring a server `Retry-After`). `AirtableException.RateLimited` only surfaces once retries are exhausted.
+
+#### Resource lifecycle
+
+`Airtable` (and the underlying `AirtableClient`) implements `AutoCloseable`. A long-lived application should construct **one** `Airtable` and hold it for the process lifetime. For short-lived use, a try-with-resources block is idiomatic:
+
+```java
+try (var airtable = new Airtable(baseId, apiKey)) {
+    var contacts = airtable.primary().get();
+}
+```
+
+> [!NOTE]
+> `close()` only closes the `HttpClient` the runtime **owns** — when you inject your own `HttpClient` (via the full `AirtableClient` constructor), `close()` is a no-op and the client remains yours to manage.
+
+#### Clearing a field
+
+To clear a field server-side, set it to `null` on a **fetched** model and update it. Dirty-tracking diffs the model against the snapshot taken at fetch time and emits an explicit JSON `null` for the cleared field:
+
+```java
+var contact = airtable.primary().get("rec1234567890"); // fetched: carries a snapshot
+contact.setSingleLineText(null);
+airtable.primary().update(contact); // sends {"fields": {"fld...": null}}, clearing it
+```
+
+> [!IMPORTANT]
+> This only works on a model **obtained from the table** — it has a snapshot to diff against. A freshly built model (`PrimaryModel.builder()...build()`) has no snapshot, so a `null` field is simply omitted from the create payload rather than sent as an explicit clear.
+
+#### Filtering by formula
+
+Filter with the per-field `f` accessor and pass the resulting formula string via `AirtableQuery.withFormula`:
+
+```java
+var bobs = airtable.primary()
+    .get(new AirtableQuery().withFormula(PrimaryModel.f.singleLineText.contains("Bob")));
+```
+
+Text fields expose `eq`/`neq`/`contains`/`startsWith`/`endsWith`/`regexMatch` (etc.); number fields expose `eq`/`neq`/`greaterThan`/`lessThan`/`between` (etc.). Combine clauses with the `Formulas` combinators `and` / `or` / `not` / `xor`:
+
+```java
+var formula = Formulas.and(
+    PrimaryModel.f.singleLineText.contains("Bob"),
+    PrimaryModel.f.numberInt.greaterThan(10));
+var results = airtable.primary().get(new AirtableQuery().withFormula(formula));
+```
+
+#### Upsert
+
+`upsert(model, mergeOnFieldIds)` inserts or updates a record, matching on the given field IDs. It returns an `OrmTable.UpsertResult<T>` exposing `.model()` (the merged record) and `.wasCreated()` (insert vs update). Merge keys come from the generated `{Table}Fields` ID constants:
+
+```java
+var result = airtable.primary().upsert(
+    PrimaryModel.builder().primaryKey("alice@example.com").build(),
+    List.of(PrimaryFields.primaryKeyId));
+if (result.wasCreated()) {
+    log.info("created {}", result.model().getId());
 }
 ```
 
@@ -68,7 +185,7 @@ name = contact.name
 > [!NOTE]
 > For JavaScript & TypeScript, the ORM models are custom to myAirtable, though they still use the Airtable.js client for save/delete, and contain methods for conversion to/from Airtable.js's "Record" class. Also, they use [Zod](https://zod.dev) validation under-the-hood.
 >
-> For Rust, Swift, and Kotlin, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
+> For Rust, Swift, Kotlin, and Java, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
 
 ### Formula Builders
 
@@ -89,7 +206,7 @@ Airtable().contacts.get(formula=formula)
 ```
 
 > [!NOTE]
-> For JavaScript, TypeScript, Rust, Swift, and Kotlin, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin names the equality pair `eq`/`neq` — `equals` collides with `Any.equals` on the JVM.)
+> For JavaScript, TypeScript, Rust, Swift, Kotlin, and Java, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin and Java name the equality pair `eq`/`neq` — `equals` collides with `Any.equals`/`Object.equals` on the JVM.)
 
 ### Table/CRUD Wrappers
 

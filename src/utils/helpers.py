@@ -195,8 +195,12 @@ def deduplicated_field_property_map(table) -> dict[str, str]:
 
     Keyword escaping (backticks) is NOT applied here; call sites wrap with
     their language's identifier escaper.
+
+    A fully-symbolic name (e.g. `_`, `.`, `(`) camels to the empty string, which
+    would emit an invalid identifier; it falls back to `field` (then deduplicates
+    like any other collision). No effect on bases without such names.
     """
-    deduped = deduplicate_identifiers([field.name_camel() for field in table.fields], suffix="V")
+    deduped = deduplicate_identifiers([field.name_camel() or "field" for field in table.fields], suffix="V")
     return {field.id: name for field, name in zip(table.fields, deduped)}
 
 

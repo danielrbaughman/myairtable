@@ -72,6 +72,16 @@ def _deduplicate_entries(entries: list[str]) -> list[str]:
 _escape_string_literal = _kotlin_string_literal
 
 
+# Generated-model member names a constructor property must not collide with.
+# The model declares `@Transient private var snapshot` and `override var
+# attachedClient` / `id` / `createdTime` in the same scope as the constructor
+# properties, so a field whose camel matches one would be a redeclaration error.
+# (`f` lives in the companion object — a separate scope — so it needs no
+# reservation, unlike Java.) id/createdTime are normally pre-renamed by
+# sanitize_reserved_names but are reserved here defensively.
+_KOTLIN_RESERVED_MODEL_MEMBERS = frozenset({"snapshot", "attachedClient", "id", "createdTime"})
+
+
 def _field_property_map(table: Table) -> dict[str, str]:
     """`{field_id: deduplicated lowerCamelCase property name}` for one table.
 
@@ -79,8 +89,15 @@ def _field_property_map(table: Table) -> dict[str, str]:
     methods, and the transpiler's field_name_map) consumes this same map so
     colliding field names ("My Field" / "my field") deduplicate consistently
     to `myField` / `myFieldV2`. Keyword backticking is applied at call sites.
+
+    Kotlin-local (not the bare shared helper) so it can additionally suffix
+    names that would collide with generated model members (snapshot /
+    attachedClient / id / createdTime), then re-deduplicate.
     """
-    return deduplicated_field_property_map(table)
+    raw = deduplicated_field_property_map(table)
+    adjusted = [f"{name}Field" if name in _KOTLIN_RESERVED_MODEL_MEMBERS else name for name in raw.values()]
+    deduped = deduplicate_identifiers(adjusted, suffix="V")
+    return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
 
 
 def _table_type_prefix(table: Table) -> str:
