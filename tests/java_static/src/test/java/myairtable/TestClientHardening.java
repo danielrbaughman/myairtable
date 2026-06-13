@@ -185,7 +185,7 @@ class TestClientHardening {
   }
 
   @Test
-  void numericRetryAfterIsHonoredExactly() {
+  void numericRetryAfterIsHonoredWithinASmallJitter() {
     FakeTransport transport = flakyTransport(1, "0.05");
     // base 10s: if the Retry-After were ignored, the jittered backoff would wait >= 5s.
     AirtableClient client = client(transport, 3, 10.0, 30.0);
@@ -193,7 +193,8 @@ class TestClientHardening {
     String payload = client.listRecords("tbl1", new AirtableQuery());
     long elapsed = elapsedMillis(start);
     assertEquals(OK_BODY, payload);
-    // Server-provided value is honored exactly (no jitter): ~50ms, far below the 5s+ backoff.
+    // Server-provided value drives the wait (~50ms plus a <=50ms proportional
+    // jitter), far below the 5s+ backoff path — proving Retry-After preempted it.
     assertTrue(elapsed >= 50, "Retry-After: 0.05 must wait at least 50ms, got " + elapsed + "ms");
     assertTrue(
         elapsed < 5000,

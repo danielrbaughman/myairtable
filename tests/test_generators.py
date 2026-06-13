@@ -2570,14 +2570,11 @@ class TestJavaModels:
         assert "public void delete() {" in content
         assert "ModelOps.delete(this);" in content
 
-    # ---- formula gating (J-F7/J8.8 not yet landed) ----
+    # ---- formula gating ----
 
     def test_evaluate_methods_emitted_with_runtime_and_gated_off_without(self, tmp_path: Path):
-        """The transpiler has Java arms (J8.8): runtime=True emits evaluate* methods
-        returning JsonNode; runtime=False suppresses them."""
-        from src.generators.java import _transpiler_supports_java
-
-        assert _transpiler_supports_java()
+        """runtime=True emits transpiled evaluate* methods returning JsonNode;
+        runtime=False suppresses them."""
         content = self._generate_model(
             self.MIXED_SPEC,
             tmp_path,
@@ -2595,10 +2592,7 @@ class TestJavaModels:
         assert "evaluate" not in content_off
 
     def test_filters_static_present_when_formulas_enabled(self, tmp_path: Path):
-        """Models expose the {Table}Filters accessor `f` (J-F7); gated off with formulas=False."""
-        from src.generators import java as java_gen
-
-        assert java_gen._FORMULA_HELPERS_IMPLEMENTED
+        """Models expose the {Table}Filters accessor `f`; gated off with formulas=False."""
         content = self._generate_model(self.MIXED_SPEC, tmp_path, formulas=True)
         assert "public static final TestTableFilters f = new TestTableFilters();" in content
         content_off = self._generate_model(self.MIXED_SPEC, tmp_path, formulas=False)

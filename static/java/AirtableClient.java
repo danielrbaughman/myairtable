@@ -15,7 +15,6 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Random;
 
 /**
  * HTTP client for the Airtable REST API, built on the JDK's {@link java.net.http.HttpClient}. All
@@ -39,6 +38,9 @@ import java.util.Random;
  */
 public final class AirtableClient implements AutoCloseable {
 
+  /** Upper bound (seconds) on the decorrelation jitter added to a server Retry-After (JR-M6). */
+  private static final double RETRY_AFTER_JITTER_CAP_SECONDS = 1.0;
+
   private final String baseId;
   private final String apiKey;
   private final String apiBase;
@@ -49,7 +51,6 @@ public final class AirtableClient implements AutoCloseable {
   private final Duration requestTimeout;
   private final java.net.http.HttpClient http;
   private final boolean ownsHttp;
-  private final Random random = new Random();
 
   /** Client with caching disabled. */
   public AirtableClient(String baseId, String apiKey) {
@@ -265,14 +266,26 @@ public final class AirtableClient implements AutoCloseable {
       if (isRetryable && attempt < maxRetries) {
         double waitSeconds;
         if (retryAfterSeconds != null) {
-          // Honor a server-provided Retry-After exactly (no jitter), capped, and
-          // floored at 0 — a negative/garbage numeric header must never reach
-          // Thread.sleep, which would throw IllegalArgumentException and escape
-          // the "catch AirtableException covers every failure" contract (JR-M4).
-          waitSeconds = Math.min(Math.max(0.0, retryAfterSeconds), maxRetryDelaySeconds);
+          // Honor a server-provided Retry-After, floored at 0 (a negative/garbage
+          // numeric header must never reach Thread.sleep — it would throw
+          // IllegalArgumentException and escape the "catch AirtableException
+          // covers every failure" contract, JR-M4), then add a small proportional
+          // jitter so concurrent callers fanning out across virtual threads don't
+          // all wake on the same millisecond and re-stampede the API (JR-M6). The
+          // jitter is bounded by RETRY_AFTER_JITTER_CAP_SECONDS so it stays a
+          // decorrelation nudge, never a material delay.
+          double floored = Math.max(0.0, retryAfterSeconds);
+          double jitter =
+              java.util.concurrent.ThreadLocalRandom.current().nextDouble()
+                  * Math.min(floored, RETRY_AFTER_JITTER_CAP_SECONDS);
+          waitSeconds = Math.min(floored + jitter, maxRetryDelaySeconds);
         } else {
           double backoff = baseRetryDelaySeconds * Math.pow(2.0, attempt);
-          waitSeconds = Math.min(backoff * (0.5 + random.nextDouble() * 0.5), maxRetryDelaySeconds);
+          waitSeconds =
+              Math.min(
+                  backoff
+                      * (0.5 + java.util.concurrent.ThreadLocalRandom.current().nextDouble() * 0.5),
+                  maxRetryDelaySeconds);
         }
         try {
           Thread.sleep((long) (waitSeconds * 1000));

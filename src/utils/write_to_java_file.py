@@ -164,10 +164,6 @@ class WriteToJavaFile(WriteToFile):
         """Write `import <fully.qualified.Name>;`."""
         self.line(f"import {fqname};")
 
-    def import_static(self, fqname: str):
-        """Write `import static <fully.qualified.member>;`."""
-        self.line(f"import static {fqname};")
-
     # ---- regions / markers --------------------------------------------------
     def region(self, text: str, indent: int = 0):
         """Emit `// region text` — IDE folding landmark."""
@@ -243,12 +239,6 @@ class WriteToJavaFile(WriteToFile):
         `modifiers` defaults to ["public", "final"] for top-level generated types.
         """
         self._type_open("class", name, extends, implements, modifiers if modifiers is not None else ["public", "final"], indent)
-
-    def interface_open(self, name: str, extends: list[str] | None = None, modifiers: list[str] | None = None, indent: int = 0):
-        """Open an interface declaration (interfaces use `extends` for supertypes)."""
-        prefix = " ".join((modifiers if modifiers is not None else ["public"]) + ["interface"])
-        conf = f" extends {', '.join(extends)}" if extends else ""
-        self.line_indented(f"{prefix} {_java_ident(name)}{conf} {{", indent)
 
     def enum_open(self, name: str, implements: list[str] | None = None, indent: int = 0):
         """Open an enum declaration."""

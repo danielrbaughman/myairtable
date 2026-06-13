@@ -65,12 +65,16 @@ public final class Fields {
   }
 
   /**
-   * Jackson encode hook + immutable view of the underlying ID-keyed storage. {@link #getNameToId}
-   * is a runtime-installed convenience and never round-trips.
+   * Jackson encode hook + view of the underlying ID-keyed storage in insertion order. {@link
+   * #getNameToId} is a runtime-installed convenience and never round-trips.
+   *
+   * <p>Order-preserving (the backing map is a {@link LinkedHashMap}) so create/update payloads and
+   * logs emit fields in a stable order; {@link Map#copyOf} would reorder by hash (JR-L1). The view
+   * is shallowly unmodifiable — contained Jackson nodes remain mutable, so do not mutate them.
    */
   @JsonValue
   public Map<String, JsonNode> toMap() {
-    return Map.copyOf(storage);
+    return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(storage));
   }
 
   public Map<String, String> getNameToId() {

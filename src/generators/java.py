@@ -10,8 +10,10 @@ Generates an idiomatic Java 21 source tree (flat `myairtable` package):
   ├── static/                              — copied verbatim from static/java/
   └── Airtable.java                        — top-level class + table accessors
 
-J-F3 scope: dict-only path. ORM models + linked records + formula helpers
-land in J-F4..J-F8.
+Emits the full surface: select-option enums, field-ID/name constants, ORM
+models (with a writable-only Builder, snapshot dirty tracking, and transpiled
+`evaluate*` methods), per-table dict + ORM accessors, formula-filter builders,
+and a top-level `Airtable` entry point.
 
 Note: the generator does NOT emit build files — matches the other languages
 (the consumer configures their own Gradle/Maven build with Jackson databind
@@ -75,9 +77,6 @@ def _deduplicate_entries(entries: list[str]) -> list[str]:
 
 # Single shared Java string-literal escaper (also backs @JsonProperty values).
 _escape_string_literal = _java_string_literal
-
-# Models reference the generated {Table}Filters classes (J-F7).
-_FORMULA_HELPERS_IMPLEMENTED = True
 
 _JAVA_FORMULA_CLASS_MAP = {
     "TextField": "FormulaTextField",
@@ -414,12 +413,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         model_name = f"{prefix}Model"
         writable_fields = [f for f in table.fields if not f.is_computed()]
 
-        # Pre-transpile formula fields for this table (J8.8 wires the Java
-        # transpiler arms; until then transpile_table_formulas has no "java"
-        # support and this stays empty).
+        # Pre-transpile this table's formula fields into Java `evaluate*` bodies.
         transpiled_formulas: dict[str, str] = {}
         raw_formulas: dict[str, str] = {}
-        if runtime and _transpiler_supports_java():
+        if runtime:
             formula_field_ids = table.formula_field_ids()
             field_name_map = {f.id: _java_ident(prop_names[f.id]) for f in table.fields}
             raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
@@ -460,7 +457,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.class_open(model_name, implements=["AirtableModel"])
             write.line_empty()
             write.line_indented(f'public static final String TABLE_ID = "{table.id}";')
-            if formulas and _FORMULA_HELPERS_IMPLEMENTED:
+            if formulas:
                 filters_name = f"{prefix}Filters"
                 write.line_empty()
                 write.doc_comment(f'Formula builder for filtering. Usage: {{@code {model_name}.f.primaryKey.eq("x")}}.', indent=1)
@@ -625,9 +622,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                         continue
                     formula_code = transpiled_formulas[field.id]
                     raw = raw_formulas.get(field.id, "")
+                    # Entity-escaped prose, NOT {@code ...}: a formula carries
+                    # `{Field}` references whose braces (or a brace left dangling
+                    # by the 80-char truncation) would close an inline tag early
+                    # and corrupt the rendered Javadoc (JR-L1). property_docstring
+                    # avoids {@code} for formula bodies for the same reason.
                     preview = _javadoc_escape(sanitize_string(raw).replace("\n", " ")[:80])
                     write.line_empty()
-                    write.doc_comment(f"Evaluate formula locally: {{@code {preview}}}", indent=1)
+                    write.doc_comment(f"Evaluate formula locally: <code>{preview}</code>", indent=1)
                     pascal = _accessor_pascal(_java_ident(prop_names[field.id]))
                     write.line_indented(f"public JsonNode evaluate{pascal}() {{")
                     write.line_indented(f"return {formula_code};", indent=2)
@@ -686,15 +688,6 @@ def _accessor_pascal(camel: str) -> str:
     if not camel:
         return camel
     return camel[0].upper() + camel[1:]
-
-
-def _transpiler_supports_java() -> bool:
-    """True once the formula transpiler has Java emitter arms (J-F8)."""
-    from typing import get_args
-
-    from ..formulas.formula_transpiler import Language as TranspilerLanguage
-
-    return "java" in get_args(TranspilerLanguage)
 
 
 def write_tables(base: Base, output_folder: Path) -> None:

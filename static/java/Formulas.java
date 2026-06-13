@@ -6,7 +6,6 @@ package myairtable;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /** Top-level formula combinators matching Airtable's logical functions. */
 public final class Formulas {
@@ -96,9 +95,5 @@ public final class Formulas {
       v = "LOWER(" + v + ")";
     }
     return v;
-  }
-
-  static String joinMapped(List<String> values, java.util.function.Function<String, String> fn) {
-    return values.stream().map(fn).collect(Collectors.joining(","));
   }
 }
