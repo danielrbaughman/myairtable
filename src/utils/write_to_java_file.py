@@ -179,18 +179,31 @@ class WriteToJavaFile(WriteToFile):
 
     # ---- comments -----------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a /** Javadoc */ block.
+        r"""Write a /** Javadoc */ block.
 
         Sanitizes each line so the block can't be broken by hostile content:
-        strips bare \\r (Airtable descriptions may contain them), neutralizes
-        `*/` (which would terminate the comment early), and splits embedded
-        newlines into separate comment lines. Lines are NOT HTML-escaped here —
-        callers that embed raw Airtable text use _javadoc_escape() first.
+
+        1. Doubles every backslash FIRST. `javac` runs unicode-escape
+           translation (`\\uXXXX`) over the *entire* source — comments included —
+           before lexing (JLS 3.3), so a name containing the literal characters
+           `\\u002a\\u002f` would otherwise be reconstituted into `*/` and close
+           the comment, injecting whatever follows as live source. Doubling
+           turns any run of N backslashes into 2N, so the backslash before any
+           `u` is always preceded by an even count and is never escape-eligible.
+           (It also neutralises an innocent `\\u`-not-followed-by-hex, which is a
+           hard compile error inside comments.) String literals are immune via
+           `_java_string_literal`, which already doubles backslashes.
+        2. Strips bare `\\r` (Airtable descriptions may contain them).
+        3. Neutralises a literal `*/` (which would terminate the comment early).
+        4. Splits embedded newlines into separate comment lines.
+
+        Lines are NOT HTML-escaped here — callers that embed raw Airtable text
+        use `_javadoc_escape()` first.
         """
         raw_lines = text if isinstance(text, list) else [text]
         lines: list[str] = []
         for raw in raw_lines:
-            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            cleaned = raw.replace("\\", "\\\\").replace(chr(13), "").replace("*/", "* /")
             lines.extend(cleaned.split("\n"))
         if len(lines) == 1:
             self.line_indented(f"/** {lines[0]} */", indent)

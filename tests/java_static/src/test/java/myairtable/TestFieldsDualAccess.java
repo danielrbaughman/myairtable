@@ -2,6 +2,7 @@ package myairtable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -95,6 +96,19 @@ class TestFieldsDualAccess {
     fields.set("Primary Key", null);
     assertNull(fields.get("fldABC"));
     assertEquals(1, fields.count());
+  }
+
+  @Test
+  void explicitNullNodeIsStoredAsJsonNullToClearTheFieldServerSide() {
+    // JR-H2: a Java null removes, but an explicit NullNode must be STORED — it
+    // serializes as JSON `null`, the only way to clear a field via the dict
+    // PATCH path. Collapsing NullNode into "remove" omits the key and silently
+    // leaves the server value unchanged (Kotlin/Swift/Rust all store it).
+    Fields fields = makeFields();
+    fields.set("Primary Key", com.fasterxml.jackson.databind.node.NullNode.getInstance());
+    assertEquals(2, fields.count(), "the cleared field must remain present (as null)");
+    assertTrue(fields.toMap().get("fldABC").isNull());
+    assertTrue(fields.get("fldABC").isNull());
   }
 
   @Test

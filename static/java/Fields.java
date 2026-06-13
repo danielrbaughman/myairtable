@@ -108,15 +108,20 @@ public final class Fields {
    * Store by field ID or field name. IDs are tried first (mirroring {@link #get}): a key that is
    * already a known field ID is never treated as a name, even if a pathological field name collides
    * with it. Otherwise names are translated via {@code nameToId} — if no translation is available,
-   * the key is stored as-is ("store what you got", mirroring the Rust behavior). A {@code null}
-   * value removes the entry.
+   * the key is stored as-is ("store what you got", mirroring the Rust behavior). A Java {@code
+   * null} value removes the entry; an explicit {@link com.fasterxml.jackson.databind.node.NullNode}
+   * is stored and clears the field server-side.
    */
   public void set(String key, JsonNode value) {
     String resolved =
         storage.containsKey(key) || nameToId.containsValue(key)
             ? key
             : nameToId.getOrDefault(key, key);
-    if (value != null && !value.isNull()) {
+    // A Java null removes the entry; an explicit NullNode is STORED and
+    // serializes as JSON `null` — the only way to clear a field server-side
+    // (matches Kotlin/Swift/Rust). Collapsing NullNode into "remove" here would
+    // make field clears a silent no-op on the dict path (JR-H2).
+    if (value != null) {
       storage.put(resolved, value);
     } else {
       storage.remove(resolved);

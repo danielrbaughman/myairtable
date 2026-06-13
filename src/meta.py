@@ -784,8 +784,26 @@ class Field(Named):
         pairs.sort(key=lambda p: p[0])
         return pairs
 
-    def options_name(self) -> str:
+    def _raw_options_name(self) -> str:
         return f"{self.table.name_pascal()}{self.name_pascal().rstrip('_')}Option"
+
+    def options_name(self) -> str:
+        """Generated enum-type name for this select field's options.
+
+        Deduplicated across the whole base: distinct select fields whose raw
+        names collapse (e.g. two `Status` fields in same-named tables, or a
+        field named `Status` vs `Status.`) would otherwise produce colliding
+        enum type names — a silent file overwrite in Java (one file per enum),
+        a duplicate declaration in Kotlin/Swift/Rust. The dedup map appends
+        `V2`, `V3`, … to collisions in schema order; for any base without
+        collisions every name is unchanged, so generated output is
+        byte-identical across all targets (JR-H3).
+        """
+        if hasattr(self, "base") and self.base is not None:
+            mapped = self.base.options_name_map().get(self.id)
+            if mapped is not None:
+                return mapped
+        return self._raw_options_name()
 
     def formula_class(self) -> str:
         """Returns the appropriate myAirtable formula type for a given Airtable field."""
@@ -982,6 +1000,7 @@ class Base(BaseModel):
     _table_index: dict[str, "Table"] = {}
     _select_fields_cache: list["Field"] | None = None
     _select_field_ids_cache: set[str] | None = None
+    _options_name_map_cache: dict[str, str] | None = None
 
     def __init__(self, csv_folder: Path | None = None):
         meta = get_base_meta_data()
@@ -1115,6 +1134,22 @@ class Base(BaseModel):
         if self._select_field_ids_cache is None:
             self._select_field_ids_cache = {field.id for field in self.select_fields()}
         return self._select_field_ids_cache
+
+    def options_name_map(self) -> dict[str, str]:
+        """`{field_id: deduplicated options enum name}` across every select field.
+
+        Built once in schema order with the shared `_V`-style suffixing so the
+        enum-type names are unique base-wide regardless of colliding raw names
+        (JR-H3). Consumed via `Field.options_name()`; for a collision-free base
+        every entry equals the raw name, so output stays byte-identical.
+        """
+        if self._options_name_map_cache is None:
+            from src.utils.helpers import deduplicate_identifiers
+
+            select_fields = self.select_fields()
+            deduped = deduplicate_identifiers([field._raw_options_name() for field in select_fields], suffix="V")
+            self._options_name_map_cache = {field.id: name for field, name in zip(select_fields, deduped)}
+        return self._options_name_map_cache
 
     def select_field_by_id(self, field_id: str) -> Field | None:
         field = self.field_by_id(field_id)

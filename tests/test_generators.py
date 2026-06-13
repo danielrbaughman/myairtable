@@ -1925,6 +1925,81 @@ class TestJavaOptionsGenerator:
         assert 'OPEN("' in content
         assert 'OPEN_V2("' in content
 
+    def _generate_multi(self, fields_spec, tmp_path: Path) -> Path:
+        """Build a table whose select fields each carry choices, return options dir.
+
+        `fields_spec` is `[(field_name, field_id, [choice, ...]), ...]`.
+        """
+        from src.generators.java import write_options
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([(name, fid, "singleSelect") for name, fid, _ in fields_spec])
+        for (_, _, choices), field in zip(fields_spec, base.tables[0].fields):
+            assert field.options is not None
+            assert field.__pydantic_private__ is not None
+            field.options.choices = [Choice.model_construct(id=f"{field.id}sel{i}", name=c) for i, c in enumerate(choices)]
+            field.__pydantic_private__["_select_options_cache"] = None
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        return output_folder / "dynamic" / "options"
+
+    def test_within_table_options_name_collision_does_not_overwrite(self, tmp_path: Path):
+        """JR-H3: two select fields whose names collapse must NOT share one enum
+        file (the second would silently overwrite the first). The dedup map gives
+        the colliding field a `V2`-suffixed enum name → two distinct files."""
+        options_dir = self._generate_multi(
+            [("Status", "fld001", ["A", "B"]), ("Status.", "fld002", ["C", "D"])],
+            tmp_path,
+        )
+        primary = (options_dir / "TestTableStatusOption.java").read_text()
+        secondary = (options_dir / "TestTableStatusOptionV2.java").read_text()
+        # First field's choices survive (were not overwritten); second got V2.
+        assert 'A("A")' in primary and 'B("B")' in primary
+        assert 'C("C")' in secondary and 'D("D")' in secondary
+
+    def test_cross_table_options_name_collision_dedups(self, tmp_path: Path):
+        """JR-H3: the raw options name uses the un-deduplicated table pascal, so
+        same-named tables collide across tables too — the base-wide dedup map
+        still keeps the enum names unique."""
+        from src.generators.java import write_options
+        from src.utils.type_mapper import map_types
+
+        # Two tables that both pascal-ize to `Foo`, each with a `Status` select.
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        first_table = base.tables[0]
+        assert first_table.__pydantic_private__ is not None
+        first_table.name = "Foo"
+        first_table.__pydantic_private__["_pascal"] = None
+        second = make_test_base([("Status", "fld101", "singleSelect")]).tables[0]
+        assert second.__pydantic_private__ is not None
+        second.id = "tblSECOND"
+        second.name = "Foo "  # trailing space → pascal-izes to `Foo` as well
+        second.__pydantic_private__["_pascal"] = None
+        for f in second.fields:
+            f.base = base
+            f.table = second
+        base.tables.append(second)
+        base._table_index[second.id] = second
+        for f in second.fields:
+            base._field_index[f.id] = f
+        base._select_fields_cache = None
+        base._options_name_map_cache = None
+        for t in base.tables:
+            for f in t.fields:
+                assert f.options is not None
+                assert f.__pydantic_private__ is not None
+                f.options.choices = [Choice.model_construct(id=f"{f.id}s0", name="X")]
+                f.__pydantic_private__["_select_options_cache"] = None
+        output_folder = tmp_path / "java_output"
+        output_folder.mkdir()
+        map_types(base)
+        write_options(base, output_folder)
+        files = sorted(p.name for p in (output_folder / "dynamic" / "options").glob("*.java"))
+        # Two distinct enum files, not one overwritten — names deduplicated.
+        assert files == ["FooStatusOption.java", "FooStatusOptionV2.java"], files
+
 
 class TestJavaFieldTypes:
     """Java `{Table}Fields` / `{Table}View` / `Create{Table}Fields` generation."""
@@ -1987,6 +2062,23 @@ class TestJavaFieldTypes:
 
         assert "Map.ofEntries(" in content
         assert not re.search(r",\s*\n\s*\);", content), "trailing comma before `);` is a Java syntax error"
+
+    def test_name_to_id_collapses_duplicate_sanitized_keys(self, tmp_path: Path):
+        """JR-M1: field names differing only by quote style sanitize to the same
+        key; Map.ofEntries THROWS on duplicate keys at class init, bricking the
+        client. The generator must collapse to one entry (last-wins, like Kotlin
+        mapOf) so the static initializer can't crash."""
+        out = self._generate(
+            [('He said "hi"', "fld001", "singleLineText"), ("He said 'hi'", "fld002", "number")],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "types" / "TestTableFields.java").read_text()
+        # Exactly one nameToId entry for the collapsed key (sanitize turns " into ').
+        assert content.count("Map.entry(\"He said 'hi'\", ") == 1, "duplicate nameToId key would throw at <clinit>"
+        # Last-wins (matches Kotlin mapOf): the second field's ID survives.
+        assert 'Map.entry("He said \'hi\'", "fld002")' in content
+        # idToName is keyed by unique field IDs — both survive there.
+        assert 'Map.entry("fld001", ' in content and 'Map.entry("fld002", ' in content
 
     def test_create_fields_excludes_computed(self, tmp_path: Path):
         """Create{Table}Fields lists writable fields only (formula/createdTime omitted)."""
@@ -2151,6 +2243,29 @@ class TestJavaStringEscaping:
         assert "A &lt;b&gt; &amp; B" in content
         # The string literal keeps the raw characters.
         assert '= "A <b> & B";' in content
+
+    def test_javadoc_unicode_escape_cannot_inject_code(self, tmp_path: Path):
+        r"""JR-H1: a field name carrying the literal 6-char sequences
+        `*/` must NOT let javac's unicode-escape pass (JLS 3.3, which
+        runs inside comments before lexing) reconstitute `*/` and inject code.
+        doc_comment doubles all backslashes, so the emitted comment carries
+        `\\u002a\\u002f` (even backslash count → not escape-eligible)."""
+        # Literal backslash-u sequences (NOT actual unicode escapes in this .py source).
+        hostile = "x \\u002a\\u002f static{} /\\u002a y"
+        content = self._generate([(hostile, "fld001", "singleLineText")], tmp_path)
+        for line in self._comment_lines(content):
+            # No single backslash immediately before `u` survives; doubling makes
+            # every occurrence `\\u`, which javac never treats as an escape.
+            assert "\\u" not in line.replace("\\\\u", ""), f"un-doubled \\u in comment: {line!r}"
+
+    def test_javadoc_lone_backslash_u_is_neutralized(self, tmp_path: Path):
+        r"""An innocent name like `Window\update` (a `\u` not followed by 4 hex
+        digits) is a HARD javac error inside a comment unless the backslash is
+        doubled. Assert the comment carries `\\update`, not a bare `\u`."""
+        content = self._generate([(r"Window\update count", "fld001", "singleLineText")], tmp_path)
+        comment = "\n".join(self._comment_lines(content))
+        assert "\\\\update" in comment
+        assert "\\u" not in comment.replace("\\\\u", "")
 
     def test_java_ident_renames_keywords_with_underscore_suffix(self):
         """Java has no identifier escaping — keywords/literals get a `_` suffix."""

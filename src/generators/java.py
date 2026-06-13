@@ -246,10 +246,18 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.doc_comment("Mapping from Airtable field name → field ID.", indent=1)
             write.line_indented("public static final Map<String, String> nameToId =")
             write.line_indented("Map.ofEntries(", indent=2)
-            for index, field in enumerate(table.fields):
-                escaped_name = _escape_string_literal(sanitize_string(field.name))
-                comma = "" if index == len(table.fields) - 1 else ","
-                write.line_indented(f'Map.entry("{escaped_name}", "{field.id}"){comma}', indent=3)
+            # Distinct field names can collapse to one key after sanitize_string
+            # (e.g. `He said "hi"` and `He said 'hi'` both → `He said 'hi'`).
+            # Map.ofEntries THROWS on a duplicate key at class init, bricking the
+            # whole client — so collapse here, last-wins, matching Kotlin's mapOf
+            # (JR-M1). idToName below is keyed by unique field IDs, so it's safe.
+            name_to_id: dict[str, str] = {}
+            for field in table.fields:
+                name_to_id[_escape_string_literal(sanitize_string(field.name))] = field.id
+            name_entries = list(name_to_id.items())
+            for index, (escaped_name, field_id) in enumerate(name_entries):
+                comma = "" if index == len(name_entries) - 1 else ","
+                write.line_indented(f'Map.entry("{escaped_name}", "{field_id}"){comma}', indent=3)
             write.line_indented(");", indent=2)
             write.line_empty()
 
