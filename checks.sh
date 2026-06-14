@@ -91,3 +91,25 @@ if [ -x tests/java_static/gradlew ] && command -v java &> /dev/null; then
 else
     echo "[warn] Java/gradlew not available; skipping Java checks."
 fi
+
+# Go
+# The static runtime + its unit tests live in-place at static/go/ (a self-contained
+# module; *_test.go and go.mod are excluded from the generator's flat static copy).
+if command -v go &> /dev/null; then
+    echo "--- Go checks ---"
+    (cd static/go && go vet ./...)
+    (cd static/go && go test ./...)
+    # gofmt is part of the toolchain and deterministic; format the hand-written runtime.
+    GO_UNFORMATTED=$(gofmt -l static/go)
+    if [ -n "$GO_UNFORMATTED" ]; then
+        echo "[info] gofmt-formatting: $GO_UNFORMATTED"
+        gofmt -w static/go
+    fi
+    if command -v golangci-lint &> /dev/null; then
+        (cd static/go && golangci-lint run ./...)
+    else
+        echo "[warn] golangci-lint not installed; skipping lint step. (brew install golangci-lint)"
+    fi
+else
+    echo "[warn] Go not on PATH; skipping Go checks."
+fi
