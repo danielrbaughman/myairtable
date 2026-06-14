@@ -23,6 +23,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Table
 from ..utils.helpers import (
     deduplicate_identifiers,
@@ -33,6 +35,7 @@ from ..utils.helpers import (
 from ..utils.write_to_go_file import (
     WriteToGoFile,
     _choice_to_const,
+    _go_ident,
     _go_string_literal,
 )
 
@@ -202,9 +205,9 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line(f"func (v {view_name}) ViewID() string {{ return string(v) }}")
 
 
-def write_models(base: Base, output_folder: Path) -> None:
+def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten: bool = False) -> None:
     """Generate `model_{table}.go`: the ORM model struct + Model-interface methods
-    + fluent Save/Fetch/Delete.
+    + fluent Save/Fetch/Delete + (when runtime) transpiled Evaluate* methods.
 
     Writable fields are pointer optionals (or slices); computed fields decode-only
     (pointer to wrapper) and are excluded from writableFields(). The read-only
@@ -215,6 +218,22 @@ def write_models(base: Base, output_folder: Path) -> None:
         model = f"{prefix}Model"
         props = _field_property_map(table)
         writable = [f for f in table.fields if not f.is_computed()]
+
+        # Pre-transpile this table's formula fields into Go Evaluate* bodies.
+        # The transpiler's field_name_map maps field_id -> the Go struct field name
+        # so `m.FieldName` (via the V() helper) resolves correctly.
+        transpiled_formulas: dict[str, str] = {}
+        raw_formulas: dict[str, str] = {}
+        if runtime:
+            formula_field_ids = table.formula_field_ids()
+            field_name_map = {f.id: _go_ident(props[f.id]) for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            if flatten and raw_formulas:
+                formula_map_tuple = table.base.get_formula_field_map_tuple()
+                raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
+            if raw_formulas:
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "go", field_name_map, formula_field_ids)
+
         with WriteToGoFile(path=output_folder / f"model_{prefix.lower()}.go") as write:
             write.package_decl()
             write.line_empty()
@@ -266,6 +285,20 @@ def write_models(base: Base, output_folder: Path) -> None:
             write.line(f"func (m *{model}) Fetch(ctx context.Context) error {{ return modelFetch[{model}](ctx, m) }}")
             write.comment("Delete removes this record.")
             write.line(f"func (m *{model}) Delete(ctx context.Context) error {{ return modelDelete[{model}](ctx, m) }}")
+
+            # Runtime formula evaluation (G8.9): one Evaluate{Field}() per formula
+            # field whose formula transpiled. Returns the native `any` runtime value.
+            if transpiled_formulas:
+                for field in table.fields:
+                    if field.id not in transpiled_formulas:
+                        continue
+                    name = props[field.id]
+                    raw = sanitize_string(raw_formulas.get(field.id, "")).replace("\n", " ")[:80]
+                    write.line_empty()
+                    write.comment(f"Evaluate{name} evaluates the formula locally: {raw}")
+                    write.line(f"func (m *{model}) Evaluate{name}() any {{")
+                    write.line_indented(f"return {transpiled_formulas[field.id]}", 1)
+                    write.line("}")
 
 
 def write_main(base: Base, output_folder: Path) -> None:
@@ -383,7 +416,7 @@ def generate_go(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
-    write_models(base, output_folder)
+    write_models(base, output_folder, runtime=runtime, flatten=flatten)
     if formulas:
         write_formula_helpers(base, output_folder)
     if wrappers:

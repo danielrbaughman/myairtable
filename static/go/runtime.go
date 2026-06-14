@@ -167,6 +167,17 @@ func D(value any) time.Time {
 	return time.Time{}
 }
 
+// IsEqual reports Airtable equality between two native values when neither side's
+// type is statically inferable (the transpiler routes numeric/string comparisons
+// through N()/S() directly). Two numbers compare numerically; otherwise both are
+// string-coerced — matching Airtable's `=` operator coercion.
+func IsEqual(a, b any) bool {
+	if isNumber(a) && isNumber(b) {
+		return N(a) == N(b)
+	}
+	return S(a) == S(b)
+}
+
 func isIntegral(d float64) bool {
 	return !math.IsInf(d, 0) && !math.IsNaN(d) && d == math.Floor(d) && math.Abs(d) < 1e15
 }
