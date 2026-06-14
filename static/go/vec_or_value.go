@@ -41,3 +41,19 @@ func (v VecOrValue[T]) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(v.Single)
 }
+
+// CleanValues unwraps a computed lookup/rollup field — a VecOrValue whose
+// elements are each a MaybeSpecialOrError[T] — into the slice of present inner
+// values, dropping every element that decoded to a special number or an error.
+// It is the null-safe read path for computed list fields (mirrors the Java/Kotlin
+// cleanValues DX helper).
+func CleanValues[T any](v VecOrValue[MaybeSpecialOrError[T]]) []T {
+	elems := v.Values()
+	out := make([]T, 0, len(elems))
+	for _, e := range elems {
+		if val, ok := e.Value(); ok {
+			out = append(out, val)
+		}
+	}
+	return out
+}
