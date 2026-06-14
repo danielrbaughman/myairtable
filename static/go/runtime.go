@@ -153,6 +153,16 @@ func D(value any) time.Time {
 				return parsed.UTC()
 			}
 		}
+	case float64:
+		return time.UnixMilli(int64(v * 1000)).UTC()
+	case int64:
+		return time.UnixMilli(v * 1000).UTC()
+	case int:
+		return time.UnixMilli(int64(v) * 1000).UTC()
+	case []any:
+		if len(v) > 0 {
+			return D(v[0])
+		}
 	}
 	return time.Time{}
 }
