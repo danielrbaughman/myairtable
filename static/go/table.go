@@ -32,6 +32,13 @@ func (t *Table[T, PT]) Dict() *DictTable {
 	return NewDictTable(t.client, t.tableID, t.nameToID)
 }
 
+// Attach binds this table's client to a model so its fluent Save/Fetch/Delete
+// methods work (e.g. for inserting a freshly-constructed model). Returns m.
+func (t *Table[T, PT]) Attach(m PT) PT {
+	m.setClient(t.client)
+	return m
+}
+
 func (t *Table[T, PT]) decode(rec *rawRecord) (PT, error) {
 	var v T
 	pt := PT(&v)
