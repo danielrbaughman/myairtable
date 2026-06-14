@@ -263,7 +263,7 @@ func (c *Client) updateRecords(ctx context.Context, tableID string, updates []re
 }
 
 func (c *Client) writeBatch(ctx context.Context, method, tableID string, records []recordPayload, typecast bool) ([]rawRecord, error) {
-	reqBody := map[string]any{"records": records}
+	reqBody := map[string]any{"records": records, "returnFieldsByFieldId": true}
 	if typecast {
 		reqBody["typecast"] = true
 	}

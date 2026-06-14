@@ -129,7 +129,9 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.line("const (")
             for field in table.fields:
                 name = props[field.id]
+                escaped = _go_string_literal(sanitize_string(field.name))
                 write.line_indented(f'{prefix}{name}FieldID = "{field.id}"', 1)
+                write.line_indented(f'{prefix}{name}FieldName = "{escaped}"', 1)
             write.line(")")
             write.line_empty()
 
