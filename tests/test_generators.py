@@ -3002,3 +3002,74 @@ class TestGoComputedFields:
         assert re.search(r"func \(m \*TestTableModel\) Delete\(ctx context\.Context\) error", content)
         assert re.search(r"func \(m \*TestTableModel\) TableID\(\) string", content)
         assert re.search(r"func \(m \*TestTableModel\) writableFields\(\) map\[string\]json\.RawMessage", content)
+
+
+class TestGoFormulaHelpers:
+    """Go `filters_{table}.go` (F7): per-table `{prefix}Filters` struct mapping
+    each field to its formula-builder type, plus a package-level `{Prefix}F`
+    instance built from field NAMES, plus an `ID IDField` entry. The static
+    formula DSL files are excluded from the flat copy when formulas=False.
+    """
+
+    FIELDS_SPEC = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+        ("Done", "fld003", "checkbox"),
+        ("Due", "fld004", "date"),
+        ("Tags", "fld005", "multipleSelects"),
+        ("Files", "fld006", "multipleAttachments"),
+    ]
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.go import _gofmt, write_formula_helpers
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "go_output"
+        out.mkdir()
+        write_formula_helpers(base, out)
+        _gofmt(out)
+        return (out / "filters_testtable.go").read_text()
+
+    def test_filters_struct_and_builder_types(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert "type testtableFilters struct {" in content
+        assert re.search(r"PrimaryKey\s+TextField", content)
+        assert re.search(r"Count\s+NumberField", content)
+        assert re.search(r"Done\s+BooleanField", content)
+        assert re.search(r"Due\s+DateField", content)
+        assert re.search(r"Tags\s+MultiSelectField", content)
+        assert re.search(r"Files\s+AttachmentsField", content)
+        # Record-ID builder entry.
+        assert re.search(r"ID\s+IDField", content)
+
+    def test_filters_instance_uses_field_names(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert "var TestTableF = testtableFilters{" in content
+        # Constructors are seeded with field NAMES, not IDs (gofmt aligns colons).
+        assert re.search(r'PrimaryKey:\s+NewTextField\("Primary Key"\),', content)
+        assert re.search(r'Count:\s+NewNumberField\("Count"\),', content)
+        assert re.search(r"ID:\s+NewIDField\(\),", content)
+        # No field IDs leak into the constructors.
+        assert "fld001" not in content
+
+    def test_generate_go_excludes_formula_statics_when_off(self, tmp_path: Path):
+        """formulas=False must drop both the generated filters file and the static
+        formula DSL files from the output (parity with runtime.go gating)."""
+        from src.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
+
+        base = make_test_base(self.FIELDS_SPEC)
+        out = tmp_path / "go_output"
+        generate_go(base, out, formulas=False)
+        assert not (out / "filters_testtable.go").exists()
+        for name in _GO_FORMULA_STATIC_FILES:
+            assert not (out / name).exists()
+
+    def test_generate_go_includes_formula_statics_when_on(self, tmp_path: Path):
+        from src.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
+
+        base = make_test_base(self.FIELDS_SPEC)
+        out = tmp_path / "go_output"
+        generate_go(base, out, formulas=True)
+        assert (out / "filters_testtable.go").exists()
+        for name in _GO_FORMULA_STATIC_FILES:
+            assert (out / name).exists()

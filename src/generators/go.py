@@ -40,6 +40,23 @@ from ..utils.write_to_go_file import (
 # project owns its go.mod) and the in-place static-runtime unit tests.
 _GO_STATIC_COPY_EXCLUDE = ("go.mod", "go.sum", "*_test.go")
 
+# Maps the field.formula_class() name to the Go formula-builder type + its
+# constructor. Mirrors java.py's _JAVA_FORMULA_CLASS_MAP but for the Go DSL.
+_GO_FORMULA_CLASS_MAP = {
+    "TextField": "TextField",
+    "BooleanField": "BooleanField",
+    "DateField": "DateField",
+    "NumberField": "NumberField",
+    "AttachmentsField": "AttachmentsField",
+    "LookupField": "LookupField",
+    "SingleSelectField": "SingleSelectField",
+    "MultiSelectField": "MultiSelectField",
+}
+
+# Static formula-DSL files excluded from the flat copy when formulas=False
+# (mirror runtime.go's conditional exclusion).
+_GO_FORMULA_STATIC_FILES = ("formula.go", "formula_fields.go", "formula_date.go")
+
 # Exported model member names a field property must not collide with. Generated
 # models expose ID()/CreatedTime()/Save/Fetch/Delete methods; a field whose
 # Pascal name equals one of these would shadow the method, so it is suffixed.
@@ -300,6 +317,49 @@ def write_main(base: Base, output_folder: Path) -> None:
         write.line("func (a *Airtable) InvalidateAllCaches() { a.client.InvalidateAllCaches() }")
 
 
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate `filters_{table}.go`: a `{prefix}Filters` struct with one builder
+    per field plus a record-ID builder, and a package-level `{Prefix}F` instance.
+
+    Shape (cross-language parity, PascalCase per Go convention):
+        type primaryFilters struct { PrimaryKey TextField; ...; ID IDField }
+        var PrimaryF = primaryFilters{ PrimaryKey: NewTextField("Primary Key"), ..., ID: NewIDField() }
+
+    Usage: `airtable.PrimaryF.PrimaryKey.Eq("x", true, false)`. Filter strings
+    reference field NAMES, so each builder is constructed from the field's name.
+    """
+    for table in base.tables:
+        prefix = _table_prefix(table)
+        props = _field_property_map(table)
+        struct_name = f"{prefix.lower()}Filters"
+        with WriteToGoFile(path=output_folder / f"filters_{prefix.lower()}.go") as write:
+            write.package_decl()
+            write.line_empty()
+            write.comment(f"Formula-filter builders for {sanitize_string(table.name)}.")
+            write.line_empty()
+
+            # The filters struct: one builder field per Airtable field + record ID.
+            write.struct_open(struct_name)
+            for field in table.fields:
+                name = props[field.id]
+                go_type = _GO_FORMULA_CLASS_MAP.get(field.formula_class(), "TextField")
+                write.struct_field(name, go_type, indent=1)
+            write.line_indented("ID IDField", 1)
+            write.close()
+            write.line_empty()
+
+            # Package-level instance the caller uses: {Prefix}F.
+            write.comment(f"{prefix}F builds filter formulas for {sanitize_string(table.name)} fields.")
+            write.line(f"var {prefix}F = {struct_name}{{")
+            for field in table.fields:
+                name = props[field.id]
+                go_type = _GO_FORMULA_CLASS_MAP.get(field.formula_class(), "TextField")
+                field_name = _go_string_literal(sanitize_string(field.name))
+                write.line_indented(f'{name}: New{go_type}("{field_name}"),', 1)
+            write.line_indented("ID: NewIDField(),", 1)
+            write.line("}")
+
+
 # endregion
 
 
@@ -317,11 +377,15 @@ def generate_go(
     exclude: list[str] = []
     if not runtime:
         exclude.append("runtime.go")
+    if not formulas:
+        exclude.extend(_GO_FORMULA_STATIC_FILES)
     _copy_static_go(output_folder, exclude)
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
     write_models(base, output_folder)
+    if formulas:
+        write_formula_helpers(base, output_folder)
     if wrappers:
         write_main(base, output_folder)
 
