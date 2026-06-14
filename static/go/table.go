@@ -48,8 +48,8 @@ func (t *Table[T, PT]) decode(rec *rawRecord) (PT, error) {
 	return pt, nil
 }
 
-// Get fetches a single record by ID.
-func (t *Table[T, PT]) Get(ctx context.Context, id string) (PT, error) {
+// GetOne fetches a single record by ID.
+func (t *Table[T, PT]) GetOne(ctx context.Context, id string) (PT, error) {
 	rec, err := t.client.getRecord(ctx, t.tableID, id)
 	if err != nil {
 		return nil, err
@@ -57,8 +57,8 @@ func (t *Table[T, PT]) Get(ctx context.Context, id string) (PT, error) {
 	return t.decode(rec)
 }
 
-// List fetches all records matching q (nil for all).
-func (t *Table[T, PT]) List(ctx context.Context, q *Query) ([]PT, error) {
+// GetMany fetches all records matching q (nil for all).
+func (t *Table[T, PT]) GetMany(ctx context.Context, q *Query) ([]PT, error) {
 	recs, err := t.client.listRecords(ctx, t.tableID, q)
 	if err != nil {
 		return nil, err
@@ -66,8 +66,8 @@ func (t *Table[T, PT]) List(ctx context.Context, q *Query) ([]PT, error) {
 	return t.decodeAll(recs)
 }
 
-// Create inserts a single model, hydrating it from the response.
-func (t *Table[T, PT]) Create(ctx context.Context, m PT) (PT, error) {
+// CreateOne inserts a single model, hydrating it from the response.
+func (t *Table[T, PT]) CreateOne(ctx context.Context, m PT) (PT, error) {
 	recs, err := t.client.createRecords(ctx, t.tableID, []map[string]json.RawMessage{toCreateFields(m)}, false)
 	if err != nil {
 		return nil, err
@@ -101,8 +101,9 @@ func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT) ([]PT, error
 	return t.decodeAll(recs)
 }
 
-// Update PATCHes a model's dirty fields, hydrating it from the response.
-func (t *Table[T, PT]) Update(ctx context.Context, m PT) (PT, error) {
+// UpdateOne PATCHes a model's dirty fields (or all writable fields when it has
+// no snapshot), hydrating it from the response. The model carries its own ID.
+func (t *Table[T, PT]) UpdateOne(ctx context.Context, m PT) (PT, error) {
 	if m.ID() == "" {
 		return nil, ErrNotFound
 	}
@@ -119,8 +120,31 @@ func (t *Table[T, PT]) Update(ctx context.Context, m PT) (PT, error) {
 	return m, nil
 }
 
-// Delete removes a record by ID.
-func (t *Table[T, PT]) Delete(ctx context.Context, id string) error {
+// UpdateMany PATCHes multiple models (batched), each by its own ID.
+func (t *Table[T, PT]) UpdateMany(ctx context.Context, models []PT) ([]PT, error) {
+	payload := make([]recordPayload, 0, len(models))
+	for _, m := range models {
+		if m.ID() == "" {
+			return nil, ErrNotFound
+		}
+		payload = append(payload, recordPayload{ID: m.ID(), Fields: dirtyFields(m)})
+	}
+	recs, err := t.client.updateRecords(ctx, t.tableID, payload, false)
+	if err != nil {
+		return nil, err
+	}
+	for i := range recs {
+		if i < len(models) {
+			if err := hydrate(models[i], &recs[i], t.client); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return t.decodeAll(recs)
+}
+
+// DeleteOne removes a record by ID.
+func (t *Table[T, PT]) DeleteOne(ctx context.Context, id string) error {
 	return t.client.deleteRecords(ctx, t.tableID, []string{id})
 }
 

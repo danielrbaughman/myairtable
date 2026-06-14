@@ -38,8 +38,8 @@ func (t *DictTable) wrap(rec *rawRecord) (*DictRecord, error) {
 	return &DictRecord{ID: rec.ID, CreatedTime: rec.CreatedTime, Fields: NewFields(values, t.nameToID)}, nil
 }
 
-// Get fetches a single record by ID.
-func (t *DictTable) Get(ctx context.Context, id string) (*DictRecord, error) {
+// GetOne fetches a single record by ID.
+func (t *DictTable) GetOne(ctx context.Context, id string) (*DictRecord, error) {
 	rec, err := t.client.getRecord(ctx, t.tableID, id)
 	if err != nil {
 		return nil, err
@@ -47,8 +47,8 @@ func (t *DictTable) Get(ctx context.Context, id string) (*DictRecord, error) {
 	return t.wrap(rec)
 }
 
-// List fetches all records matching q (nil for all records).
-func (t *DictTable) List(ctx context.Context, q *Query) ([]*DictRecord, error) {
+// GetMany fetches all records matching q (nil for all records).
+func (t *DictTable) GetMany(ctx context.Context, q *Query) ([]*DictRecord, error) {
 	recs, err := t.client.listRecords(ctx, t.tableID, q)
 	if err != nil {
 		return nil, err
@@ -64,8 +64,8 @@ func (t *DictTable) List(ctx context.Context, q *Query) ([]*DictRecord, error) {
 	return out, nil
 }
 
-// Create inserts a single record from the given fields.
-func (t *DictTable) Create(ctx context.Context, fields *Fields) (*DictRecord, error) {
+// CreateOne inserts a single record from the given fields.
+func (t *DictTable) CreateOne(ctx context.Context, fields *Fields) (*DictRecord, error) {
 	created, err := t.CreateMany(ctx, []*Fields{fields})
 	if err != nil {
 		return nil, err
@@ -89,8 +89,8 @@ func (t *DictTable) CreateMany(ctx context.Context, fields []*Fields) ([]*DictRe
 	return t.wrapAll(recs)
 }
 
-// Update PATCHes a single record's fields.
-func (t *DictTable) Update(ctx context.Context, id string, fields *Fields) (*DictRecord, error) {
+// UpdateOne PATCHes a single record's fields.
+func (t *DictTable) UpdateOne(ctx context.Context, id string, fields *Fields) (*DictRecord, error) {
 	recs, err := t.client.updateRecords(ctx, t.tableID, []recordPayload{{ID: id, Fields: fields.Raw()}}, false)
 	if err != nil {
 		return nil, err
@@ -105,8 +105,8 @@ func (t *DictTable) Update(ctx context.Context, id string, fields *Fields) (*Dic
 	return wrapped[0], nil
 }
 
-// Delete removes a single record by ID.
-func (t *DictTable) Delete(ctx context.Context, id string) error {
+// DeleteOne removes a single record by ID.
+func (t *DictTable) DeleteOne(ctx context.Context, id string) error {
 	return t.client.deleteRecords(ctx, t.tableID, []string{id})
 }
 
