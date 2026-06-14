@@ -43,7 +43,16 @@ _GO_STATIC_COPY_EXCLUDE = ("go.mod", "go.sum", "*_test.go")
 # Exported model member names a field property must not collide with. Generated
 # models expose ID()/CreatedTime()/Save/Fetch/Delete methods; a field whose
 # Pascal name equals one of these would shadow the method, so it is suffixed.
-_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete"})
+_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete", "TableID"})
+
+
+def _go_model_field_type(field) -> str:
+    """The Go struct-field type for a model field: pointer for optional scalars/
+    wrappers, slice as-is (already nil-able)."""
+    go_type = field.go_type()
+    if go_type.startswith("[]"):
+        return go_type
+    return f"*{go_type}"
 
 
 def _copy_static_go(output_folder: Path, exclude: list[str]) -> None:
@@ -176,6 +185,72 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.line(f"func (v {view_name}) ViewID() string {{ return string(v) }}")
 
 
+def write_models(base: Base, output_folder: Path) -> None:
+    """Generate `model_{table}.go`: the ORM model struct + Model-interface methods
+    + fluent Save/Fetch/Delete.
+
+    Writable fields are pointer optionals (or slices); computed fields decode-only
+    (pointer to wrapper) and are excluded from writableFields(). The read-only
+    contract is enforced by writableFields(), not the type system.
+    """
+    for table in base.tables:
+        prefix = _table_prefix(table)
+        model = f"{prefix}Model"
+        props = _field_property_map(table)
+        writable = [f for f in table.fields if not f.is_computed()]
+        with WriteToGoFile(path=output_folder / f"model_{prefix.lower()}.go") as write:
+            write.package_decl()
+            write.line_empty()
+            write.add_go_import("context")
+            write.add_go_import("encoding/json")
+            write.mark_imports()
+            write.line_empty()
+            write.comment(f"{model} is the ORM model for {sanitize_string(table.name)}.")
+            write.struct_open(model)
+            for field in table.fields:
+                name = props[field.id]
+                write.property_docstring(field, table, indent_level=1)
+                write.struct_field(name, _go_model_field_type(field), json_tag=f"{field.id},omitempty", indent=1)
+            write.line_empty()
+            write.line_indented("id          string", 1)
+            write.line_indented("createdTime *AirtableTime", 1)
+            write.line_indented("client      *Client", 1)
+            write.line_indented("snapshot    map[string]json.RawMessage", 1)
+            write.close()
+            write.line_empty()
+
+            # Model-interface methods.
+            write.line(f'func (m *{model}) TableID() string {{ return "{table.id}" }}')
+            write.line(f"func (m *{model}) ID() string {{ return m.id }}")
+            write.line(f"func (m *{model}) CreatedTime() *AirtableTime {{ return m.createdTime }}")
+            write.line(f"func (m *{model}) setID(id string) {{ m.id = id }}")
+            write.line(f"func (m *{model}) setCreatedTime(t *AirtableTime) {{ m.createdTime = t }}")
+            write.line(f"func (m *{model}) setClient(c *Client) {{ m.client = c }}")
+            write.line(f"func (m *{model}) getClient() *Client {{ return m.client }}")
+            write.line(f"func (m *{model}) setSnapshot(s map[string]json.RawMessage) {{ m.snapshot = s }}")
+            write.line(f"func (m *{model}) snapshotFields() map[string]json.RawMessage {{ return m.snapshot }}")
+            write.line_empty()
+
+            # writableFields(): every writable field keyed by field ID.
+            write.comment("writableFields returns the writable fields keyed by field ID.")
+            write.line(f"func (m *{model}) writableFields() map[string]json.RawMessage {{")
+            write.line_indented("out := map[string]json.RawMessage{}", 1)
+            for field in writable:
+                name = props[field.id]
+                write.line_indented(f'out["{field.id}"] = mustMarshal(m.{name})', 1)
+            write.line_indented("return out", 1)
+            write.line("}")
+            write.line_empty()
+
+            # Fluent CRUD.
+            write.comment("Save creates (if new) or updates this record.")
+            write.line(f"func (m *{model}) Save(ctx context.Context) error {{ return modelSave[{model}](ctx, m) }}")
+            write.comment("Fetch refreshes this record from the server.")
+            write.line(f"func (m *{model}) Fetch(ctx context.Context) error {{ return modelFetch[{model}](ctx, m) }}")
+            write.comment("Delete removes this record.")
+            write.line(f"func (m *{model}) Delete(ctx context.Context) error {{ return modelDelete[{model}](ctx, m) }}")
+
+
 def write_main(base: Base, output_folder: Path) -> None:
     """Generate `airtable.go`: the Airtable entry point + per-table dict accessors.
 
@@ -194,6 +269,7 @@ def write_main(base: Base, output_folder: Path) -> None:
         write.struct_field("client", "*Client", indent=1)
         for table in base.tables:
             prefix = _table_prefix(table)
+            write.struct_field(prefix, f"*Table[{prefix}Model, *{prefix}Model]", indent=1)
             write.struct_field(f"{prefix}Dict", "*DictTable", indent=1)
         write.close()
         write.line_empty()
@@ -207,6 +283,7 @@ def write_main(base: Base, output_folder: Path) -> None:
         write.line_indented("client: c,", 2)
         for table in base.tables:
             prefix = _table_prefix(table)
+            write.line_indented(f'{prefix}: NewTable[{prefix}Model, *{prefix}Model](c, "{table.id}", {prefix}NameToID),', 2)
             write.line_indented(f'{prefix}Dict: NewDictTable(c, "{table.id}", {prefix}NameToID),', 2)
         write.line_indented("}", 1)
         write.line("}")
@@ -244,6 +321,7 @@ def generate_go(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    write_models(base, output_folder)
     if wrappers:
         write_main(base, output_folder)
 
