@@ -1,6 +1,7 @@
 """Tests for computed field read-only property generation in TS, JS, and Python generators."""
 
 import ast
+import re
 from pathlib import Path
 
 from src.meta import Base, Choice, Field, Options, Result, Table, View
@@ -2710,3 +2711,220 @@ class TestJavaModels:
         # Field references render by name; <, >, & are HTML-entity-escaped.
         assert '{My Text} &amp; "&lt;b&gt;!"' in content
         assert '& "<b>!"' not in content
+
+
+# =============================================================================
+# Go generator
+# =============================================================================
+
+
+class TestGoOptionsGenerator:
+    """Go select-option typed-string constant generation.
+
+    Go has no enums: each select field becomes `type {Name} string` plus a const
+    block of `{Name}{Choice} {Name} = "raw"`. Verifies the generated source text
+    without shelling out to `go build` (mirrors the Java/Swift generator tests).
+    Assertions use substring/regex checks robust to gofmt's column alignment.
+    """
+
+    def _generate_options(self, choices: list[str], tmp_path: Path) -> str:
+        from src.generators.go import _gofmt, write_options
+
+        base = make_test_base([("Status", "fld001", "singleSelect")])
+        field = base.tables[0].fields[0]
+        assert field.options is not None
+        field.options.choices = [Choice.model_construct(id=f"sel{i}", name=name) for i, name in enumerate(choices)]
+        assert field.__pydantic_private__ is not None
+        field.__pydantic_private__["_select_options_cache"] = None
+
+        out = tmp_path / "go_output"
+        out.mkdir()
+        write_options(base, out)
+        _gofmt(out)
+        return (out / "options_testtable.go").read_text()
+
+    def test_typed_string_type_declared(self, tmp_path: Path):
+        """Each select field emits `type {TypeName} string`."""
+        content = self._generate_options(["Open", "Closed"], tmp_path)
+        assert "type TestTableStatusOption string" in content
+
+    def test_const_names_are_pascal_with_raw_values(self, tmp_path: Path):
+        """Const names are `{TypeName}{Choice}` PascalCase with the raw choice value."""
+        content = self._generate_options(["Open", "In Progress"], tmp_path)
+        assert re.search(r'TestTableStatusOptionOpen\s+TestTableStatusOption = "Open"', content)
+        assert re.search(r'TestTableStatusOptionInProgress\s+TestTableStatusOption = "In Progress"', content)
+
+    def test_const_block_present(self, tmp_path: Path):
+        """The typed constants are grouped in a `const ( ... )` block."""
+        content = self._generate_options(["Open"], tmp_path)
+        assert "const (" in content
+
+    def test_colliding_choices_get_dedup_suffix(self, tmp_path: Path):
+        """Two choices that sanitize to the same const name get a `V2` dedup suffix."""
+        # select_options() sorts alphabetically; both "Open" entries collide.
+        content = self._generate_options(["Open", "Open"], tmp_path)
+        assert re.search(r'TestTableStatusOptionOpen\s+TestTableStatusOption = "Open"', content)
+        assert re.search(r'TestTableStatusOptionOpenV2\s+TestTableStatusOption = "Open"', content)
+
+
+class TestGoFieldTypes:
+    """Go per-table field ID/name consts, lookup maps, allIds slice, and View consts.
+
+    Member names mirror the other targets for cross-language parity (AllFieldIDs,
+    NameToID, IDToName). Assertions are whitespace-tolerant (gofmt aligns the
+    const block columns).
+    """
+
+    FIELDS_SPEC = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+        ("My Formula", "fld003", "formula"),
+    ]
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, views: list[tuple[str, str]] | None = None) -> Path:
+        from src.generators.go import _gofmt, write_field_types
+
+        base = make_test_base(fields_spec)
+        if views is not None:
+            base.tables[0].views = [View.model_construct(id=vid, name=vname, type="grid", table_id=base.tables[0].id) for vname, vid in views]
+        out = tmp_path / "go_output"
+        out.mkdir()
+        write_field_types(base, out)
+        _gofmt(out)
+        return out
+
+    def test_per_field_id_and_name_consts(self, tmp_path: Path):
+        """Every field gets a `{Prefix}{Name}FieldID` + `{Prefix}{Name}FieldName` const."""
+        content = (self._generate(self.FIELDS_SPEC, tmp_path) / "fields_testtable.go").read_text()
+        assert re.search(r'TestTablePrimaryKeyFieldID\s+= "fld001"', content)
+        assert re.search(r'TestTablePrimaryKeyFieldName\s+= "Primary Key"', content)
+        assert re.search(r'TestTableCountFieldID\s+= "fld002"', content)
+        assert re.search(r'TestTableCountFieldName\s+= "Count"', content)
+        assert re.search(r'TestTableMyFormulaFieldID\s+= "fld003"', content)
+        assert re.search(r'TestTableMyFormulaFieldName\s+= "My Formula"', content)
+
+    def test_all_field_ids_slice(self, tmp_path: Path):
+        """`{Prefix}AllFieldIDs` is a []string with every field ID in schema order."""
+        content = (self._generate(self.FIELDS_SPEC, tmp_path) / "fields_testtable.go").read_text()
+        assert 'var TestTableAllFieldIDs = []string{"fld001", "fld002", "fld003"}' in content
+
+    def test_name_to_id_map(self, tmp_path: Path):
+        """`{Prefix}NameToID` maps Airtable field name -> field ID."""
+        content = (self._generate(self.FIELDS_SPEC, tmp_path) / "fields_testtable.go").read_text()
+        assert "var TestTableNameToID = map[string]string{" in content
+        assert re.search(r'"Primary Key":\s*"fld001"', content)
+        assert re.search(r'"Count":\s*"fld002"', content)
+        assert re.search(r'"My Formula":\s*"fld003"', content)
+
+    def test_id_to_name_map(self, tmp_path: Path):
+        """`{Prefix}IDToName` maps field ID -> Airtable field name."""
+        content = (self._generate(self.FIELDS_SPEC, tmp_path) / "fields_testtable.go").read_text()
+        assert "var TestTableIDToName = map[string]string{" in content
+        assert re.search(r'"fld001":\s*"Primary Key"', content)
+        assert re.search(r'"fld002":\s*"Count"', content)
+        assert re.search(r'"fld003":\s*"My Formula"', content)
+
+    def test_view_type_and_viewid_method(self, tmp_path: Path):
+        """views_{table}.go emits `type {Prefix}View string` + a ViewID() method."""
+        out = self._generate(self.FIELDS_SPEC, tmp_path, views=[("Grid view", "viw001"), ("My View", "viw002")])
+        content = (out / "views_testtable.go").read_text()
+        assert "type TestTableView string" in content
+        assert re.search(r'TestTableViewGridView\s+TestTableView = "viw001"', content)
+        assert re.search(r'TestTableViewMyView\s+TestTableView = "viw002"', content)
+        assert "func (v TestTableView) ViewID() string { return string(v) }" in content
+
+    def test_no_views_file_when_table_has_no_views(self, tmp_path: Path):
+        """A table with no views must not emit a views_{table}.go file."""
+        out = self._generate(self.FIELDS_SPEC, tmp_path, views=[])
+        assert not (out / "views_testtable.go").exists()
+
+
+class TestGoTablesAndMain:
+    """Go airtable.go entry point: BaseID const, Airtable struct with per-table
+    `{Prefix}Dict *DictTable` fields, New/NewWithBase constructors, Client() and
+    InvalidateAllCaches accessors.
+    """
+
+    FIELDS_SPEC = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+    ]
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.go import _gofmt, write_main
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "go_output"
+        out.mkdir()
+        write_main(base, out)
+        _gofmt(out)
+        return (out / "airtable.go").read_text()
+
+    def test_base_id_const(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert 'const BaseID = "appTEST123"' in content
+
+    def test_airtable_struct_and_dict_fields(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert "type Airtable struct {" in content
+        # One `{Prefix}Dict *DictTable` field per table.
+        assert re.search(r"TestTableDict\s+\*DictTable", content)
+
+    def test_constructors_present(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert "func New(" in content
+        assert "func NewWithBase(" in content
+        # NewWithBase wires up each table's DictTable from its NameToID map.
+        assert 'NewDictTable(c, "tblTEST123", TestTableNameToID)' in content
+
+    def test_client_and_invalidate_accessors(self, tmp_path: Path):
+        content = self._generate(self.FIELDS_SPEC, tmp_path)
+        assert "func (a *Airtable) Client()" in content
+        assert "InvalidateAllCaches" in content
+
+
+class TestGoFlagGating:
+    """generate_go must honor the wrappers flag: with wrappers=False the dynamic
+    writers must NOT emit airtable.go (the entry point), while the per-table field
+    consts are still written.
+    """
+
+    FIELDS_SPEC = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+    ]
+
+    def test_wrappers_false_skips_airtable_go(self, tmp_path: Path):
+        """With wrappers=False, write_main is not called so airtable.go is absent."""
+        from src.generators.go import _gofmt, write_field_types, write_main, write_options
+
+        base = make_test_base(self.FIELDS_SPEC)
+        out = tmp_path / "go_output"
+        out.mkdir()
+        # Mirror generate_go's dynamic writers with wrappers=False (skip write_main).
+        wrappers = False
+        write_options(base, out)
+        write_field_types(base, out)
+        if wrappers:
+            write_main(base, out)
+        _gofmt(out)
+
+        assert not (out / "airtable.go").exists()
+        # Field consts are still emitted.
+        assert (out / "fields_testtable.go").exists()
+
+    def test_wrappers_true_emits_airtable_go(self, tmp_path: Path):
+        """The complementary case: with wrappers=True airtable.go is emitted."""
+        from src.generators.go import _gofmt, write_field_types, write_main, write_options
+
+        base = make_test_base(self.FIELDS_SPEC)
+        out = tmp_path / "go_output"
+        out.mkdir()
+        wrappers = True
+        write_options(base, out)
+        write_field_types(base, out)
+        if wrappers:
+            write_main(base, out)
+        _gofmt(out)
+
+        assert (out / "airtable.go").exists()
