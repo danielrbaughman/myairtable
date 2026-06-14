@@ -2928,3 +2928,77 @@ class TestGoFlagGating:
         _gofmt(out)
 
         assert (out / "airtable.go").exists()
+
+
+class TestGoComputedFields:
+    """Go `model_{table}.go` writable vs computed contract (G4.5 — content
+    assertions only, no `go build`).
+
+    Go analog of TestJavaModels/TestJavaComputedFields: writable fields are
+    pointer optionals (`*string`, ...) carrying a `json:"fld...,omitempty"` tag
+    and appear in writableFields(); computed fields are pointer wrappers
+    (`*MaybeSpecialOrError[...]` / `*VecOrValue[...]`) and are excluded from
+    writableFields(). Assertions are whitespace-tolerant (gofmt reflows the
+    method receivers and aligns struct-field columns).
+    """
+
+    MIXED_SPEC: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Count", "fld002", "number"),
+        ("Is Done", "fld003", "checkbox"),
+        ("My Formula", "fld004", "formula"),
+        ("Look", "fld005", "multipleLookupValues"),
+    ]
+
+    def _generate_model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from src.generators.go import _gofmt, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "go_output"
+        out.mkdir()
+        map_types(base)
+        write_models(base, out)
+        _gofmt(out)
+        return (out / "model_testtable.go").read_text()
+
+    def test_computed_field_is_pointer_wrapper(self, tmp_path: Path):
+        """A computed field is a pointer to a MaybeSpecialOrError[...] (scalar
+        formula) or VecOrValue[...] (lookup) wrapper, tagged with its field ID."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        # Scalar formula -> *MaybeSpecialOrError[...].
+        assert re.search(r"MyFormula\s+\*MaybeSpecialOrError\[[^\]]+\]\s+`json:\"fld004,omitempty\"`", content)
+        # Lookup -> *VecOrValue[...].
+        assert re.search(r"Look\s+\*VecOrValue\[[^\]]+\]\s+`json:\"fld005,omitempty\"`", content)
+
+    def test_writable_scalar_field_is_pointer_with_field_id_tag(self, tmp_path: Path):
+        """Writable scalars are pointer optionals carrying a json field-ID tag."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert re.search(r"PrimaryKey\s+\*string\s+`json:\"fld001,omitempty\"`", content)
+        assert re.search(r"Count\s+\*float64\s+`json:\"fld002,omitempty\"`", content)
+        assert re.search(r"IsDone\s+\*bool\s+`json:\"fld003,omitempty\"`", content)
+        # Writable fields are never wrapped.
+        assert "PrimaryKey *MaybeSpecialOrError" not in content
+        assert "Count *VecOrValue" not in content
+
+    def test_writable_fields_method_includes_only_writable_ids(self, tmp_path: Path):
+        """writableFields() emits an out["fldID"] line per writable field and
+        excludes every computed field's ID."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        body = content.split("func (m *TestTableModel) writableFields()")[1]
+        body = body.split("return out")[0]
+        for writable_id in ("fld001", "fld002", "fld003"):
+            assert re.search(rf'out\["{writable_id}"\]\s*=\s*mustMarshal\(', body)
+        # Computed fields must not appear in writableFields().
+        for computed_id in ("fld004", "fld005"):
+            assert f'out["{computed_id}"]' not in body
+
+    def test_model_has_crud_and_interface_methods(self, tmp_path: Path):
+        """The model exposes Save/Fetch/Delete plus the TableID/writableFields
+        Model-interface hooks (gofmt-aligned receivers)."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert re.search(r"func \(m \*TestTableModel\) Save\(ctx context\.Context\) error", content)
+        assert re.search(r"func \(m \*TestTableModel\) Fetch\(ctx context\.Context\) error", content)
+        assert re.search(r"func \(m \*TestTableModel\) Delete\(ctx context\.Context\) error", content)
+        assert re.search(r"func \(m \*TestTableModel\) TableID\(\) string", content)
+        assert re.search(r"func \(m \*TestTableModel\) writableFields\(\) map\[string\]json\.RawMessage", content)
