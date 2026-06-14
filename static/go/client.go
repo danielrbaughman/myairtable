@@ -262,6 +262,29 @@ func (c *Client) updateRecords(ctx context.Context, tableID string, updates []re
 	return updated, nil
 }
 
+// upsertRecords PATCHes records with performUpsert, matching on fieldsToMergeOn.
+func (c *Client) upsertRecords(ctx context.Context, tableID string, records []recordPayload, matchFields []string) ([]rawRecord, error) {
+	reqBody := map[string]any{
+		"records":               records,
+		"returnFieldsByFieldId": true,
+		"performUpsert":         map[string]any{"fieldsToMergeOn": matchFields},
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, &DecodingError{Err: err}
+	}
+	data, err := c.do(ctx, http.MethodPatch, c.recordURL(tableID, "", nil), body)
+	if err != nil {
+		return nil, err
+	}
+	var resp listResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, &DecodingError{Err: err}
+	}
+	c.cache.invalidateTable(tableID)
+	return resp.Records, nil
+}
+
 func (c *Client) writeBatch(ctx context.Context, method, tableID string, records []recordPayload, typecast bool) ([]rawRecord, error) {
 	reqBody := map[string]any{"records": records, "returnFieldsByFieldId": true}
 	if typecast {
