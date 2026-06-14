@@ -4,7 +4,10 @@ package airtable
 // can instead be an Airtable "special number" ({"specialValue": "NaN"|...}) or
 // an error ({"error": "#ERROR!"}). Decoding dispatches on the object shape.
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // SpecialNumber is Airtable's non-finite-number sentinel, e.g. {"specialValue":"NaN"}.
 type SpecialNumber struct {
@@ -36,6 +39,11 @@ func (m MaybeSpecialOrError[T]) IsError() bool         { return m.errValue != ni
 func (m MaybeSpecialOrError[T]) ErrorVal() *ErrorValue { return m.errValue }
 
 func (m *MaybeSpecialOrError[T]) UnmarshalJSON(b []byte) error {
+	// A JSON null (e.g. a null element inside a lookup array) is absent, not a
+	// present zero value, and is neither a special number nor an error.
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(b, &probe); err == nil {
 		if _, ok := probe["specialValue"]; ok {
