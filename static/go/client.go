@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,6 +28,12 @@ const (
 	maxBatch         = 10
 	maxRetries       = 5
 	defaultRetryWait = 30 * time.Second
+)
+
+// Retry backoff timing — vars (not consts) so tests can shrink the delays.
+var (
+	retryBaseDelay = 1 * time.Second
+	maxRetryWait   = 30 * time.Second
 )
 
 // Client is the Airtable API client. Construct with NewClient.
@@ -89,14 +96,15 @@ func (c *Client) recordURL(tableID, recordID string, query url.Values) string {
 	return b.String()
 }
 
-// do performs an HTTP request with bearer auth and 429 retry/backoff. It returns
+// do performs an HTTP request with bearer auth and 429/5xx retry with jittered
+// backoff (honoring a server Retry-After). It returns
 // the response body for 2xx, or a typed error otherwise.
 func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([]byte, error) {
 	if c.apiKey == "" || c.baseID == "" {
 		return nil, ErrMissingCredentials
 	}
 
-	var lastRateLimit *RateLimitError
+	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		var reqBody io.Reader
 		if body != nil {
@@ -121,40 +129,64 @@ func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([
 			return nil, readErr
 		}
 
-		switch {
-		case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return respBody, nil
-		case resp.StatusCode == 429:
-			wait := defaultRetryWait
-			if ra := resp.Header.Get("Retry-After"); ra != "" {
-				if secs, err := strconv.Atoi(ra); err == nil {
-					wait = time.Duration(secs) * time.Second
-				}
-			}
-			lastRateLimit = &RateLimitError{RetryAfter: wait}
-			if attempt < maxRetries {
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(backoff(attempt, wait)):
-				}
-				continue
-			}
-		default:
+		}
+		// Only 429 and 5xx are transient; other 4xx fail immediately.
+		if resp.StatusCode != 429 && resp.StatusCode < 500 {
 			return nil, errorFromResponse(resp.StatusCode, respBody)
 		}
+
+		var retryAfter time.Duration
+		if resp.StatusCode == 429 {
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if secs, err := strconv.Atoi(ra); err == nil {
+					retryAfter = time.Duration(secs) * time.Second
+				}
+			}
+			reported := retryAfter
+			if reported == 0 {
+				reported = defaultRetryWait
+			}
+			lastErr = &RateLimitError{RetryAfter: reported}
+		} else {
+			lastErr = errorFromResponse(resp.StatusCode, respBody)
+		}
+
+		if attempt < maxRetries {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryWait(attempt, retryAfter)):
+			}
+			continue
+		}
 	}
-	return nil, lastRateLimit
+	return nil, lastErr
 }
 
-// backoff returns the wait before the next retry: exponential, capped at the
-// server-suggested wait.
-func backoff(attempt int, suggested time.Duration) time.Duration {
-	d := time.Duration(1<<uint(attempt)) * time.Second
-	if d > suggested {
-		return suggested
+// retryWait computes the delay before the next retry. An explicit server
+// Retry-After is honored as a floor (plus small jitter); otherwise an
+// exponential backoff (capped at maxRetryWait) with decorrelated jitter is used
+// to avoid a thundering herd.
+func retryWait(attempt int, retryAfter time.Duration) time.Duration {
+	if retryAfter > 0 {
+		return retryAfter + jitter(retryAfter/4)
 	}
-	return d
+	d := retryBaseDelay << uint(attempt)
+	if d > maxRetryWait {
+		d = maxRetryWait
+	}
+	return d + jitter(d/2)
+}
+
+// jitter returns a random duration in [0, max). The global rand source is
+// auto-seeded (Go 1.20+); concurrency-safe.
+func jitter(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(max)))
 }
 
 // getRecord fetches a single record by ID (fields keyed by field ID).

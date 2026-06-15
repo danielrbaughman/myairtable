@@ -91,14 +91,7 @@ func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT) ([]PT, error
 	if err != nil {
 		return nil, err
 	}
-	for i := range recs {
-		if i < len(models) {
-			if err := hydrate(models[i], &recs[i], t.client); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return t.decodeAll(recs)
+	return t.hydrateInto(models, recs)
 }
 
 // UpdateOne PATCHes a model's dirty fields (or all writable fields when it has
@@ -133,14 +126,22 @@ func (t *Table[T, PT]) UpdateMany(ctx context.Context, models []PT) ([]PT, error
 	if err != nil {
 		return nil, err
 	}
+	return t.hydrateInto(models, recs)
+}
+
+// hydrateInto refreshes the given models in place from the response records
+// (Airtable returns one record per input, in order) and returns the same
+// hydrated models — so callers get back the objects they passed in.
+func (t *Table[T, PT]) hydrateInto(models []PT, recs []rawRecord) ([]PT, error) {
 	for i := range recs {
-		if i < len(models) {
-			if err := hydrate(models[i], &recs[i], t.client); err != nil {
-				return nil, err
-			}
+		if i >= len(models) {
+			break
+		}
+		if err := hydrate(models[i], &recs[i], t.client); err != nil {
+			return nil, err
 		}
 	}
-	return t.decodeAll(recs)
+	return models, nil
 }
 
 // DeleteOne removes a record by ID.

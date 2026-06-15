@@ -18,8 +18,11 @@ func fieldRef(name string) string { return "{" + name + "}" }
 
 // numberToString renders a numeric value the way Airtable formula source expects:
 // integers without a trailing ".0", floats with their natural decimal form.
+// Uses 'f' (never 'g'/'e') so values >= 1e6 are NOT emitted in scientific
+// notation — Airtable's formula parser rejects "1e+06", which would silently
+// break numeric filters on large values (e.g. currency).
 func numberToString(value float64) string {
-	return strconv.FormatFloat(value, 'g', -1, 64)
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 // =============================================================================
