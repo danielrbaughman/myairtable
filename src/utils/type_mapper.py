@@ -169,6 +169,23 @@ GENERIC_TO_JAVA: dict[GenericType, str] = {
     GenericType.UNKNOWN: "JsonNode",  # com.fasterxml.jackson.databind.JsonNode — no custom JSON sum type
 }
 
+GENERIC_TO_GO: dict[GenericType, str] = {
+    GenericType.STRING: "string",
+    GenericType.INTEGER: "int64",  # 64-bit, matching Rust i64 / Kotlin Long / Java Long width
+    GenericType.FLOAT: "float64",
+    GenericType.BOOLEAN: "bool",
+    GenericType.DATETIME: "AirtableTime",  # wrapper over time.Time; 3-format UnmarshalJSON
+    GenericType.DURATION: "AirtableDuration",  # wrapper over time.Duration; wire = numeric seconds
+    GenericType.RECORD_ID: "[]string",  # API always returns arrays, even for single-link fields (matches Rust/Java)
+    GenericType.ATTACHMENT: "AirtableAttachment",
+    GenericType.COLLABORATOR: "AirtableCollaborator",
+    GenericType.BUTTON: "AirtableButton",
+    GenericType.LIST_OF_RECORD_IDS: "[]string",
+    GenericType.LIST_OF_ATTACHMENTS: "[]AirtableAttachment",
+    GenericType.LIST_OF_COLLABORATORS: "[]AirtableCollaborator",
+    GenericType.UNKNOWN: "any",  # native any (decoded JSON) — no custom JSON sum type
+}
+
 # endregion
 
 
@@ -219,6 +236,7 @@ def map_types(base: Base) -> None:
             swift_type = apply_swift_computed_wrapping(render_type(field, "swift", resolved=resolved), field)
             kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", resolved=resolved), field)
             java_type = apply_java_computed_wrapping(render_type(field, "java", resolved=resolved), field)
+            go_type = apply_go_computed_wrapping(render_type(field, "go", resolved=resolved), field)
 
             field._python_type = py_type
             field._typescript_type = ts_type
@@ -226,6 +244,7 @@ def map_types(base: Base) -> None:
             field._swift_type = swift_type
             field._kotlin_type = kotlin_type
             field._java_type = java_type
+            field._go_type = go_type
 
             # Handle disambiguation for union types (list vs single value)
             if "|" in py_type and field.is_valid():
@@ -240,6 +259,7 @@ def map_types(base: Base) -> None:
                     field._swift_type = apply_swift_computed_wrapping(render_type(field, "swift", is_list=is_list), field)
                     field._kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", is_list=is_list), field)
                     field._java_type = apply_java_computed_wrapping(render_type(field, "java", is_list=is_list), field)
+                    field._go_type = apply_go_computed_wrapping(render_type(field, "go", is_list=is_list), field)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -338,7 +358,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-Language = Literal["python", "typescript", "zod", "rust", "swift", "kotlin", "java"]
+Language = Literal["python", "typescript", "zod", "rust", "swift", "kotlin", "java", "go"]
 
 
 @dataclass(frozen=True)
@@ -412,6 +432,17 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         union_fmt="VecOrValue<{0}>",
         enum_fmt="{0}",
     ),
+    "go": LanguageConfig(
+        type_map=GENERIC_TO_GO,
+        unknown="any",
+        list_fmt="[]{0}",
+        # VecOrValue[T] is a generic struct in static/go/vec_or_value.go matching the
+        # Rust/Swift/Kotlin/Java type by name, decoding either a single T or []T — used for
+        # lookup/rollup fields whose cardinality can't be determined from metadata alone.
+        # No computed_union_fmt: computed wrapping is applied via apply_go_computed_wrapping.
+        union_fmt="VecOrValue[{0}]",
+        enum_fmt="{0}",
+    ),
 }
 
 
@@ -429,6 +460,8 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return base_type.startswith("[") and base_type.endswith("]")
         case "kotlin" | "java":
             return base_type.startswith("List<")
+        case "go":
+            return base_type.startswith("[]")
         case _:
             return False
 
@@ -650,6 +683,32 @@ def apply_java_computed_wrapping(java_type: str, field: Field) -> str:
     return f"MaybeSpecialOrError<{inner}>"
 
 
+def apply_go_computed_wrapping(go_type: str, field: Field) -> str:
+    """Wrap a computed field's Go type to model Airtable special/error values.
+
+    Mirrors `apply_java_computed_wrapping` with Go generic syntax: always
+    `MaybeSpecialOrError[T]`, and `VecOrValue[MaybeSpecialOrError[T]]` for
+    lookup/rollup computed fields whose list/scalar shape is not guaranteed per
+    record. Strips a disambiguation-applied `[]` slice prefix so the inner element
+    type is wrapped. No-op when already wrapped.
+    """
+    if not field.is_computed():
+        return go_type
+
+    if "MaybeSpecialOrError[" in go_type or "VecOrValue[" in go_type:
+        return go_type
+
+    # Strip any disambiguation-applied `[]...` slice so we wrap the inner element type.
+    inner = go_type
+    if inner.startswith("[]"):
+        inner = inner[2:]
+
+    if field.involves_lookup() or field.involves_rollup():
+        return f"VecOrValue[MaybeSpecialOrError[{inner}]]"
+
+    return f"MaybeSpecialOrError[{inner}]"
+
+
 def map_rust_type(field: Field) -> str:
     """Calculate the Rust type for a field."""
 
@@ -704,6 +763,20 @@ def map_java_type(field: Field) -> str:
 
     field._java_type = java_type
     return java_type
+
+
+def map_go_type(field: Field) -> str:
+    """Calculate the Go type for a field."""
+
+    if field._go_type is not None:
+        return field._go_type
+
+    resolved: ResolvedType = map_type(field)
+    go_type: str = render_type(field, "go", resolved=resolved)
+    go_type = apply_go_computed_wrapping(go_type, field)
+
+    field._go_type = go_type
+    return go_type
 
 
 # endregion
@@ -882,6 +955,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     field._swift_type = apply_swift_computed_wrapping(render_type(field, "swift", is_list=is_list), field)
     field._kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", is_list=is_list), field)
     field._java_type = apply_java_computed_wrapping(render_type(field, "java", is_list=is_list), field)
+    field._go_type = apply_go_computed_wrapping(render_type(field, "go", is_list=is_list), field)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:

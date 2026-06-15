@@ -14,6 +14,7 @@ Languages supported:
 - Swift (via a custom-built client)
 - Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
 - Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
+- Go (via a custom-built client on the standard library — `net/http` + `encoding/json`, zero third-party dependencies)
 
 ### Kotlin
 
@@ -154,6 +155,27 @@ if (result.wasCreated()) {
     log.info("created {}", result.model().getId());
 }
 ```
+
+### Go
+
+The generated Go code targets **Go 1.21+** and depends on the **standard library only** (`net/http` + `encoding/json` — no third-party modules). All files (the static runtime and the generated code) live in one flat `package airtable`, and the generator emits **no** `go.mod` — the consuming project owns its module and imports the generated package:
+
+```go
+import airtable "yourmodule/path/to/output"
+
+at := airtable.NewWithBase(apiKey, baseID, 0) // cacheSeconds; 0 disables caching
+```
+
+Idioms:
+
+- **Models** are structs with `json:"fldID"` tags; optional fields are pointers (`*string`, `*float64`, …) so absent and cleared are distinguishable. Build them with the pointer helpers: `airtable.PrimaryModel{PrimaryKey: airtable.String("x")}`.
+- **`context.Context`** is the first argument of every I/O method: `at.Primary.GetOne(ctx, id)`, `rec.Save(ctx)`.
+- **Errors are returned, never panicked** — typed errors via `errors.As` (`*airtable.APIError`, `*airtable.RateLimitError`, …) and sentinels via `errors.Is` (`airtable.ErrNotFound`). 429/5xx are retried with backoff before surfacing.
+- **Typed table** layer uses generics: `at.Primary` is a `Table[PrimaryModel, *PrimaryModel]`. Methods follow an explicit `*One`/`*Many` naming convention (Go has no overloading): `GetOne`/`GetMany`, `CreateOne`/`CreateMany`, `UpdateOne`/`UpdateMany`, `DeleteOne`/`DeleteMany`, plus `Upsert` and `.Dict()` for raw access. Per-model fluent `Save`/`Fetch`/`Delete` work on models bound via `at.Primary.Attach(&m)` or returned from the table.
+- **Select options** are typed-string constants; **computed fields** decode into `*MaybeSpecialOrError[T]` (read with `.Value()`), lookups/rollups into `*VecOrValue[MaybeSpecialOrError[T]]` (read with `CleanValues`).
+- **Filtering**: `at.Primary.GetMany(ctx, (&airtable.Query{}).WithFilterFormula(airtable.PrimaryF.PrimaryKey.Eq("alice@example.com")))`.
+
+Generated code is `gofmt`-clean by construction; format/lint via `gofmt`/`go vet`/`golangci-lint`.
 
 ## Features
 
