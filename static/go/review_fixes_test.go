@@ -15,6 +15,39 @@ import (
 	"time"
 )
 
+// ---- PR review: V() unwraps wrapper types (doc accuracy + duration arithmetic) ----
+
+func TestVUnwrapsWrapperTypes(t *testing.T) {
+	when := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	at := AirtableTime{Time: when}
+	if got := V(at); got != when {
+		t.Errorf("V(AirtableTime) = %v, want %v", got, when)
+	}
+	if got := V(&at); got != when {
+		t.Errorf("V(*AirtableTime) = %v, want %v", got, when)
+	}
+	dur := AirtableDuration(90 * time.Second)
+	if got := V(dur); got != 90.0 {
+		t.Errorf("V(AirtableDuration) = %v, want 90 (seconds)", got)
+	}
+	if got := V(&dur); got != 90.0 {
+		t.Errorf("V(*AirtableDuration) = %v, want 90 (seconds)", got)
+	}
+	// nil wrapper pointers box to nil.
+	var nilTime *AirtableTime
+	if got := V(nilTime); got != nil {
+		t.Errorf("V(nil *AirtableTime) = %v, want nil", got)
+	}
+	// Scalars still pass through.
+	if got := V(String("x")); got != "x" {
+		t.Errorf("V(*string) = %v, want x", got)
+	}
+	// Duration boxed by V is now coercible by N (was 0 before the fix).
+	if got := N(V(dur)); got != 90.0 {
+		t.Errorf("N(V(duration)) = %v, want 90", got)
+	}
+}
+
 // ---- H1: number formatting -------------------------------------------------
 
 func TestNumberFilterNoScientificNotation(t *testing.T) {

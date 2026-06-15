@@ -68,15 +68,17 @@ func (d *AirtableDuration) UnmarshalJSON(b []byte) error {
 // Duration returns the value as a standard time.Duration.
 func (d AirtableDuration) Duration() time.Duration { return time.Duration(d) }
 
-// V boxes an arbitrary Go value into the native `any` representation used by the
-// formula runtime and create/update payloads. Pointers are dereferenced (nil ->
-// nil); wrapper types fall through json round-tripping so dates/durations encode
-// with their custom marshalers.
+// V boxes an arbitrary Go value into the native `any` representation the formula
+// runtime operates on (the values it sees after JSON decode: nil/bool/float64/
+// string/[]any/map). Scalar pointers are dereferenced (a nil pointer becomes
+// nil), and the Airtable wrapper types are unwrapped to a runtime-coercible
+// form — AirtableTime -> time.Time (so D() handles it), AirtableDuration ->
+// seconds as float64 (so N() can do arithmetic on durations). Anything else
+// (slices, maps, plain scalars) is returned unchanged.
 func V(value any) any {
-	if value == nil {
-		return nil
-	}
 	switch v := value.(type) {
+	case nil:
+		return nil
 	case *string:
 		if v == nil {
 			return nil
@@ -97,8 +99,23 @@ func V(value any) any {
 			return nil
 		}
 		return *v
+	case AirtableTime:
+		return v.Time
+	case *AirtableTime:
+		if v == nil {
+			return nil
+		}
+		return v.Time
+	case AirtableDuration:
+		return time.Duration(v).Seconds()
+	case *AirtableDuration:
+		if v == nil {
+			return nil
+		}
+		return time.Duration(*v).Seconds()
+	default:
+		return value
 	}
-	return value
 }
 
 // marshalField encodes a single writable field value for a create/update
