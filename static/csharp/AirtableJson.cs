@@ -1,0 +1,29 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace MyAirtable;
+
+/// <summary>
+/// The single shared <see cref="JsonSerializerOptions"/> for the runtime. Owns ONLY the options;
+/// all value coercions live on <see cref="AirtableRuntime"/> (one transpiler qualifier). The two
+/// sum-type factories are registered GLOBALLY here, so nested generics resolve without any
+/// field-level converter attributes.
+/// </summary>
+public static class AirtableJson
+{
+    public static readonly JsonSerializerOptions Options = CreateOptions();
+
+    private static JsonSerializerOptions CreateOptions()
+    {
+        var o = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
+        o.Converters.Add(new VecOrValueConverterFactory());
+        o.Converters.Add(new MaybeSpecialOrErrorConverterFactory());
+        o.Converters.Add(new AirtableDateConverter());
+        o.Converters.Add(new AirtableDurationConverter());
+        return o;
+    }
+}
