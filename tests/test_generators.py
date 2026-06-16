@@ -2492,6 +2492,52 @@ class TestCSharpComputedTypes:
         assert map_csharp_type(self._field("My Text", "fld001", "singleLineText")) == "string"
 
 
+class TestCSharpWriterHelpers:
+    """Pure helpers in write_to_csharp_file.py (CS1.2)."""
+
+    def test_csharp_ident_escapes_keywords_with_at_prefix(self):
+        """C# uses verbatim identifiers — reserved words get a leading `@`."""
+        from src.utils.write_to_csharp_file import _csharp_ident
+
+        for kw in ("class", "switch", "true", "false", "null", "namespace", "string", "int"):
+            assert _csharp_ident(kw) == f"@{kw}"
+        # Contextual keywords and ordinary names are left alone.
+        assert _csharp_ident("status") == "status"
+        assert _csharp_ident("value") == "value"
+        assert _csharp_ident("record") == "record"
+        assert _csharp_ident("async") == "async"
+
+    def test_csharp_string_literal_escapes_quotes_and_controls(self):
+        from src.utils.write_to_csharp_file import _csharp_string_literal
+
+        assert _csharp_string_literal('a"b') == 'a\\"b'
+        assert _csharp_string_literal("a\\b") == "a\\\\b"
+        assert _csharp_string_literal("a\nb\tc") == "a\\nb\\tc"
+        # `$` and `{` are not interpreted in a regular literal — left alone.
+        assert _csharp_string_literal("${x}") == "${x}"
+
+    def test_xmldoc_escape_entities_and_double_dash(self):
+        from src.utils.write_to_csharp_file import _xmldoc_escape
+
+        assert _xmldoc_escape("a < b & c > d") == "a &lt; b &amp; c &gt; d"
+        # `--` is illegal inside an XML comment body — neutralised.
+        assert _xmldoc_escape("LEN({f})--1") == "LEN({f})- -1"
+        # `&` runs first so introduced entities aren't re-escaped.
+        assert "&amp;lt;" not in _xmldoc_escape("<")
+
+    def test_choice_to_entry_pascal_case_and_edges(self):
+        from src.utils.write_to_csharp_file import _choice_to_entry
+
+        assert _choice_to_entry("open Invoices") == "OpenInvoices"
+        assert _choice_to_entry("In Progress") == "InProgress"
+        assert _choice_to_entry("") == "Empty"
+        assert _choice_to_entry("   ") == "Empty"
+        # Every result is a valid PascalCase-ish identifier (never starts with a digit).
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("!!!"))
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("3rd Party"))
+        assert _choice_to_entry("3rd Party").startswith("N")
+
+
 class TestJavaModels:
     """Java `{Table}Model` generation (J4 — content assertions only, no javac).
 
