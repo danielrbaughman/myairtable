@@ -382,6 +382,7 @@ class Field(Named):
     _kotlin_type: str | None = PrivateAttr(default=None)
     _java_type: str | None = PrivateAttr(default=None)
     _go_type: str | None = PrivateAttr(default=None)
+    _csharp_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -617,6 +618,14 @@ class Field(Named):
         from src.utils.type_mapper import map_go_type
 
         return map_go_type(self)
+
+    def csharp_type(self) -> str:
+        """Returns the C# type for this field."""
+        if self._csharp_type:
+            return self._csharp_type
+        from src.utils.type_mapper import map_csharp_type
+
+        return map_csharp_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""

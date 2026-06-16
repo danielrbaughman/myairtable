@@ -186,6 +186,23 @@ GENERIC_TO_GO: dict[GenericType, str] = {
     GenericType.UNKNOWN: "any",  # native any (decoded JSON) — no custom JSON sum type
 }
 
+GENERIC_TO_CSHARP: dict[GenericType, str] = {
+    GenericType.STRING: "string",
+    GenericType.INTEGER: "long",  # 64-bit, matching Rust i64 / Kotlin Long / Java Long width
+    GenericType.FLOAT: "double",
+    GenericType.BOOLEAN: "bool",
+    GenericType.DATETIME: "DateTimeOffset",  # custom AirtableDateConverter (3-format)
+    GenericType.DURATION: "TimeSpan",  # custom AirtableDurationConverter; wire = numeric seconds
+    GenericType.RECORD_ID: "List<string>",  # no alias in C#; API always returns arrays (matches Rust/Java)
+    GenericType.ATTACHMENT: "AirtableAttachment",
+    GenericType.COLLABORATOR: "AirtableCollaborator",
+    GenericType.BUTTON: "AirtableButton",
+    GenericType.LIST_OF_RECORD_IDS: "List<string>",
+    GenericType.LIST_OF_ATTACHMENTS: "List<AirtableAttachment>",
+    GenericType.LIST_OF_COLLABORATORS: "List<AirtableCollaborator>",
+    GenericType.UNKNOWN: "JsonNode",  # System.Text.Json.Nodes.JsonNode (mutable DOM) — no custom JSON sum type
+}
+
 # endregion
 
 
@@ -217,7 +234,7 @@ def map_types(base: Base) -> None:
 
     if base.tables and base.tables[0].fields:
         first_field = base.tables[0].fields[0]
-        if first_field._python_type is not None and first_field._typescript_type is not None:
+        if first_field._python_type is not None and first_field._typescript_type is not None and first_field._csharp_type is not None:
             return  # Already calculated
 
     # First pass: calculate all types and identify fields needing disambiguation
@@ -237,6 +254,7 @@ def map_types(base: Base) -> None:
             kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", resolved=resolved), field)
             java_type = apply_java_computed_wrapping(render_type(field, "java", resolved=resolved), field)
             go_type = apply_go_computed_wrapping(render_type(field, "go", resolved=resolved), field)
+            csharp_type = apply_csharp_computed_wrapping(render_type(field, "csharp", resolved=resolved), field)
 
             field._python_type = py_type
             field._typescript_type = ts_type
@@ -245,6 +263,7 @@ def map_types(base: Base) -> None:
             field._kotlin_type = kotlin_type
             field._java_type = java_type
             field._go_type = go_type
+            field._csharp_type = csharp_type
 
             # Handle disambiguation for union types (list vs single value)
             if "|" in py_type and field.is_valid():
@@ -260,6 +279,7 @@ def map_types(base: Base) -> None:
                     field._kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", is_list=is_list), field)
                     field._java_type = apply_java_computed_wrapping(render_type(field, "java", is_list=is_list), field)
                     field._go_type = apply_go_computed_wrapping(render_type(field, "go", is_list=is_list), field)
+                    field._csharp_type = apply_csharp_computed_wrapping(render_type(field, "csharp", is_list=is_list), field)
                 else:
                     # Need to disambiguate via API (no saved type, or base type changed)
                     fields_to_disambiguate.append(field)
@@ -358,7 +378,7 @@ def get_select_options_name(field: Field) -> str | None:
     return None
 
 
-Language = Literal["python", "typescript", "zod", "rust", "swift", "kotlin", "java", "go"]
+Language = Literal["python", "typescript", "zod", "rust", "swift", "kotlin", "java", "go", "csharp"]
 
 
 @dataclass(frozen=True)
@@ -443,6 +463,17 @@ LANGUAGE_CONFIGS: dict[Language, LanguageConfig] = {
         union_fmt="VecOrValue[{0}]",
         enum_fmt="{0}",
     ),
+    "csharp": LanguageConfig(
+        type_map=GENERIC_TO_CSHARP,
+        unknown="JsonNode",
+        list_fmt="List<{0}>",
+        # VecOrValue<T> is an abstract record (Single/Multiple) in static/csharp/VecOrValue.cs
+        # matching the Rust/Swift/Kotlin/Java type by name, decoding either a single T or List<T>
+        # — used for lookup/rollup fields whose cardinality can't be determined from metadata alone.
+        # No computed_union_fmt: computed wrapping is applied via apply_csharp_computed_wrapping.
+        union_fmt="VecOrValue<{0}>",
+        enum_fmt="{0}",
+    ),
 }
 
 
@@ -458,7 +489,7 @@ def is_already_list(base_type: str, language: Language) -> bool:
             return base_type.startswith("Vec<")
         case "swift":
             return base_type.startswith("[") and base_type.endswith("]")
-        case "kotlin" | "java":
+        case "kotlin" | "java" | "csharp":
             return base_type.startswith("List<")
         case "go":
             return base_type.startswith("[]")
@@ -709,6 +740,32 @@ def apply_go_computed_wrapping(go_type: str, field: Field) -> str:
     return f"MaybeSpecialOrError[{inner}]"
 
 
+def apply_csharp_computed_wrapping(csharp_type: str, field: Field) -> str:
+    """Wrap a computed field's C# type to model Airtable special/error values.
+
+    Mirrors `apply_java_computed_wrapping`: always `MaybeSpecialOrError<T>` (even
+    for non-numeric fields — Airtable can return `{"specialValue": ...}` for
+    text-like computed fields when a formula uses numeric intermediates), and
+    `VecOrValue<MaybeSpecialOrError<T>>` for lookup/rollup computed fields whose
+    list/scalar shape is not guaranteed per record. No-op when already wrapped.
+    """
+    if not field.is_computed():
+        return csharp_type
+
+    if "MaybeSpecialOrError<" in csharp_type or "VecOrValue<" in csharp_type:
+        return csharp_type
+
+    # Strip any disambiguation-applied `List<...>` so we wrap the inner primitive.
+    inner = csharp_type
+    if inner.startswith("List<") and inner.endswith(">"):
+        inner = inner[len("List<") : -1]
+
+    if field.involves_lookup() or field.involves_rollup():
+        return f"VecOrValue<MaybeSpecialOrError<{inner}>>"
+
+    return f"MaybeSpecialOrError<{inner}>"
+
+
 def map_rust_type(field: Field) -> str:
     """Calculate the Rust type for a field."""
 
@@ -777,6 +834,20 @@ def map_go_type(field: Field) -> str:
 
     field._go_type = go_type
     return go_type
+
+
+def map_csharp_type(field: Field) -> str:
+    """Calculate the C# type for a field."""
+
+    if field._csharp_type is not None:
+        return field._csharp_type
+
+    resolved: ResolvedType = map_type(field)
+    csharp_type: str = render_type(field, "csharp", resolved=resolved)
+    csharp_type = apply_csharp_computed_wrapping(csharp_type, field)
+
+    field._csharp_type = csharp_type
+    return csharp_type
 
 
 # endregion
@@ -956,6 +1027,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     field._kotlin_type = apply_kotlin_computed_wrapping(render_type(field, "kotlin", is_list=is_list), field)
     field._java_type = apply_java_computed_wrapping(render_type(field, "java", is_list=is_list), field)
     field._go_type = apply_go_computed_wrapping(render_type(field, "go", is_list=is_list), field)
+    field._csharp_type = apply_csharp_computed_wrapping(render_type(field, "csharp", is_list=is_list), field)
 
 
 def find_non_blank_value(records: list[dict], field_id: str) -> Any:

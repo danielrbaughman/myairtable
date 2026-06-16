@@ -86,6 +86,7 @@ def make_test_base(fields_spec: list[tuple[str, str, FieldType]], formula_map: d
             "_kotlin_type": None,
             "_java_type": None,
             "_go_type": None,
+            "_csharp_type": None,
             "_snake": None,
             "_pascal": None,
             "_model": None,
@@ -482,6 +483,7 @@ def _make_base_with_select_field(table_name: str, field_name: str, field_id: str
         "_kotlin_type": None,
         "_java_type": None,
         "_go_type": None,
+        "_csharp_type": None,
         "_snake": None,
         "_pascal": None,
         "_model": None,
@@ -2430,6 +2432,64 @@ class TestJavaComputedTypes:
         from src.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("My Text", "fld001", "singleLineText")) == "String"
+
+
+class TestCSharpComputedTypes:
+    """map_csharp_type wrapping for computed fields (pure type_mapper assertions)."""
+
+    @staticmethod
+    def _field(name: str, field_id: str, field_type: FieldType):
+        return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
+
+    def test_formula_number_wraps_maybe_special_or_error_double(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<double>"
+
+    def test_auto_number_wraps_maybe_special_or_error_long(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<long>"
+
+    def test_lookup_wraps_vec_or_value(self):
+        """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Look", "fld001", "multipleLookupValues")
+        assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+        # Disambiguation-applied List<...> is stripped so the inner primitive is wrapped.
+        assert apply_csharp_computed_wrapping("List<string>", field) == "VecOrValue<MaybeSpecialOrError<string>>"
+
+    def test_lookup_with_unresolvable_inner_falls_back_to_json_node(self):
+        """An unresolvable lookup renders as VecOrValue<JsonNode> end-to-end."""
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<JsonNode>"
+
+    def test_rollup_wraps_vec_or_value(self):
+        """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Roll", "fld001", "rollup")
+        assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+
+    def test_already_wrapped_type_is_left_alone(self):
+        """apply_csharp_computed_wrapping is a no-op on already-wrapped types."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Calc", "fld001", "formula")
+        assert apply_csharp_computed_wrapping("MaybeSpecialOrError<double>", field) == "MaybeSpecialOrError<double>"
+
+    def test_writable_field_is_never_wrapped(self):
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("My Text", "fld001", "singleLineText")
+        assert apply_csharp_computed_wrapping("string", field) == "string"
+
+    def test_writable_text_is_plain_string(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("My Text", "fld001", "singleLineText")) == "string"
 
 
 class TestJavaModels:
