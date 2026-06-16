@@ -12,6 +12,24 @@ namespace MyAirtable;
 /// </summary>
 public static partial class AirtableRuntime
 {
+    /// <summary>
+    /// Robustly read a Number-kind node as a double. Handles both JsonElement-backed nodes
+    /// (from parsing) and typed <c>JsonValue&lt;long|int|decimal|double&gt;</c> (from
+    /// <see cref="JsonValue.Create{T}(T, System.Text.Json.Nodes.JsonNodeOptions?)"/>), which are
+    /// strict about <c>GetValue&lt;double&gt;()</c>.
+    /// </summary>
+    internal static double NumberOf(JsonNode node)
+    {
+        var v = node.AsValue();
+        if (v.TryGetValue<double>(out var d))
+            return d;
+        if (v.TryGetValue<long>(out var l))
+            return l;
+        if (v.TryGetValue<decimal>(out var m))
+            return (double)m;
+        return double.Parse(node.ToJsonString(), CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Box any value into a <see cref="JsonNode"/> (formula literals / field refs).</summary>
     public static JsonNode? V(object? value) =>
         value switch
@@ -33,7 +51,7 @@ public static partial class AirtableRuntime
         switch (value.GetValueKind())
         {
             case JsonValueKind.Number:
-                return value.GetValue<double>();
+                return NumberOf(value);
             case JsonValueKind.String:
                 return double.TryParse(
                     value.GetValue<string>().Trim(),
@@ -69,7 +87,7 @@ public static partial class AirtableRuntime
             case JsonValueKind.False:
                 return "0";
             case JsonValueKind.Number:
-                var d = value.GetValue<double>();
+                var d = NumberOf(value);
                 if (double.IsFinite(d) && d == Math.Floor(d) && Math.Abs(d) < 1e15)
                     return ((long)d).ToString(CultureInfo.InvariantCulture);
                 return d.ToString("R", CultureInfo.InvariantCulture);
@@ -124,9 +142,7 @@ public static partial class AirtableRuntime
                     ? dto
                     : null;
             case JsonValueKind.Number:
-                return DateTimeOffset.FromUnixTimeMilliseconds(
-                    (long)(value.GetValue<double>() * 1000)
-                );
+                return DateTimeOffset.FromUnixTimeMilliseconds((long)(NumberOf(value) * 1000));
             case JsonValueKind.Array:
                 var arr = value.AsArray();
                 return arr.Count == 0 ? null : D(arr[0]);
@@ -149,7 +165,7 @@ public static partial class AirtableRuntime
             case JsonValueKind.False:
                 return false;
             case JsonValueKind.Number:
-                var d = value.GetValue<double>();
+                var d = NumberOf(value);
                 return d != 0.0 && !double.IsNaN(d);
             case JsonValueKind.Array:
                 return value.AsArray().Count > 0;

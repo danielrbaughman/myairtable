@@ -56,11 +56,13 @@ public sealed class Fields
 
     public long? GetLong(string key) =>
         Get(key) is { } n && n.GetValueKind() == JsonValueKind.Number
-            ? (long)n.GetValue<double>()
+            ? (long)AirtableRuntime.NumberOf(n)
             : null;
 
     public double? GetDouble(string key) =>
-        Get(key) is { } n && n.GetValueKind() == JsonValueKind.Number ? n.GetValue<double>() : null;
+        Get(key) is { } n && n.GetValueKind() == JsonValueKind.Number
+            ? AirtableRuntime.NumberOf(n)
+            : null;
 
     public bool? GetBoolean(string key) =>
         Get(key) is { } n && n.GetValueKind() is JsonValueKind.True or JsonValueKind.False
