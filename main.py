@@ -414,6 +414,7 @@ def all(
     kotlin_folder: Annotated[str, Option(help="Path to the Kotlin output folder")] = "",
     java_folder: Annotated[str, Option(help="Path to the Java output folder")] = "",
     go_folder: Annotated[str, Option(help="Path to the Go output folder")] = "",
+    csharp_folder: Annotated[str, Option(help="Path to the C# output folder")] = "",
     md_folder: Annotated[str, Option(help="Path to the Markdown output folder")] = "",
     html_folder: Annotated[str, Option(help="Path to the HTML output folder")] = "",
     fresh: Annotated[bool, Option(help="Generate fresh property names instead of using custom names if they exist.")] = False,
@@ -483,6 +484,10 @@ def all(
     if go_folder:
         go_folder_path = reset_folder(go_folder)
         generate_go(base=base, output_folder=go_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
+
+    if csharp_folder:
+        csharp_folder_path = reset_folder(csharp_folder)
+        generate_csharp(base=base, output_folder=csharp_folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
     if md_folder:
         preserve = None if reset_svg_cache else [".svg_cache"]
