@@ -18,3 +18,8 @@ Package.resolved
 .gradle/
 **/build/
 .kotlin/
+
+# C# / .NET
+bin/
+obj/
+*.user
