@@ -15,6 +15,7 @@ Languages supported:
 - Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
 - Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
 - Go (via a custom-built client on the standard library — `net/http` + `encoding/json`, zero third-party dependencies)
+- C# (via a custom-built .NET 8 client on `HttpClient` + `System.Text.Json`, async/await, zero third-party dependencies)
 
 ### Kotlin
 
@@ -176,6 +177,25 @@ Idioms:
 - **Filtering**: `at.Primary.GetMany(ctx, (&airtable.Query{}).WithFilterFormula(airtable.PrimaryF.PrimaryKey.Eq("alice@example.com")))`.
 
 Generated code is `gofmt`-clean by construction; format/lint via `gofmt`/`go vet`/`golangci-lint`.
+
+### C#
+
+The generated C# code targets **.NET 8 / C# 12** and depends on the **base class library only** (`HttpClient` + `System.Text.Json` — no third-party packages). Every file declares the single file-scoped `namespace MyAirtable;`, and the generator emits **no** `.csproj` — the consuming project owns its build:
+
+```csharp
+var airtable = new Airtable(baseId, apiKey, cacheSeconds: 0); // 0 disables caching
+```
+
+Idioms:
+
+- **Models** are mutable `sealed class`es with `[JsonPropertyName("fldID")]` and nullable auto-properties. Writable fields are `{ get; set; }`; computed fields are `[JsonInclude] { get; private set; }` (decode-only). Build them with object initializers: `new PrimaryModel { PrimaryKey = "x" }`.
+- **async/await** throughout: every I/O method is `…Async` and takes a `CancellationToken` — `await at.Primary.Orm.GetAsync(id)`, `await model.SaveAsync()`.
+- **Errors** are an unchecked hierarchy — `catch (AirtableException)` or pattern-match a nested case (`AirtableException.ApiError`, `.RateLimitedError`, …). 429/5xx are retried with jittered backoff before surfacing.
+- **Typed `Orm` accessor** on each table — `at.Primary.Orm` is an `OrmTable<PrimaryModel>` (reified generics, no class token); `.Dict` gives raw field-bag access. Per-model fluent `SaveAsync`/`FetchAsync`/`DeleteAsync`.
+- **Select options** are C# enums with a generated per-enum `JsonConverter`; **computed fields** decode into `MaybeSpecialOrError<T>?` (read with `.ValueOrDefault`), lookups/rollups into `VecOrValue<MaybeSpecialOrError<T>>?` (read with `VecOrValue.CleanValues`).
+- **Filtering**: `at.Primary.Orm.GetAsync(new AirtableQuery().WithFormula(PrimaryModel.F.PrimaryKey.Eq("alice@example.com")))`.
+
+Generated code is formatted with [CSharpier](https://csharpier.com).
 
 ## Features
 
