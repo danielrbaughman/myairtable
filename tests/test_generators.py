@@ -2600,6 +2600,106 @@ class TestCSharpGenerator:
         assert "WriteStringValue(ToWire[value])" in content
 
 
+class TestCSharpComputedFields:
+    """csharp.py `write_models` (CS4.3) — offline model-shape assertions (no dotnet).
+
+    Computed fields decode-only ([JsonInclude] + private set, absent from the writable
+    payload map); writable fields have public setters and feed CollectWritableFields.
+    Compilation + live CRUD are verified separately by the integration suite.
+    """
+
+    MIXED_SPEC: list[tuple[str, str, FieldType]] = [
+        ("My Text", "fld001", "singleLineText"),
+        ("My Formula", "fld002", "formula"),
+        ("Look", "fld003", "multipleLookupValues"),
+    ]
+
+    def _model(
+        self,
+        fields_spec: list[tuple[str, str, FieldType]],
+        tmp_path: Path,
+        **flags,
+    ) -> str:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out, **flags)
+        return (out / "dynamic" / "Models" / "TestTableModel.cs").read_text()
+
+    # ---- class header ----
+
+    def test_model_class_extends_airtable_model(self, tmp_path: Path):
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "namespace MyAirtable;" in content
+        assert "public sealed class TestTableModel : AirtableModel" in content
+        assert 'public override string TableId => "tbl' in content
+
+    # ---- field properties ----
+
+    def test_writable_field_has_public_setter_and_json_property(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        assert '[JsonPropertyName("fld001")]' in content
+        assert "public string? MyText { get; set; }" in content
+
+    def test_computed_field_is_json_include_private_set(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        # Formula → MaybeSpecialOrError<...>; lookup → VecOrValue<MaybeSpecialOrError<...>>.
+        assert '[JsonPropertyName("fld002")]' in content
+        assert "[JsonInclude]" in content
+        assert "MyFormula { get; private set; }" in content
+        assert "Look { get; private set; }" in content
+        # computed fields never get a public setter
+        assert "MyFormula { get; set; }" not in content
+        assert "Look { get; set; }" not in content
+
+    def test_all_properties_are_nullable(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        # every Airtable field is optional → nullable annotation on every property
+        assert "public string? MyText" in content
+        assert "MaybeSpecialOrError<double>? MyFormula" in content
+
+    # ---- payload maps ----
+
+    def test_writable_payload_map_excludes_computed(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        writable = content.split("CollectWritableFields()")[1].split("CollectComputedFields()")[0]
+        assert '["fld001"] = AirtableRuntime.V(MyText),' in writable
+        assert "fld002" not in writable
+        assert "fld003" not in writable
+
+    def test_computed_payload_map_excludes_writable(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        computed = content.split("CollectComputedFields()")[1]
+        assert '["fld002"] = AirtableRuntime.V(MyFormula),' in computed
+        assert '["fld003"] = AirtableRuntime.V(Look),' in computed
+        assert "fld001" not in computed
+
+    # ---- fluent CRUD ----
+
+    def test_fluent_crud_methods_delegate_to_model_ops(self, tmp_path: Path):
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "public Task<TestTableModel> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct);" in content
+        assert "public Task<TestTableModel> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);" in content
+        assert "public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);" in content
+
+    # ---- deferred features ----
+
+    def test_filter_accessor_deferred_to_f7(self, tmp_path: Path):
+        """The static `F` filter accessor needs {Table}Filters (F7); not emitted yet."""
+        content = self._model(self.MIXED_SPEC, tmp_path, formulas=True)
+        assert "TestTableFilters" not in content
+        assert "public static readonly" not in content
+
+    def test_evaluate_methods_deferred_to_f8(self, tmp_path: Path):
+        """Runtime formula `evaluate*` methods need the C# transpiler (F8); not emitted yet."""
+        content = self._model(self.MIXED_SPEC, tmp_path, runtime=True)
+        assert "JsonNode? Evaluate" not in content
+        assert "#region Runtime formula evaluation" not in content
+
+
 class TestJavaModels:
     """Java `{Table}Model` generation (J4 — content assertions only, no javac).
 
