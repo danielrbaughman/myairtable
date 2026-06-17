@@ -37,7 +37,10 @@ public static partial class AirtableRuntime
             null => null,
             JsonNode node => node,
             DateTimeOffset dto => JsonValue.Create(
-                dto.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture)
+                // ISO-8601 UTC millis + 'Z' (matches AirtableDateConverter.Write); the round-trip
+                // "o" format's 7-digit fractional + numeric offset is rejected by Airtable.
+                dto.ToUniversalTime()
+                    .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture)
             ),
             TimeSpan ts => JsonValue.Create(ts.TotalSeconds),
             _ => JsonSerializer.SerializeToNode(value, AirtableJson.Options),

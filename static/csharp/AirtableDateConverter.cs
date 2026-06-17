@@ -33,5 +33,13 @@ public sealed class AirtableDateConverter : JsonConverter<DateTimeOffset>
         Utf8JsonWriter w,
         DateTimeOffset value,
         JsonSerializerOptions options
-    ) => w.WriteStringValue(value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture));
+    ) =>
+        w.WriteStringValue(
+            // ISO-8601 UTC with millisecond precision + 'Z' — Airtable rejects the round-trip
+            // ("o") format's 7-digit fractional seconds + numeric offset on date columns. Matches
+            // the wire format the other language targets emit.
+            value
+                .ToUniversalTime()
+                .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture)
+        );
 }
