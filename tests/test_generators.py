@@ -2701,6 +2701,20 @@ class TestCSharpComputedFields:
         assert "JsonNode? Evaluate" not in content
         assert "#region Runtime formula evaluation" not in content
 
+    # ---- linked records (CS6.1) ----
+
+    def test_linked_record_field_is_raw_string_list(self, tmp_path: Path):
+        """Record-ID links map to a raw nullable List<string> — no VecOrValue wrapper."""
+        content = self._model(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Links", "fld002", "multipleRecordLinks"),
+            ],
+            tmp_path,
+        )
+        assert "public List<string>? Links { get; set; }" in content
+        assert "VecOrValue" not in content
+
 
 class TestJavaModels:
     """Java `{Table}Model` generation (J4 — content assertions only, no javac).

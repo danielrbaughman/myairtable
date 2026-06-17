@@ -19,6 +19,9 @@ public abstract class AirtableModel
     private static readonly IReadOnlyDictionary<string, JsonNode?> EmptySnapshot =
         new Dictionary<string, JsonNode?>();
 
+    private static bool DeepEquals(JsonNode? a, JsonNode? b) =>
+        (a is null && b is null) || (a is not null && b is not null && JsonNode.DeepEquals(a, b));
+
     /// <summary>Table identity. Generated models return their table's <c>TableId</c> constant.</summary>
     [JsonIgnore]
     public abstract string TableId { get; }
@@ -83,7 +86,10 @@ public abstract class AirtableModel
         foreach (var (id, value) in CollectWritableFields())
         {
             snapshot.TryGetValue(id, out var previous);
-            if (!AirtableRuntime.IsEqual(previous, value))
+            // Structural (deep) equality — NOT AirtableRuntime.IsEqual, whose formula-style
+            // coercion compares arrays by their first element only and would miss a multi-value
+            // change like [a, b] -> [a].
+            if (!DeepEquals(previous, value))
                 dirty[id] = value;
         }
         return dirty;
