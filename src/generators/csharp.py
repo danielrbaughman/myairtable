@@ -40,9 +40,35 @@ _DIR_OPTIONS = "Options"
 _DIR_TYPES = "Types"
 _DIR_TABLES = "Tables"
 _DIR_MODELS = "Models"
+_DIR_FORMULAS = "Formulas"
 
-# Static formula-DSL files excluded from the copy when formulas=False (F7 populates these).
-_FORMULA_STATIC_FILES: list[str] = []
+# Static formula-DSL files excluded from the copy when formulas=False.
+_FORMULA_STATIC_FILES: list[str] = [
+    "Formulas.cs",
+    "FormulaField.cs",
+    "FormulaTextOps.cs",
+    "FormulaTextField.cs",
+    "FormulaSingleSelectField.cs",
+    "FormulaMultiSelectField.cs",
+    "FormulaLookupField.cs",
+    "FormulaNumberField.cs",
+    "FormulaBooleanField.cs",
+    "FormulaAttachmentsField.cs",
+    "FormulaDateField.cs",
+    "FormulaId.cs",
+]
+
+# Airtable field → generated Formula*Field class (mirrors java._JAVA_FORMULA_CLASS_MAP).
+_CSHARP_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "LookupField": "FormulaLookupField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
 
 # Generated-model / table member names a field/table property must not collide with.
 # Covers the AirtableModel base surface (TableId/Id/CreatedTime/AttachedClient property
@@ -282,7 +308,7 @@ def write_models(
     The `F` formula accessor (needs `{Table}Filters`, F7) and the runtime `evaluate*` methods
     (need the C# formula transpiler, F8) are added by those later features.
     """
-    del formulas, runtime, flatten  # F7 adds the `F` accessor; F8 adds evaluate* methods.
+    del runtime, flatten  # F8 adds the runtime evaluate* methods.
     models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
 
     for table in base.tables:
@@ -316,6 +342,12 @@ def write_models(
             write.attribute("JsonIgnore", indent=1)
             write.line_indented(f'public override string TableId => "{table.id}";')
             write.line_empty()
+
+            if formulas:
+                filters_name = f"{prefix}Filters"
+                _doc(write, f'Formula builder for filtering. Usage: <c>{model_name}.F.Field.Eq("x")</c>.', indent=1)
+                write.line_indented(f"public static readonly {filters_name} F = new();")
+                write.line_empty()
 
             # ---------- fields ----------
             for field in table.fields:
@@ -378,6 +410,36 @@ def _write_collect_method(
         prop = _csharp_ident(prop_names[field.id])
         write.line_indented(f'["{field.id}"] = AirtableRuntime.V({prop}),', indent=3)
     write.line_indented("};", indent=2)
+
+
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{Table}Filters` class, accessed via `{Table}Model.F`.
+
+    Layout: `dynamic/Formulas/{Table}Filters.cs`. One get-only property per field typed to the
+    appropriate Formula*Field class, plus an `Id` FormulaId for record-ID filters. Shape:
+    `PrimaryModel.F.PrimaryKey.Eq("x")` (the locked Eq/Neq deviation, §2.3.2).
+    """
+    formulas_dir = _create_dynamic_subdir(output_folder, _DIR_FORMULAS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
+        filters_name = f"{prefix}Filters"
+
+        with WriteToCSharpFile(path=formulas_dir / f"{filters_name}.cs") as write:
+            write.namespace_decl()
+            write.line_empty()
+            _doc(write, f"Formula builder for {sanitize_string(table.name)}.")
+            write.class_open(filters_name)
+            _doc(write, "Record ID formula.", indent=1)
+            write.line_indented("public FormulaId Id { get; } = new();")
+            write.line_empty()
+            for field in table.fields:
+                prop = _csharp_ident(prop_names[field.id])
+                formula_class = _CSHARP_FORMULA_CLASS_MAP.get(field.formula_class(), "FormulaTextField")
+                _doc(write, f"{_xmldoc_escape(sanitize_string(field.name))}", indent=1)
+                write.line_indented(f'public {formula_class} {prop} {{ get; }} = new("{field.id}");')
+            write.close()
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
@@ -487,6 +549,8 @@ def generate_csharp(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    if formulas:
+        write_formula_helpers(base, output_folder)
     write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if wrappers:
         write_tables(base, output_folder)

@@ -2689,11 +2689,14 @@ class TestCSharpComputedFields:
 
     # ---- deferred features ----
 
-    def test_filter_accessor_deferred_to_f7(self, tmp_path: Path):
-        """The static `F` filter accessor needs {Table}Filters (F7); not emitted yet."""
+    def test_filter_accessor_present_when_formulas(self, tmp_path: Path):
+        """The static `F` filter accessor (F7) is emitted when formulas are enabled."""
         content = self._model(self.MIXED_SPEC, tmp_path, formulas=True)
+        assert "public static readonly TestTableFilters F = new();" in content
+
+    def test_filter_accessor_absent_without_formulas(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path, formulas=False)
         assert "TestTableFilters" not in content
-        assert "public static readonly" not in content
 
     def test_evaluate_methods_deferred_to_f8(self, tmp_path: Path):
         """Runtime formula `evaluate*` methods need the C# transpiler (F8); not emitted yet."""
