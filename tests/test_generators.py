@@ -2635,7 +2635,9 @@ class TestCSharpComputedFields:
         content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
         assert "namespace MyAirtable;" in content
         assert "public sealed class TestTableModel : AirtableModel" in content
-        assert 'public override string TableId => "tbl' in content
+        # [JsonIgnore] on the override is required — the base property's attribute is not
+        # inherited, so STJ would otherwise serialize TableId into the fields payload.
+        assert '[JsonIgnore]\n    public override string TableId => "tbl' in content
 
     # ---- field properties ----
 

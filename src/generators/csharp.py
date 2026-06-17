@@ -311,6 +311,9 @@ def write_models(
             write.class_open(model_name, base="AirtableModel")
 
             _doc(write, "Airtable id of this model's table.", indent=1)
+            # [JsonIgnore] on the abstract base property is NOT inherited by this override,
+            # so STJ would otherwise serialize TableId into the fields payload.
+            write.attribute("JsonIgnore", indent=1)
             write.line_indented(f'public override string TableId => "{table.id}";')
             write.line_empty()
 
