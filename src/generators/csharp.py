@@ -378,13 +378,21 @@ def _write_collect_method(
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate per-table `{Table}Table` facade. F3: dict access only (ORM added in F4)."""
+    """Generate per-table `{Table}Table` facade: typed ORM accessor + raw dict access.
+
+    `Orm` is the typed entry point — `airtable.Primary.Orm.GetAsync(id)` returns a
+    `PrimaryModel`. `Dict` keeps the untyped field-bag access for parity with the other
+    targets. C#'s `OrmTable<T>` already exposes the full async CRUD surface, so the facade
+    holds it directly rather than re-emitting delegating wrappers (Java needed those only
+    because it threads a class token).
+    """
     tables_dir = _create_dynamic_subdir(output_folder, _DIR_TABLES)
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
         type_name = f"{prefix}Table"
         fields_name = f"{prefix}Fields"
+        model_name = f"{prefix}Model"
         with WriteToCSharpFile(path=tables_dir / f"{type_name}.cs") as write:
             write.namespace_decl()
             write.line_empty()
@@ -395,7 +403,11 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f"public {type_name}(AirtableClient client)")
             write.line_indented("{", indent=1)
             write.line_indented(f"Dict = new DictTable(TableId, {fields_name}.NameToId, client);", indent=2)
+            write.line_indented(f"Orm = new OrmTable<{model_name}>(TableId, client);", indent=2)
             write.line_indented("}", indent=1)
+            write.line_empty()
+            _doc(write, f"Typed ORM access — decodes into {model_name}. The default entry point.", indent=1)
+            write.line_indented(f"public OrmTable<{model_name}> Orm {{ get; }}")
             write.line_empty()
             _doc(write, "Raw (dict-style) access — decoded fields keyed by id.", indent=1)
             write.line_indented("public DictTable Dict { get; }")
