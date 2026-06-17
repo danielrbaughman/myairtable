@@ -18,6 +18,8 @@ Output layout (under <output>/):
 
 from pathlib import Path
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Table
 from ..utils.helpers import (
     Paths,
@@ -305,10 +307,10 @@ def write_models(
     from the writable-only `CollectWritableFields` map. Creation is by object initializer —
     computed fields have a private setter, so they're excluded from it.
 
-    The `F` formula accessor (needs `{Table}Filters`, F7) and the runtime `evaluate*` methods
-    (need the C# formula transpiler, F8) are added by those later features.
+    When ``runtime`` is set, formula fields also get an ``Evaluate{Field}()`` method returning
+    ``JsonNode?`` — the formula transpiled to C# (F8). The ``F`` formula accessor (F7) is gated on
+    ``formulas``.
     """
-    del runtime, flatten  # F8 adds the runtime evaluate* methods.
     models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
 
     for table in base.tables:
@@ -317,6 +319,20 @@ def write_models(
         model_name = f"{prefix}Model"
         writable_fields = [f for f in table.fields if not f.is_computed()]
         computed_fields = [f for f in table.fields if f.is_computed()]
+
+        # Pre-transpile this table's formula fields into C# `Evaluate*` bodies (F8).
+        transpiled_formulas: dict[str, str] = {}
+        raw_formulas: dict[str, str] = {}
+        if runtime:
+            formula_field_ids = table.formula_field_ids()
+            # field_name_map uses PascalCase property names (MED-6) → `this.MyField`.
+            field_name_map = {f.id: prop_names[f.id] for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            if flatten and raw_formulas:
+                formula_map_tuple = table.base.get_formula_field_map_tuple()
+                raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
+            if raw_formulas:
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "csharp", field_name_map, formula_field_ids)
 
         with WriteToCSharpFile(path=models_dir / f"{model_name}.cs") as write:
             write.using_stmt("System.Text.Json.Nodes")
@@ -386,6 +402,23 @@ def write_models(
             write.line_empty()
             _doc(write, "Delete the record referenced by this model's Id.", indent=1)
             write.line_indented("public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);")
+
+            # ---------- runtime formula evaluation (F8) ----------
+            if transpiled_formulas:
+                write.line_empty()
+                write.region("Runtime formula evaluation", indent=1)
+                for field in table.fields:
+                    if field.id not in transpiled_formulas:
+                        continue
+                    raw = raw_formulas.get(field.id, "")
+                    preview = _xmldoc_escape(sanitize_string(raw).replace("\n", " ")[:80])
+                    pascal = prop_names[field.id]
+                    write.line_empty()
+                    _doc(write, f"Evaluate this formula locally: <c>{preview}</c>", indent=1)
+                    write.line_indented(f"public JsonNode? Evaluate{_csharp_ident(pascal)}() =>", indent=1)
+                    write.line_indented(f"{transpiled_formulas[field.id]};", indent=2)
+                write.endregion(indent=1)
+
             write.close()
 
 

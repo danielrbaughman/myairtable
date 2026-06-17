@@ -2698,11 +2698,32 @@ class TestCSharpComputedFields:
         content = self._model(self.MIXED_SPEC, tmp_path, formulas=False)
         assert "TestTableFilters" not in content
 
-    def test_evaluate_methods_deferred_to_f8(self, tmp_path: Path):
-        """Runtime formula `evaluate*` methods need the C# transpiler (F8); not emitted yet."""
-        content = self._model(self.MIXED_SPEC, tmp_path, runtime=True)
-        assert "JsonNode? Evaluate" not in content
+    # ---- runtime formula evaluation (F8) ----
+
+    def _model_with_formula(self, tmp_path: Path, **flags) -> str:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [("Primary Key", "fld001", "singleLineText"), ("My Formula", "fld002", "formula")],
+            formula_map={"fld002": "UPPER({fld001})"},
+        )
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out, **flags)
+        return (out / "dynamic" / "Models" / "TestTableModel.cs").read_text()
+
+    def test_evaluate_method_emitted_for_formula_when_runtime(self, tmp_path: Path):
+        content = self._model_with_formula(tmp_path, runtime=True)
+        assert "#region Runtime formula evaluation" in content
+        assert "public JsonNode? EvaluateMyFormula() =>" in content
+        # field refs transpile to AirtableRuntime.V(this.<PascalProp>)
+        assert "AirtableRuntime.UPPER(AirtableRuntime.V(this.PrimaryKey))" in content
+
+    def test_evaluate_methods_absent_without_runtime(self, tmp_path: Path):
+        content = self._model_with_formula(tmp_path, runtime=False)
         assert "#region Runtime formula evaluation" not in content
+        assert "Evaluate" not in content
 
     # ---- linked records (CS6.1) ----
 
