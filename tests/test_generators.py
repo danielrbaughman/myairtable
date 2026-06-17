@@ -2538,6 +2538,68 @@ class TestCSharpWriterHelpers:
         assert _choice_to_entry("3rd Party").startswith("N")
 
 
+class TestCSharpGenerator:
+    """csharp.py F3 generator — offline content assertions (no dotnet)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out)
+        return out
+
+    def test_fields_constants_and_maps(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText"), ("Count", "fld002", "number")], tmp_path)
+        content = (out / "dynamic" / "Types" / "TestTableFields.cs").read_text()
+        assert "namespace MyAirtable;" in content
+        assert 'public const string PrimaryKeyId = "fld001";' in content
+        assert 'public const string PrimaryKeyName = "Primary Key";' in content
+        assert '["Primary Key"] = "fld001",' in content  # NameToId
+        assert '["fld001"] = "Primary Key",' in content  # IdToName
+        assert "public static string? IdByName(string name)" in content
+
+    def test_table_facade_dict_only(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "Tables" / "TestTableTable.cs").read_text()
+        assert 'public const string TableId = "tbl' in content
+        assert "new DictTable(TableId, TestTableFields.NameToId, client)" in content
+        assert "public DictTable Dict { get; }" in content
+
+    def test_airtable_entry_point(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "Airtable.cs").read_text()
+        assert "public sealed class Airtable" in content
+        assert "public TestTableTable TestTable { get; }" in content
+        assert "public const string BaseId =" in content
+        assert "public Airtable(string baseId, string apiKey, double cacheSeconds = 0)" in content
+        assert "public void InvalidateAllCaches() => Client.InvalidateAllCaches();" in content
+
+    def test_static_runtime_copied(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        assert (out / "static" / "AirtableClient.cs").exists()
+        assert (out / "static" / "DictTable.cs").exists()
+
+    def test_options_enum_and_converter(self, tmp_path: Path):
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["To Do", "In Progress", "Done"])
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out)
+        opts = list((out / "dynamic" / "Options").glob("*.cs"))
+        assert opts, "expected an options enum file"
+        content = opts[0].read_text()
+        assert "public enum" in content
+        assert "ToDo," in content and "InProgress," in content and "Done," in content
+        assert "JsonConverter<" in content
+        assert '["To Do"] =' in content  # FromWire raw-string mapping
+        assert "WriteStringValue(ToWire[value])" in content
+
+
 class TestJavaModels:
     """Java `{Table}Model` generation (J4 — content assertions only, no javac).
 
