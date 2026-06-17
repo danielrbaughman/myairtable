@@ -19,6 +19,12 @@ public static class AirtableJson
         {
             PropertyNameCaseInsensitive = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            // Value carriers (AirtableAttachment/Collaborator/Button/thumbnails) and the REST
+            // envelope records carry no [JsonPropertyName], so their property names follow this
+            // policy — Airtable's wire format is camelCase (url, profilePicUrl, createdTime).
+            // Generated model properties are unaffected: they all carry explicit [JsonPropertyName]
+            // field-id attributes, which override the policy.
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         };
         o.Converters.Add(new VecOrValueConverterFactory());
         o.Converters.Add(new MaybeSpecialOrErrorConverterFactory());
