@@ -33,12 +33,18 @@ public sealed class CacheStore
     public double TtlSeconds => _ttlSeconds;
     public bool Enabled => _ttlSeconds > 0;
 
-    /// <summary>Return the cached payload for the key, or await <paramref name="factory"/> and cache it.</summary>
+    /// <summary>
+    /// Return the cached payload for the key, or await <paramref name="factory"/> and cache it.
+    /// When <paramref name="shouldCache"/> is supplied and returns <c>false</c> for the fetched
+    /// payload, the result is returned but NOT stored (e.g. a list page carrying a transient
+    /// <c>offset</c> continuation token must not be cached — the token expires server-side).
+    /// </summary>
     public async Task<string> GetOrAddAsync(
         string tableId,
         string cacheKey,
         Func<Task<string>> factory,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Func<string, bool>? shouldCache = null
     )
     {
         if (!Enabled)
@@ -62,6 +68,9 @@ public sealed class CacheStore
 
         // Fetch OUTSIDE the lock so unrelated reads aren't serialized behind this one.
         var value = await factory().ConfigureAwait(false);
+
+        if (shouldCache is not null && !shouldCache(value))
+            return value;
 
         await _lock.WaitAsync(ct).ConfigureAwait(false);
         try

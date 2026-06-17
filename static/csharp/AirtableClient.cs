@@ -22,6 +22,9 @@ public sealed class AirtableClient
 
     private readonly string _baseId;
     private readonly string _apiKey;
+    private readonly HttpClient _http;
+    private readonly double _baseRetryDelay;
+    private readonly double _jitterCap;
 
     public AirtableClient(string baseId, string apiKey, double cacheSeconds = 0)
     {
@@ -31,6 +34,35 @@ public sealed class AirtableClient
             throw new AirtableException.MissingCredentialsError("apiKey is required");
         _baseId = baseId;
         _apiKey = apiKey;
+        _http = Http;
+        _baseRetryDelay = BaseRetryDelaySeconds;
+        _jitterCap = RetryJitterCapSeconds;
+        Cache = new CacheStore(cacheSeconds);
+    }
+
+    /// <summary>
+    /// Test-only constructor: injects an <see cref="HttpMessageHandler"/> (a fake transport) and
+    /// optionally shrinks the retry backoff so offline hardening tests don't actually sleep.
+    /// Production code uses the public constructors + the shared static <see cref="HttpClient"/>.
+    /// </summary>
+    internal AirtableClient(
+        string baseId,
+        string apiKey,
+        HttpMessageHandler handler,
+        double cacheSeconds = 0,
+        double baseRetryDelaySeconds = 0,
+        double retryJitterCapSeconds = 0
+    )
+    {
+        if (string.IsNullOrEmpty(baseId))
+            throw new AirtableException.MissingCredentialsError("baseId is required");
+        if (string.IsNullOrEmpty(apiKey))
+            throw new AirtableException.MissingCredentialsError("apiKey is required");
+        _baseId = baseId;
+        _apiKey = apiKey;
+        _http = new HttpClient(handler);
+        _baseRetryDelay = baseRetryDelaySeconds;
+        _jitterCap = retryJitterCapSeconds;
         Cache = new CacheStore(cacheSeconds);
     }
 
@@ -55,8 +87,27 @@ public sealed class AirtableClient
             tableId,
             "list:" + CacheKeyForQuery(query),
             () => SendAsync(HttpMethod.Get, url, null, ct),
-            ct
+            ct,
+            // Don't cache a multi-page payload: its server-side `offset` continuation token
+            // expires after a few minutes, so a later cache hit would replay a dead token and
+            // fail the follow-up page fetch. Cache complete single-page payloads only.
+            shouldCache: payload => !HasContinuationOffset(payload)
         );
+    }
+
+    private static bool HasContinuationOffset(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            return doc.RootElement.TryGetProperty("offset", out var offset)
+                && offset.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(offset.GetString());
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>GET a single record by id (cached).</summary>
@@ -171,7 +222,7 @@ public sealed class AirtableClient
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                 if (body is not null)
                     request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                response = await Http.SendAsync(request, ct).ConfigureAwait(false);
+                response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -227,15 +278,11 @@ public sealed class AirtableClient
         }
     }
 
-    private static async Task DelayAsync(
-        double? retryAfterSeconds,
-        int attempt,
-        CancellationToken ct
-    )
+    private async Task DelayAsync(double? retryAfterSeconds, int attempt, CancellationToken ct)
     {
-        var delay = retryAfterSeconds ?? BaseRetryDelaySeconds * Math.Pow(2, attempt);
+        var delay = retryAfterSeconds ?? _baseRetryDelay * Math.Pow(2, attempt);
         // Decorrelation jitter (Kotlin/Java parity) so concurrent clients don't stampede.
-        var jitter = Random.Shared.NextDouble() * Math.Min(delay, RetryJitterCapSeconds);
+        var jitter = Random.Shared.NextDouble() * Math.Min(delay, _jitterCap);
         await Task.Delay(TimeSpan.FromSeconds(delay + jitter), ct).ConfigureAwait(false);
     }
 
