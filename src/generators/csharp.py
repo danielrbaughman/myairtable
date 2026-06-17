@@ -39,12 +39,17 @@ _DIR_DYNAMIC = Paths.DYNAMIC
 _DIR_OPTIONS = "Options"
 _DIR_TYPES = "Types"
 _DIR_TABLES = "Tables"
+_DIR_MODELS = "Models"
 
 # Static formula-DSL files excluded from the copy when formulas=False (F7 populates these).
 _FORMULA_STATIC_FILES: list[str] = []
 
 # Generated-model / table member names a field/table property must not collide with.
-_CSHARP_RESERVED_MODEL_MEMBERS = frozenset({"F", "Id", "CreatedTime", "AttachedClient", "Snapshot"})
+# Covers the AirtableModel base surface (TableId/Id/CreatedTime/AttachedClient property
+# names a same-named generated property would clash with) plus the generated `F` filter
+# accessor. Methods (ToRecord/SaveAsync/…) are left out: a property can't share a name with
+# them either, but Airtable field names producing those PascalCase forms are vanishingly rare.
+_CSHARP_RESERVED_MODEL_MEMBERS = frozenset({"F", "Id", "TableId", "CreatedTime", "AttachedClient", "Snapshot"})
 _CSHARP_RESERVED_TABLE_PROPS = frozenset({"Client", "BaseId"})
 
 
@@ -250,6 +255,128 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.close()
 
 
+def write_models(
+    base: Base,
+    output_folder: Path,
+    formulas: bool = True,
+    runtime: bool = True,
+    flatten: bool = False,
+) -> None:
+    """Generate per-table `{Table}Model` ORM class.
+
+    Layout: `dynamic/Models/{Table}Model.cs`. Shape (plan §2.3.1, proven by the Phase 0
+    gate `TestPocoModel.cs`):
+
+        public sealed class {Table}Model : AirtableModel {
+            [JsonPropertyName("fldX")] public T? Writable { get; set; }
+            [JsonPropertyName("fldY")] [JsonInclude] public T? Computed { get; private set; }
+            // override TableId; CollectWritableFields/CollectComputedFields feed the base's
+            // snapshot/dirty/payload machinery; fluent SaveAsync/FetchAsync/DeleteAsync.
+        }
+
+    All properties are nullable (every Airtable field is optional). STJ decodes the typed
+    auto-properties wholesale via the global converters; create/update payloads are built
+    from the writable-only `CollectWritableFields` map. Creation is by object initializer —
+    computed fields have a private setter, so they're excluded from it.
+
+    The `F` formula accessor (needs `{Table}Filters`, F7) and the runtime `evaluate*` methods
+    (need the C# formula transpiler, F8) are added by those later features.
+    """
+    del formulas, runtime, flatten  # F7 adds the `F` accessor; F8 adds evaluate* methods.
+    models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        prop_names = _field_property_map(table)
+        model_name = f"{prefix}Model"
+        writable_fields = [f for f in table.fields if not f.is_computed()]
+        computed_fields = [f for f in table.fields if f.is_computed()]
+
+        with WriteToCSharpFile(path=models_dir / f"{model_name}.cs") as write:
+            write.using_stmt("System.Text.Json.Nodes")
+            write.using_stmt("System.Text.Json.Serialization")
+            write.line_empty()
+            write.namespace_decl()
+            write.line_empty()
+
+            write.doc_comment(
+                [
+                    f"Typed model for the {_xmldoc_escape(sanitize_string(table.name))} Airtable table.",
+                    "",
+                    "Computed fields are decode-only (private setter, excluded from create payloads);",
+                    "writable fields have public setters. Create records with an object initializer:",
+                    f"<c>new {model_name} {{ ... }}</c>.",
+                ]
+            )
+            write.class_open(model_name, base="AirtableModel")
+
+            _doc(write, "Airtable id of this model's table.", indent=1)
+            write.line_indented(f'public override string TableId => "{table.id}";')
+            write.line_empty()
+
+            # ---------- fields ----------
+            for field in table.fields:
+                cs_type = f"{field.csharp_type()}?"
+                prop = _csharp_ident(prop_names[field.id])
+                write.property_docstring(field, table, indent_level=1)
+                write.json_property_name(field.id, indent=1)
+                if field.is_computed():
+                    write.attribute("JsonInclude", indent=1)
+                    write.line_indented(f"public {cs_type} {prop} {{ get; private set; }}")
+                else:
+                    write.line_indented(f"public {cs_type} {prop} {{ get; set; }}")
+                write.line_empty()
+
+            # ---------- AirtableModel plumbing ----------
+            _doc(write, "Current writable field values keyed by field id (every writable field, for dirty diffing).", indent=1)
+            _write_collect_method(write, "CollectWritableFields", writable_fields, prop_names)
+            write.line_empty()
+            _doc(write, "Current computed (read-only) field values keyed by field id.", indent=1)
+            _write_collect_method(write, "CollectComputedFields", computed_fields, prop_names)
+            write.line_empty()
+
+            # ---------- fluent CRUD ----------
+            write.doc_comment(
+                [
+                    "Persist this model's dirty fields back to Airtable (requires a saved record).",
+                    "Returns a FRESH instance with a reset snapshot; this receiver keeps its",
+                    "pre-save snapshot, so continue with the returned model.",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"public Task<{model_name}> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct);")
+            write.line_empty()
+            _doc(write, "Re-fetch this model from the server. Returns a fresh instance.", indent=1)
+            write.line_indented(f"public Task<{model_name}> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);")
+            write.line_empty()
+            _doc(write, "Delete the record referenced by this model's Id.", indent=1)
+            write.line_indented("public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);")
+            write.close()
+
+
+def _write_collect_method(
+    write: WriteToCSharpFile,
+    method: str,
+    fields: list,
+    prop_names: dict[str, str],
+) -> None:
+    """Emit a `CollectWritableFields`/`CollectComputedFields` override.
+
+    Returns a `Dictionary<string, JsonNode?>` mapping every field's id to `AirtableRuntime.V(prop)`
+    (null when the property is unset). The base class filters/diffs these for payloads.
+    """
+    write.line_indented(f"protected override IReadOnlyDictionary<string, JsonNode?> {method}() =>", indent=1)
+    if not fields:
+        write.line_indented("new Dictionary<string, JsonNode?>();", indent=2)
+        return
+    write.line_indented("new Dictionary<string, JsonNode?>", indent=2)
+    write.line_indented("{", indent=2)
+    for field in fields:
+        prop = _csharp_ident(prop_names[field.id])
+        write.line_indented(f'["{field.id}"] = AirtableRuntime.V({prop}),', indent=3)
+    write.line_indented("};", indent=2)
+
+
 def write_tables(base: Base, output_folder: Path) -> None:
     """Generate per-table `{Table}Table` facade. F3: dict access only (ORM added in F4)."""
     tables_dir = _create_dynamic_subdir(output_folder, _DIR_TABLES)
@@ -336,7 +463,6 @@ def generate_csharp(
     F3: options, field types, dict-only table facades, and the entry point. ORM models
     (F4) and formula helpers (F7) are emitted by later features.
     """
-    del runtime, flatten  # consumed by F4/F8 writers
     output_folder = reset_folder(output_folder)
 
     exclude_static: list[str] = []
@@ -346,6 +472,7 @@ def generate_csharp(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if wrappers:
         write_tables(base, output_folder)
         write_main(base, output_folder)
