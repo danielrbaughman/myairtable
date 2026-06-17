@@ -476,13 +476,12 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate per-table `{Table}Table` facade: typed ORM accessor + raw dict access.
+    """Generate per-table `{Table}Table` facade.
 
-    `Orm` is the typed entry point — `airtable.Primary.Orm.GetAsync(id)` returns a
-    `PrimaryModel`. `Dict` keeps the untyped field-bag access for parity with the other
-    targets. C#'s `OrmTable<T>` already exposes the full async CRUD surface, so the facade
-    holds it directly rather than re-emitting delegating wrappers (Java needed those only
-    because it threads a class token).
+    The facade **is** the typed table — it derives from `OrmTable<{Table}Model>`, so the ORM is
+    the default entry point with no `.Orm` hop: `airtable.Primary.GetAsync(id)` returns a
+    `PrimaryModel` (parity with the other targets, where ORM is the default and raw access is
+    behind `.dict()`/`.Dict`). `Dict` keeps the untyped field-bag access.
     """
     tables_dir = _create_dynamic_subdir(output_folder, _DIR_TABLES)
 
@@ -494,18 +493,18 @@ def write_tables(base: Base, output_folder: Path) -> None:
         with WriteToCSharpFile(path=tables_dir / f"{type_name}.cs") as write:
             write.namespace_decl()
             write.line_empty()
-            _doc(write, f"Accessor for the {sanitize_string(table.name)} Airtable table.")
-            write.class_open(type_name)
+            _doc(
+                write,
+                f"Typed accessor for the {sanitize_string(table.name)} Airtable table — the full async ORM CRUD surface is inherited; <c>Dict</c> gives raw field-bag access.",
+            )
+            write.class_open(type_name, base=f"OrmTable<{model_name}>")
             write.line_indented(f'public const string TableId = "{table.id}";')
             write.line_empty()
             write.line_indented(f"public {type_name}(AirtableClient client)")
+            write.line_indented(": base(TableId, client)", indent=1)
             write.line_indented("{", indent=1)
             write.line_indented(f"Dict = new DictTable(TableId, {fields_name}.NameToId, client);", indent=2)
-            write.line_indented(f"Orm = new OrmTable<{model_name}>(TableId, client);", indent=2)
             write.line_indented("}", indent=1)
-            write.line_empty()
-            _doc(write, f"Typed ORM access — decodes into {model_name}. The default entry point.", indent=1)
-            write.line_indented(f"public OrmTable<{model_name}> Orm {{ get; }}")
             write.line_empty()
             _doc(write, "Raw (dict-style) access — decoded fields keyed by id.", indent=1)
             write.line_indented("public DictTable Dict { get; }")

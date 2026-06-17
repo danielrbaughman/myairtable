@@ -9,7 +9,7 @@ namespace MyAirtable;
 /// taking a snapshot on every decode so model-side <c>SaveAsync</c>/<c>DirtyFields</c> work. C#'s
 /// reified generics carry the model type, so no class token is threaded (unlike the Java target).
 /// </summary>
-public sealed class OrmTable<T>
+public class OrmTable<T>
     where T : AirtableModel
 {
     /// <summary>Airtable's hard cap for create / update / delete batches.</summary>
@@ -30,8 +30,6 @@ public sealed class OrmTable<T>
         _tableId = tableId;
         _client = client;
     }
-
-    public string TableId => _tableId;
 
     /// <summary>Result of <see cref="UpsertAsync"/>: the merged model plus whether it was inserted.</summary>
     public sealed record UpsertResult(T Model, bool WasCreated);

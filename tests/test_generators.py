@@ -2561,10 +2561,17 @@ class TestCSharpGenerator:
         assert '["fld001"] = "Primary Key",' in content  # IdToName
         assert "public static string? IdByName(string name)" in content
 
-    def test_table_facade_dict_only(self, tmp_path: Path):
+    def test_table_facade_inherits_ormtable_and_exposes_dict(self, tmp_path: Path):
         out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
         content = (out / "dynamic" / "Tables" / "TestTableTable.cs").read_text()
+        # The facade IS the typed table (ORM is the default, no `.Orm` hop): it derives from
+        # OrmTable<{Table}Model> and forwards the table id to the base ctor.
+        assert "class TestTableTable : OrmTable<TestTableModel>" in content
         assert 'public const string TableId = "tbl' in content
+        assert ": base(TableId, client)" in content
+        # No `.Orm` accessor property anymore (the ORM surface is inherited directly).
+        assert "Orm { get; }" not in content
+        # Raw dict access is still available behind `.Dict`.
         assert "new DictTable(TableId, TestTableFields.NameToId, client)" in content
         assert "public DictTable Dict { get; }" in content
 
