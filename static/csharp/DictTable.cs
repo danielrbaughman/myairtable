@@ -104,6 +104,7 @@ public sealed class DictTable
                         .Select(f => (JsonNode?)new JsonObject { ["fields"] = FieldsToJson(f) })
                         .ToArray()
                 ),
+                ["returnFieldsByFieldId"] = true,
             };
             var payload = await _client
                 .CreateRecordsAsync(_tableId, body.ToJsonString(), ct)
@@ -144,6 +145,7 @@ public sealed class DictTable
                         )
                         .ToArray()
                 ),
+                ["returnFieldsByFieldId"] = true,
             };
             var payload = await _client
                 .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)

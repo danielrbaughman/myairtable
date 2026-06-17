@@ -66,7 +66,9 @@ public sealed class AirtableClient
         CancellationToken ct = default
     )
     {
-        var url = $"{ApiRoot}/{Esc(_baseId)}/{Esc(tableId)}/{Esc(recordId)}";
+        // returnFieldsByFieldId so the response keys match the generated field-id constants.
+        var url =
+            $"{ApiRoot}/{Esc(_baseId)}/{Esc(tableId)}/{Esc(recordId)}?returnFieldsByFieldId=true";
         return Cache.GetOrAddAsync(
             tableId,
             "rec:" + recordId,
