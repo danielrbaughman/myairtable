@@ -1,0 +1,422 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace MyAirtable;
+
+/// <summary>
+/// Typed record accessor for an Airtable table. Forwards all I/O to the <see cref="AirtableClient"/>;
+/// decodes responses into the generated <c>{Table}Model</c> classes via STJ, attaching the client +
+/// taking a snapshot on every decode so model-side <c>SaveAsync</c>/<c>DirtyFields</c> work. C#'s
+/// reified generics carry the model type, so no class token is threaded (unlike the Java target).
+/// </summary>
+public sealed class OrmTable<T>
+    where T : AirtableModel
+{
+    /// <summary>Airtable's hard cap for create / update / delete batches.</summary>
+    public const int BatchSize = 10;
+
+    /// <summary>
+    /// Max in-flight requests for the multi-ID <see cref="GetAsync(IReadOnlyList{string},CancellationToken)"/>
+    /// fan-out. Kept just under Airtable's 5-requests-per-second limit so large ID lists don't
+    /// trigger a synchronized 429 storm. Matches the Java/Kotlin targets.
+    /// </summary>
+    public const int MaxConcurrentGets = 4;
+
+    private readonly string _tableId;
+    private readonly AirtableClient _client;
+
+    public OrmTable(string tableId, AirtableClient client)
+    {
+        _tableId = tableId;
+        _client = client;
+    }
+
+    public string TableId => _tableId;
+
+    /// <summary>Result of <see cref="UpsertAsync"/>: the merged model plus whether it was inserted.</summary>
+    public sealed record UpsertResult(T Model, bool WasCreated);
+
+    // ---- decoding -----------------------------------------------------------
+
+    /// <summary>
+    /// Decode one <c>{id, createdTime, fields}</c> envelope: STJ handles <c>fields</c>; id/createdTime
+    /// are copied onto the model, the client attached, and a snapshot taken.
+    /// </summary>
+    private T DecodeEnvelope(JsonNode? element)
+    {
+        try
+        {
+            if (element is not JsonObject obj)
+                throw new AirtableException.DecodingError("expected a record object");
+            var fields = obj["fields"] as JsonObject ?? new JsonObject();
+            var model =
+                fields.Deserialize<T>(AirtableJson.Options)
+                ?? throw new AirtableException.DecodingError($"null {typeof(T).Name}");
+            model.Id = obj["id"]?.GetValue<string>();
+            var createdTime = obj["createdTime"];
+            model.CreatedTime = createdTime is null
+                ? null
+                : createdTime.Deserialize<DateTimeOffset>(AirtableJson.Options);
+            model.AttachedClient = _client;
+            model.TakeSnapshot();
+            return model;
+        }
+        catch (AirtableException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            throw new AirtableException.DecodingError(ex.Message, ex);
+        }
+    }
+
+    private static JsonNode ParseTree(string payload)
+    {
+        try
+        {
+            return JsonNode.Parse(payload)
+                ?? throw new AirtableException.DecodingError("null payload");
+        }
+        catch (JsonException ex)
+        {
+            throw new AirtableException.DecodingError(ex.Message, ex);
+        }
+    }
+
+    private T DecodeRecordPayload(string payload) => DecodeEnvelope(ParseTree(payload));
+
+    /// <summary>Decode a <c>{records: [...], offset}</c> payload. Returns models + offset.</summary>
+    private (List<T> Records, string? Offset) DecodeListPayload(string payload)
+    {
+        var obj = ParseTree(payload);
+        var records = new List<T>();
+        if (obj["records"] is JsonArray array)
+            foreach (var record in array)
+                records.Add(DecodeEnvelope(record));
+        var offset = obj["offset"]?.GetValue<string>();
+        return (records, string.IsNullOrEmpty(offset) ? null : offset);
+    }
+
+    // ---- get (read) ---------------------------------------------------------
+
+    /// <summary>Fetch one record by ID.</summary>
+    public async Task<T> GetAsync(string recordId, CancellationToken ct = default) =>
+        DecodeRecordPayload(
+            await _client.GetRecordAsync(_tableId, recordId, ct).ConfigureAwait(false)
+        );
+
+    /// <summary>
+    /// Fetch many records by ID in windows of <see cref="MaxConcurrentGets"/>. Chunking bounds
+    /// in-flight requests; preserves caller-supplied order.
+    /// </summary>
+    public async Task<List<T>> GetAsync(
+        IReadOnlyList<string> recordIds,
+        CancellationToken ct = default
+    )
+    {
+        var collected = new List<T>(recordIds.Count);
+        for (var start = 0; start < recordIds.Count; start += MaxConcurrentGets)
+        {
+            var window = recordIds
+                .Skip(start)
+                .Take(MaxConcurrentGets)
+                .Select(id => GetAsync(id, ct))
+                .ToList();
+            collected.AddRange(await Task.WhenAll(window).ConfigureAwait(false));
+        }
+        return collected;
+    }
+
+    /// <summary>Fetch all records (default query).</summary>
+    public Task<List<T>> GetAsync(CancellationToken ct = default) =>
+        GetAsync(new AirtableQuery(), ct);
+
+    /// <summary>
+    /// Fetch records matching the query. Paginates internally via the <c>offset</c> continuation
+    /// token; returns the merged list in page-arrival order.
+    /// </summary>
+    public async Task<List<T>> GetAsync(AirtableQuery query, CancellationToken ct = default)
+    {
+        var collected = new List<T>();
+        string? offset = null;
+        do
+        {
+            var payload = offset is null
+                ? await _client.ListRecordsAsync(_tableId, query, ct).ConfigureAwait(false)
+                : await FetchWithOffsetAsync(query, offset, ct).ConfigureAwait(false);
+            var (records, next) = DecodeListPayload(payload);
+            collected.AddRange(records);
+            offset = next;
+        } while (!string.IsNullOrEmpty(offset));
+        return collected;
+    }
+
+    private Task<string> FetchWithOffsetAsync(
+        AirtableQuery query,
+        string offset,
+        CancellationToken ct
+    )
+    {
+        var pars = query.ToParameters();
+        pars.Add(new("offset", offset));
+        return _client.SendAsync(HttpMethod.Get, _client.TableUrl(_tableId, pars), null, ct);
+    }
+
+    // ---- create -------------------------------------------------------------
+
+    /// <summary>
+    /// Create one record. Pass a fresh model built with an object initializer (e.g.
+    /// <c>new PrimaryModel { PrimaryKey = "x" }</c>); only writable fields are sent.
+    /// </summary>
+    public async Task<T> CreateAsync(T model, CancellationToken ct = default)
+    {
+        var created = await CreateBatchAsync(new[] { model.ToCreateFields() }, ct)
+            .ConfigureAwait(false);
+        if (created.Count == 0)
+            throw new AirtableException.ApiError(
+                "UNEXPECTED_RESPONSE",
+                "create returned no records"
+            );
+        return created[0];
+    }
+
+    /// <summary>Create many records. Chunks into Airtable's batch limit (10).</summary>
+    public async Task<List<T>> CreateAsync(IReadOnlyList<T> models, CancellationToken ct = default)
+    {
+        var payloads = models.Select(m => m.ToCreateFields()).ToList();
+        var collected = new List<T>(models.Count);
+        foreach (var batch in Chunk(payloads))
+            collected.AddRange(await CreateBatchAsync(batch, ct).ConfigureAwait(false));
+        return collected;
+    }
+
+    private async Task<List<T>> CreateBatchAsync(
+        IReadOnlyList<Dictionary<string, JsonNode?>> records,
+        CancellationToken ct
+    )
+    {
+        if (records.Count == 0)
+            return new List<T>();
+        // `typecast` is intentionally omitted — Airtable's server-side default is false,
+        // matching the other targets.
+        var body = new JsonObject
+        {
+            ["records"] = new JsonArray(
+                records
+                    .Select(f => (JsonNode?)new JsonObject { ["fields"] = FieldsToJson(f) })
+                    .ToArray()
+            ),
+            ["returnFieldsByFieldId"] = true,
+        };
+        var payload = await _client
+            .CreateRecordsAsync(_tableId, body.ToJsonString(), ct)
+            .ConfigureAwait(false);
+        return DecodeListPayload(payload).Records;
+    }
+
+    // ---- update -------------------------------------------------------------
+
+    /// <summary>
+    /// Update a single model. Diffs against the model's snapshot and sends only fields that changed
+    /// since the last <see cref="AirtableModel.TakeSnapshot"/>.
+    /// </summary>
+    public async Task<T> UpdateAsync(T model, CancellationToken ct = default)
+    {
+        var updated = await UpdateAsync(new[] { model }, ct).ConfigureAwait(false);
+        if (updated.Count == 0)
+            throw new AirtableException.ApiError(
+                "UNEXPECTED_RESPONSE",
+                "update returned no records"
+            );
+        return updated[0];
+    }
+
+    /// <summary>
+    /// Update many models (dirty fields only). Chunks into the batch limit. Models with no dirty
+    /// fields already match server state, so they are never PATCHed — they come back unchanged, in
+    /// their original positions.
+    /// </summary>
+    public async Task<List<T>> UpdateAsync(IReadOnlyList<T> models, CancellationToken ct = default)
+    {
+        if (models.Count == 0)
+            return new List<T>();
+        var results = new T?[models.Count];
+        var dirtyIndices = new List<int>();
+        var dirtyPatches = new List<(string Id, Dictionary<string, JsonNode?> Fields)>();
+        for (var index = 0; index < models.Count; index++)
+        {
+            var model = models[index];
+            if (model.IsNew)
+                throw new AirtableException.ApiError(
+                    "UNSAVED_MODEL",
+                    "Cannot update a model without an id"
+                );
+            var dirty = model.DirtyFields();
+            if (dirty.Count == 0)
+                results[index] = model;
+            else
+            {
+                dirtyIndices.Add(index);
+                dirtyPatches.Add((model.RequireId(), dirty));
+            }
+        }
+        var updated = new List<T>();
+        foreach (var batch in Chunk(dirtyPatches))
+            updated.AddRange(await UpdateBatchAsync(batch, ct).ConfigureAwait(false));
+        for (var i = 0; i < dirtyIndices.Count && i < updated.Count; i++)
+            results[dirtyIndices[i]] = updated[i];
+        var ordered = new List<T>(results.Length);
+        foreach (var result in results)
+            ordered.Add(
+                result
+                    ?? throw new AirtableException.ApiError(
+                        "UNEXPECTED_RESPONSE",
+                        "update returned fewer records than requested"
+                    )
+            );
+        return ordered;
+    }
+
+    /// <summary>Update a record's fields directly by ID (no model required).</summary>
+    public async Task<T> UpdateFieldsAsync(
+        string recordId,
+        Dictionary<string, JsonNode?> fields,
+        CancellationToken ct = default
+    )
+    {
+        var updated = await UpdateBatchAsync(new[] { (recordId, fields) }, ct)
+            .ConfigureAwait(false);
+        if (updated.Count == 0)
+            throw new AirtableException.ApiError(
+                "UNEXPECTED_RESPONSE",
+                "update returned no records"
+            );
+        return updated[0];
+    }
+
+    private async Task<List<T>> UpdateBatchAsync(
+        IReadOnlyList<(string Id, Dictionary<string, JsonNode?> Fields)> patches,
+        CancellationToken ct
+    )
+    {
+        if (patches.Count == 0)
+            return new List<T>();
+        var body = new JsonObject
+        {
+            ["records"] = new JsonArray(
+                patches
+                    .Select(p =>
+                        (JsonNode?)
+                            new JsonObject { ["id"] = p.Id, ["fields"] = FieldsToJson(p.Fields) }
+                    )
+                    .ToArray()
+            ),
+            ["returnFieldsByFieldId"] = true,
+        };
+        var payload = await _client
+            .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+            .ConfigureAwait(false);
+        return DecodeListPayload(payload).Records;
+    }
+
+    // ---- upsert -------------------------------------------------------------
+
+    /// <summary>
+    /// Upsert a record, matching on the supplied field IDs. Returns the merged model plus whether the
+    /// record was inserted (vs updated).
+    /// </summary>
+    public async Task<UpsertResult> UpsertAsync(
+        T model,
+        IReadOnlyList<string> fieldsToMergeOn,
+        CancellationToken ct = default
+    )
+    {
+        var body = new JsonObject
+        {
+            ["records"] = new JsonArray(
+                new JsonObject { ["fields"] = FieldsToJson(model.ToCreateFields()) }
+            ),
+            ["performUpsert"] = new JsonObject
+            {
+                ["fieldsToMergeOn"] = new JsonArray(
+                    fieldsToMergeOn.Select(f => (JsonNode?)f).ToArray()
+                ),
+            },
+            ["returnFieldsByFieldId"] = true,
+        };
+        var payload = await _client
+            .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+            .ConfigureAwait(false);
+        var obj = ParseTree(payload);
+        var records = new List<T>();
+        if (obj["records"] is JsonArray array)
+            foreach (var record in array)
+                records.Add(DecodeEnvelope(record));
+        if (records.Count == 0)
+            throw new AirtableException.ApiError(
+                "UNEXPECTED_RESPONSE",
+                "upsert returned no records"
+            );
+        var first = records[0];
+        var wasCreated = false;
+        if (obj["createdRecords"] is JsonArray created)
+            foreach (var createdId in created)
+                if (createdId?.GetValue<string>() == first.Id)
+                    wasCreated = true;
+        return new UpsertResult(first, wasCreated);
+    }
+
+    // ---- delete -------------------------------------------------------------
+
+    /// <summary>Delete one record by ID.</summary>
+    public Task DeleteAsync(string recordId, CancellationToken ct = default) =>
+        _client.DeleteRecordAsync(_tableId, recordId, ct);
+
+    /// <summary>Delete the record referenced by this model's <c>id</c>.</summary>
+    public Task DeleteAsync(T model, CancellationToken ct = default)
+    {
+        if (model.IsNew)
+            throw new AirtableException.ApiError("UNSAVED_MODEL", "Cannot delete an unsaved model");
+        return DeleteAsync(model.RequireId(), ct);
+    }
+
+    /// <summary>Delete many records by ID. Chunks into Airtable's batch limit (10).</summary>
+    public async Task DeleteAsync(IReadOnlyList<string> recordIds, CancellationToken ct = default)
+    {
+        foreach (var batch in Chunk(recordIds))
+            await _client.DeleteRecordsAsync(_tableId, batch.ToList(), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Delete many records by passing their models. Chunks by ID.</summary>
+    public Task DeleteModelsAsync(IReadOnlyList<T> models, CancellationToken ct = default)
+    {
+        var ids = new List<string>(models.Count);
+        foreach (var model in models)
+        {
+            if (model.IsNew)
+                throw new AirtableException.ApiError(
+                    "UNSAVED_MODEL",
+                    "Cannot delete an unsaved model"
+                );
+            ids.Add(model.RequireId());
+        }
+        return DeleteAsync(ids, ct);
+    }
+
+    // ---- helpers ------------------------------------------------------------
+
+    private static JsonObject FieldsToJson(IReadOnlyDictionary<string, JsonNode?> fields)
+    {
+        var obj = new JsonObject();
+        foreach (var (id, value) in fields)
+            obj[id] = value?.DeepClone();
+        return obj;
+    }
+
+    private static IEnumerable<IReadOnlyList<TItem>> Chunk<TItem>(IReadOnlyList<TItem> items)
+    {
+        for (var i = 0; i < items.Count; i += BatchSize)
+            yield return items.Skip(i).Take(BatchSize).ToList();
+    }
+}
