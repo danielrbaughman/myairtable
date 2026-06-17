@@ -81,6 +81,30 @@ public sealed class CacheStore
         return value;
     }
 
+    /// <summary>
+    /// Peek a cached value, lazily evicting it if past its TTL — returns <c>null</c> on miss or
+    /// expiry. A non-null result proves the entry was live (not served stale); test/inspection helper.
+    /// </summary>
+    public string? Get(string tableId, string cacheKey)
+    {
+        var key = new Key(tableId, cacheKey);
+        _lock.Wait();
+        try
+        {
+            if (_entries.TryGetValue(key, out var hit))
+            {
+                if (hit.Expiry > DateTimeOffset.UtcNow)
+                    return hit.Value;
+                _entries.Remove(key); // lazy eviction past TTL
+            }
+            return null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     /// <summary>Drop every cached entry for one table (call after a mutation to that table).</summary>
     public void Invalidate(string tableId)
     {
