@@ -86,6 +86,7 @@ def make_test_base(fields_spec: list[tuple[str, str, FieldType]], formula_map: d
             "_kotlin_type": None,
             "_java_type": None,
             "_go_type": None,
+            "_csharp_type": None,
             "_snake": None,
             "_pascal": None,
             "_model": None,
@@ -482,6 +483,7 @@ def _make_base_with_select_field(table_name: str, field_name: str, field_id: str
         "_kotlin_type": None,
         "_java_type": None,
         "_go_type": None,
+        "_csharp_type": None,
         "_snake": None,
         "_pascal": None,
         "_model": None,
@@ -2430,6 +2432,357 @@ class TestJavaComputedTypes:
         from src.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("My Text", "fld001", "singleLineText")) == "String"
+
+
+class TestCSharpComputedTypes:
+    """map_csharp_type wrapping for computed fields (pure type_mapper assertions)."""
+
+    @staticmethod
+    def _field(name: str, field_id: str, field_type: FieldType):
+        return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
+
+    def test_formula_number_wraps_maybe_special_or_error_double(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<double>"
+
+    def test_auto_number_wraps_maybe_special_or_error_long(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<long>"
+
+    def test_lookup_wraps_vec_or_value(self):
+        """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Look", "fld001", "multipleLookupValues")
+        assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+        # Disambiguation-applied List<...> is stripped so the inner primitive is wrapped.
+        assert apply_csharp_computed_wrapping("List<string>", field) == "VecOrValue<MaybeSpecialOrError<string>>"
+
+    def test_lookup_with_unresolvable_inner_falls_back_to_json_node(self):
+        """An unresolvable lookup renders as VecOrValue<JsonNode> end-to-end."""
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<JsonNode>"
+
+    def test_rollup_wraps_vec_or_value(self):
+        """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Roll", "fld001", "rollup")
+        assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+
+    def test_already_wrapped_type_is_left_alone(self):
+        """apply_csharp_computed_wrapping is a no-op on already-wrapped types."""
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("Calc", "fld001", "formula")
+        assert apply_csharp_computed_wrapping("MaybeSpecialOrError<double>", field) == "MaybeSpecialOrError<double>"
+
+    def test_writable_field_is_never_wrapped(self):
+        from src.utils.type_mapper import apply_csharp_computed_wrapping
+
+        field = self._field("My Text", "fld001", "singleLineText")
+        assert apply_csharp_computed_wrapping("string", field) == "string"
+
+    def test_writable_text_is_plain_string(self):
+        from src.utils.type_mapper import map_csharp_type
+
+        assert map_csharp_type(self._field("My Text", "fld001", "singleLineText")) == "string"
+
+
+class TestCSharpWriterHelpers:
+    """Pure helpers in write_to_csharp_file.py (CS1.2)."""
+
+    def test_csharp_ident_escapes_keywords_with_at_prefix(self):
+        """C# uses verbatim identifiers — reserved words get a leading `@`."""
+        from src.utils.write_to_csharp_file import _csharp_ident
+
+        for kw in ("class", "switch", "true", "false", "null", "namespace", "string", "int"):
+            assert _csharp_ident(kw) == f"@{kw}"
+        # Contextual keywords and ordinary names are left alone.
+        assert _csharp_ident("status") == "status"
+        assert _csharp_ident("value") == "value"
+        assert _csharp_ident("record") == "record"
+        assert _csharp_ident("async") == "async"
+
+    def test_csharp_string_literal_escapes_quotes_and_controls(self):
+        from src.utils.write_to_csharp_file import _csharp_string_literal
+
+        assert _csharp_string_literal('a"b') == 'a\\"b'
+        assert _csharp_string_literal("a\\b") == "a\\\\b"
+        assert _csharp_string_literal("a\nb\tc") == "a\\nb\\tc"
+        # `$` and `{` are not interpreted in a regular literal — left alone.
+        assert _csharp_string_literal("${x}") == "${x}"
+
+    def test_xmldoc_escape_entities_and_double_dash(self):
+        from src.utils.write_to_csharp_file import _xmldoc_escape
+
+        assert _xmldoc_escape("a < b & c > d") == "a &lt; b &amp; c &gt; d"
+        # `--` is illegal inside an XML comment body — neutralised.
+        assert _xmldoc_escape("LEN({f})--1") == "LEN({f})- -1"
+        # `&` runs first so introduced entities aren't re-escaped.
+        assert "&amp;lt;" not in _xmldoc_escape("<")
+
+    def test_choice_to_entry_pascal_case_and_edges(self):
+        from src.utils.write_to_csharp_file import _choice_to_entry
+
+        assert _choice_to_entry("open Invoices") == "OpenInvoices"
+        assert _choice_to_entry("In Progress") == "InProgress"
+        assert _choice_to_entry("") == "Empty"
+        assert _choice_to_entry("   ") == "Empty"
+        # Every result is a valid PascalCase-ish identifier (never starts with a digit).
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("!!!"))
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("3rd Party"))
+        assert _choice_to_entry("3rd Party").startswith("N")
+
+
+class TestCSharpGenerator:
+    """csharp.py F3 generator — offline content assertions (no dotnet)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out)
+        return out
+
+    def test_fields_constants_and_maps(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText"), ("Count", "fld002", "number")], tmp_path)
+        content = (out / "dynamic" / "Types" / "TestTableFields.cs").read_text()
+        assert "namespace MyAirtable;" in content
+        assert 'public const string PrimaryKeyId = "fld001";' in content
+        assert 'public const string PrimaryKeyName = "Primary Key";' in content
+        assert '["Primary Key"] = "fld001",' in content  # NameToId
+        assert '["fld001"] = "Primary Key",' in content  # IdToName
+        assert "public static string? IdByName(string name)" in content
+
+    def test_table_facade_inherits_ormtable_and_exposes_dict(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "Tables" / "TestTableTable.cs").read_text()
+        # The facade IS the typed table (ORM is the default, no `.Orm` hop): it derives from
+        # OrmTable<{Table}Model> and forwards the table id to the base ctor.
+        assert "class TestTableTable : OrmTable<TestTableModel>" in content
+        assert 'public const string TableId = "tbl' in content
+        assert ": base(TableId, client)" in content
+        # No `.Orm` accessor property anymore (the ORM surface is inherited directly).
+        assert "Orm { get; }" not in content
+        # Raw dict access is still available behind `.Dict`.
+        assert "new DictTable(TableId, TestTableFields.NameToId, client)" in content
+        assert "public DictTable Dict { get; }" in content
+
+    def test_airtable_entry_point(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "Airtable.cs").read_text()
+        assert "public sealed class Airtable" in content
+        assert "public TestTableTable TestTable { get; }" in content
+        assert "public const string BaseId =" in content
+        assert "public Airtable(string baseId, string apiKey, double cacheSeconds = 0)" in content
+        assert "public void InvalidateAllCaches() => Client.InvalidateAllCaches();" in content
+
+    def test_static_runtime_copied(self, tmp_path: Path):
+        out = self._generate([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        assert (out / "static" / "AirtableClient.cs").exists()
+        assert (out / "static" / "DictTable.cs").exists()
+
+    def test_reserved_model_member_names_are_suffixed(self):
+        """A field whose PascalCase collides with an AirtableModel member — a base
+        property (`IsNew`) OR a base method (`ToRecord`, `DirtyFields`) — is suffixed
+        `Field` so the generated property neither duplicates nor shadows the base member.
+        Regression: `IsNew` and the method names were missing from the reserved set."""
+        from src.generators.csharp import _field_property_map
+
+        base = make_test_base(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Is New", "fld002", "singleLineText"),  # base property
+                ("To Record", "fld003", "singleLineText"),  # base method
+                ("Dirty Fields", "fld004", "singleLineText"),  # base method
+            ]
+        )
+        props = _field_property_map(base.tables[0])
+        assert props["fld002"] == "IsNewField"
+        assert props["fld003"] == "ToRecordField"
+        assert props["fld004"] == "DirtyFieldsField"
+        # Names must stay unique after suffixing.
+        assert len(set(props.values())) == len(props)
+
+    def test_reserved_table_accessor_names_are_suffixed(self):
+        """A table whose PascalCase accessor would collide with a root `Airtable`-class
+        member is renamed `{Name}Table`. Covers the class name itself (`Airtable` →
+        CS0542) and the `InvalidateAllCaches()` method (regression: was missing)."""
+        from src.generators.csharp import _table_property
+
+        for name, expected in [
+            ("Airtable", "AirtableTable"),
+            ("Invalidate All Caches", "InvalidateAllCachesTable"),
+            ("Client", "ClientTable"),
+        ]:
+            base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+            base.tables[0].name = name
+            base.tables[0].__pydantic_private__["_pascal"] = None
+            assert _table_property(base.tables[0]) == expected
+
+    def test_options_enum_and_converter(self, tmp_path: Path):
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["To Do", "In Progress", "Done"])
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out)
+        opts = list((out / "dynamic" / "Options").glob("*.cs"))
+        assert opts, "expected an options enum file"
+        content = opts[0].read_text()
+        assert "public enum" in content
+        assert "ToDo," in content and "InProgress," in content and "Done," in content
+        assert "JsonConverter<" in content
+        assert '["To Do"] =' in content  # FromWire raw-string mapping
+        assert "WriteStringValue(ToWire[value])" in content
+
+
+class TestCSharpComputedFields:
+    """csharp.py `write_models` (CS4.3) — offline model-shape assertions (no dotnet).
+
+    Computed fields decode-only ([JsonInclude] + private set, absent from the writable
+    payload map); writable fields have public setters and feed CollectWritableFields.
+    Compilation + live CRUD are verified separately by the integration suite.
+    """
+
+    MIXED_SPEC: list[tuple[str, str, FieldType]] = [
+        ("My Text", "fld001", "singleLineText"),
+        ("My Formula", "fld002", "formula"),
+        ("Look", "fld003", "multipleLookupValues"),
+    ]
+
+    def _model(
+        self,
+        fields_spec: list[tuple[str, str, FieldType]],
+        tmp_path: Path,
+        **flags,
+    ) -> str:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out, **flags)
+        return (out / "dynamic" / "Models" / "TestTableModel.cs").read_text()
+
+    # ---- class header ----
+
+    def test_model_class_extends_airtable_model(self, tmp_path: Path):
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "namespace MyAirtable;" in content
+        assert "public sealed class TestTableModel : AirtableModel" in content
+        # [JsonIgnore] on the override is required — the base property's attribute is not
+        # inherited, so STJ would otherwise serialize TableId into the fields payload.
+        assert '[JsonIgnore]\n    public override string TableId => "tbl' in content
+
+    # ---- field properties ----
+
+    def test_writable_field_has_public_setter_and_json_property(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        assert '[JsonPropertyName("fld001")]' in content
+        assert "public string? MyText { get; set; }" in content
+
+    def test_computed_field_is_json_include_private_set(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        # Formula → MaybeSpecialOrError<...>; lookup → VecOrValue<MaybeSpecialOrError<...>>.
+        assert '[JsonPropertyName("fld002")]' in content
+        assert "[JsonInclude]" in content
+        assert "MyFormula { get; private set; }" in content
+        assert "Look { get; private set; }" in content
+        # computed fields never get a public setter
+        assert "MyFormula { get; set; }" not in content
+        assert "Look { get; set; }" not in content
+
+    def test_all_properties_are_nullable(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        # every Airtable field is optional → nullable annotation on every property
+        assert "public string? MyText" in content
+        assert "MaybeSpecialOrError<double>? MyFormula" in content
+
+    # ---- payload maps ----
+
+    def test_writable_payload_map_excludes_computed(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        writable = content.split("CollectWritableFields()")[1].split("CollectComputedFields()")[0]
+        assert '["fld001"] = AirtableRuntime.V(MyText),' in writable
+        assert "fld002" not in writable
+        assert "fld003" not in writable
+
+    def test_computed_payload_map_excludes_writable(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        computed = content.split("CollectComputedFields()")[1]
+        assert '["fld002"] = AirtableRuntime.V(MyFormula),' in computed
+        assert '["fld003"] = AirtableRuntime.V(Look),' in computed
+        assert "fld001" not in computed
+
+    # ---- fluent CRUD ----
+
+    def test_fluent_crud_methods_delegate_to_model_ops(self, tmp_path: Path):
+        content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
+        assert "public Task<TestTableModel> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct);" in content
+        assert "public Task<TestTableModel> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);" in content
+        assert "public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);" in content
+
+    # ---- deferred features ----
+
+    def test_filter_accessor_present_when_formulas(self, tmp_path: Path):
+        """The static `F` filter accessor (F7) is emitted when formulas are enabled."""
+        content = self._model(self.MIXED_SPEC, tmp_path, formulas=True)
+        assert "public static readonly TestTableFilters F = new();" in content
+
+    def test_filter_accessor_absent_without_formulas(self, tmp_path: Path):
+        content = self._model(self.MIXED_SPEC, tmp_path, formulas=False)
+        assert "TestTableFilters" not in content
+
+    # ---- runtime formula evaluation (F8) ----
+
+    def _model_with_formula(self, tmp_path: Path, **flags) -> str:
+        from src.generators.csharp import generate_csharp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [("Primary Key", "fld001", "singleLineText"), ("My Formula", "fld002", "formula")],
+            formula_map={"fld002": "UPPER({fld001})"},
+        )
+        map_types(base)
+        out = tmp_path / "cs"
+        generate_csharp(base=base, output_folder=out, **flags)
+        return (out / "dynamic" / "Models" / "TestTableModel.cs").read_text()
+
+    def test_evaluate_method_emitted_for_formula_when_runtime(self, tmp_path: Path):
+        content = self._model_with_formula(tmp_path, runtime=True)
+        assert "#region Runtime formula evaluation" in content
+        assert "public JsonNode? EvaluateMyFormula() =>" in content
+        # field refs transpile to AirtableRuntime.V(this.<PascalProp>)
+        assert "AirtableRuntime.UPPER(AirtableRuntime.V(this.PrimaryKey))" in content
+
+    def test_evaluate_methods_absent_without_runtime(self, tmp_path: Path):
+        content = self._model_with_formula(tmp_path, runtime=False)
+        assert "#region Runtime formula evaluation" not in content
+        assert "Evaluate" not in content
+
+    # ---- linked records (CS6.1) ----
+
+    def test_linked_record_field_is_raw_string_list(self, tmp_path: Path):
+        """Record-ID links map to a raw nullable List<string> — no VecOrValue wrapper."""
+        content = self._model(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Links", "fld002", "multipleRecordLinks"),
+            ],
+            tmp_path,
+        )
+        assert "public List<string>? Links { get; set; }" in content
+        assert "VecOrValue" not in content
 
 
 class TestJavaModels:

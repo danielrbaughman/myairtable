@@ -113,3 +113,24 @@ if command -v go &> /dev/null; then
 else
     echo "[warn] Go not on PATH; skipping Go checks."
 fi
+
+# C#
+# The static runtime + its unit tests live in tests/csharp_static/ (an xUnit project
+# whose .csproj compiles static/csharp/ directly via <Compile Include>). Target net8.0;
+# RollForward=Major lets the test host run on a newer installed runtime (e.g. SDK 9).
+if command -v dotnet &> /dev/null; then
+    echo "--- C# checks ---"
+    (cd tests/csharp_static && dotnet test --nologo)
+    # csharpier is the opinionated formatter (global dotnet tool, installed to ~/.dotnet/tools).
+    # Format the hand-written runtime + tests; generated output is exempt by design.
+    export PATH="$PATH:$HOME/.dotnet/tools"
+    if command -v csharpier &> /dev/null; then
+        CS_FMT_TARGETS="tests/csharp_static"
+        [ -d static/csharp ] && CS_FMT_TARGETS="static/csharp $CS_FMT_TARGETS"
+        csharpier format $CS_FMT_TARGETS
+    else
+        echo "[warn] csharpier not installed; skipping format step. (dotnet tool install -g csharpier)"
+    fi
+else
+    echo "[warn] dotnet not on PATH; skipping C# checks."
+fi
