@@ -821,7 +821,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
             write.line_indented(f'"""`{table.name}` ({table.id})"""', 2)
             write.line_indented(f"if '{table.name}' not in self._tables:", 2)
             write.line_indented(
-                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.name}"), cache_seconds=self._cache_seconds)',
+                f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.id}"), cache_seconds=self._cache_seconds)',
                 3,
             )
             write.line_indented(f'return self._tables["{table.name}"]  # ty: ignore[invalid-return-type]', 2)
