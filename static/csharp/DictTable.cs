@@ -12,6 +12,14 @@ public sealed class DictTable
 {
     public const int BatchSize = 10;
 
+    /// <summary>
+    /// Max in-flight requests for the multi-ID <see cref="GetAsync(IReadOnlyList{string},CancellationToken)"/>
+    /// fan-out. Kept just under Airtable's 5-requests-per-second limit so large ID lists don't
+    /// trigger a synchronized 429 storm. Matches <see cref="OrmTable{T}.MaxConcurrentGets"/> and the
+    /// Java/Kotlin targets.
+    /// </summary>
+    public const int MaxConcurrentGets = 4;
+
     private readonly string _tableId;
     private readonly IReadOnlyDictionary<string, string> _nameToId;
     private readonly AirtableClient _client;
@@ -41,16 +49,26 @@ public sealed class DictTable
         return ToRecord(Decode<RawEnvelope>(payload));
     }
 
-    /// <summary>Fetch many records by id, preserving caller order.</summary>
+    /// <summary>
+    /// Fetch many records by id in windows of <see cref="MaxConcurrentGets"/>. Chunking bounds
+    /// in-flight requests so a large id list can't trigger a 429 storm; preserves caller order.
+    /// </summary>
     public async Task<List<Record>> GetAsync(
         IReadOnlyList<string> recordIds,
         CancellationToken ct = default
     )
     {
-        var result = new List<Record>(recordIds.Count);
-        foreach (var id in recordIds)
-            result.Add(await GetAsync(id, ct).ConfigureAwait(false));
-        return result;
+        var collected = new List<Record>(recordIds.Count);
+        for (var start = 0; start < recordIds.Count; start += MaxConcurrentGets)
+        {
+            var window = recordIds
+                .Skip(start)
+                .Take(MaxConcurrentGets)
+                .Select(id => GetAsync(id, ct))
+                .ToList();
+            collected.AddRange(await Task.WhenAll(window).ConfigureAwait(false));
+        }
+        return collected;
     }
 
     public Task<List<Record>> GetAsync(CancellationToken ct = default) =>

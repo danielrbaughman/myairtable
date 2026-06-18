@@ -197,7 +197,16 @@ public sealed class AirtableClient
     private static string Esc(string s) => Uri.EscapeDataString(s);
 
     private static string CacheKeyForQuery(AirtableQuery query) =>
-        string.Join("&", query.ToParameters().Select(p => $"{p.Key}={p.Value}"));
+        // Encode both halves so a value containing `=`/`&` (e.g. a filterByFormula) can't collide
+        // with a structurally different query, and sort so semantically identical queries share a
+        // stable key regardless of parameter order. Parity with the Java/Kotlin cacheKeyForQuery.
+        string.Join(
+            "&",
+            query
+                .ToParameters()
+                .Select(p => $"{Esc(p.Key)}={Esc(p.Value)}")
+                .OrderBy(s => s, StringComparer.Ordinal)
+        );
 
     // ---- transport ----------------------------------------------------------
 

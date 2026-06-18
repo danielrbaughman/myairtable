@@ -52,4 +52,60 @@ public class TestClientCachePolicy
         await client.ListRecordsAsync("tbl1", new AirtableQuery());
         Assert.Equal(1, client.Cache.Count);
     }
+
+    [Fact]
+    public async Task QueriesWithDelimitersInValuesDoNotCollideInCache()
+    {
+        // These two queries are structurally different but joined to the SAME cache key before the
+        // fix (values were not encoded): filterByFormula="a&maxRecords=5" vs filterByFormula="a"
+        // plus maxRecords=5. The collision served A's cached payload for B. Encoding both halves of
+        // each pair makes the keys distinct.
+        var n = 0;
+        var client = new AirtableClient(
+            "appX",
+            "key",
+            new FakeTransport(
+                (_, _) => FakeTransport.Canned.Ok($"{{\"records\": [], \"n\": {n++}}}")
+            ),
+            cacheSeconds: 60.0
+        );
+
+        var a = await client.ListRecordsAsync(
+            "tbl1",
+            new AirtableQuery().WithFormula("a&maxRecords=5")
+        );
+        var b = await client.ListRecordsAsync(
+            "tbl1",
+            new AirtableQuery().WithFormula("a").WithMaxRecords(5)
+        );
+
+        Assert.NotEqual(a, b); // distinct payloads ⇒ B did not hit A's entry
+        Assert.Equal(2, client.Cache.Count);
+    }
+
+    [Fact]
+    public async Task IdenticalQueriesShareOneCacheEntry()
+    {
+        // A formula value containing `=` must still cache + hit correctly through the encoding.
+        var calls = 0;
+        var client = new AirtableClient(
+            "appX",
+            "key",
+            new FakeTransport(
+                (_, _) =>
+                {
+                    calls++;
+                    return FakeTransport.Canned.Ok("{\"records\": []}");
+                }
+            ),
+            cacheSeconds: 60.0
+        );
+        var query = new AirtableQuery().WithFormula("{f}=1").WithMaxRecords(5);
+
+        await client.ListRecordsAsync("tbl1", query);
+        await client.ListRecordsAsync("tbl1", query);
+
+        Assert.Equal(1, calls); // second call served from cache
+        Assert.Equal(1, client.Cache.Count);
+    }
 }

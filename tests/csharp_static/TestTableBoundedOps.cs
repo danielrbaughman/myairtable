@@ -126,6 +126,40 @@ public class TestTableBoundedOps
     }
 
     [Fact]
+    public async Task DictTableMultiGetBoundsInFlightRequestsToMaxConcurrentGets()
+    {
+        // DictTable fans out the same way OrmTable does (PR#24 review / Java parity): windows of
+        // MaxConcurrentGets, never breaching the cap, but genuinely concurrent within a window.
+        var ids = Enumerable.Range(1, 12).Select(i => $"rec{i:D2}").ToList();
+        var transport = new FakeTransport(
+            (request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                var recordId = path[(path.LastIndexOf('/') + 1)..];
+                return FakeTransport.Canned.Ok($"{{\"id\": \"{recordId}\", \"fields\": {{}}}}");
+            },
+            entryDelayMs: 25
+        );
+        var table = new DictTable(
+            "tblStub",
+            new Dictionary<string, string>(),
+            ClientWith(transport)
+        );
+
+        var records = await table.GetAsync(ids);
+
+        Assert.Equal(ids, records.Select(r => r.Id).ToList());
+        Assert.True(
+            transport.MaxConcurrent <= DictTable.MaxConcurrentGets,
+            $"in-flight {transport.MaxConcurrent} exceeded cap {DictTable.MaxConcurrentGets}"
+        );
+        Assert.True(
+            transport.MaxConcurrent > 1,
+            "expected requests to overlap, but they serialized"
+        );
+    }
+
+    [Fact]
     public async Task MultiGetEmptyInputMakesNoRequests()
     {
         var transport = EchoTransport();
