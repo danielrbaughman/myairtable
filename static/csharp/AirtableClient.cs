@@ -280,13 +280,36 @@ public sealed class AirtableClient
 
     private async Task DelayAsync(double? retryAfterSeconds, int attempt, CancellationToken ct)
     {
-        var delay = retryAfterSeconds ?? _baseRetryDelay * Math.Pow(2, attempt);
-        // Decorrelation jitter (Kotlin/Java parity) so concurrent clients don't stampede.
-        var jitter = Random.Shared.NextDouble() * Math.Min(delay, _jitterCap);
-        await Task.Delay(TimeSpan.FromSeconds(delay + jitter), ct).ConfigureAwait(false);
+        var seconds = ComputeRetryDelaySeconds(
+            retryAfterSeconds,
+            _baseRetryDelay,
+            attempt,
+            _jitterCap,
+            Random.Shared.NextDouble()
+        );
+        await Task.Delay(TimeSpan.FromSeconds(seconds), ct).ConfigureAwait(false);
     }
 
-    private static double? ParseRetryAfter(HttpResponseMessage response)
+    /// <summary>
+    /// Total backoff in seconds. An explicit <paramref name="retryAfterSeconds"/> (from a 429
+    /// Retry-After) wins; otherwise exponential <c>baseRetryDelay * 2^attempt</c>. Decorrelation
+    /// jitter of <c>rand * min(delay, jitterCap)</c> (Kotlin/Java parity) is added so concurrent
+    /// clients don't stampede. Pure + deterministic given <paramref name="rand"/> in [0, 1).
+    /// </summary>
+    internal static double ComputeRetryDelaySeconds(
+        double? retryAfterSeconds,
+        double baseRetryDelay,
+        int attempt,
+        double jitterCap,
+        double rand
+    )
+    {
+        var delay = retryAfterSeconds ?? baseRetryDelay * Math.Pow(2, attempt);
+        var jitter = rand * Math.Min(delay, jitterCap);
+        return delay + jitter;
+    }
+
+    internal static double? ParseRetryAfter(HttpResponseMessage response)
     {
         var ra = response.Headers.RetryAfter;
         if (ra?.Delta is { } delta)

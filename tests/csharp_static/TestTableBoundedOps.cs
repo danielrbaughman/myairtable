@@ -95,6 +95,37 @@ public class TestTableBoundedOps
     }
 
     [Fact]
+    public async Task MultiGetBoundsInFlightRequestsToMaxConcurrentGets()
+    {
+        // The fan-out's whole reason for existing is to cap concurrency below Airtable's rate
+        // limit. With per-request latency the windows of 4 overlap, so the high-water mark proves
+        // both that requests *do* run concurrently (> 1) and that the cap is never breached.
+        var ids = Enumerable.Range(1, 12).Select(i => $"rec{i:D2}").ToList();
+        var transport = new FakeTransport(
+            (request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                var recordId = path[(path.LastIndexOf('/') + 1)..];
+                return FakeTransport.Canned.Ok($"{{\"id\": \"{recordId}\", \"fields\": {{}}}}");
+            },
+            entryDelayMs: 25
+        );
+        var table = new OrmTable<BoundedOpsStubModel>("tblStub", ClientWith(transport));
+
+        var models = await table.GetAsync(ids);
+
+        Assert.Equal(ids, models.Select(m => m.Id!).ToList());
+        Assert.True(
+            transport.MaxConcurrent <= OrmTable<BoundedOpsStubModel>.MaxConcurrentGets,
+            $"in-flight {transport.MaxConcurrent} exceeded cap {OrmTable<BoundedOpsStubModel>.MaxConcurrentGets}"
+        );
+        Assert.True(
+            transport.MaxConcurrent > 1,
+            "expected requests to overlap, but they serialized"
+        );
+    }
+
+    [Fact]
     public async Task MultiGetEmptyInputMakesNoRequests()
     {
         var transport = EchoTransport();
