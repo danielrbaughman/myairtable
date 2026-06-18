@@ -2589,6 +2589,44 @@ class TestCSharpGenerator:
         assert (out / "static" / "AirtableClient.cs").exists()
         assert (out / "static" / "DictTable.cs").exists()
 
+    def test_reserved_model_member_names_are_suffixed(self):
+        """A field whose PascalCase collides with an AirtableModel member — a base
+        property (`IsNew`) OR a base method (`ToRecord`, `DirtyFields`) — is suffixed
+        `Field` so the generated property neither duplicates nor shadows the base member.
+        Regression: `IsNew` and the method names were missing from the reserved set."""
+        from src.generators.csharp import _field_property_map
+
+        base = make_test_base(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Is New", "fld002", "singleLineText"),  # base property
+                ("To Record", "fld003", "singleLineText"),  # base method
+                ("Dirty Fields", "fld004", "singleLineText"),  # base method
+            ]
+        )
+        props = _field_property_map(base.tables[0])
+        assert props["fld002"] == "IsNewField"
+        assert props["fld003"] == "ToRecordField"
+        assert props["fld004"] == "DirtyFieldsField"
+        # Names must stay unique after suffixing.
+        assert len(set(props.values())) == len(props)
+
+    def test_reserved_table_accessor_names_are_suffixed(self):
+        """A table whose PascalCase accessor would collide with a root `Airtable`-class
+        member is renamed `{Name}Table`. Covers the class name itself (`Airtable` →
+        CS0542) and the `InvalidateAllCaches()` method (regression: was missing)."""
+        from src.generators.csharp import _table_property
+
+        for name, expected in [
+            ("Airtable", "AirtableTable"),
+            ("Invalidate All Caches", "InvalidateAllCachesTable"),
+            ("Client", "ClientTable"),
+        ]:
+            base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+            base.tables[0].name = name
+            base.tables[0].__pydantic_private__["_pascal"] = None
+            assert _table_property(base.tables[0]) == expected
+
     def test_options_enum_and_converter(self, tmp_path: Path):
         from src.generators.csharp import generate_csharp
         from src.utils.type_mapper import map_types

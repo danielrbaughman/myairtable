@@ -72,13 +72,38 @@ _CSHARP_FORMULA_CLASS_MAP = {
     "MultiSelectField": "FormulaMultiSelectField",
 }
 
-# Generated-model / table member names a field/table property must not collide with.
-# Covers the AirtableModel base surface (TableId/Id/CreatedTime/AttachedClient property
-# names a same-named generated property would clash with) plus the generated `F` filter
-# accessor. Methods (ToRecord/SaveAsync/…) are left out: a property can't share a name with
-# them either, but Airtable field names producing those PascalCase forms are vanishingly rare.
-_CSHARP_RESERVED_MODEL_MEMBERS = frozenset({"F", "Id", "TableId", "CreatedTime", "AttachedClient", "Snapshot"})
-_CSHARP_RESERVED_TABLE_PROPS = frozenset({"Client", "BaseId"})
+# Generated-model member names a field property must not collide with. C# properties are
+# PascalCase, so a generated property clashes with a base member of the SAME name regardless of
+# kind: same-named base properties collide directly, and a property named like a base *method*
+# both shadows it (CS0108) and breaks the ORM call that relies on it. So this covers the full
+# public/protected instance surface of AirtableModel, plus the generated `F` filter accessor.
+_CSHARP_RESERVED_MODEL_MEMBERS = frozenset(
+    {
+        # Base properties
+        "Id",
+        "TableId",
+        "CreatedTime",
+        "AttachedClient",
+        "IsNew",
+        # Base methods (a property of the same name shadows + breaks them)
+        "TakeSnapshot",
+        "DirtyFields",
+        "ToRecord",
+        "ToCreateFields",
+        "RequireId",
+        "RequireAttachedClient",
+        # Protected hooks a generated property would shadow
+        "CollectWritableFields",
+        "CollectComputedFields",
+        # Generated members: `F` filter accessor, `Snapshot` (legacy guard)
+        "F",
+        "Snapshot",
+    }
+)
+# Table-accessor property names on the root `Airtable` class. Covers its `BaseId`/`Client`
+# members and the `InvalidateAllCaches()` method, plus the class name itself ("Airtable") — a
+# property whose name equals its enclosing type is a CS0542 error.
+_CSHARP_RESERVED_TABLE_PROPS = frozenset({"Airtable", "BaseId", "Client", "InvalidateAllCaches"})
 
 
 def _create_dynamic_subdir(output_folder: Path, name: str) -> Path:
