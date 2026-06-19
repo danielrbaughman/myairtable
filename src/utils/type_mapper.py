@@ -931,7 +931,7 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
     field_ids: list[str] = [f.id for f in fields]
 
     try:
-        table = pyairtable.Table(api_key, base_id, table_id)
+        table = pyairtable.Api(api_key).table(base_id, table_id)
         remaining = list(fields)
 
         # Phase 1: shotgun fetch
