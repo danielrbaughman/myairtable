@@ -176,9 +176,10 @@ class FormulaParser:
             func_name = self.advance().value.upper()
             self.expect(TokenType.PARENTHESIS, "(")
             args: list[ASTNode] = []
-            if self.peek() and not (self.peek().type == TokenType.PARENTHESIS and self.peek().value == ")"):
+            next_tok = self.peek()
+            if next_tok and not (next_tok.type == TokenType.PARENTHESIS and next_tok.value == ")"):
                 args.append(self.parse_comparison())
-                while self.peek() and self.peek().type == TokenType.COMMA:
+                while (next_tok := self.peek()) and next_tok.type == TokenType.COMMA:
                     self.advance()  # skip comma
                     args.append(self.parse_comparison())
             self.expect(TokenType.PARENTHESIS, ")")

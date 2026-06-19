@@ -291,6 +291,7 @@ class TestGoEmitter:
 
     def test_regex_match_falls_through(self):
         result = self._transpile('REGEX_MATCH({fld1}, "\\\\d+")')
+        assert result is not None
         assert result.startswith("REGEX_MATCH(V(m.MyField), ")
 
     def test_regex_replace_falls_through(self):

@@ -702,7 +702,7 @@ def list_interfaces() -> dict[str, Any]:
     app_data = _read_application_data()
     base_id = get_base_id()
 
-    interfaces = []
+    interfaces: list[dict[str, Any]] = []
     for bundle in app_data.interfaces:
         pages = [
             {

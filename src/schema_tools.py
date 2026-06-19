@@ -11,7 +11,7 @@ Counterpart to src/internal_api/tools.py for the unofficial internal API.
 from __future__ import annotations
 
 from collections import Counter
-from typing import Literal
+from typing import Any, Literal
 
 from src.formulas.formula_formatter import _count_nesting_depth
 from src.formulas.formula_tokenizer import TokenType, tokenize_formula
@@ -399,12 +399,12 @@ def table_connectivity() -> dict:
         names = [base.table_by_id(tid) for tid in tids]
         return sorted(t.name for t in names if t is not None)
 
-    tables = []
+    tables: list[dict[str, Any]] = []
     isolated = []
     junctions = []
     for t in base.tables:
         degree = len(connected[t.id])
-        entry = {
+        entry: dict[str, Any] = {
             "name": t.name,
             "id": t.id,
             "link_field_count": len(link_fields_by_table[t.id]),
@@ -1146,7 +1146,8 @@ def find_circular_references() -> dict:
                 continue
             other_linked = other_field.linked_table()
             if other_linked and other_linked.id == field.table.id:
-                pair = tuple(sorted([field.table.id, linked_table.id]))
+                lo, hi = sorted([field.table.id, linked_table.id])
+                pair = (lo, hi)
                 if pair not in seen_pairs:
                     seen_pairs.add(pair)
                     link_circles.append(

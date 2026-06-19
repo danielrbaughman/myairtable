@@ -189,7 +189,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record_id) > 0 and isinstance(record_id[0], str):
                 record_ids = record_id
-                record_id = None  # ty: ignore
+                record_id = None
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -220,7 +220,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     user_locale=user_locale,
                     **options,
                 )
-            record = sanitize_record_dict(record)  # ty: ignore[invalid-assignment]
+            record = sanitize_record_dict(record)
             result = record
         elif record_ids and len(record_ids) > 0:
             if page_size > 100:
@@ -238,7 +238,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
+            records = [sanitize_record_dict(r) for r in records]
             result = records
         else:
             if page_size > 100:
@@ -256,7 +256,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
+            records = [sanitize_record_dict(r) for r in records]
             result = records
 
         # Cache store
@@ -312,7 +312,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -321,14 +321,14 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
+            records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)  # ty: ignore[invalid-assignment]
             records = [sanitize_record_dict(r) for r in records]  # ty: ignore[not-iterable, invalid-argument-type]
             return records
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
-            record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)
+            record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)  # ty: ignore[invalid-assignment]
             record = sanitize_record_dict(record)  # ty: ignore[invalid-argument-type]
             return record
 
@@ -380,7 +380,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -389,8 +389,8 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in records]
-            records = self._table.batch_update(
+            update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in records]  # ty: ignore[invalid-assignment]
+            records = self._table.batch_update(  # ty: ignore[invalid-assignment]
                 update_dicts,
                 use_field_ids=use_field_ids,
                 **options,
@@ -400,8 +400,8 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         else:
             if record is None:
                 raise ValueError("Record to update cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
-            record = self._table.update(
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)
+            record = self._table.update(  # ty: ignore[invalid-assignment]
                 record_id=record["id"],
                 fields=record["fields"],
                 use_field_ids=use_field_ids,

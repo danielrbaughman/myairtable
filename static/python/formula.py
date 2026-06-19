@@ -34,16 +34,16 @@ class Field(F.Field):
     def __ne__(self, value: Any) -> F.Comparison:  # ty: ignore
         return super().ne(value)
 
-    def __lt__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __lt__(self, value: Any) -> F.Comparison:
         return super().lt(value)
 
-    def __le__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __le__(self, value: Any) -> F.Comparison:
         return super().lte(value)
 
-    def __gt__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __gt__(self, value: Any) -> F.Comparison:
         return super().gt(value)
 
-    def __ge__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __ge__(self, value: Any) -> F.Comparison:
         return super().gte(value)
 
     def empty(self) -> F.Formula:
@@ -502,7 +502,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __eq__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on(date)  # ty: ignore[invalid-return-type]
+        return self.on(date)
 
     @overload
     def on_or_after(self) -> DateComparison: ...
@@ -532,7 +532,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __ge__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on_or_after(date)  # ty: ignore[invalid-return-type]
+        return self.on_or_after(date)
 
     @overload
     def on_or_before(self) -> DateComparison: ...
@@ -563,7 +563,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __le__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on_or_before(date)  # ty: ignore[invalid-return-type]
+        return self.on_or_before(date)
 
     @overload
     def after(self) -> DateComparison: ...
@@ -594,7 +594,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __gt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.after(date)  # ty: ignore[invalid-return-type]
+        return self.after(date)
 
     @overload
     def before(self) -> DateComparison: ...
@@ -624,7 +624,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __lt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.before(date)  # ty: ignore[invalid-return-type]
+        return self.before(date)
 
     @overload
     def not_on(self) -> DateComparison: ...
@@ -655,7 +655,7 @@ class DateField(Field):
         return date_comparison._date(parsed_date)
 
     def __ne__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.not_on(date)  # ty: ignore[invalid-return-type]
+        return self.not_on(date)
 
     def between(
         self,

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import pyairtable
+from pyairtable.api.types import RecordDict
 from rich import print
 
 from ..meta import AirtableCredentials, Base, Field
@@ -957,7 +958,7 @@ def disambiguate_fields_per_table(api_key: str, fields: list[Field]) -> list[Fie
         return fields  # Return all as failures
 
 
-def process_records_and_get_remaining(fields: list[Field], records: list[dict]) -> list[Field]:
+def process_records_and_get_remaining(fields: list[Field], records: list[RecordDict]) -> list[Field]:
     """Process records and return fields that still need disambiguation."""
     remaining: list[Field] = []
     for field in fields:
@@ -1030,7 +1031,7 @@ def apply_disambiguated_type(field: Field, is_list: bool) -> None:
     field._csharp_type = apply_csharp_computed_wrapping(render_type(field, "csharp", is_list=is_list), field)
 
 
-def find_non_blank_value(records: list[dict], field_id: str) -> Any:
+def find_non_blank_value(records: list[RecordDict], field_id: str) -> Any:
     """Find the first non-blank value for a field across multiple records."""
     for record in records:
         value = record.get("fields", {}).get(field_id)

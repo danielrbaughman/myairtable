@@ -166,7 +166,7 @@ class TestTypeScriptComputedFields:
     def test_non_formula_computed_types_getter_only(self, tmp_path: Path):
         """Non-formula computed field types should generate getter-only."""
         non_formula_computed = [ft for ft in COMPUTED_TYPES if ft != "formula"]
-        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
+        fields_spec: list[tuple[str, str, FieldType]] = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
         content = self._generate(fields_spec, tmp_path)
 
         for i, ft in enumerate(non_formula_computed):
@@ -177,7 +177,7 @@ class TestTypeScriptComputedFields:
 
     def test_mixed_table_correct_accessors(self, tmp_path: Path):
         """A table with both computed and writable fields should have correct accessors."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Formula", "fld001", "formula"),
             ("My Text", "fld002", "singleLineText"),
             ("Created", "fld003", "createdTime"),
@@ -227,7 +227,7 @@ class TestJavaScriptComputedFields:
     def test_non_formula_computed_types_getter_only(self, tmp_path: Path):
         """Non-formula computed field types should generate getter-only."""
         non_formula_computed = [ft for ft in COMPUTED_TYPES if ft != "formula"]
-        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
+        fields_spec: list[tuple[str, str, FieldType]] = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
         content = self._generate(fields_spec, tmp_path)
 
         for i, ft in enumerate(non_formula_computed):
@@ -276,7 +276,7 @@ class TestTypeScriptFormulaFunctions:
 
     def test_formula_field_generates_getter(self, tmp_path: Path):
         """A formula field with a transpilable formula should generate a getter."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
         ]
@@ -290,27 +290,27 @@ class TestTypeScriptFormulaFunctions:
 
     def test_formula_field_without_formula_is_still_getter(self, tmp_path: Path):
         """A formula field without a transpilable formula is still a getter."""
-        fields_spec = [("My Formula", "fld001", "formula")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
         assert "get myFormula()" in content
         assert "myFormula(recalculate" not in content
 
     def test_rollup_still_generates_getter(self, tmp_path: Path):
         """Rollup fields should still generate getter-only, not functions."""
-        fields_spec = [("My Rollup", "fld001", "rollup")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Rollup", "fld001", "rollup")]
         content = self._generate(fields_spec, tmp_path)
         assert "get myRollup()" in content
         assert "myRollup(recalculate" not in content
 
     def test_no_runtime_import_without_formulas(self, tmp_path: Path):
         """Runtime import should only appear when there are formula fields."""
-        fields_spec = [("My Text", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Text", "fld001", "singleLineText")]
         content = self._generate(fields_spec, tmp_path)
         assert "AirtableRuntime" not in content and "F." not in content
 
     def test_formula_references_another_formula(self, tmp_path: Path):
         """A formula referencing another formula field should access it as a property."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("Base Value", "fld001", "number"),
             ("Formula A", "fld002", "formula"),
             ("Formula B", "fld003", "formula"),
@@ -339,7 +339,7 @@ class TestJavaScriptFormulaFunctions:
 
     def test_formula_field_generates_getter(self, tmp_path: Path):
         """A formula field with a transpilable formula should generate a getter."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
         ]
@@ -352,7 +352,7 @@ class TestJavaScriptFormulaFunctions:
 
     def test_formula_field_without_formula_is_still_getter(self, tmp_path: Path):
         """A formula field without a transpilable formula is still a getter."""
-        fields_spec = [("My Formula", "fld001", "formula")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
         assert "get myFormula()" in content
         assert "myFormula(recalculate" not in content
@@ -373,7 +373,7 @@ class TestPythonFormulaFunctions:
 
     def test_formula_field_generates_property(self, tmp_path: Path):
         """A formula field with a transpilable formula should generate a property."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Number", "fld001", "number"),
             ("My Formula", "fld002", "formula"),
         ]
@@ -391,7 +391,7 @@ class TestPythonFormulaFunctions:
 
     def test_formula_field_without_formula_is_still_property(self, tmp_path: Path):
         """A formula field without a transpilable formula is still a property with hidden ORM descriptor."""
-        fields_spec = [("My Formula", "fld001", "formula")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("My Formula", "fld001", "formula")]
         content = self._generate(fields_spec, tmp_path)
         assert "_orm_my_formula:" in content
         assert "@property" in content
@@ -783,7 +783,7 @@ class TestSwiftGeneratorOutput:
 
     def test_field_types_emit_dual_id_and_name_constants(self, tmp_path: Path):
         """Every field must get both a `{field}Id` and `{field}Name` static constant."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
 
         fields_file = out / "dynamic" / "types" / "TestTableFields.swift"
@@ -795,7 +795,7 @@ class TestSwiftGeneratorOutput:
 
     def test_field_types_emit_name_to_id_and_id_to_name_dictionaries(self, tmp_path: Path):
         """The nameToId / idToName maps enable dual-access lookup at runtime."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         content = (out / "dynamic" / "types" / "TestTableFields.swift").read_text()
 
@@ -808,7 +808,7 @@ class TestSwiftGeneratorOutput:
 
     def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
         """allIds: [String] should list every field ID in schema order."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("A", "fld001", "singleLineText"),
             ("B", "fld002", "number"),
             ("C", "fld003", "checkbox"),
@@ -820,7 +820,7 @@ class TestSwiftGeneratorOutput:
 
     def test_writable_fields_exclude_computed_from_create_enum(self, tmp_path: Path):
         """Create{Table}Fields enum omits computed fields (formula, createdTime, etc.)."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Text", "fld001", "singleLineText"),
             ("My Formula", "fld002", "formula"),
             ("Created", "fld003", "createdTime"),
@@ -838,7 +838,7 @@ class TestSwiftGeneratorOutput:
 
     def test_tables_struct_exposes_dict_accessor(self, tmp_path: Path):
         """Each table gets a {Table}Table struct with a `.dict: DictTable` accessor."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         content = (out / "dynamic" / "tables" / "TestTableTable.swift").read_text()
 
@@ -852,7 +852,7 @@ class TestSwiftGeneratorOutput:
         """ORM is the default: `get` / `create` / `update` / `delete` live on
         the table struct as overloaded methods (no `.orm` prefix, no
         `getOne`/`createOne` variants). Matches TS/Py pattern."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         content = (out / "dynamic" / "tables" / "TestTableTable.swift").read_text()
 
@@ -902,7 +902,7 @@ class TestSwiftGeneratorOutput:
 
     def test_main_airtable_actor_exposes_per_table_accessors(self, tmp_path: Path):
         """Airtable.swift should expose each table as a lowerCamelCase property."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         content = (out / "Airtable.swift").read_text()
 
@@ -916,7 +916,7 @@ class TestSwiftGeneratorOutput:
 
     def test_no_package_swift_is_emitted(self, tmp_path: Path):
         """User decision #5: generator does NOT emit Package.swift."""
-        fields_spec = [("Primary Key", "fld001", "singleLineText")]
+        fields_spec: list[tuple[str, str, FieldType]] = [("Primary Key", "fld001", "singleLineText")]
         out = self._generate(fields_spec, tmp_path)
         assert not (out / "Package.swift").exists()
 
@@ -950,7 +950,7 @@ class TestSwiftComputedFields:
     def test_computed_fields_are_let(self, tmp_path: Path):
         """Each computed-type field should emit as `public let <prop>: T?`."""
         non_formula_computed = [ft for ft in COMPUTED_TYPES if ft != "formula"]
-        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
+        fields_spec: list[tuple[str, str, FieldType]] = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(non_formula_computed)]
         content = self._generate(fields_spec, tmp_path)
 
         for i, ft in enumerate(non_formula_computed):
@@ -962,7 +962,7 @@ class TestSwiftComputedFields:
 
     def test_writable_fields_are_var(self, tmp_path: Path):
         """Writable field types should emit as `public var <prop>: T?`."""
-        fields_spec = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(WRITABLE_TYPES)]
+        fields_spec: list[tuple[str, str, FieldType]] = [(f"Field {i}", f"fld{i:03d}", ft) for i, ft in enumerate(WRITABLE_TYPES)]
         content = self._generate(fields_spec, tmp_path)
 
         for i, ft in enumerate(WRITABLE_TYPES):
@@ -1159,7 +1159,7 @@ class TestSwiftFlagGating:
     corresponding static + dynamic output instead of emitting it anyway.
     """
 
-    FIELDS_SPEC = [
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
         ("Primary Key", "fld001", "singleLineText"),
         ("Count", "fld002", "number"),
     ]
@@ -1261,7 +1261,7 @@ class TestKotlinGeneratorOutput:
 
     def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
         """allIds should list every field ID in schema order."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("A", "fld001", "singleLineText"),
             ("B", "fld002", "number"),
             ("C", "fld003", "checkbox"),
@@ -1273,7 +1273,7 @@ class TestKotlinGeneratorOutput:
 
     def test_writable_fields_exclude_computed_from_create_object(self, tmp_path: Path):
         """Create{Table}Fields object omits computed fields (formula, createdTime, etc.)."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Text", "fld001", "singleLineText"),
             ("My Formula", "fld002", "formula"),
             ("Created", "fld003", "createdTime"),
@@ -1479,7 +1479,7 @@ class TestKotlinComputedFields:
         assert "override val tableId: String get() = TABLE_ID" in content
 
     def test_create_fields_exclude_computed_but_to_record_includes_all(self, tmp_path: Path):
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Text", "fld001", "singleLineText"),
             ("My Formula", "fld002", "formula"),
         ]
@@ -2056,7 +2056,7 @@ class TestJavaFieldTypes:
 
     def test_field_types_all_ids_contains_every_field(self, tmp_path: Path):
         """allIds should list every field ID in schema order."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("A", "fld001", "singleLineText"),
             ("B", "fld002", "number"),
             ("C", "fld003", "checkbox"),
@@ -2082,7 +2082,7 @@ class TestJavaFieldTypes:
         """Map.ofEntries blocks must not leave a trailing comma before `);`."""
         import re
 
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("A", "fld001", "singleLineText"),
             ("B", "fld002", "number"),
             ("C", "fld003", "checkbox"),
@@ -2112,7 +2112,7 @@ class TestJavaFieldTypes:
 
     def test_create_fields_excludes_computed(self, tmp_path: Path):
         """Create{Table}Fields lists writable fields only (formula/createdTime omitted)."""
-        fields_spec = [
+        fields_spec: list[tuple[str, str, FieldType]] = [
             ("My Text", "fld001", "singleLineText"),
             ("My Formula", "fld002", "formula"),
             ("Created", "fld003", "createdTime"),
@@ -3128,7 +3128,7 @@ class TestGoFieldTypes:
     const block columns).
     """
 
-    FIELDS_SPEC = [
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
         ("Primary Key", "fld001", "singleLineText"),
         ("Count", "fld002", "number"),
         ("My Formula", "fld003", "formula"),
@@ -3198,7 +3198,7 @@ class TestGoTablesAndMain:
     InvalidateAllCaches accessors.
     """
 
-    FIELDS_SPEC = [
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
         ("Primary Key", "fld001", "singleLineText"),
         ("Count", "fld002", "number"),
     ]
@@ -3242,7 +3242,7 @@ class TestGoFlagGating:
     consts are still written.
     """
 
-    FIELDS_SPEC = [
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
         ("Primary Key", "fld001", "singleLineText"),
         ("Count", "fld002", "number"),
     ]
@@ -3364,7 +3364,7 @@ class TestGoFormulaHelpers:
     formula DSL files are excluded from the flat copy when formulas=False.
     """
 
-    FIELDS_SPEC = [
+    FIELDS_SPEC: list[tuple[str, str, FieldType]] = [
         ("Primary Key", "fld001", "singleLineText"),
         ("Count", "fld002", "number"),
         ("Done", "fld003", "checkbox"),

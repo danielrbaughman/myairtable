@@ -3,6 +3,7 @@ from enum import Enum, auto
 from typing import Any, Literal, Optional, TypedDict
 
 from typer import Typer
+from typing_extensions import ReadOnly
 
 cli = Typer()
 
@@ -119,7 +120,7 @@ class FormulaFieldOptions(OptionsBase):
 class NamedFieldMetadata(TypedDict):
     id: str
     name: str
-    type: FieldType
+    type: ReadOnly[FieldType]
     description: Optional[str]
     strong_links: list[str]
     weak_links: list[str]
@@ -267,7 +268,7 @@ class RollupField(NamedFieldMetadata):
 
 
 class CollaboratorField(NamedFieldMetadata):
-    type: Literal["collaborator"]
+    type: Literal["singleCollaborator"]
 
 
 class AutoNumberField(NamedFieldMetadata):
