@@ -7,7 +7,6 @@
  * - Type coercion follows Airtable rules, not TypeScript rules
  */
 
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class AirtableRuntime {
 	// region Utilities
 	/* Check if value is null or undefined */

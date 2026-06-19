@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from typing import Generic, TypeVar
 
 from pyairtable import Table
@@ -36,26 +37,28 @@ class AirtableTable(ORMTable[ORMType, ViewType, FieldType], Generic[DictType, Cr
     _table: Table
     """The original pyAirtable instance. Returns un-typed RecordDicts."""
 
-    _calculated_field_names: list[str]
-    _calculated_field_ids: list[str]
-    _view_name_id_mapping: dict[ViewType, str]
-    _field_names: list[str]
+    _calculated_field_names: Sequence[str]
+    _calculated_field_ids: Sequence[str]
+    _view_name_id_mapping: Mapping[ViewType, str]
+    _field_names: Sequence[str]
 
     dict: DictTable[DictType, UpdateDictType, CreateDictType, ViewType, FieldType]
     """A table that returns typed RecordDicts."""
 
     @classmethod
-    def from_table(  # ty: ignore
+    # Named-constructor override: AirtableTable needs the dict/create/update classes
+    # that ORMTable.from_table doesn't take, so the signature intentionally differs.
+    def from_table(  # ty: ignore[invalid-method-override]
         cls,
         table: Table,
         dict_cls: type[DictType],
         create_cls: type[CreateDictType],
         update_cls: type[UpdateDictType],
         orm_cls: type[ORMType],
-        calculated_field_names: list[str],
-        calculated_field_ids: list[str],
-        view_name_id_mapping: "dict[ViewType, str]",
-        field_names: list[str],
+        calculated_field_names: Sequence[str],
+        calculated_field_ids: Sequence[str],
+        view_name_id_mapping: "Mapping[ViewType, str]",
+        field_names: Sequence[str],
         cache_seconds: int = 0,
     ) -> "AirtableTable[DictType, CreateDictType, UpdateDictType, ORMType, ViewType, FieldType]":
         instance = cls()

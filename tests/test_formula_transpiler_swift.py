@@ -17,10 +17,12 @@ class TestSwiftEmitter:
         formula: str,
         field_map: dict | None = None,
         formula_ids: set | None = None,
-    ) -> str | None:
+    ) -> str:
         field_map = field_map or {"fld1": "myField", "fld2": "otherField"}
         formula_ids = formula_ids or set()
-        return transpile_formula(formula, "swift", field_map, formula_ids)
+        result = transpile_formula(formula, "swift", field_map, formula_ids)
+        assert result is not None
+        return result
 
     # --- Literals ---
 

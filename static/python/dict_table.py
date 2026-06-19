@@ -1,9 +1,10 @@
 import json
 import time
-from typing import Any, Generic, Optional, overload
+from collections.abc import Mapping, Sequence
+from typing import Any, Generic, Optional, cast, overload
 
 from pyairtable import Table
-from pyairtable.api.types import RecordDict
+from pyairtable.api.types import RecordDict, UpdateRecordDict
 from pyairtable.formulas import Formula
 
 from .formula import ID
@@ -29,10 +30,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
     _create_cls: type[CreateDictType]
     _table: Table
     """The original pyAirtable instance. Returns un-typed RecordDicts."""
-    _calculated_field_names: list[str]
-    _calculated_field_ids: list[str]
-    _view_name_id_mapping: dict[ViewType, str]
-    _field_names: list[str]
+    _calculated_field_names: Sequence[str]
+    _calculated_field_ids: Sequence[str]
+    _view_name_id_mapping: Mapping[ViewType, str]
+    _field_names: Sequence[str]
     _cache_seconds: int = 0
     _cache: dict[str, tuple[Any, float]] = {}
 
@@ -43,10 +44,10 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
         dict_cls: type[DictType],
         update_cls: type[UpdateDictType],
         create_cls: type[CreateDictType],
-        calculated_field_names: list[str],
-        calculated_field_ids: list[str],
-        view_name_id_mapping: "dict[ViewType, str]",
-        field_names: list[str],
+        calculated_field_names: Sequence[str],
+        calculated_field_ids: Sequence[str],
+        view_name_id_mapping: "Mapping[ViewType, str]",
+        field_names: Sequence[str],
         cache_seconds: int = 0,
     ) -> "DictTable[DictType, UpdateDictType, CreateDictType, ViewType, FieldType]":
         instance = cls()
@@ -189,7 +190,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record_id) > 0 and isinstance(record_id[0], str):
                 record_ids = record_id
-                record_id = None  # ty: ignore
+                record_id = None
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -220,7 +221,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                     user_locale=user_locale,
                     **options,
                 )
-            record = sanitize_record_dict(record)  # ty: ignore[invalid-assignment]
+            record = sanitize_record_dict(record)
             result = record
         elif record_ids and len(record_ids) > 0:
             if page_size > 100:
@@ -238,7 +239,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
+            records = [sanitize_record_dict(r) for r in records]
             result = records
         else:
             if page_size > 100:
@@ -256,13 +257,15 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 user_locale=user_locale,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[invalid-assignment]
+            records = [sanitize_record_dict(r) for r in records]
             result = records
 
         # Cache store
         if self._cache_seconds > 0:
             self._cache[cache_key] = (result, time.monotonic() + self._cache_seconds)
-        return result  # ty: ignore[invalid-return-type]
+        # The pyairtable layer hands back base `RecordDict`s; the generated subclass
+        # narrows them to its specific `DictType` shape, which we assert here.
+        return cast("DictType | list[DictType]", result)
 
     @overload
     def create(
@@ -312,7 +315,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -321,16 +324,16 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            records = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[not-iterable, invalid-argument-type]
-            return records
+            created = self._table.batch_create([r["fields"] for r in records], use_field_ids=use_field_ids, **options)
+            sanitized = [sanitize_record_dict(r) for r in created]
+            return cast("list[DictType]", sanitized)
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
-            record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
-            record = sanitize_record_dict(record)  # ty: ignore[invalid-argument-type]
-            return record
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)
+            created_record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
+            sanitized_record = sanitize_record_dict(created_record)
+            return cast("DictType", sanitized_record)
 
     @overload
     def update(
@@ -380,7 +383,7 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             if len(record) > 0 and isinstance(record[0], dict):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -389,26 +392,26 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
                 return []
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], calculated_field_keys)
-            update_dicts: list[UpdateDictType] = [{"id": r["id"], "fields": r["fields"]} for r in records]
-            records = self._table.batch_update(
+            update_dicts: list[UpdateRecordDict] = [{"id": r["id"], "fields": r["fields"]} for r in records]
+            updated = self._table.batch_update(
                 update_dicts,
                 use_field_ids=use_field_ids,
                 **options,
             )
-            records = [sanitize_record_dict(r) for r in records]  # ty: ignore[not-iterable, invalid-argument-type]
-            return records
+            sanitized = [sanitize_record_dict(r) for r in updated]
+            return cast("list[DictType]", sanitized)
         else:
             if record is None:
                 raise ValueError("Record to update cannot be None.")
-            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)  # ty: ignore
-            record = self._table.update(
+            record["fields"] = prepare_fields_for_save(record["fields"], calculated_field_keys)
+            updated_record = self._table.update(
                 record_id=record["id"],
                 fields=record["fields"],
                 use_field_ids=use_field_ids,
                 **options,
             )
-            record = sanitize_record_dict(record)  # ty: ignore[invalid-argument-type]
-            return record
+            sanitized_record = sanitize_record_dict(updated_record)
+            return cast("DictType", sanitized_record)
 
     @overload
     def delete(self, record_id: str) -> None:

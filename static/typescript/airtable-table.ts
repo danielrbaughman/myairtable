@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import Airtable, { Record as ATRecord, FieldSet, Table, AirtableOptions } from "airtable";
 import { AirtableModel } from "./airtable-model";
 import { QueryParams, SortParameter } from "airtable/lib/query_params";

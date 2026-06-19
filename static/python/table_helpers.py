@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar
 
@@ -37,7 +38,7 @@ def sanitize_record_dict(record: DictType) -> DictType:
     return record
 
 
-def remove_calculated_fields(fields: dict, calculated_fields: list[str]) -> dict:
+def remove_calculated_fields(fields: dict, calculated_fields: Sequence[str]) -> dict:
     """Remove calculated fields. Needed for creating/updating records."""
     return {k: v for k, v in fields.items() if k not in calculated_fields}
 
@@ -47,7 +48,7 @@ def convert_datetime_fields_to_str(fields: dict) -> dict:
     return {k: v.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if isinstance(v, datetime) else v for k, v in fields.items()}
 
 
-def prepare_fields_for_save(fields: dict, calculated_fields: list[str]) -> dict:
+def prepare_fields_for_save(fields: dict, calculated_fields: Sequence[str]) -> dict:
     """Prepare fields for sending to Airtable."""
     fields = remove_calculated_fields(fields, calculated_fields)
     fields = convert_datetime_fields_to_str(fields)

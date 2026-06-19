@@ -16,6 +16,7 @@ dependencies = [
 	"pytest>=9.0.2",
 	"typer>=0.16.1",
 	"typer-verbose>=0.1.2",
+	"typing-extensions>=4.12.0",
 ]
 
 [tool.ruff]
@@ -47,7 +48,10 @@ unresolved-attribute = "ignore" # ty lacks type stubs for csv module
 pythonpath = ["."]
 
 [dependency-groups]
-dev = ["ruff>=0.12.10", "ty>=0.0.1a19"]
+dev = [
+	"ruff>=0.15.18",
+	"ty>=0.0.51"
+]
 # Internal (unofficial) Airtable API support — `uv sync --group internal`,
 # then `uv run playwright install firefox`. See docs/airtable-internal-api.md.
 internal = ["playwright>=1.49"]

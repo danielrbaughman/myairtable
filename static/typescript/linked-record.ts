@@ -31,15 +31,12 @@ export class LinkedRecord<Mdl extends AirtableModel<FieldSet, unknown, keyof Fie
 	/** The ID of the linked record. This is the value Airtable actually stores in the linked record field. */
 	private _id?: RecordId;
 	private record?: Mdl;
-	// eslint-disable-next-line no-unused-vars
 	private modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl;
-	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
 	private __configOptions?: AirtableOptions;
 	private linkedModelClass?: any;
 
-	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordId?: RecordId,
 		modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl,
@@ -104,14 +101,11 @@ export class LinkedRecords<Mdl extends AirtableModel<FieldSet, unknown, keyof Fi
 	/** The IDs of the linked records. These are the values Airtable actually stores in the linked record field. */
 	private _ids?: RecordId[];
 	private records?: Mdl[];
-	// eslint-disable-next-line no-unused-vars
 	private modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl;
-	// eslint-disable-next-line no-unused-vars
 	private onDirty?: () => void;
 	private __configBaseId?: string;
 	private __configOptions?: AirtableOptions;
 
-	// eslint-disable-next-line no-unused-vars
 	constructor(
 		recordIds?: RecordId[],
 		modelCtor?: (id: RecordId, config?: AirtableOptions & { baseId: string }) => Mdl,

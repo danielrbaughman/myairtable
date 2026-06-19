@@ -1,5 +1,6 @@
 import json
 import time
+from collections.abc import Mapping, Sequence
 from typing import Any, Generic, Optional, overload
 
 from pyairtable import Table
@@ -17,10 +18,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     _orm_cls: type[ORMType]
     _table: Table
     """The original pyAirtable instance. Returns un-typed RecordDicts."""
-    _calculated_field_names: list[str]
-    _calculated_field_ids: list[str]
-    _view_name_id_mapping: dict[ViewType, str]
-    _field_names: list[str]
+    _calculated_field_names: Sequence[str]
+    _calculated_field_ids: Sequence[str]
+    _view_name_id_mapping: Mapping[ViewType, str]
+    _field_names: Sequence[str]
 
     _cache_seconds: int = 0
     _cache: dict[str, tuple[Any, float]] = {}
@@ -30,10 +31,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         cls,
         table: Table,
         model_cls: type[ORMType],
-        calculated_field_names: list[str],
-        calculated_field_ids: list[str],
-        view_name_id_mapping: "dict[ViewType, str]",
-        field_names: list[str],
+        calculated_field_names: Sequence[str],
+        calculated_field_ids: Sequence[str],
+        view_name_id_mapping: "Mapping[ViewType, str]",
+        field_names: Sequence[str],
         cache_seconds: int = 0,
     ) -> "ORMTable[ORMType, ViewType, FieldType]":
         instance = cls()
@@ -170,7 +171,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 return []
             if len(record_id) > 0 and isinstance(record_id[0], str):
                 record_ids = record_id
-                record_id = None  # ty: ignore
+                record_id = None
 
         if isinstance(record_id, str) and not record_id.strip():
             raise ValueError("Record ID cannot be an empty string.")
@@ -199,7 +200,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                     user_locale=user_locale,
                     **options,
                 )
-            record_dict = sanitize_record_dict(record_dict)  # ty: ignore[invalid-assignment]
+            record_dict = sanitize_record_dict(record_dict)
             record_orm: ORMType = self._orm_cls.from_record(record_dict)
             result = record_orm
         elif record_ids and len(record_ids) > 0:
@@ -218,7 +219,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 max_records=max_records,
                 **options,
             )
-            record_dicts = [sanitize_record_dict(r) for r in record_dicts]  # ty: ignore[invalid-assignment]
+            record_dicts = [sanitize_record_dict(r) for r in record_dicts]
             record_orms: list[ORMType] = [self._orm_cls.from_record(r) for r in record_dicts]
             result = record_orms
         else:
@@ -237,7 +238,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 max_records=max_records,
                 **options,
             )
-            record_dicts = [sanitize_record_dict(r) for r in record_dicts]  # ty: ignore[invalid-assignment]
+            record_dicts = [sanitize_record_dict(r) for r in record_dicts]
             record_orms: list[ORMType] = [self._orm_cls.from_record(r) for r in record_dicts]
             result = record_orms
 
@@ -277,7 +278,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 return []
             if len(record) > 0 and isinstance(record[0], self._orm_cls):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
@@ -290,8 +291,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
-            record.save()  # ty: ignore
-            new_record = self.get(record_id=record.id)  # ty: ignore
+            record.save()
+            new_record = self.get(record_id=record.id)
             return new_record
 
     @overload
@@ -325,14 +326,14 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 return []
             if len(record) > 0 and isinstance(record[0], self._orm_cls):
                 records = record
-                record = None  # ty: ignore
+                record = None
 
         if records is not None and isinstance(records, list):
             if records is None:
                 raise ValueError("Records to update cannot be None.")
             if len(records) == 0:
                 return []
-            records: list[RecordDict] = [r.to_record() for r in records]  # ty: ignore
+            records: list[RecordDict] = [r.to_record() for r in records]
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)
             update_dicts: list[RecordDict] = [{"id": r["id"], "createdTime": r.get("createdTime", ""), "fields": r["fields"]} for r in records]
@@ -343,12 +344,12 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         else:
             if record is None:
                 raise ValueError("Record to update cannot be None.")
-            record: RecordDict = record.to_record()  # ty: ignore
-            record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)  # ty: ignore
+            record: RecordDict = record.to_record()
+            record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)
             record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True)
             record = sanitize_record_dict(record)
-            record = self._orm_cls.from_record(record)
-            return record  # ty: ignore[invalid-return-type]
+            orm_record = self._orm_cls.from_record(record)
+            return orm_record
 
     @overload
     def delete(

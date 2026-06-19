@@ -9,7 +9,7 @@ from pyairtable import formulas as F  # noqa: N812
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "static" / "python"))
 
-from formula import (  # type: ignore[attr-defined]
+from formula import (  # ty: ignore[unresolved-import]
     AND,
     ID,
     NOT,

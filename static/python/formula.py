@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Generic, Optional, TypeVar, overload
 
@@ -14,7 +15,7 @@ class ID:
         """RECORD_ID()='id'"""
         return F.EQ(F.RECORD_ID(), id)
 
-    def __eq__(self, id: str) -> F.Formula:  # ty: ignore
+    def __eq__(self, id: str) -> F.Formula:  # ty: ignore[invalid-method-override]
         return self.equals(id)
 
     @staticmethod
@@ -28,22 +29,22 @@ class ID:
 
 
 class Field(F.Field):
-    def __eq__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __eq__(self, value: Any) -> F.Comparison:  # ty: ignore[invalid-method-override]
         return super().eq(value)
 
-    def __ne__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __ne__(self, value: Any) -> F.Comparison:  # ty: ignore[invalid-method-override]
         return super().ne(value)
 
-    def __lt__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __lt__(self, value: Any) -> F.Comparison:
         return super().lt(value)
 
-    def __le__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __le__(self, value: Any) -> F.Comparison:
         return super().lte(value)
 
-    def __gt__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __gt__(self, value: Any) -> F.Comparison:
         return super().gt(value)
 
-    def __ge__(self, value: Any) -> F.Comparison:  # ty: ignore
+    def __ge__(self, value: Any) -> F.Comparison:
         return super().gte(value)
 
     def empty(self) -> F.Formula:
@@ -146,7 +147,7 @@ class TextField(Field):
         """
         return self._find(value, ">0", case_sensitive=case_sensitive, trim=trim)
 
-    def contains_any(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
+    def contains_any(self, values: Sequence[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field contains any of the substrings in the provided list.
 
@@ -160,7 +161,7 @@ class TextField(Field):
         """
         return OR(*[self.contains(value, case_sensitive=case_sensitive, trim=trim) for value in values])
 
-    def contains_all(self, values: list[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
+    def contains_all(self, values: Sequence[str], case_sensitive: bool = False, trim: bool = True) -> F.Formula:
         """
         Checks if field contains all of the substrings in the provided list.
 
@@ -317,16 +318,16 @@ SelectOptions = TypeVar("SelectOptions", bound=str)
 class SingleSelectField(TextField, Generic[SelectOptions]):
     """Select comparison formulas"""
 
-    def equals(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:  # ty: ignore
+    def equals(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:  # ty: ignore[invalid-method-override]
         """
         Slightly redundant with `.eq`, but adds options for case sensitivity and trimming whitespace.
         """
         return super().equals(value, case_sensitive=case_sensitive, trim=trim)
 
-    def eq(self, value: SelectOptions) -> F.Formula:  # ty: ignore
+    def eq(self, value: SelectOptions) -> F.Formula:  # ty: ignore[invalid-method-override]
         return super().eq(value)
 
-    def ne(self, value: SelectOptions) -> F.Formula:  # ty: ignore
+    def ne(self, value: SelectOptions) -> F.Formula:  # ty: ignore[invalid-method-override]
         return super().ne(value)
 
     def contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
@@ -335,7 +336,7 @@ class SingleSelectField(TextField, Generic[SelectOptions]):
 
     def contains_any_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
-        return self.contains_any(values, case_sensitive=case_sensitive, trim=trim)  # ty: ignore[invalid-argument-type]
+        return self.contains_any(values, case_sensitive=case_sensitive, trim=trim)
 
     def not_contains_option(self, value: SelectOptions, case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
@@ -351,7 +352,7 @@ class MultiSelectField(SingleSelectField[SelectOptions], Generic[SelectOptions])
 
     def contains_all_options(self, values: list[SelectOptions], case_sensitive: bool = True, trim: bool = False) -> F.Formula:
         """WARNING: May return false positives if the option you're searching for is a substring of another option."""
-        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)  # ty: ignore[invalid-argument-type]
+        return self.contains_all(values, case_sensitive=case_sensitive, trim=trim)
 
 
 class NumberField(Field):
@@ -374,7 +375,7 @@ class NumberField(Field):
 class BooleanField(Field):
     """Boolean comparison formulas"""
 
-    def eq(self, value: bool) -> F.Formula:  # ty: ignore
+    def eq(self, value: bool) -> F.Formula:  # ty: ignore[invalid-method-override]
         """{field}=TRUE()|FALSE()"""
         return F.EQ(self, F.TRUE() if value else F.FALSE())
 
@@ -501,8 +502,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __eq__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on(date)  # ty: ignore[invalid-return-type]
+    def __eq__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.on(date)
 
     @overload
     def on_or_after(self) -> DateComparison: ...
@@ -531,8 +532,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ge__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on_or_after(date)  # ty: ignore[invalid-return-type]
+    def __ge__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.on_or_after(date)
 
     @overload
     def on_or_before(self) -> DateComparison: ...
@@ -562,8 +563,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __le__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.on_or_before(date)  # ty: ignore[invalid-return-type]
+    def __le__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.on_or_before(date)
 
     @overload
     def after(self) -> DateComparison: ...
@@ -593,8 +594,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __gt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.after(date)  # ty: ignore[invalid-return-type]
+    def __gt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.after(date)
 
     @overload
     def before(self) -> DateComparison: ...
@@ -623,8 +624,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __lt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.before(date)  # ty: ignore[invalid-return-type]
+    def __lt__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.before(date)
 
     @overload
     def not_on(self) -> DateComparison: ...
@@ -654,8 +655,8 @@ class DateField(Field):
         parsed_date: datetime = _parse_date(date)
         return date_comparison._date(parsed_date)
 
-    def __ne__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore
-        return self.not_on(date)  # ty: ignore[invalid-return-type]
+    def __ne__(self, date: "str | datetime | DateField") -> F.Formula:  # ty: ignore[invalid-method-override]
+        return self.not_on(date)
 
     def between(
         self,

@@ -332,7 +332,8 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.endregion()
 
     with WriteToPythonFile(path=types_dir / "_tables.py") as write:
-        write.line("from typing import Literal")
+        write.line("from collections.abc import Mapping, Sequence")
+        write.line("from typing import Any, Literal")
         for table in base.tables:
             snake = table.name_snake()
             pascal = table.name_pascal()
@@ -367,32 +368,35 @@ def write_types(base: Base, output_folder: Path) -> None:
             second_type="str",
             value_is_string=True,
         )
+        # Value types are widened to read-only covariant supertypes (Mapping/Sequence/Any) so the
+        # per-table mappings — whose keys/values are narrow Literal aliases — stay assignable despite
+        # dict/list invariance. These tables are convenience exports and aren't consumed internally.
         write.dict_class(
             "TableIdToFieldNameIdMapping",
             [(table.id, f"{table.name_pascal()}FieldNameIdMapping") for table in base.tables],
             first_type="TableId",
-            second_type="dict[str, str]",
+            second_type="Mapping[Any, str]",
             value_is_string=False,
         )
         write.dict_class(
             "TableIdToFieldNamesTypeMapping",
             [(table.id, f"{table.name_pascal()}Field") for table in base.tables],
             first_type="TableId",
-            second_type="str",
+            second_type="Any",
             value_is_string=False,
         )
         write.dict_class(
             "TableIdToFieldNamesListMapping",
             [(table.id, f"{table.name_pascal()}Fields") for table in base.tables],
             first_type="TableId",
-            second_type="list[str]",
+            second_type="Sequence[str]",
             value_is_string=False,
         )
         write.dict_class(
             "TableIdToFieldNameToFieldIdMapping",
             [(table.id, f"{table.name_pascal()}FieldNameIdMapping") for table in base.tables],
             first_type="TableId",
-            second_type="dict[str, str]",
+            second_type="Mapping[Any, str]",
             value_is_string=False,
         )
 
@@ -433,10 +437,12 @@ def write_dicts(base: Base, output_folder: Path) -> None:
             for suffix, parent, has_id, has_created_time, use_field_ids in dict_classes:
                 write.line(f"class {table.name_pascal()}{suffix}({parent}):")
                 write.line_indented(record_doc_string(table.name, id=has_id, created_time=has_created_time, use_field_ids=use_field_ids))
+                # Narrowing the inherited `fields` TypedDict key/value type isn't expressible
+                # without overwriting a mutable TypedDict field, which the type spec forbids.
                 if use_field_ids:
-                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict  # ty: ignore")
+                    write.line_indented(f"fields: {table.name_pascal()}FieldsDict  # ty: ignore[invalid-typed-dict-field]")
                 else:
-                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]  # ty: ignore")
+                    write.line_indented(f"fields: dict[{table.name_pascal()}Field, Any]  # ty: ignore[invalid-typed-dict-field]")
                 write.line_empty()
                 write.line_empty()
 
@@ -490,7 +496,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
             # Imports (registered as candidates; only symbols used in the body are emitted)
             write.mark_imports()
             write.add_import("datetime", ["datetime", "timedelta"])
-            write.add_import("typing", ["Any", "TYPE_CHECKING"])
+            write.add_import("typing", ["Any", "TYPE_CHECKING", "cast"])
             write.add_import("pyairtable.orm", ["Model"])
             write.add_import("pyairtable.orm.fields", list(PYAIRTABLE_FIELD_TYPES))
             write.add_import("...static.helpers", ["get_api_key", "get_base_id", "build_url"])
@@ -539,7 +545,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
 
             # to_record_dict
             write.line_indented(f"def to_record_dict(self, only_writable: bool = False) -> {table.name_pascal()}RecordDict:")
-            write.line_indented("return self.to_record(only_writable)  # ty: ignore[invalid-return-type]", 2)
+            # Model.to_record() returns the base RecordDict; assert this table's narrower shape.
+            write.line_indented(f'return cast("{table.name_pascal()}RecordDict", self.to_record(only_writable))', 2)
             write.line_empty()
 
             # url
@@ -651,17 +658,20 @@ def write_tables(base: Base, output_folder: Path) -> None:
             )
             write.line_indented(table_doc_string(table))
             write.line_indented("@classmethod")
-            write.line_indented("def from_table(cls, table: Table, cache_seconds: int = 0):  # ty: ignore")
+            # Named-constructor override: this convenience signature deliberately differs from
+            # AirtableTable.from_table (it bakes in this table's typed classes), so the LSP-incompatible
+            # override is expected and suppressed with a specific code.
+            write.line_indented("def from_table(cls, table: Table, cache_seconds: int = 0):  # ty: ignore[invalid-method-override]")
             write.line_indented("cls = super().from_table(", 2)
             write.line_indented("table,", 3)
-            write.line_indented(f"{table.name_pascal()}RecordDict,  # ty: ignore[invalid-argument-type]", 3)
-            write.line_indented(f"{table.name_pascal()}CreateRecordDict,  # ty: ignore[invalid-argument-type]", 3)
-            write.line_indented(f"{table.name_pascal()}UpdateRecordDict,  # ty: ignore[invalid-argument-type]", 3)
-            write.line_indented(f"{table.name_model()},  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_pascal()}RecordDict,", 3)
+            write.line_indented(f"{table.name_pascal()}CreateRecordDict,", 3)
+            write.line_indented(f"{table.name_pascal()}UpdateRecordDict,", 3)
+            write.line_indented(f"{table.name_model()},", 3)
             write.line_indented(f"{table.name_pascal()}CalculatedFields,", 3)
             write.line_indented(f"{table.name_pascal()}CalculatedFieldIds,", 3)
-            write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,  # ty: ignore[invalid-argument-type]", 3)
-            write.line_indented(f"{table.name_pascal()}Fields,  # ty: ignore[invalid-argument-type]", 3)
+            write.line_indented(f"{table.name_pascal()}ViewNameIdMapping,", 3)
+            write.line_indented(f"{table.name_pascal()}Fields,", 3)
             write.line_indented("cache_seconds=cache_seconds,", 3)
             write.line_indented(")", 2)
             write.line_indented("return cls", 2)
@@ -751,6 +761,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         # Imports
         write.region("IMPORTS")
         write.mark_imports()
+        write.add_import("typing", ["cast"])
         write.add_import("pyairtable", ["Api"])
         write.add_import(".types", ["TableName"])
         write.add_import("..static.airtable_table", ["AirtableTable", "TableType"])
@@ -824,7 +835,8 @@ def write_main_class(base: Base, output_folder: Path) -> None:
                 f'self._tables["{table.name}"] = {table.name_pascal()}Table.from_table(self._api.table(self.base_id, "{table.id}"), cache_seconds=self._cache_seconds)',
                 3,
             )
-            write.line_indented(f'return self._tables["{table.name}"]  # ty: ignore[invalid-return-type]', 2)
+            # `_tables` stores the base AirtableTable; assert the concrete table type back out.
+            write.line_indented(f'return cast("{table.name_pascal()}Table", self._tables["{table.name}"])', 2)
             write.line_empty()
         write.endregion()
 
@@ -979,11 +991,13 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
     match airtable_type:
         case "singleSelect":
             if field.id in field.base.select_fields_ids():
-                return f"{field.options_name()} = SelectField({params})"
+                # pyairtable's SelectField descriptor isn't generic over the option literal type,
+                # so assigning it to the narrowed option type needs a specific suppression.
+                return f"{field.options_name()} = SelectField({params})  # ty: ignore[invalid-assignment]"
             return f"SelectField = SelectField({params})"
         case "multipleSelects":
             if field.id in field.base.select_fields_ids():
-                return f"list[{field.options_name()}] = MultipleSelectField({params}) # ty: ignore"
+                return f"list[{field.options_name()}] = MultipleSelectField({params})  # ty: ignore[invalid-assignment]"
             return f"MultipleSelectField = MultipleSelectField({params})"
         case "lookup" | "multipleLookupValues":
             return f"LookupField[{field.python_type()}] = LookupField({params})"
@@ -996,8 +1010,8 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
                         break
                 prefix = f"{package_prefix}.{output_folder.stem}.dynamic.models" if package_prefix else f"{output_folder.stem}.dynamic.models"
                 if field.options.prefers_single_record_link:
-                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # ty: ignore'
-                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}") # ty: ignore'
+                    return f'"{linked_orm_class}" = SingleLinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}")  # ty: ignore[invalid-assignment]'
+                return f'list["{linked_orm_class}"] = LinkField["{linked_orm_class}"]({params}, model="{prefix}.{table.name_snake()}.{linked_orm_class}")  # ty: ignore[invalid-assignment]'
             print(field.table.name, original_id, sanitize_string(field.name), "[yellow]does not have a linkedTableId[/]")
         case _:
             pass

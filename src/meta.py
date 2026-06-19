@@ -4,7 +4,7 @@ import random
 import time
 from csv import DictReader
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import httpx
 from pydantic import BaseModel, PrivateAttr
@@ -662,8 +662,8 @@ class Field(Named):
     def referenced_fields(self) -> list["Field"]:
         """Get all referenced fields for this field (link, lookup, rollup, formula)."""
         fields: list["Field"] = []
-        if self.field_in_linked_table():
-            fields.append(self.field_in_linked_table())
+        if linked_field := self.field_in_linked_table():
+            fields.append(linked_field)
         if self.options and self.options.referenced_field_ids:
             for field_id in self.options.referenced_field_ids:
                 ref_field = self.base.field_by_id(field_id)
@@ -1042,7 +1042,7 @@ class Base(BaseModel):
                 base=self,
             )
             for field_meta in table_meta["fields"]:
-                options: dict[str, Any] = field_meta.get("options", {})
+                options: dict[str, Any] = cast(dict[str, Any], field_meta.get("options", {}))
                 field = Field(
                     id=field_meta["id"],
                     name=field_meta["name"],

@@ -281,7 +281,7 @@ def transpile_command(
 ):
     """Convert an Airtable formula to Python, TypeScript, or JavaScript."""
     try:
-        _emit("transpile", schema_tools.transpile(table, field, language), pretty)  # type: ignore[arg-type]
+        _emit("transpile", schema_tools.transpile(table, field, language), pretty)  # ty: ignore[invalid-argument-type]
     except Exception as e:
         _fail(e)
 

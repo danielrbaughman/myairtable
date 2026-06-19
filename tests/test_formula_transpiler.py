@@ -606,10 +606,12 @@ class TestRustEqualityCoercion:
     """myairtable-02fg — Rust =/!= route through F::N/F::S when either side's
     type is inferable (serde Number f64 vs i64 variants are not cross-equal)."""
 
-    def _transpile(self, formula: str) -> str | None:
+    def _transpile(self, formula: str) -> str:
         from src.formulas.formula_transpiler import transpile_formula
 
-        return transpile_formula(formula, "rust", {"fld1": "my_field", "fld2": "other_field"}, set())
+        result = transpile_formula(formula, "rust", {"fld1": "my_field", "fld2": "other_field"}, set())
+        assert result is not None
+        return result
 
     def test_numeric_equality_coerces_both_sides(self):
         result = self._transpile("{fld1} = 5")

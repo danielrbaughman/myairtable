@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable no-unused-vars */
 import { AirtableOptions, Record as ATRecord, Attachment, FieldSet, RecordData } from "airtable";
 import * as z from "zod";
 import { CreateRecordData, IRecord, RecordId, recordIdSchema } from "./special-types";
