@@ -2624,7 +2624,7 @@ class TestCSharpGenerator:
         ]:
             base = make_test_base([("Primary Key", "fld001", "singleLineText")])
             base.tables[0].name = name
-            base.tables[0].__pydantic_private__["_pascal"] = None
+            base.tables[0]._pascal = None
             assert _table_property(base.tables[0]) == expected
 
     def test_options_enum_and_converter(self, tmp_path: Path):
@@ -3042,7 +3042,7 @@ class TestJavaModels:
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         base.tables[0].name = "Client"
-        base.tables[0].__pydantic_private__["_pascal"] = None
+        base.tables[0]._pascal = None
         assert _table_property(base.tables[0]) == "clientTable"
 
     # ---- Javadoc ----

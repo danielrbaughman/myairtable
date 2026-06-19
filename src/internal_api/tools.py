@@ -238,7 +238,7 @@ def find_views_using_field(table: str, field: str) -> dict[str, Any]:
     visible_in = 0
     hidden_in = 0
 
-    for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+    for view_id, d in sorted(definitions.items(), key=lambda kv: kv[1].name or ""):
         usage: list[dict[str, Any]] = []
 
         operators = _filter_operators_for_field(d, column.id)
@@ -335,7 +335,7 @@ def count_records(table: str, view: str | None = None) -> dict[str, Any]:
     views = []
     unfiltered_counts: list[int] = []
     all_counts: list[int] = []
-    for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+    for view_id, d in sorted(definitions.items(), key=lambda kv: kv[1].name or ""):
         if d.row_count is None:
             continue  # form views have no rowOrder
         views.append(
@@ -671,7 +671,7 @@ def audit_shares(table: str | None = None) -> dict[str, Any]:
         definitions, scan_errors = get_all_view_definitions(t)
         all_scan_errors.update(scan_errors)
         views_scanned += len(definitions)
-        for view_id, d in sorted(definitions.items(), key=lambda kv: (kv[1].name or "")):
+        for view_id, d in sorted(definitions.items(), key=lambda kv: kv[1].name or ""):
             for share in d.shares_by_id.values():
                 shares.append(_share_entry(share, "view", table=t, view_name=d.name))
 
