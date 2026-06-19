@@ -1,5 +1,6 @@
 import json
 import time
+from collections.abc import Mapping, Sequence
 from typing import Any, Generic, Optional, overload
 
 from pyairtable import Table
@@ -17,10 +18,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     _orm_cls: type[ORMType]
     _table: Table
     """The original pyAirtable instance. Returns un-typed RecordDicts."""
-    _calculated_field_names: list[str]
-    _calculated_field_ids: list[str]
-    _view_name_id_mapping: dict[ViewType, str]
-    _field_names: list[str]
+    _calculated_field_names: Sequence[str]
+    _calculated_field_ids: Sequence[str]
+    _view_name_id_mapping: Mapping[ViewType, str]
+    _field_names: Sequence[str]
 
     _cache_seconds: int = 0
     _cache: dict[str, tuple[Any, float]] = {}
@@ -30,10 +31,10 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         cls,
         table: Table,
         model_cls: type[ORMType],
-        calculated_field_names: list[str],
-        calculated_field_ids: list[str],
-        view_name_id_mapping: "dict[ViewType, str]",
-        field_names: list[str],
+        calculated_field_names: Sequence[str],
+        calculated_field_ids: Sequence[str],
+        view_name_id_mapping: "Mapping[ViewType, str]",
+        field_names: Sequence[str],
         cache_seconds: int = 0,
     ) -> "ORMTable[ORMType, ViewType, FieldType]":
         instance = cls()
@@ -347,8 +348,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)
             record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True)
             record = sanitize_record_dict(record)
-            record = self._orm_cls.from_record(record)  # ty: ignore[invalid-assignment]
-            return record  # ty: ignore[invalid-return-type]
+            orm_record = self._orm_cls.from_record(record)
+            return orm_record
 
     @overload
     def delete(

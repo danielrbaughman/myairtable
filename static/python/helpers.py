@@ -68,7 +68,7 @@ def validate_key(name: str, valid_names: list[str]):
 """)
 
 
-def validate_keys(field_names: Sequence[str], valid_names: list[str]):
+def validate_keys(field_names: Sequence[str], valid_names: Sequence[str]):
     invalid_names = []
     for name in field_names:
         if name not in valid_names:
