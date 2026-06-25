@@ -406,8 +406,12 @@ public class TestAirtableRuntime
         Eq(Str("100%25"), AirtableRuntime.ENCODE_URL_COMPONENT(Str("100%")));
 
     [Fact]
-    public void EncodeUrlComponentQueryCharsPassThrough() =>
-        Eq(Str("a&b=c"), AirtableRuntime.ENCODE_URL_COMPONENT(Str("a&b=c")));
+    public void EncodeUrlComponentEncodesReservedChars()
+    {
+        // encodeURIComponent (which Airtable matches) percent-encodes reserved chars like & = + .
+        Eq(Str("a%26b%3Dc"), AirtableRuntime.ENCODE_URL_COMPONENT(Str("a&b=c")));
+        Eq(Str("a%2Bb"), AirtableRuntime.ENCODE_URL_COMPONENT(Str("a+b")));
+    }
 
     [Fact]
     public void EncodeUrlComponentUnicode() =>

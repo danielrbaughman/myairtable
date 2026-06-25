@@ -717,7 +717,8 @@ class CodeEmitter:
             return None  # Fall through to ENCODE_URL_COMPONENT in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
-            return f'urllib.parse.quote({arg}, safe="")'
+            # Match JS encodeURIComponent: leave -_.!~*'() literal (urllib already keeps -_.~).
+            return f'urllib.parse.quote({arg}, safe="!*\'()")'
         return f"encodeURIComponent({arg})"
 
     def _emit_fn_int(self, node: FunctionCall) -> str | None:

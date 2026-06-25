@@ -651,8 +651,8 @@ public final class AirtableRuntime {
     return TextNode.valueOf(out.toString());
   }
 
-  /** Characters NOT percent-encoded, mirroring Swift's {@code CharacterSet.urlQueryAllowed}. */
-  private static final String URL_QUERY_ALLOWED_EXTRA = "-._~!$&'()*+,;=:@/?";
+  /** Non-alphanumerics left literal by JS {@code encodeURIComponent} (Airtable matches it). */
+  private static final String URL_QUERY_ALLOWED_EXTRA = "-_.!~*'()";
 
   public static JsonNode ENCODE_URL_COMPONENT(JsonNode value) {
     String s = S(value);

@@ -614,9 +614,10 @@ class TestAirtableRuntime {
   }
 
   @Test
-  void encodeUrlComponentQueryCharsPassThrough() {
-    // Swift parity: CharacterSet.urlQueryAllowed leaves query sub-delims unencoded.
-    assertEquals(s("a&b=c"), AirtableRuntime.ENCODE_URL_COMPONENT(s("a&b=c")));
+  void encodeUrlComponentEncodesReservedChars() {
+    // encodeURIComponent (which Airtable matches) percent-encodes reserved chars like & = + .
+    assertEquals(s("a%26b%3Dc"), AirtableRuntime.ENCODE_URL_COMPONENT(s("a&b=c")));
+    assertEquals(s("a%2Bb"), AirtableRuntime.ENCODE_URL_COMPONENT(s("a+b")));
   }
 
   @Test
