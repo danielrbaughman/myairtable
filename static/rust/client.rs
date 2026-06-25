@@ -55,7 +55,7 @@ impl AirtableClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
         Ok(resp.json().await?)
     }
@@ -83,7 +83,7 @@ impl AirtableClient {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
 
         Ok(response.json().await?)
@@ -116,7 +116,7 @@ impl AirtableClient {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
 
         Ok(response.json().await?)
@@ -146,7 +146,7 @@ impl AirtableClient {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
 
         Ok(response.json().await?)
@@ -177,7 +177,7 @@ impl AirtableClient {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
 
         Ok(response.json().await?)
@@ -201,7 +201,7 @@ impl AirtableClient {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(AirtableError::Api { status, body });
+            return Err(AirtableError::from_response(status, body));
         }
 
         Ok(())
@@ -238,7 +238,7 @@ impl AirtableClient {
             if !response.status().is_success() {
                 let status = response.status().as_u16();
                 let body = response.text().await.unwrap_or_default();
-                return Err(AirtableError::Api { status, body });
+                return Err(AirtableError::from_response(status, body));
             }
 
             let batch: serde_json::Value = response.json().await?;
@@ -288,7 +288,7 @@ impl AirtableClient {
             if !response.status().is_success() {
                 let status = response.status().as_u16();
                 let body = response.text().await.unwrap_or_default();
-                return Err(AirtableError::Api { status, body });
+                return Err(AirtableError::from_response(status, body));
             }
 
             let batch: serde_json::Value = response.json().await?;
@@ -322,7 +322,7 @@ impl AirtableClient {
             if !response.status().is_success() {
                 let status = response.status().as_u16();
                 let body = response.text().await.unwrap_or_default();
-                return Err(AirtableError::Api { status, body });
+                return Err(AirtableError::from_response(status, body));
             }
         }
 
