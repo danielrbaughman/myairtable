@@ -6,6 +6,34 @@ use crate::error::AirtableError;
 use crate::pagination::PaginatedResponse;
 use crate::types::{AirtableQuery, Record, RecordId};
 
+/// Max retry attempts (after the initial request) for transient failures: 429, 5xx, and
+/// connect/timeout transport errors.
+const RETRY_MAX_ATTEMPTS: u32 = 5;
+/// Base for exponential backoff, in seconds.
+const RETRY_BASE_SECS: f64 = 1.0;
+/// Cap on a single backoff delay, in seconds.
+const RETRY_MAX_DELAY_SECS: f64 = 30.0;
+
+/// Parse a numeric `Retry-After` header (delta-seconds) into seconds.
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<f64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<f64>()
+        .ok()
+}
+
+/// A cheap, dependency-free jitter fraction in [0, 1) derived from the wall clock.
+fn jitter_fraction() -> f64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    f64::from(nanos % 1000) / 1000.0
+}
+
 /// Airtable API client.
 #[derive(Debug)]
 pub struct AirtableClient {
@@ -40,6 +68,57 @@ impl AirtableClient {
         format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }
 
+    /// Backoff delay (seconds) before the next retry. A 429 `Retry-After` (seconds) is honored as
+    /// the delay; otherwise exponential `base * 2^attempt` capped at the max. Decorrelated jitter of
+    /// `jitter * delay/4` (with `jitter` in [0, 1)) is added so concurrent clients don't stampede.
+    /// Pure + deterministic given `jitter`, so it can be unit-tested.
+    pub fn retry_delay_secs(retry_after: Option<f64>, attempt: u32, jitter: f64) -> f64 {
+        let delay = match retry_after {
+            Some(s) if s >= 0.0 => s,
+            _ => (RETRY_BASE_SECS * 2f64.powi(attempt as i32)).min(RETRY_MAX_DELAY_SECS),
+        };
+        delay + jitter * (delay / 4.0)
+    }
+
+    /// Send a request, retrying transient failures (429 / 5xx, and connect/timeout transport errors)
+    /// up to [`RETRY_MAX_ATTEMPTS`] times with jittered exponential backoff (honoring a 429
+    /// `Retry-After`). The builder is cloned per attempt; a non-cloneable (streamed) body is sent
+    /// once without retry.
+    async fn send_with_retry(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, AirtableError> {
+        let mut attempt: u32 = 0;
+        loop {
+            let Some(attempt_builder) = builder.try_clone() else {
+                return Ok(builder.send().await?);
+            };
+            match attempt_builder.send().await {
+                Ok(resp) => {
+                    let status = resp.status().as_u16();
+                    let retryable = status == 429 || (500..600).contains(&status);
+                    if retryable && attempt < RETRY_MAX_ATTEMPTS {
+                        let delay = Self::retry_delay_secs(
+                            parse_retry_after(resp.headers()),
+                            attempt,
+                            jitter_fraction(),
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs_f64(delay)).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(e) if attempt < RETRY_MAX_ATTEMPTS && (e.is_timeout() || e.is_connect()) => {
+                    let delay = Self::retry_delay_secs(None, attempt, jitter_fraction());
+                    tokio::time::sleep(std::time::Duration::from_secs_f64(delay)).await;
+                    attempt += 1;
+                }
+                Err(e) => return Err(AirtableError::from(e)),
+            }
+        }
+    }
+
     /// Fetch the base schema from Airtable's metadata API.
     pub async fn get_schema(&self) -> Result<serde_json::Value, AirtableError> {
         let url = format!(
@@ -47,10 +126,7 @@ impl AirtableClient {
             self.base_id
         );
         let resp = self
-            .client
-            .get(&url)
-            .headers(self.headers.clone())
-            .send()
+            .send_with_retry(self.client.get(&url).headers(self.headers.clone()))
             .await?;
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
@@ -73,11 +149,12 @@ impl AirtableClient {
 
         let url = self.table_url(table_id);
         let response = self
-            .client
-            .get(&url)
-            .query(&query_params)
-            .headers(self.headers.clone())
-            .send()
+            .send_with_retry(
+                self.client
+                    .get(&url)
+                    .query(&query_params)
+                    .headers(self.headers.clone()),
+            )
             .await?;
 
         if !response.status().is_success() {
@@ -107,10 +184,7 @@ impl AirtableClient {
         };
 
         let response = self
-            .client
-            .get(&url)
-            .headers(self.headers.clone())
-            .send()
+            .send_with_retry(self.client.get(&url).headers(self.headers.clone()))
             .await?;
 
         if !response.status().is_success() {
@@ -136,11 +210,12 @@ impl AirtableClient {
         }
 
         let response = self
-            .client
-            .post(&url)
-            .headers(self.headers.clone())
-            .json(&body)
-            .send()
+            .send_with_retry(
+                self.client
+                    .post(&url)
+                    .headers(self.headers.clone())
+                    .json(&body),
+            )
             .await?;
 
         if !response.status().is_success() {
@@ -167,11 +242,12 @@ impl AirtableClient {
         }
 
         let response = self
-            .client
-            .patch(&url)
-            .headers(self.headers.clone())
-            .json(&body)
-            .send()
+            .send_with_retry(
+                self.client
+                    .patch(&url)
+                    .headers(self.headers.clone())
+                    .json(&body),
+            )
             .await?;
 
         if !response.status().is_success() {
@@ -192,10 +268,7 @@ impl AirtableClient {
         let url = format!("{}/{}", self.table_url(table_id), record_id);
 
         let response = self
-            .client
-            .delete(&url)
-            .headers(self.headers.clone())
-            .send()
+            .send_with_retry(self.client.delete(&url).headers(self.headers.clone()))
             .await?;
 
         if !response.status().is_success() {
@@ -228,11 +301,12 @@ impl AirtableClient {
             }
 
             let response = self
-                .client
-                .post(&url)
-                .headers(self.headers.clone())
-                .json(&body)
-                .send()
+                .send_with_retry(
+                    self.client
+                        .post(&url)
+                        .headers(self.headers.clone())
+                        .json(&body),
+                )
                 .await?;
 
             if !response.status().is_success() {
@@ -278,11 +352,12 @@ impl AirtableClient {
             }
 
             let response = self
-                .client
-                .patch(&url)
-                .headers(self.headers.clone())
-                .json(&body)
-                .send()
+                .send_with_retry(
+                    self.client
+                        .patch(&url)
+                        .headers(self.headers.clone())
+                        .json(&body),
+                )
                 .await?;
 
             if !response.status().is_success() {
@@ -313,10 +388,7 @@ impl AirtableClient {
             let url = format!("{}?{}", self.table_url(table_id), params.join("&"));
 
             let response = self
-                .client
-                .delete(&url)
-                .headers(self.headers.clone())
-                .send()
+                .send_with_retry(self.client.delete(&url).headers(self.headers.clone()))
                 .await?;
 
             if !response.status().is_success() {

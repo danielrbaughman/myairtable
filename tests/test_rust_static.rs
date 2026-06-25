@@ -6,6 +6,23 @@ fn creates_client() {
 }
 
 #[test]
+fn retry_delay_honors_retry_after_and_caps_backoff() {
+    // A 429 Retry-After (seconds) is used directly.
+    assert_eq!(AirtableClient::retry_delay_secs(Some(5.0), 0, 0.0), 5.0);
+    // No Retry-After: exponential base * 2^attempt.
+    assert_eq!(AirtableClient::retry_delay_secs(None, 0, 0.0), 1.0);
+    assert_eq!(AirtableClient::retry_delay_secs(None, 2, 0.0), 4.0);
+    // Capped at the 30s max (1 * 2^10 = 1024 -> 30).
+    assert_eq!(AirtableClient::retry_delay_secs(None, 10, 0.0), 30.0);
+    // Decorrelated jitter adds up to delay/4.
+    let d = AirtableClient::retry_delay_secs(None, 0, 0.999);
+    assert!(
+        (1.0..=1.25).contains(&d),
+        "jittered delay {d} out of [1.0, 1.25]"
+    );
+}
+
+#[test]
 fn vec_or_value_deserializes_single() {
     let json = r#""hello""#;
     let val: VecOrValue<String> = serde_json::from_str(json).unwrap();
