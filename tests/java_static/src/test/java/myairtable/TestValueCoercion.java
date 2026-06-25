@@ -73,8 +73,8 @@ class TestValueCoercion {
   }
 
   @Test
-  void sTakesFirstElementOfArray() {
-    assertEquals("a", AirtableRuntime.S(array(TextNode.valueOf("a"), TextNode.valueOf("b"))));
+  void sJoinsArrayWithCommaSpace() {
+    assertEquals("a, b", AirtableRuntime.S(array(TextNode.valueOf("a"), TextNode.valueOf("b"))));
     assertEquals("", AirtableRuntime.S(array()));
   }
 

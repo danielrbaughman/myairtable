@@ -49,7 +49,8 @@ export class AirtableRuntime {
 
 	/** Coerce value to string */
 	static S(v: unknown): string {
-		if (Array.isArray(v)) return AirtableRuntime.S(v[0]);
+		// Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+		if (Array.isArray(v)) return v.map((x) => AirtableRuntime.S(x)).join(", ");
 		if (AirtableRuntime.isNull(v)) return "";
 		if (typeof v === "boolean") return v ? "1" : "0";
 		return String(v);

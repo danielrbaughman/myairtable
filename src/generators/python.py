@@ -1016,4 +1016,6 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
         case _:
             pass
 
-    return "Any"
+    # Unknown/unmapped field type: emit a default so the attribute is always bound (an unset
+    # `rating: Any` with no default raises AttributeError when read, e.g. in runtime formula eval).
+    return "Any = None"

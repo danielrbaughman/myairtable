@@ -62,8 +62,8 @@ class TestValueCoercion {
     }
 
     @Test
-    fun sTakesFirstElementOfArray() {
-        assertEquals("a", S(JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b")))))
+    fun sJoinsArrayWithCommaSpace() {
+        assertEquals("a, b", S(JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b")))))
         assertEquals("", S(JsonArray(emptyList())))
     }
 

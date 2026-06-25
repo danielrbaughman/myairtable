@@ -7,6 +7,7 @@ package airtable
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -113,6 +114,38 @@ func V(value any) any {
 			return nil
 		}
 		return time.Duration(*v).Seconds()
+	default:
+		// Named select-enum types (e.g. *PrimarySingleSelectOption, []PrimaryMultipleSelectOption)
+		// don't match the concrete cases above, so normalize them via reflection: deref pointers,
+		// unwrap a named string (enum) to a plain string, and convert a named slice to []any so
+		// S()/IsTruthy can coerce it (the array-join then renders "a, b").
+		return normalizeNamed(value)
+	}
+}
+
+// normalizeNamed unwraps named types the explicit V() cases miss (select enums and their slices)
+// so the formula runtime's string/truthiness coercions can handle them.
+func normalizeNamed(value any) any {
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Pointer:
+		if rv.IsNil() {
+			return nil
+		}
+		return V(rv.Elem().Interface())
+	case reflect.String:
+		return rv.String()
+	case reflect.Slice, reflect.Array:
+		// An already-normalized []any passes through; named slices ([]Enum, []string) are
+		// converted element-wise.
+		if rv.Type().Elem().Kind() == reflect.Interface {
+			return value
+		}
+		out := make([]any, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			out[i] = V(rv.Index(i).Interface())
+		}
+		return out
 	default:
 		return value
 	}

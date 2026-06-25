@@ -44,7 +44,8 @@ public enum AirtableRuntime {
             }
             return String(d)
         case .string(let s): return s
-        case .array(let arr): return arr.isEmpty ? "" : S(arr[0])
+        // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+        case .array(let arr): return arr.map { S($0) }.joined(separator: ", ")
         case .object: return ""
         }
     }

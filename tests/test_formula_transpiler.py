@@ -246,7 +246,7 @@ class TestTypeScriptEmitter:
         assert self._transpile("COUNTALL({fld1}, {fld2})") == "F.A([this.myField, this.otherField]).length"
 
     def test_concatenate(self):
-        assert self._transpile("CONCATENATE({fld1}, {fld2})") == 'F.AS([this.myField, this.otherField]).join("")'
+        assert self._transpile("CONCATENATE({fld1}, {fld2})") == '[this.myField, this.otherField].map((_x) => F.S(_x)).join("")'
 
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
@@ -309,7 +309,7 @@ class TestJavaScriptEmitter:
         assert self._transpile("COUNTALL({fld1})") == "F.A([this.myField]).length"
 
     def test_concatenate(self):
-        assert self._transpile("CONCATENATE({fld1})") == 'F.AS([this.myField]).join("")'
+        assert self._transpile("CONCATENATE({fld1})") == '[this.myField].map((_x) => F.S(_x)).join("")'
 
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "F.S(this.myField).repeat(3)"
@@ -378,7 +378,7 @@ class TestPythonEmitter:
         assert self._transpile("ROUND({fld1}, 2)") == "round(F.N(self.my_field), 2)"
 
     def test_concatenate(self):
-        assert self._transpile('CONCATENATE({fld1}, " ", {fld2})') == '"".join(F.AS((self.my_field, " ", self.other_field,)))'
+        assert self._transpile('CONCATENATE({fld1}, " ", {fld2})') == '"".join(map(F.S, (self.my_field, " ", self.other_field,)))'
 
     def test_rept(self):
         assert self._transpile("REPT({fld1}, 3)") == "(F.S(self.my_field) * 3)"

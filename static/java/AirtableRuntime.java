@@ -123,7 +123,15 @@ public final class AirtableRuntime {
       return Double.toString(d);
     }
     if (value.isArray()) {
-      return value.isEmpty() ? "" : S(value.get(0));
+      // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+      StringBuilder sb = new StringBuilder();
+      for (int i = 0; i < value.size(); i++) {
+        if (i > 0) {
+          sb.append(", ");
+        }
+        sb.append(S(value.get(i)));
+      }
+      return sb.toString();
     }
     return "";
   }
