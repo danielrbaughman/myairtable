@@ -45,6 +45,15 @@ function isFieldRef(value: string): boolean {
 	return /^\{[^{}]+\}$/.test(value);
 }
 
+/**
+ * Escape a value for an Airtable double-quoted formula string literal. Backslashes are escaped
+ * FIRST, then quotes — otherwise a trailing `\` would leave the closing quote live and the
+ * remainder of the formula would be misparsed.
+ */
+function escapeFormulaString(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 /** Wrap a value for use in a formula - quotes strings, passes through formulas and fields */
 function wrapValue(value: string | Field): string {
 	if (value instanceof Field) {
@@ -52,7 +61,7 @@ function wrapValue(value: string | Field): string {
 	} else if (isFormula(value) || isFieldRef(value)) {
 		return value;
 	} else {
-		return `"${value}"`;
+		return `"${escapeFormulaString(value)}"`;
 	}
 }
 
@@ -148,24 +157,23 @@ export class TextField extends Field {
 	 */
 	equals(value: string, caseSensitive: boolean = true, trim: boolean = false): string {
 		StringSchema.parse(value);
-		const escapedValue = value.replace(/"/g, '\\"');
 
 		if (caseSensitive) {
 			if (trim) {
 				const left = TRIM(this);
-				const right = TRIM(escapedValue);
+				const right = TRIM(value);
 				return `${left}=${right}`;
 			} else {
-				return `${this.field}="${escapedValue}"`;
+				return `${this.field}="${escapeFormulaString(value)}"`;
 			}
 		} else {
 			if (trim) {
 				const left = TRIM(LOWER(this));
-				const right = TRIM(LOWER(escapedValue));
+				const right = TRIM(LOWER(value));
 				return `${left}=${right}`;
 			} else {
 				const left = LOWER(this);
-				const right = LOWER(escapedValue);
+				const right = LOWER(value);
 				return `${left}=${right}`;
 			}
 		}
@@ -196,8 +204,7 @@ export class TextField extends Field {
 	/** {field}!="value" */
 	notEquals(value: string): string {
 		StringSchema.parse(value);
-		const escapedValue = value.replace(/"/g, '\\"');
-		return `${this.field}!="${escapedValue}"`;
+		return `${this.field}!="${escapeFormulaString(value)}"`;
 	}
 
 	/**
