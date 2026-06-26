@@ -484,7 +484,16 @@ export class AirtableTable<
 			const fetched = (await this.get(orderedIds, { returnAs: inputType } as any)) as any[];
 			const byId = new Map<string, any>();
 			for (const item of fetched) byId.set((item as any).id, item);
-			const ordered = orderedIds.map((id) => byId.get(id));
+			const ordered = orderedIds.map((id) => {
+				const record = byId.get(id);
+				if (record === undefined) {
+					// The follow-up fetch didn't return an upserted id (e.g. deleted between PATCH
+					// and GET, or hidden by a view filter on get). Surface it instead of returning
+					// undefined typed as a model.
+					throw new Error(`upsert: record ${id} was not returned by the follow-up fetch`);
+				}
+				return record;
+			});
 			return isArray ? ordered : ordered[0];
 		}
 
