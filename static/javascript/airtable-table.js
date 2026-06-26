@@ -194,7 +194,8 @@ class AirtableTable {
 				const payloads = items.map((r) => r.toCreateRecordData());
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
-					const batchCreated = await this.withRetry(() => this._table.create(batch));
+					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
+					const batchCreated = await this.withRetry(() => this._table.create(batch), false);
 					createdRecords.push(...batchCreated);
 				}
 				return createdRecords.map((r) => this.recordCtor(r));
@@ -203,8 +204,10 @@ class AirtableTable {
 				const isUsingFieldNames = this.isUsingFieldNames(records);
 				for (let i = 0; i < records.length; i += 10) {
 					const batch = records.slice(i, i + 10);
-					const batchCreated = await this.withRetry(() =>
-						this._table.create(batch.map((r) => this.toWritableRecord(r))),
+					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
+					const batchCreated = await this.withRetry(
+						() => this._table.create(batch.map((r) => this.toWritableRecord(r))),
+						false,
 					);
 					createdRecords.push(...batchCreated);
 				}
@@ -214,12 +217,14 @@ class AirtableTable {
 		} else {
 			if (inputType === "model") {
 				const payload = recordOrRecords.toCreateRecordData();
-				const createdRecords = await this.withRetry(() => this._table.create([payload]));
+				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
+				const createdRecords = await this.withRetry(() => this._table.create([payload]), false);
 				return this.recordCtor(createdRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
-				const createdRecords = await this.withRetry(() => this._table.create([this.toWritableRecord(record)]));
+				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
+				const createdRecords = await this.withRetry(() => this._table.create([this.toWritableRecord(record)]), false);
 				if (isUsingFieldNames) this.mapToNames(createdRecords);
 				const created = createdRecords[0];
 				return inputType === "interface" ? this.toInterface(created) : created;
@@ -359,6 +364,10 @@ class AirtableTable {
 		const endpoint = this._options.endpointUrl ?? "https://api.airtable.com";
 		const url = `${endpoint}/v0/${this.baseId}/${encodeURIComponent(this.id)}`;
 
+		// A merge-upsert PATCH is idempotent ONLY when fieldsToMergeOn is non-empty: the merge key
+		// determines record identity, so a retried 5xx re-resolves to the same record (update, not
+		// insert). With no merge fields, a retry could insert duplicates, so 5xx must NOT be retried.
+		const idempotent = fieldsToMergeOn.length > 0;
 		const ids = [];
 		for (let i = 0; i < payloads.length; i += 10) {
 			const batch = payloads.slice(i, i + 10);
@@ -380,8 +389,10 @@ class AirtableTable {
 					throw new Error(String(error));
 				}
 				if (response.ok) break;
-				// Retry transient 429/5xx (e.g. 503 SERVICE_UNAVAILABLE) with backoff, mirroring withRetry().
-				if (this.isRetryableStatus(response.status) && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
+				// Retry transient failures with backoff, mirroring withRetry(): 429 always (rejected,
+				// nothing applied); 5xx (e.g. 503 SERVICE_UNAVAILABLE) only when idempotent.
+				const retryable = response.status === 429 || (idempotent && this.isRetryableStatus(response.status));
+				if (retryable && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
 					await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs(attempt)));
 					continue;
 				}
@@ -415,14 +426,21 @@ class AirtableTable {
 	 * SERVICE_UNAVAILABLE. On a non-retryable error or once attempts are exhausted, preserves the
 	 * existing contract by throwing `new Error(String(error))`. airtable.js's error carries no
 	 * Retry-After, so 5xx uses pure backoff.
+	 *
+	 * `idempotent` controls 5xx/transport retry: 429 always retries (the request was rejected, nothing
+	 * applied), but a 5xx may mean the write partially succeeded, so it is retried ONLY for idempotent
+	 * ops (get/list/update-by-id/delete). create (POST) is non-idempotent — passes `false` so a 5xx
+	 * surfaces immediately rather than risking duplicate inserts. We do not distinguish
+	 * connect-before-send from read-timeout (not portable); the conservative uniform rule is correct.
 	 */
-	async withRetry(op) {
+	async withRetry(op, idempotent = true) {
 		for (let attempt = 0; ; attempt++) {
 			try {
 				return await op();
 			} catch (error) {
 				const status = error?.statusCode;
-				if (this.isRetryableStatus(status) && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
+				const retryable = status === 429 || (idempotent && this.isRetryableStatus(status));
+				if (retryable && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
 					await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs(attempt)));
 					continue;
 				}

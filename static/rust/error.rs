@@ -29,6 +29,12 @@ impl AirtableError {
         let code = parse_api_error_code(&body);
         Self::Api { status, code, body }
     }
+
+    /// Build a [`AirtableError::RateLimited`] carrying the parsed `Retry-After` (seconds). Used when
+    /// retries are exhausted on a 429 so the caller can see how long the server asked us to wait.
+    pub fn rate_limited(retry_after: Option<f64>) -> Self {
+        Self::RateLimited { retry_after }
+    }
 }
 
 /// Extract the Airtable error code from either envelope shape: the legacy bare-string

@@ -17,6 +17,10 @@ public sealed class AirtableClient
     private const double BaseRetryDelaySeconds = 0.5;
     private const double RetryJitterCapSeconds = 1.0;
 
+    // Hard ceiling on any single backoff, applied to BOTH the computed exponential backoff and a
+    // server-supplied Retry-After. A malicious/broken `Retry-After: 999999` must never hang the call.
+    private const double MaxRetryDelaySeconds = 30.0;
+
     // One shared HttpClient for the process (thread-safe; avoids socket exhaustion).
     private static readonly HttpClient Http = new();
 
@@ -86,7 +90,7 @@ public sealed class AirtableClient
         return Cache.GetOrAddAsync(
             tableId,
             "list:" + CacheKeyForQuery(query),
-            () => SendAsync(HttpMethod.Get, url, null, ct),
+            () => SendAsync(HttpMethod.Get, url, null, idempotent: true, ct),
             ct,
             // Don't cache a multi-page payload: its server-side `offset` continuation token
             // expires after a few minutes, so a later cache hit would replay a dead token and
@@ -123,7 +127,7 @@ public sealed class AirtableClient
         return Cache.GetOrAddAsync(
             tableId,
             "rec:" + recordId,
-            () => SendAsync(HttpMethod.Get, url, null, ct),
+            () => SendAsync(HttpMethod.Get, url, null, idempotent: true, ct),
             ct
         );
     }
@@ -135,19 +139,28 @@ public sealed class AirtableClient
     )
     {
         var url = $"{ApiRoot}/{Esc(_baseId)}/{Esc(tableId)}";
-        var result = await SendAsync(HttpMethod.Post, url, body, ct).ConfigureAwait(false);
+        // create is a POST: NOT idempotent — a retried 5xx/transport error could double-insert.
+        var result = await SendAsync(HttpMethod.Post, url, body, idempotent: false, ct)
+            .ConfigureAwait(false);
         Cache.Invalidate(tableId);
         return result;
     }
 
+    /// <summary>
+    /// PATCH the records collection. Used by both update-by-id and upsert. Update-by-id and
+    /// merge-keyed upsert are idempotent; an upsert with an empty <c>fieldsToMergeOn</c> inserts and
+    /// is therefore NOT idempotent — callers pass <paramref name="idempotent"/> accordingly.
+    /// </summary>
     public async Task<string> UpdateRecordsAsync(
         string tableId,
         string body,
+        bool idempotent = true,
         CancellationToken ct = default
     )
     {
         var url = $"{ApiRoot}/{Esc(_baseId)}/{Esc(tableId)}";
-        var result = await SendAsync(HttpMethod.Patch, url, body, ct).ConfigureAwait(false);
+        var result = await SendAsync(HttpMethod.Patch, url, body, idempotent, ct)
+            .ConfigureAwait(false);
         Cache.Invalidate(tableId);
         return result;
     }
@@ -159,7 +172,8 @@ public sealed class AirtableClient
     )
     {
         var url = $"{ApiRoot}/{Esc(_baseId)}/{Esc(tableId)}/{Esc(recordId)}";
-        var result = await SendAsync(HttpMethod.Delete, url, null, ct).ConfigureAwait(false);
+        var result = await SendAsync(HttpMethod.Delete, url, null, idempotent: true, ct)
+            .ConfigureAwait(false);
         Cache.Invalidate(tableId);
         return result;
     }
@@ -172,7 +186,8 @@ public sealed class AirtableClient
     {
         var pairs = recordIds.Select(id => new KeyValuePair<string, string>("records[]", id));
         var url = TableUrl(tableId, pairs);
-        var result = await SendAsync(HttpMethod.Delete, url, null, ct).ConfigureAwait(false);
+        var result = await SendAsync(HttpMethod.Delete, url, null, idempotent: true, ct)
+            .ConfigureAwait(false);
         Cache.Invalidate(tableId);
         return result;
     }
@@ -213,11 +228,20 @@ public sealed class AirtableClient
     /// <summary>
     /// Send a request with bearer auth and retry-with-jitter on 429/5xx. Throws an
     /// <see cref="AirtableException"/> subclass on a terminal failure.
+    ///
+    /// <para><paramref name="idempotent"/> classifies the request at the call site: GET/list/get,
+    /// update-by-id (PATCH with ids), delete, and merge-keyed upsert are idempotent; create (POST)
+    /// and an empty-merge upsert (which inserts) are not. A 429 is always retried (the server
+    /// rejected the request, so nothing was applied), but 5xx and transport/IO errors are retried
+    /// ONLY when idempotent — a non-idempotent retry could double-apply. We do NOT distinguish a
+    /// connect-before-send failure from a read-timeout (not portably available); the conservative
+    /// uniform rule is correct.</para>
     /// </summary>
     public async Task<string> SendAsync(
         HttpMethod method,
         string url,
         string? body,
+        bool idempotent,
         CancellationToken ct = default
     )
     {
@@ -239,7 +263,7 @@ public sealed class AirtableClient
             }
             catch (HttpRequestException ex)
             {
-                if (attempt < MaxRetries)
+                if (idempotent && attempt < MaxRetries)
                 {
                     await DelayAsync(null, attempt++, ct).ConfigureAwait(false);
                     continue;
@@ -248,7 +272,7 @@ public sealed class AirtableClient
             }
             catch (TaskCanceledException ex) // request timeout (not caller cancellation)
             {
-                if (attempt < MaxRetries)
+                if (idempotent && attempt < MaxRetries)
                 {
                     await DelayAsync(null, attempt++, ct).ConfigureAwait(false);
                     continue;
@@ -275,7 +299,7 @@ public sealed class AirtableClient
                     throw new AirtableException.RateLimitedError(retryAfter);
                 }
 
-                if (status >= 500 && attempt < MaxRetries)
+                if (status >= 500 && idempotent && attempt < MaxRetries)
                 {
                     await DelayAsync(null, attempt++, ct).ConfigureAwait(false);
                     continue;
@@ -294,6 +318,7 @@ public sealed class AirtableClient
             _baseRetryDelay,
             attempt,
             _jitterCap,
+            MaxRetryDelaySeconds,
             Random.Shared.NextDouble()
         );
         await Task.Delay(TimeSpan.FromSeconds(seconds), ct).ConfigureAwait(false);
@@ -303,26 +328,38 @@ public sealed class AirtableClient
     /// Total backoff in seconds. An explicit <paramref name="retryAfterSeconds"/> (from a 429
     /// Retry-After) wins; otherwise exponential <c>baseRetryDelay * 2^attempt</c>. Decorrelation
     /// jitter of <c>rand * min(delay, jitterCap)</c> (Kotlin/Java parity) is added so concurrent
-    /// clients don't stampede. Pure + deterministic given <paramref name="rand"/> in [0, 1).
+    /// clients don't stampede. The final value is capped at <paramref name="maxDelay"/> — this
+    /// applies to BOTH the computed backoff AND a server-supplied Retry-After, so a broken
+    /// <c>Retry-After: 999999</c> can never hang the call. A negative Retry-After is floored to 0.
+    /// Pure + deterministic given <paramref name="rand"/> in [0, 1).
     /// </summary>
     internal static double ComputeRetryDelaySeconds(
         double? retryAfterSeconds,
         double baseRetryDelay,
         int attempt,
         double jitterCap,
+        double maxDelay,
         double rand
     )
     {
-        var delay = retryAfterSeconds ?? baseRetryDelay * Math.Pow(2, attempt);
+        var delay = retryAfterSeconds is { } ra
+            ? Math.Max(0, ra)
+            : baseRetryDelay * Math.Pow(2, attempt);
         var jitter = rand * Math.Min(delay, jitterCap);
-        return delay + jitter;
+        return Math.Min(delay + jitter, maxDelay);
     }
 
+    /// <summary>
+    /// Parse a <c>Retry-After</c> response header per RFC 9110, handling BOTH forms: delta-seconds
+    /// (exposed as <see cref="RetryConditionHeaderValue.Delta"/>) and an HTTP-date (exposed as
+    /// <see cref="RetryConditionHeaderValue.Date"/>, converted to <c>max(0, date - now)</c>). The
+    /// final cap is applied later in <see cref="ComputeRetryDelaySeconds"/>.
+    /// </summary>
     internal static double? ParseRetryAfter(HttpResponseMessage response)
     {
         var ra = response.Headers.RetryAfter;
         if (ra?.Delta is { } delta)
-            return delta.TotalSeconds;
+            return Math.Max(0, delta.TotalSeconds);
         if (ra?.Date is { } date)
             return Math.Max(0, (date - DateTimeOffset.UtcNow).TotalSeconds);
         return null;

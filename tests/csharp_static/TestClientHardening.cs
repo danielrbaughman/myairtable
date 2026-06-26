@@ -101,6 +101,51 @@ public class TestClientHardening
         Assert.Equal(5, transport.CallCount);
     }
 
+    // ---- idempotency policy (unified retry spec) ----
+
+    private const string CreateBody = "{\"records\": [{\"fields\": {}}]}";
+
+    [Fact]
+    public async Task ServerErrorOnNonIdempotentCreateIsNotRetried()
+    {
+        // create is a POST → non-idempotent → a 5xx returns immediately (no double-insert risk).
+        var transport = new FakeTransport(
+            (_, _) => new FakeTransport.Canned(503, "{\"error\": \"SERVER\"}")
+        );
+        // The {"error": "SERVER"} body decodes into the ApiError envelope; the point is it's terminal.
+        await Assert.ThrowsAnyAsync<AirtableException>(() =>
+            Client(transport).CreateRecordsAsync("tbl1", CreateBody)
+        );
+        Assert.Equal(1, transport.CallCount); // single attempt, not MaxRetries+1
+    }
+
+    [Fact]
+    public async Task TransportErrorOnNonIdempotentCreateIsNotRetried()
+    {
+        var transport = new FakeTransport(
+            (_, _) => throw new HttpRequestException("connection reset")
+        );
+        await Assert.ThrowsAsync<AirtableException.NetworkError>(() =>
+            Client(transport).CreateRecordsAsync("tbl1", CreateBody)
+        );
+        Assert.Equal(1, transport.CallCount);
+    }
+
+    [Fact]
+    public async Task RateLimitOnNonIdempotentCreateIsStillRetried()
+    {
+        // 429 is always retried even for a POST — the server rejected the request, nothing applied.
+        var transport = new FakeTransport(
+            (_, callIndex) =>
+                callIndex < 1
+                    ? new FakeTransport.Canned(429, "{\"error\": \"RATE_LIMITED\"}")
+                    : FakeTransport.Canned.Ok(OkBody)
+        );
+        var payload = await Client(transport).CreateRecordsAsync("tbl1", CreateBody);
+        Assert.Equal(OkBody, payload);
+        Assert.Equal(2, transport.CallCount);
+    }
+
     // ---- network exception wrapping ----
 
     [Fact]

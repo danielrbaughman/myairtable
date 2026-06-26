@@ -14,24 +14,38 @@ const RETRY_BASE_SECS: f64 = 1.0;
 /// Cap on a single backoff delay, in seconds.
 const RETRY_MAX_DELAY_SECS: f64 = 30.0;
 
-/// Parse a numeric `Retry-After` header (delta-seconds) into seconds.
+/// Parse a `Retry-After` header (RFC 9110) into seconds, accepting BOTH forms: delta-seconds
+/// (`"120"` / `"1.5"`) and an HTTP-date (`"Wed, 21 Oct 2015 07:28:00 GMT"`). For the date form the
+/// result is `max(0, date - now)`. A garbage or negative value floors to 0 so it can never reach the
+/// sleep call as a negative.
 fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<f64> {
-    headers
+    let raw = headers
         .get(reqwest::header::RETRY_AFTER)?
         .to_str()
         .ok()?
-        .trim()
-        .parse::<f64>()
-        .ok()
+        .trim();
+    if let Ok(secs) = raw.parse::<f64>() {
+        return Some(secs.max(0.0));
+    }
+    // HTTP-date form (RFC 9110 IMF-fixdate, e.g. "Wed, 21 Oct 2015 07:28:00 GMT" -> RFC 2822):
+    // compute remaining seconds until the given instant, flooring past dates to 0.
+    let target = chrono::DateTime::parse_from_rfc2822(raw).ok()?;
+    let secs =
+        (target.timestamp_millis() as f64 - chrono::Utc::now().timestamp_millis() as f64) / 1000.0;
+    Some(secs.max(0.0))
 }
 
-/// A cheap, dependency-free jitter fraction in [0, 1) derived from the wall clock.
+/// A cheap, dependency-free jitter fraction in [0, 1) derived from the wall clock. NOTE: nanosecond
+/// wall-clock entropy is weak under correlated clocks (e.g. many hosts booted from the same image and
+/// NTP-synced can land on near-identical nanos), so this does not fully prevent a thundering herd; a
+/// real PRNG would be stronger but is avoided here to stay dependency-free.
 fn jitter_fraction() -> f64 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    f64::from(nanos % 1000) / 1000.0
+    // Use the full sub-second nanos range (0..1_000_000_000) for wider entropy.
+    f64::from(nanos) / 1_000_000_000.0
 }
 
 /// Airtable API client.
@@ -68,25 +82,45 @@ impl AirtableClient {
         format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }
 
-    /// Backoff delay (seconds) before the next retry. A 429 `Retry-After` (seconds) is honored as
-    /// the delay; otherwise exponential `base * 2^attempt` capped at the max. Decorrelated jitter of
-    /// `jitter * delay/4` (with `jitter` in [0, 1)) is added so concurrent clients don't stampede.
+    /// Backoff delay (seconds) before the next retry, with `jitter` in [0, 1). Two paths:
+    ///
+    /// - Server `Retry-After` present: honor it, but CAP at [`RETRY_MAX_DELAY_SECS`] (a broken
+    ///   `Retry-After: 999999` must never hang the call), then add a small bounded jitter
+    ///   (`jitter * delay/4`) so clients released by the same window don't stampede.
+    /// - Otherwise: FULL jitter on exponential backoff — `jitter * min(cap, base * 2^attempt)` —
+    ///   which spreads retries uniformly across the backoff window.
+    ///
     /// Pure + deterministic given `jitter`, so it can be unit-tested.
     pub fn retry_delay_secs(retry_after: Option<f64>, attempt: u32, jitter: f64) -> f64 {
-        let delay = match retry_after {
-            Some(s) if s >= 0.0 => s,
-            _ => (RETRY_BASE_SECS * 2f64.powi(attempt as i32)).min(RETRY_MAX_DELAY_SECS),
-        };
-        delay + jitter * (delay / 4.0)
+        match retry_after {
+            Some(s) if s >= 0.0 => {
+                let capped = s.min(RETRY_MAX_DELAY_SECS);
+                capped + jitter * (capped / 4.0)
+            }
+            _ => {
+                let cap = (RETRY_BASE_SECS * 2f64.powi(attempt as i32)).min(RETRY_MAX_DELAY_SECS);
+                jitter * cap
+            }
+        }
     }
 
-    /// Send a request, retrying transient failures (429 / 5xx, and connect/timeout transport errors)
-    /// up to [`RETRY_MAX_ATTEMPTS`] times with jittered exponential backoff (honoring a 429
-    /// `Retry-After`). The builder is cloned per attempt; a non-cloneable (streamed) body is sent
-    /// once without retry.
+    /// Send a request, retrying transient failures with jittered, capped exponential backoff (honoring
+    /// a 429 `Retry-After`), up to [`RETRY_MAX_ATTEMPTS`] times. The retry policy depends on whether the
+    /// caller classified the request as `idempotent`:
+    ///
+    /// - HTTP 429: ALWAYS retry (the request was rejected, nothing was applied).
+    /// - HTTP 5xx: retry ONLY IF `idempotent` (a non-idempotent op may have been partially applied).
+    /// - transport/IO error: retry ONLY IF `idempotent`. We deliberately do NOT distinguish
+    ///   connect-before-send from a read-timeout — that is not portably available, and the conservative
+    ///   uniform rule (retry only when idempotent) is correct.
+    ///
+    /// When retries are exhausted on a 429, returns [`AirtableError::RateLimited`] carrying the parsed
+    /// `Retry-After` rather than the raw response. The builder is cloned per attempt; a non-cloneable
+    /// (streamed) body is sent once without retry.
     async fn send_with_retry(
         &self,
         builder: reqwest::RequestBuilder,
+        idempotent: bool,
     ) -> Result<reqwest::Response, AirtableError> {
         let mut attempt: u32 = 0;
         loop {
@@ -96,7 +130,10 @@ impl AirtableClient {
             match attempt_builder.send().await {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
-                    let retryable = status == 429 || (500..600).contains(&status);
+                    let is_429 = status == 429;
+                    let is_5xx = (500..600).contains(&status);
+                    // 429 always retries; 5xx only when the request is idempotent.
+                    let retryable = is_429 || (is_5xx && idempotent);
                     if retryable && attempt < RETRY_MAX_ATTEMPTS {
                         let delay = Self::retry_delay_secs(
                             parse_retry_after(resp.headers()),
@@ -107,9 +144,21 @@ impl AirtableClient {
                         attempt += 1;
                         continue;
                     }
+                    // Retries exhausted on a 429: surface the typed rate-limit error with the
+                    // server's (capped) Retry-After instead of the raw response.
+                    if is_429 {
+                        let retry_after =
+                            parse_retry_after(resp.headers()).map(|s| s.min(RETRY_MAX_DELAY_SECS));
+                        return Err(AirtableError::rate_limited(retry_after));
+                    }
                     return Ok(resp);
                 }
-                Err(e) if attempt < RETRY_MAX_ATTEMPTS && (e.is_timeout() || e.is_connect()) => {
+                // Transport errors retry only when idempotent.
+                Err(e)
+                    if attempt < RETRY_MAX_ATTEMPTS
+                        && idempotent
+                        && (e.is_timeout() || e.is_connect()) =>
+                {
                     let delay = Self::retry_delay_secs(None, attempt, jitter_fraction());
                     tokio::time::sleep(std::time::Duration::from_secs_f64(delay)).await;
                     attempt += 1;
@@ -126,7 +175,7 @@ impl AirtableClient {
             self.base_id
         );
         let resp = self
-            .send_with_retry(self.client.get(&url).headers(self.headers.clone()))
+            .send_with_retry(self.client.get(&url).headers(self.headers.clone()), true)
             .await?;
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
@@ -154,6 +203,7 @@ impl AirtableClient {
                     .get(&url)
                     .query(&query_params)
                     .headers(self.headers.clone()),
+                true,
             )
             .await?;
 
@@ -184,7 +234,7 @@ impl AirtableClient {
         };
 
         let response = self
-            .send_with_retry(self.client.get(&url).headers(self.headers.clone()))
+            .send_with_retry(self.client.get(&url).headers(self.headers.clone()), true)
             .await?;
 
         if !response.status().is_success() {
@@ -215,6 +265,7 @@ impl AirtableClient {
                     .post(&url)
                     .headers(self.headers.clone())
                     .json(&body),
+                false, // POST create is not idempotent.
             )
             .await?;
 
@@ -247,6 +298,7 @@ impl AirtableClient {
                     .patch(&url)
                     .headers(self.headers.clone())
                     .json(&body),
+                true, // update-by-id is idempotent.
             )
             .await?;
 
@@ -268,7 +320,10 @@ impl AirtableClient {
         let url = format!("{}/{}", self.table_url(table_id), record_id);
 
         let response = self
-            .send_with_retry(self.client.delete(&url).headers(self.headers.clone()))
+            .send_with_retry(
+                self.client.delete(&url).headers(self.headers.clone()),
+                true, // delete-by-id is idempotent.
+            )
             .await?;
 
         if !response.status().is_success() {
@@ -306,6 +361,7 @@ impl AirtableClient {
                         .post(&url)
                         .headers(self.headers.clone())
                         .json(&body),
+                    false, // batch POST create is not idempotent.
                 )
                 .await?;
 
@@ -357,6 +413,7 @@ impl AirtableClient {
                         .patch(&url)
                         .headers(self.headers.clone())
                         .json(&body),
+                    true, // batch update-by-id is idempotent.
                 )
                 .await?;
 
@@ -409,12 +466,17 @@ impl AirtableClient {
                 body["returnFieldsByFieldId"] = serde_json::json!(true);
             }
 
+            // Upsert is idempotent only when a merge key identifies records (a retried insert with
+            // no merge key would create duplicates). With merge fields, a retried PATCH converges to
+            // the same row.
+            let idempotent = !fields_to_merge_on.is_empty();
             let response = self
                 .send_with_retry(
                     self.client
                         .patch(&url)
                         .headers(self.headers.clone())
                         .json(&body),
+                    idempotent,
                 )
                 .await?;
 
@@ -446,7 +508,10 @@ impl AirtableClient {
             let url = format!("{}?{}", self.table_url(table_id), params.join("&"));
 
             let response = self
-                .send_with_retry(self.client.delete(&url).headers(self.headers.clone()))
+                .send_with_retry(
+                    self.client.delete(&url).headers(self.headers.clone()),
+                    true, // batch delete-by-id is idempotent.
+                )
                 .await?;
 
             if !response.status().is_success() {

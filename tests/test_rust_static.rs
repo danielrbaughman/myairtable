@@ -7,18 +7,41 @@ fn creates_client() {
 
 #[test]
 fn retry_delay_honors_retry_after_and_caps_backoff() {
-    // A 429 Retry-After (seconds) is used directly.
+    // Retry-After path: the (capped) value plus a small bounded jitter of up to value/4.
+    // With jitter=0.0 the value is used directly.
     assert_eq!(AirtableClient::retry_delay_secs(Some(5.0), 0, 0.0), 5.0);
-    // No Retry-After: exponential base * 2^attempt.
-    assert_eq!(AirtableClient::retry_delay_secs(None, 0, 0.0), 1.0);
-    assert_eq!(AirtableClient::retry_delay_secs(None, 2, 0.0), 4.0);
-    // Capped at the 30s max (1 * 2^10 = 1024 -> 30).
-    assert_eq!(AirtableClient::retry_delay_secs(None, 10, 0.0), 30.0);
-    // Decorrelated jitter adds up to delay/4.
-    let d = AirtableClient::retry_delay_secs(None, 0, 0.999);
+    // A huge/broken Retry-After is capped at the 30s max even with jitter=0.0.
+    assert_eq!(
+        AirtableClient::retry_delay_secs(Some(999999.0), 0, 0.0),
+        30.0
+    );
+    // Retry-After jitter adds up to value/4 on top of the (capped) value.
+    let d = AirtableClient::retry_delay_secs(Some(8.0), 0, 0.999);
     assert!(
-        (1.0..=1.25).contains(&d),
-        "jittered delay {d} out of [1.0, 1.25]"
+        (8.0..=10.0).contains(&d),
+        "jittered Retry-After {d} out of [8.0, 10.0]"
+    );
+
+    // No Retry-After: FULL jitter on exponential backoff -> jitter * min(cap, base * 2^attempt).
+    // With jitter=0.0 the delay is 0 (full jitter spans [0, window)).
+    assert_eq!(AirtableClient::retry_delay_secs(None, 0, 0.0), 0.0);
+    assert_eq!(AirtableClient::retry_delay_secs(None, 2, 0.0), 0.0);
+    // With jitter just under 1.0, the delay approaches the backoff window (base * 2^attempt).
+    let d0 = AirtableClient::retry_delay_secs(None, 0, 0.999);
+    assert!(
+        (0.0..=1.0).contains(&d0),
+        "attempt 0 jittered delay {d0} out of [0.0, 1.0]"
+    );
+    let d2 = AirtableClient::retry_delay_secs(None, 2, 0.999);
+    assert!(
+        (0.0..=4.0).contains(&d2),
+        "attempt 2 jittered delay {d2} out of [0.0, 4.0]"
+    );
+    // The backoff window is capped at the 30s max (1 * 2^10 = 1024 -> 30).
+    let dcap = AirtableClient::retry_delay_secs(None, 10, 0.999);
+    assert!(
+        (0.0..=30.0).contains(&dcap),
+        "capped jittered delay {dcap} out of [0.0, 30.0]"
     );
 }
 

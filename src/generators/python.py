@@ -798,7 +798,23 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("self._cache_seconds: int = cache_seconds", 2)
         write.line_indented("# pyairtable retries 429 only by default; also retry transient 5xx (incl. 503).", 2)
         write.line_indented(
-            "self._api = Api(api_key=api_key, endpoint_url=endpoint_url, retry_strategy=retry_strategy(status_forcelist=(429, 500, 502, 503, 504)))",
+            "# allowed_methods excludes POST so create (POST) is never retried (urllib3 is method-based,",
+            2,
+        )
+        write.line_indented(
+            "# so it can't distinguish idempotent from non-idempotent at the body level). Residuals:",
+            2,
+        )
+        write.line_indented(
+            "# (1) PATCH upsert-without-merge is still retried (can't be told apart from update-by-id);",
+            2,
+        )
+        write.line_indented(
+            "# (2) POST no longer retries even on 429 (safe: 429 means the request was rejected, nothing applied).",
+            2,
+        )
+        write.line_indented(
+            'self._api = Api(api_key=api_key, endpoint_url=endpoint_url, retry_strategy=retry_strategy(status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset({"GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "PATCH"})))',
             2,
         )
         write.line_empty()

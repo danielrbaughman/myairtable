@@ -158,7 +158,13 @@ public class OrmTable<T>
     {
         var pars = query.ToParameters();
         pars.Add(new("offset", offset));
-        return _client.SendAsync(HttpMethod.Get, _client.TableUrl(_tableId, pars), null, ct);
+        return _client.SendAsync(
+            HttpMethod.Get,
+            _client.TableUrl(_tableId, pars),
+            null,
+            idempotent: true,
+            ct
+        );
     }
 
     // ---- create -------------------------------------------------------------
@@ -313,7 +319,7 @@ public class OrmTable<T>
             ["returnFieldsByFieldId"] = true,
         };
         var payload = await _client
-            .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+            .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct: ct)
             .ConfigureAwait(false);
         return DecodeListPayload(payload).Records;
     }
@@ -343,8 +349,16 @@ public class OrmTable<T>
             },
             ["returnFieldsByFieldId"] = true,
         };
+        // A merge-keyed upsert (non-empty fieldsToMergeOn) is idempotent — the key determines record
+        // identity, so a retried 5xx/transport error converges. An empty merge list inserts and is
+        // therefore NOT idempotent.
         var payload = await _client
-            .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+            .UpdateRecordsAsync(
+                _tableId,
+                body.ToJsonString(),
+                idempotent: fieldsToMergeOn.Count > 0,
+                ct: ct
+            )
             .ConfigureAwait(false);
         var obj = ParseTree(payload);
         var records = new List<T>();

@@ -99,7 +99,13 @@ public sealed class DictTable
     {
         var pars = query.ToParameters();
         pars.Add(new("offset", offset));
-        return _client.SendAsync(HttpMethod.Get, _client.TableUrl(_tableId, pars), null, ct);
+        return _client.SendAsync(
+            HttpMethod.Get,
+            _client.TableUrl(_tableId, pars),
+            null,
+            idempotent: true,
+            ct
+        );
     }
 
     // ---- creates ------------------------------------------------------------
@@ -166,7 +172,7 @@ public sealed class DictTable
                 ["returnFieldsByFieldId"] = true,
             };
             var payload = await _client
-                .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+                .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct: ct)
                 .ConfigureAwait(false);
             foreach (var raw in Decode<RawList>(payload).Records ?? new())
                 updated.Add(ToRecord(raw));

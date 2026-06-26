@@ -268,7 +268,10 @@ class OrmTable<T : AirtableModel>(
                 put("performUpsert", buildJsonObject { put("fieldsToMergeOn", buildJsonArray { fieldsToMergeOn.forEach { add(JsonPrimitive(it)) } }) })
                 put("returnFieldsByFieldId", JsonPrimitive(true))
             }
-        val payload = client.updateRecords(tableId, body.toString())
+        // An upsert is idempotent only when it merges on a key — the merge
+        // fields determine record identity, so a retried PATCH converges. With
+        // no merge fields the upsert inserts, so it must not retry on 5xx/IO.
+        val payload = client.updateRecords(tableId, body.toString(), idempotent = fieldsToMergeOn.isNotEmpty())
         val obj = decoding { json.parseToJsonElement(payload) as JsonObject }
         val records = (obj["records"] as? JsonArray)?.map { decodeEnvelope(it) } ?: emptyList()
         val first =

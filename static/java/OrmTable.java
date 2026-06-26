@@ -317,7 +317,10 @@ public final class OrmTable<T extends AirtableModel> {
     fieldsToMergeOn.forEach(mergeOn::add);
     body.put("returnFieldsByFieldId", true);
 
-    String payload = client.updateRecords(tableId, body.toString());
+    // Idempotent only when a merge key is supplied: with fieldsToMergeOn the
+    // request targets a stable identity (safe to retry on 5xx); without it the
+    // upsert inserts, so a retry could duplicate (unified retry spec, kx1m).
+    String payload = client.updateRecords(tableId, body.toString(), !fieldsToMergeOn.isEmpty());
     JsonNode obj = parseTree(payload);
     List<T> records = new ArrayList<>();
     for (JsonNode record : obj.path("records")) {

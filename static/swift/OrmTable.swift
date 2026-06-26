@@ -201,7 +201,13 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
             returnFieldsByFieldId: true
         )
         let payload = try makeEncoder().encode(body)
-        let response = try await client.updateRecords(tableId: tableId, body: payload)
+        // Upsert is idempotent only when a merge key determines record identity;
+        // with no merge fields it behaves like an insert and must not retry 5xx.
+        let response = try await client.updateRecords(
+            tableId: tableId,
+            body: payload,
+            idempotent: !matchFieldsToMerge.isEmpty
+        )
         let env: AirtableUpsertResponse<Model>
         do {
             env = try makeDecoder().decode(AirtableUpsertResponse<Model>.self, from: response)
