@@ -815,6 +815,7 @@ def write_index(output_folder: Path, formulas: bool = True, wrappers: bool = Tru
             write.line_indented('...require("./static/formula"),')
         if wrappers:
             write.line_indented('...require("./static/airtable-model"),')
+        write.line_indented('...require("./static/errors"),')
         write.line("};")
         write.line("")
 

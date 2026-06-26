@@ -4,6 +4,7 @@ import { QueryParams, SortParameter } from "airtable/lib/query_params";
 import { ID } from "./formula";
 import { baseIdSchema, IRecord, validateRecordIds } from "./special-types";
 import { buildUrl } from "./helpers";
+import { ApiError, NetworkError, classifyAirtableJsError, classifyHttpResponse } from "./errors";
 
 /** Options for `upsert()` */
 export interface UpsertOptions {
@@ -241,7 +242,7 @@ export class AirtableTable<
 
 			const records = await this.withRetry(() => this._table.select(selectOptions).all());
 			if (records.length === 0) {
-				throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
+				throw new ApiError("NOT_FOUND", 404, `Record ${recordIdOrIdsOrOptions} not found`);
 			}
 			result = this.convertGetResult(records[0], returnAs);
 		}
@@ -573,7 +574,7 @@ export class AirtableTable<
 						body: JSON.stringify(body),
 					});
 				} catch (error) {
-					throw new Error(String(error));
+					throw new NetworkError(String(error), error);
 				}
 				if (response.ok) break;
 				// Retry transient failures with backoff, mirroring withRetry(): 429 always (rejected,
@@ -584,7 +585,10 @@ export class AirtableTable<
 					continue;
 				}
 				const text = await response.text().catch(() => "");
-				throw new Error(`Airtable upsert failed (${response.status}): ${text}`);
+				const retryAfterRaw = response.headers.get("retry-after");
+				const retryAfterSeconds =
+					retryAfterRaw !== null && !Number.isNaN(parseFloat(retryAfterRaw)) ? parseFloat(retryAfterRaw) : undefined;
+				throw classifyHttpResponse(response.status, text, retryAfterSeconds);
 			}
 			const json = (await response!.json()) as { records: { id: string }[] };
 			for (const rec of json.records) ids.push(rec.id);
@@ -638,10 +642,10 @@ export class AirtableTable<
 					await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs(attempt)));
 					continue;
 				}
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
+				// Classify the airtable.js error into our typed hierarchy. (Wrapping is still
+				// required: without re-throwing, airtable.js errors don't surface properly — you get a
+				// generic "UnhandledPromiseRejectionWarning" instead.)
+				throw classifyAirtableJsError(error);
 			}
 		}
 	}
