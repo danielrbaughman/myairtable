@@ -351,6 +351,57 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             orm_record = self._orm_cls.from_record(record)
             return orm_record
 
+    def upsert(
+        self,
+        record: ORMType | list[ORMType],
+        fields_to_merge_on: list[str] | None = None,
+    ) -> ORMType | list[ORMType]:
+        """
+        Update-or-insert one or more records.
+
+        With ``fields_to_merge_on`` (a list of field ids), Airtable matches each input record
+        against existing records by those field values via its server-side ``performUpsert`` (an
+        exact-one match updates, no match inserts, more than one match is rejected). Without it,
+        records are matched by ``id`` (those carrying an id are updated, the rest created). Batches
+        are handled by the underlying client (10 records per request).
+        """
+        self.invalidate_cache()
+        is_list = isinstance(record, list)
+        models: list[ORMType] = list(record) if isinstance(record, list) else [record]
+        if not models:
+            return []  # only reachable for an empty list input
+
+        if fields_to_merge_on is not None:
+            upsert_dicts: list[dict[str, Any]] = []
+            for model in models:
+                rec = model.to_record()
+                fields = prepare_fields_for_save(rec["fields"], self._calculated_field_ids)
+                entry: dict[str, Any] = {"fields": fields}
+                rid = rec.get("id")
+                if rid:
+                    entry["id"] = rid
+                upsert_dicts.append(entry)
+            result = self._table.batch_upsert(upsert_dicts, key_fields=fields_to_merge_on, use_field_ids=True)
+            out = [self._orm_cls.from_record(sanitize_record_dict(r)) for r in result["records"]]
+        else:
+            # No merge fields: update records that already have an id, create the rest.
+            ordered: dict[int, ORMType] = {}
+            with_id = [(i, m) for i, m in enumerate(models) if m.id]
+            without_id = [(i, m) for i, m in enumerate(models) if not m.id]
+            if with_id:
+                updated = self.update([m for _, m in with_id])
+                updated_list: list[ORMType] = updated if isinstance(updated, list) else [updated]
+                for (i, _), upd in zip(with_id, updated_list):
+                    ordered[i] = upd
+            if without_id:
+                created = self.create([m for _, m in without_id])
+                created_list: list[ORMType] = created if isinstance(created, list) else [created]
+                for (i, _), crt in zip(without_id, created_list):
+                    ordered[i] = crt
+            out = [ordered[i] for i in range(len(models))]
+
+        return out if is_list else out[0]
+
     @overload
     def delete(
         self,
