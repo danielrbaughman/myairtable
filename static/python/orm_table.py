@@ -24,7 +24,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     _field_names: Sequence[str]
 
     _cache_seconds: int = 0
-    _cache: dict[str, tuple[Any, float]] = {}
+    # Per-instance cache; always assigned in from_table() (the sole constructor). Declared as a bare
+    # annotation rather than `= {}` so instances never share a class-level mutable dict.
+    _cache: dict[str, tuple[Any, float]]
 
     @classmethod
     def from_table(
@@ -460,9 +462,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     def delete(
         self,
         record: ORMType | None = None,
-        records: list[ORMType] = [],
+        records: list[ORMType] | None = None,
         record_id: str = "",
-        record_ids: list[str] = [],
+        record_ids: list[str] | None = None,
     ) -> None:
         self.invalidate_cache()
         if record:
