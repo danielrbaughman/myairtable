@@ -35,9 +35,9 @@ public struct DictTable: Sendable {
         let offset: String?
     }
 
-    // `typecast` is intentionally omitted — matches the Rust / Py / TS
-    // behavior (Airtable defaults it to false). Cross-target typecast support
-    // is tracked at beads myairtable-hbph.
+    // `typecast` is encoded only when `true` (Airtable defaults it to false).
+    // When set, Airtable coerces string inputs to the cell's type. Exposed via
+    // the `typecast:` parameter on the public create/update methods.
     private struct CreateRequestBody: Encodable {
         struct RecordPayload: Encodable {
             let fields: [String: AirtableJSONValue]
@@ -47,6 +47,18 @@ public struct DictTable: Sendable {
         // this true means the echoed fields are keyed by field ID — matching
         // what `returnFieldsByFieldId=true` does on list/get requests.
         let returnFieldsByFieldId: Bool
+        var typecast: Bool? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case records, returnFieldsByFieldId, typecast
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(records, forKey: .records)
+            try c.encode(returnFieldsByFieldId, forKey: .returnFieldsByFieldId)
+            if typecast == true { try c.encode(true, forKey: .typecast) }
+        }
     }
 
     private struct UpdateRequestBody: Encodable {
@@ -56,6 +68,18 @@ public struct DictTable: Sendable {
         }
         let records: [RecordPayload]
         let returnFieldsByFieldId: Bool
+        var typecast: Bool? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case records, returnFieldsByFieldId, typecast
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(records, forKey: .records)
+            try c.encode(returnFieldsByFieldId, forKey: .returnFieldsByFieldId)
+            if typecast == true { try c.encode(true, forKey: .typecast) }
+        }
     }
 
     private struct DeleteSingleResponse: Codable {
@@ -184,8 +208,8 @@ public struct DictTable: Sendable {
     // MARK: - create
 
     /// Create one record and return the populated envelope.
-    public func create(_ fields: Fields) async throws -> Record {
-        let records = try await createBatch([fields])
+    public func create(_ fields: Fields, typecast: Bool = false) async throws -> Record {
+        let records = try await createBatch([fields], typecast: typecast)
         guard let first = records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "create returned no records")
         }
@@ -193,19 +217,20 @@ public struct DictTable: Sendable {
     }
 
     /// Create many records. Chunks into Airtable's 10-per-call batch limit.
-    public func create(_ fields: [Fields]) async throws -> [Record] {
+    public func create(_ fields: [Fields], typecast: Bool = false) async throws -> [Record] {
         if fields.isEmpty { return [] }
         var collected: [Record] = []
         for chunk in fields.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await createBatch(chunk))
+            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
         }
         return collected
     }
 
-    private func createBatch(_ fields: [Fields]) async throws -> [Record] {
+    private func createBatch(_ fields: [Fields], typecast: Bool = false) async throws -> [Record] {
         let body = CreateRequestBody(
             records: fields.map { CreateRequestBody.RecordPayload(fields: $0.encodeForWire()) },
-            returnFieldsByFieldId: true
+            returnFieldsByFieldId: true,
+            typecast: typecast ? true : nil
         )
         let payload = try makeEncoder().encode(body)
         let data = try await client.createRecords(tableId: tableId, body: payload)
@@ -221,9 +246,9 @@ public struct DictTable: Sendable {
     // MARK: - update
 
     /// Update a single record's field values.
-    public func update(_ recordId: String, fields: Fields) async throws -> Record {
+    public func update(_ recordId: String, fields: Fields, typecast: Bool = false) async throws -> Record {
         let payloads = [UpdateRequestBody.RecordPayload(id: recordId, fields: fields.encodeForWire())]
-        let records = try await updateBatch(payloads)
+        let records = try await updateBatch(payloads, typecast: typecast)
         guard let first = records.first else {
             throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "update returned no records")
         }
@@ -231,20 +256,30 @@ public struct DictTable: Sendable {
     }
 
     /// Update many records. Chunks into Airtable's 10-per-call batch limit.
-    public func update(_ updates: [(id: String, fields: Fields)]) async throws -> [Record] {
+    public func update(
+        _ updates: [(id: String, fields: Fields)],
+        typecast: Bool = false
+    ) async throws -> [Record] {
         if updates.isEmpty { return [] }
         let payloads = updates.map {
             UpdateRequestBody.RecordPayload(id: $0.id, fields: $0.fields.encodeForWire())
         }
         var collected: [Record] = []
         for chunk in payloads.chunked(intoBatchSize: Self.batchSize) {
-            collected.append(contentsOf: try await updateBatch(chunk))
+            collected.append(contentsOf: try await updateBatch(chunk, typecast: typecast))
         }
         return collected
     }
 
-    private func updateBatch(_ payloads: [UpdateRequestBody.RecordPayload]) async throws -> [Record] {
-        let body = UpdateRequestBody(records: payloads, returnFieldsByFieldId: true)
+    private func updateBatch(
+        _ payloads: [UpdateRequestBody.RecordPayload],
+        typecast: Bool = false
+    ) async throws -> [Record] {
+        let body = UpdateRequestBody(
+            records: payloads,
+            returnFieldsByFieldId: true,
+            typecast: typecast ? true : nil
+        )
         let payload = try makeEncoder().encode(body)
         let data = try await client.updateRecords(tableId: tableId, body: payload)
         let env: RawListResponse

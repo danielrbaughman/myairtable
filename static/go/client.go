@@ -361,11 +361,14 @@ func (c *Client) updateRecords(ctx context.Context, tableID string, updates []re
 }
 
 // upsertRecords PATCHes records with performUpsert, matching on fieldsToMergeOn.
-func (c *Client) upsertRecords(ctx context.Context, tableID string, records []recordPayload, matchFields []string) ([]rawRecord, error) {
+func (c *Client) upsertRecords(ctx context.Context, tableID string, records []recordPayload, matchFields []string, typecast bool) ([]rawRecord, error) {
 	reqBody := map[string]any{
 		"records":               records,
 		"returnFieldsByFieldId": true,
 		"performUpsert":         map[string]any{"fieldsToMergeOn": matchFields},
+	}
+	if typecast {
+		reqBody["typecast"] = true
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {

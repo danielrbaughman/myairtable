@@ -6,6 +6,24 @@ import { baseIdSchema, IRecord, validateRecordIds } from "./special-types";
 import { buildUrl } from "./helpers";
 import { ApiError, NetworkError, classifyAirtableJsError, classifyHttpResponse } from "./errors";
 
+/** Options for `create()` */
+export interface CreateOptions {
+	/**
+	 * When true, Airtable coerces string inputs to each cell's type (creates missing select options,
+	 * parses dates/numbers, etc.). Default false — existing behavior is unchanged.
+	 */
+	typecast?: boolean;
+}
+
+/** Options for `update()` */
+export interface UpdateOptions {
+	/**
+	 * When true, Airtable coerces string inputs to each cell's type (creates missing select options,
+	 * parses dates/numbers, etc.). Default false — existing behavior is unchanged.
+	 */
+	typecast?: boolean;
+}
+
 /** Options for `upsert()` */
 export interface UpsertOptions {
 	/**
@@ -13,6 +31,11 @@ export interface UpsertOptions {
 	 * When omitted, upsert falls back to matching by record `id` (create when absent, update when present).
 	 */
 	fieldsToMergeOn?: string[];
+	/**
+	 * When true, Airtable coerces string inputs to each cell's type (creates missing select options,
+	 * parses dates/numbers, etc.). Default false — existing behavior is unchanged.
+	 */
+	typecast?: boolean;
 }
 
 /** Options for fetching records via `get()` */
@@ -311,21 +334,24 @@ export class AirtableTable<
 	//#region CREATE
 
 	/** Create a single record */
-	public async create(record: Mdl): Promise<Mdl>;
+	public async create(record: Mdl, options?: CreateOptions): Promise<Mdl>;
 	/** Create multiple records */
-	public async create(records: Mdl[]): Promise<Mdl[]>;
+	public async create(records: Mdl[], options?: CreateOptions): Promise<Mdl[]>;
 	/** Create a single record from an Airtable.js Record */
-	public async create(record: ATRecord<FldSt>): Promise<ATRecord<FldSt>>;
+	public async create(record: ATRecord<FldSt>, options?: CreateOptions): Promise<ATRecord<FldSt>>;
 	/** Create multiple records from Airtable.js Records */
-	public async create(records: ATRecord<FldSt>[]): Promise<ATRecord<FldSt>[]>;
+	public async create(records: ATRecord<FldSt>[], options?: CreateOptions): Promise<ATRecord<FldSt>[]>;
 	/** Create a single record from a simple interface */
-	public async create(record: IRecord<FldSt>): Promise<IRecord<FldSt>>;
+	public async create(record: IRecord<FldSt>, options?: CreateOptions): Promise<IRecord<FldSt>>;
 	/** Create multiple records from simple interfaces */
-	public async create(records: IRecord<FldSt>[]): Promise<IRecord<FldSt>[]>;
+	public async create(records: IRecord<FldSt>[], options?: CreateOptions): Promise<IRecord<FldSt>[]>;
 	public async create(
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
+		options?: CreateOptions,
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
 		this.invalidateCache();
+		// Only pass typecast to airtable.js when true (omit when false), matching the API's default.
+		const writeOptions = options?.typecast ? { typecast: true } : undefined;
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
@@ -340,7 +366,7 @@ export class AirtableTable<
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
 					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
-					const batchCreated = await this.withRetry(() => this._table.create(batch), false);
+					const batchCreated = await this.withRetry(() => this._table.create(batch, writeOptions as any), false);
 					createdRecords.push(...batchCreated);
 				}
 				return createdRecords.map((r) => this.recordCtor(r));
@@ -351,7 +377,7 @@ export class AirtableTable<
 					const batch = records.slice(i, i + 10);
 					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
 					const batchCreated = await this.withRetry(
-						() => this._table.create(batch.map((r) => this.toWritableRecord(r)) as any),
+						() => this._table.create(batch.map((r) => this.toWritableRecord(r)) as any, writeOptions as any),
 						false,
 					);
 					createdRecords.push(...batchCreated);
@@ -365,14 +391,14 @@ export class AirtableTable<
 			if (inputType === "model") {
 				const payload = (recordOrRecords as Mdl).toCreateRecordData();
 				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
-				const createdRecords = await this.withRetry(() => this._table.create([payload]), false);
+				const createdRecords = await this.withRetry(() => this._table.create([payload], writeOptions as any), false);
 				return this.recordCtor(createdRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords as any])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
 				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
 				const createdRecords = await this.withRetry(
-					() => this._table.create([this.toWritableRecord(record)] as any),
+					() => this._table.create([this.toWritableRecord(record)] as any, writeOptions as any),
 					false,
 				);
 				if (isUsingFieldNames) this.mapToNames(createdRecords as ATRecord<FldSt>[]);
@@ -387,21 +413,24 @@ export class AirtableTable<
 	//#region UPDATE
 
 	/** Update a single record */
-	public async update(record: Mdl): Promise<Mdl>;
+	public async update(record: Mdl, options?: UpdateOptions): Promise<Mdl>;
 	/** Update multiple records */
-	public async update(records: Mdl[]): Promise<Mdl[]>;
+	public async update(records: Mdl[], options?: UpdateOptions): Promise<Mdl[]>;
 	/** Update a single record from an Airtable.js Record */
-	public async update(record: ATRecord<FldSt>): Promise<ATRecord<FldSt>>;
+	public async update(record: ATRecord<FldSt>, options?: UpdateOptions): Promise<ATRecord<FldSt>>;
 	/** Update multiple records from Airtable.js Records */
-	public async update(records: ATRecord<FldSt>[]): Promise<ATRecord<FldSt>[]>;
+	public async update(records: ATRecord<FldSt>[], options?: UpdateOptions): Promise<ATRecord<FldSt>[]>;
 	/** Update a single record from a simple interface */
-	public async update(record: IRecord<FldSt>): Promise<IRecord<FldSt>>;
+	public async update(record: IRecord<FldSt>, options?: UpdateOptions): Promise<IRecord<FldSt>>;
 	/** Update multiple records from simple interfaces */
-	public async update(records: IRecord<FldSt>[]): Promise<IRecord<FldSt>[]>;
+	public async update(records: IRecord<FldSt>[], options?: UpdateOptions): Promise<IRecord<FldSt>[]>;
 	public async update(
 		recordOrRecords: Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[],
+		options?: UpdateOptions,
 	): Promise<Mdl | Mdl[] | ATRecord<FldSt> | ATRecord<FldSt>[] | IRecord<FldSt> | IRecord<FldSt>[]> {
 		this.invalidateCache();
+		// Only pass typecast to airtable.js when true (omit when false), matching the API's default.
+		const writeOptions = options?.typecast ? { typecast: true } : undefined;
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && (recordOrRecords as any[]).length === 0) return [] as any;
 		const firstItem = isArray ? (recordOrRecords as any[])[0] : recordOrRecords;
@@ -415,7 +444,7 @@ export class AirtableTable<
 				const payloads = items.map((r: Mdl) => r.toUpdateRecordData());
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
-					const batchUpdated = await this.withRetry(() => this._table.update(batch));
+					const batchUpdated = await this.withRetry(() => this._table.update(batch, writeOptions as any));
 					updatedRecords.push(...batchUpdated);
 				}
 				return updatedRecords.map((r) => this.recordCtor(r));
@@ -425,7 +454,7 @@ export class AirtableTable<
 				for (let i = 0; i < records.length; i += 10) {
 					const batch = records.slice(i, i + 10);
 					const batchUpdated = await this.withRetry(() =>
-						this._table.update(batch.map((r) => this.toWritableRecord(r)) as any),
+						this._table.update(batch.map((r) => this.toWritableRecord(r)) as any[], writeOptions as any),
 					);
 					updatedRecords.push(...batchUpdated);
 				}
@@ -437,12 +466,14 @@ export class AirtableTable<
 		} else {
 			if (inputType === "model") {
 				const payload = (recordOrRecords as Mdl).toUpdateRecordData();
-				const updatedRecords = await this.withRetry(() => this._table.update([payload]));
+				const updatedRecords = await this.withRetry(() => this._table.update([payload], writeOptions as any));
 				return this.recordCtor(updatedRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords as any])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
-				const updatedRecords = await this.withRetry(() => this._table.update([this.toWritableRecord(record)] as any));
+				const updatedRecords = await this.withRetry(() =>
+					this._table.update([this.toWritableRecord(record)] as any[], writeOptions as any),
+				);
 				if (isUsingFieldNames) this.mapToNames(updatedRecords as ATRecord<FldSt>[]);
 				const updated = updatedRecords[0] as ATRecord<FldSt>;
 				return inputType === "interface" ? this.toInterface(updated) : updated;
@@ -481,7 +512,12 @@ export class AirtableTable<
 		// IDs/names (server-side performUpsert). airtable.js doesn't expose this, so issue the PATCH
 		// directly, then rehydrate the upserted records (returned in input order) via get().
 		if (options?.fieldsToMergeOn && options.fieldsToMergeOn.length > 0) {
-			const orderedIds = await this.performMergeUpsert(records, inputType, options.fieldsToMergeOn);
+			const orderedIds = await this.performMergeUpsert(
+				records,
+				inputType,
+				options.fieldsToMergeOn,
+				options.typecast ?? false,
+			);
 			const fetched = (await this.get(orderedIds, { returnAs: inputType } as any)) as any[];
 			const byId = new Map<string, any>();
 			for (const item of fetched) byId.set((item as any).id, item);
@@ -515,9 +551,10 @@ export class AirtableTable<
 		}
 
 		// Batch update and create
+		const typecast = options?.typecast ?? false;
 		const [updatedRecords, createdRecords] = await Promise.all([
-			toUpdate.length > 0 ? this.update(toUpdate as any) : Promise.resolve([]),
-			toCreate.length > 0 ? this.create(toCreate as any) : Promise.resolve([]),
+			toUpdate.length > 0 ? this.update(toUpdate as any, { typecast }) : Promise.resolve([]),
+			toCreate.length > 0 ? this.create(toCreate as any, { typecast }) : Promise.resolve([]),
 		]);
 		const upsertedRecords = [
 			...(Array.isArray(updatedRecords) ? updatedRecords : [updatedRecords]),
@@ -542,6 +579,7 @@ export class AirtableTable<
 		records: any[],
 		inputType: "model" | "record" | "interface",
 		fieldsToMergeOn: string[],
+		typecast: boolean,
 	): Promise<string[]> {
 		const payloads: { id?: string; fields: any }[] =
 			inputType === "model"
@@ -563,7 +601,7 @@ export class AirtableTable<
 				performUpsert: { fieldsToMergeOn },
 				records: batch.map((p) => (p.id ? { id: p.id, fields: p.fields } : { fields: p.fields })),
 				returnFieldsByFieldId: true,
-				typecast: false,
+				typecast,
 			};
 			let response: Response | undefined;
 			for (let attempt = 0; ; attempt++) {

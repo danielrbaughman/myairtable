@@ -177,9 +177,9 @@ public class OrmTable<T>
     /// Create one record. Pass a fresh model built with an object initializer (e.g.
     /// <c>new PrimaryModel { PrimaryKey = "x" }</c>); only writable fields are sent.
     /// </summary>
-    public async Task<T> CreateAsync(T model, CancellationToken ct = default)
+    public async Task<T> CreateAsync(T model, bool typecast = false, CancellationToken ct = default)
     {
-        var created = await CreateBatchAsync(new[] { model.ToCreateFields() }, ct)
+        var created = await CreateBatchAsync(new[] { model.ToCreateFields() }, typecast, ct)
             .ConfigureAwait(false);
         if (created.Count == 0)
             throw new AirtableException.ApiError(
@@ -190,24 +190,27 @@ public class OrmTable<T>
     }
 
     /// <summary>Create many records. Chunks into Airtable's batch limit (10).</summary>
-    public async Task<List<T>> CreateAsync(IReadOnlyList<T> models, CancellationToken ct = default)
+    public async Task<List<T>> CreateAsync(
+        IReadOnlyList<T> models,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
     {
         var payloads = models.Select(m => m.ToCreateFields()).ToList();
         var collected = new List<T>(models.Count);
         foreach (var batch in Chunk(payloads))
-            collected.AddRange(await CreateBatchAsync(batch, ct).ConfigureAwait(false));
+            collected.AddRange(await CreateBatchAsync(batch, typecast, ct).ConfigureAwait(false));
         return collected;
     }
 
     private async Task<List<T>> CreateBatchAsync(
         IReadOnlyList<Dictionary<string, JsonNode?>> records,
+        bool typecast,
         CancellationToken ct
     )
     {
         if (records.Count == 0)
             return new List<T>();
-        // `typecast` is intentionally omitted — Airtable's server-side default is false,
-        // matching the other targets.
         var body = new JsonObject
         {
             ["records"] = new JsonArray(
@@ -217,6 +220,10 @@ public class OrmTable<T>
             ),
             ["returnFieldsByFieldId"] = true,
         };
+        // Only emit `typecast` when opted in — Airtable's server-side default is false, matching
+        // the other targets.
+        if (typecast)
+            body["typecast"] = true;
         var payload = await _client
             .CreateRecordsAsync(_tableId, body.ToJsonString(), ct)
             .ConfigureAwait(false);
@@ -229,9 +236,9 @@ public class OrmTable<T>
     /// Update a single model. Diffs against the model's snapshot and sends only fields that changed
     /// since the last <see cref="AirtableModel.TakeSnapshot"/>.
     /// </summary>
-    public async Task<T> UpdateAsync(T model, CancellationToken ct = default)
+    public async Task<T> UpdateAsync(T model, bool typecast = false, CancellationToken ct = default)
     {
-        var updated = await UpdateAsync(new[] { model }, ct).ConfigureAwait(false);
+        var updated = await UpdateAsync(new[] { model }, typecast, ct).ConfigureAwait(false);
         if (updated.Count == 0)
             throw new AirtableException.ApiError(
                 "UNEXPECTED_RESPONSE",
@@ -245,7 +252,11 @@ public class OrmTable<T>
     /// fields already match server state, so they are never PATCHed — they come back unchanged, in
     /// their original positions.
     /// </summary>
-    public async Task<List<T>> UpdateAsync(IReadOnlyList<T> models, CancellationToken ct = default)
+    public async Task<List<T>> UpdateAsync(
+        IReadOnlyList<T> models,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
     {
         if (models.Count == 0)
             return new List<T>();
@@ -271,7 +282,7 @@ public class OrmTable<T>
         }
         var updated = new List<T>();
         foreach (var batch in Chunk(dirtyPatches))
-            updated.AddRange(await UpdateBatchAsync(batch, ct).ConfigureAwait(false));
+            updated.AddRange(await UpdateBatchAsync(batch, typecast, ct).ConfigureAwait(false));
         for (var i = 0; i < dirtyIndices.Count && i < updated.Count; i++)
             results[dirtyIndices[i]] = updated[i];
         var ordered = new List<T>(results.Length);
@@ -290,10 +301,11 @@ public class OrmTable<T>
     public async Task<T> UpdateFieldsAsync(
         string recordId,
         Dictionary<string, JsonNode?> fields,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
-        var updated = await UpdateBatchAsync(new[] { (recordId, fields) }, ct)
+        var updated = await UpdateBatchAsync(new[] { (recordId, fields) }, typecast, ct)
             .ConfigureAwait(false);
         if (updated.Count == 0)
             throw new AirtableException.ApiError(
@@ -305,6 +317,7 @@ public class OrmTable<T>
 
     private async Task<List<T>> UpdateBatchAsync(
         IReadOnlyList<(string Id, Dictionary<string, JsonNode?> Fields)> patches,
+        bool typecast,
         CancellationToken ct
     )
     {
@@ -322,6 +335,8 @@ public class OrmTable<T>
             ),
             ["returnFieldsByFieldId"] = true,
         };
+        if (typecast)
+            body["typecast"] = true;
         var payload = await _client
             .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct: ct)
             .ConfigureAwait(false);
@@ -337,6 +352,7 @@ public class OrmTable<T>
     public async Task<UpsertResult> UpsertAsync(
         T model,
         IReadOnlyList<string> fieldsToMergeOn,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
@@ -353,6 +369,8 @@ public class OrmTable<T>
             },
             ["returnFieldsByFieldId"] = true,
         };
+        if (typecast)
+            body["typecast"] = true;
         // A merge-keyed upsert (non-empty fieldsToMergeOn) is idempotent — the key determines record
         // identity, so a retried 5xx/transport error converges. An empty merge list inserts and is
         // therefore NOT idempotent.

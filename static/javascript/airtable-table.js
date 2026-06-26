@@ -179,9 +179,13 @@ class AirtableTable {
 	/**
 	 * Create record(s).
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 * @param {{ typecast?: boolean }} [options] - When `typecast` is true, Airtable coerces string
+	 *   inputs to each cell's type. Default false — existing behavior is unchanged.
 	 */
-	async create(recordOrRecords) {
+	async create(recordOrRecords, options) {
 		this.invalidateCache();
+		// Only pass typecast to airtable.js when true (omit when false), matching the API's default.
+		const writeOptions = options?.typecast ? { typecast: true } : undefined;
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
@@ -196,7 +200,7 @@ class AirtableTable {
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
 					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
-					const batchCreated = await this.withRetry(() => this._table.create(batch), false);
+					const batchCreated = await this.withRetry(() => this._table.create(batch, writeOptions), false);
 					createdRecords.push(...batchCreated);
 				}
 				return createdRecords.map((r) => this.recordCtor(r));
@@ -207,7 +211,11 @@ class AirtableTable {
 					const batch = records.slice(i, i + 10);
 					// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
 					const batchCreated = await this.withRetry(
-						() => this._table.create(batch.map((r) => this.toWritableRecord(r))),
+						() =>
+							this._table.create(
+								batch.map((r) => this.toWritableRecord(r)),
+								writeOptions,
+							),
 						false,
 					);
 					createdRecords.push(...batchCreated);
@@ -219,13 +227,16 @@ class AirtableTable {
 			if (inputType === "model") {
 				const payload = recordOrRecords.toCreateRecordData();
 				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
-				const createdRecords = await this.withRetry(() => this._table.create([payload]), false);
+				const createdRecords = await this.withRetry(() => this._table.create([payload], writeOptions), false);
 				return this.recordCtor(createdRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
 				// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
-				const createdRecords = await this.withRetry(() => this._table.create([this.toWritableRecord(record)]), false);
+				const createdRecords = await this.withRetry(
+					() => this._table.create([this.toWritableRecord(record)], writeOptions),
+					false,
+				);
 				if (isUsingFieldNames) this.mapToNames(createdRecords);
 				const created = createdRecords[0];
 				return inputType === "interface" ? this.toInterface(created) : created;
@@ -240,9 +251,13 @@ class AirtableTable {
 	/**
 	 * Update record(s).
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 * @param {{ typecast?: boolean }} [options] - When `typecast` is true, Airtable coerces string
+	 *   inputs to each cell's type. Default false — existing behavior is unchanged.
 	 */
-	async update(recordOrRecords) {
+	async update(recordOrRecords, options) {
 		this.invalidateCache();
+		// Only pass typecast to airtable.js when true (omit when false), matching the API's default.
+		const writeOptions = options?.typecast ? { typecast: true } : undefined;
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
@@ -256,7 +271,7 @@ class AirtableTable {
 				const payloads = items.map((r) => r.toUpdateRecordData());
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
-					const batchUpdated = await this.withRetry(() => this._table.update(batch));
+					const batchUpdated = await this.withRetry(() => this._table.update(batch, writeOptions));
 					updatedRecords.push(...batchUpdated);
 				}
 				return updatedRecords.map((r) => this.recordCtor(r));
@@ -266,7 +281,10 @@ class AirtableTable {
 				for (let i = 0; i < records.length; i += 10) {
 					const batch = records.slice(i, i + 10);
 					const batchUpdated = await this.withRetry(() =>
-						this._table.update(batch.map((r) => this.toWritableRecord(r))),
+						this._table.update(
+							batch.map((r) => this.toWritableRecord(r)),
+							writeOptions,
+						),
 					);
 					updatedRecords.push(...batchUpdated);
 				}
@@ -276,12 +294,14 @@ class AirtableTable {
 		} else {
 			if (inputType === "model") {
 				const payload = recordOrRecords.toUpdateRecordData();
-				const updatedRecords = await this.withRetry(() => this._table.update([payload]));
+				const updatedRecords = await this.withRetry(() => this._table.update([payload], writeOptions));
 				return this.recordCtor(updatedRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
-				const updatedRecords = await this.withRetry(() => this._table.update([this.toWritableRecord(record)]));
+				const updatedRecords = await this.withRetry(() =>
+					this._table.update([this.toWritableRecord(record)], writeOptions),
+				);
 				if (isUsingFieldNames) this.mapToNames(updatedRecords);
 				const updated = updatedRecords[0];
 				return inputType === "interface" ? this.toInterface(updated) : updated;
@@ -296,6 +316,8 @@ class AirtableTable {
 	/**
 	 * Upsert record(s) - creates if doesn't exist, updates if exists.
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
+	 * @param {{ fieldsToMergeOn?: string[], typecast?: boolean }} [options] - When `typecast` is true,
+	 *   Airtable coerces string inputs to each cell's type. Default false — existing behavior is unchanged.
 	 */
 	async upsert(recordOrRecords, options) {
 		this.invalidateCache();
@@ -309,7 +331,12 @@ class AirtableTable {
 		// IDs/names (server-side performUpsert). airtable.js doesn't expose this, so issue the PATCH
 		// directly, then rehydrate the upserted records (returned in input order) via get().
 		if (options?.fieldsToMergeOn && options.fieldsToMergeOn.length > 0) {
-			const orderedIds = await this.performMergeUpsert(records, inputType, options.fieldsToMergeOn);
+			const orderedIds = await this.performMergeUpsert(
+				records,
+				inputType,
+				options.fieldsToMergeOn,
+				options.typecast ?? false,
+			);
 			const fetched = await this.get(orderedIds, { returnAs: inputType });
 			const byId = new Map();
 			for (const item of fetched) byId.set(item.id, item);
@@ -343,9 +370,10 @@ class AirtableTable {
 		}
 
 		// Batch update and create
+		const typecast = options?.typecast ?? false;
 		const [updatedRecords, createdRecords] = await Promise.all([
-			toUpdate.length > 0 ? this.update(toUpdate) : Promise.resolve([]),
-			toCreate.length > 0 ? this.create(toCreate) : Promise.resolve([]),
+			toUpdate.length > 0 ? this.update(toUpdate, { typecast }) : Promise.resolve([]),
+			toCreate.length > 0 ? this.create(toCreate, { typecast }) : Promise.resolve([]),
 		]);
 		const upsertedRecords = [
 			...(Array.isArray(updatedRecords) ? updatedRecords : [updatedRecords]),
@@ -364,7 +392,7 @@ class AirtableTable {
 	 * in batches of 10. Returns the upserted record IDs in input order. Records carrying an `id` are
 	 * matched by id; the rest by the merge fields (one match updates, none inserts, many → 422).
 	 */
-	async performMergeUpsert(records, inputType, fieldsToMergeOn) {
+	async performMergeUpsert(records, inputType, fieldsToMergeOn, typecast) {
 		const payloads =
 			inputType === "model"
 				? records.map((r) => ({ id: r.id, fields: r.toCreateRecordData(true).fields }))
@@ -385,7 +413,7 @@ class AirtableTable {
 				performUpsert: { fieldsToMergeOn },
 				records: batch.map((p) => (p.id ? { id: p.id, fields: p.fields } : { fields: p.fields })),
 				returnFieldsByFieldId: true,
-				typecast: false,
+				typecast,
 			};
 			let response;
 			for (let attempt = 0; ; attempt++) {

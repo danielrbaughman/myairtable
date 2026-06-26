@@ -15,7 +15,11 @@ public static class ModelOps
     /// — construct a fresh model and pass it to the table's <c>CreateAsync(...)</c> to insert a
     /// brand-new row.
     /// </summary>
-    public static Task<T> SaveAsync<T>(T model, CancellationToken ct = default)
+    public static Task<T> SaveAsync<T>(
+        T model,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
         where T : AirtableModel
     {
         var client = model.RequireAttachedClient();
@@ -24,7 +28,7 @@ public static class ModelOps
                 "UNSAVED_MODEL",
                 "Cannot save a model without an id; use the table's CreateAsync(...) instead"
             );
-        return new OrmTable<T>(model.TableId, client).UpdateAsync(model, ct);
+        return new OrmTable<T>(model.TableId, client).UpdateAsync(model, typecast, ct);
     }
 
     /// <summary>Re-fetch the model from the server. Returns a fresh instance.</summary>

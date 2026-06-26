@@ -115,11 +115,15 @@ public sealed class DictTable
 
     // ---- creates ------------------------------------------------------------
 
-    public async Task<Record> CreateAsync(Fields fields, CancellationToken ct = default) =>
-        (await CreateAsync(new[] { fields }, ct).ConfigureAwait(false))[0];
+    public async Task<Record> CreateAsync(
+        Fields fields,
+        bool typecast = false,
+        CancellationToken ct = default
+    ) => (await CreateAsync(new[] { fields }, typecast, ct).ConfigureAwait(false))[0];
 
     public async Task<List<Record>> CreateAsync(
         IReadOnlyList<Fields> fields,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
@@ -135,6 +139,8 @@ public sealed class DictTable
                 ),
                 ["returnFieldsByFieldId"] = true,
             };
+            if (typecast)
+                body["typecast"] = true;
             var payload = await _client
                 .CreateRecordsAsync(_tableId, body.ToJsonString(), ct)
                 .ConfigureAwait(false);
@@ -149,11 +155,17 @@ public sealed class DictTable
     public async Task<Record> UpdateAsync(
         string recordId,
         Fields fields,
+        bool typecast = false,
         CancellationToken ct = default
-    ) => (await UpdateAsync(new[] { new Update(recordId, fields) }, ct).ConfigureAwait(false))[0];
+    ) =>
+        (
+            await UpdateAsync(new[] { new Update(recordId, fields) }, typecast, ct)
+                .ConfigureAwait(false)
+        )[0];
 
     public async Task<List<Record>> UpdateAsync(
         IReadOnlyList<Update> updates,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
@@ -176,6 +188,8 @@ public sealed class DictTable
                 ),
                 ["returnFieldsByFieldId"] = true,
             };
+            if (typecast)
+                body["typecast"] = true;
             var payload = await _client
                 .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct: ct)
                 .ConfigureAwait(false);

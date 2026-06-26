@@ -67,8 +67,9 @@ func (t *Table[T, PT]) GetMany(ctx context.Context, q *Query) ([]PT, error) {
 }
 
 // CreateOne inserts a single model, hydrating it from the response.
-func (t *Table[T, PT]) CreateOne(ctx context.Context, m PT) (PT, error) {
-	recs, err := t.client.createRecords(ctx, t.tableID, []map[string]json.RawMessage{toCreateFields(m)}, false)
+func (t *Table[T, PT]) CreateOne(ctx context.Context, m PT, opts ...WriteOption) (PT, error) {
+	o := resolveWriteOptions(opts)
+	recs, err := t.client.createRecords(ctx, t.tableID, []map[string]json.RawMessage{toCreateFields(m)}, o.typecast)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +83,13 @@ func (t *Table[T, PT]) CreateOne(ctx context.Context, m PT) (PT, error) {
 }
 
 // CreateMany inserts multiple models (batched), hydrating each from the response.
-func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT) ([]PT, error) {
+func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT, opts ...WriteOption) ([]PT, error) {
+	o := resolveWriteOptions(opts)
 	payload := make([]map[string]json.RawMessage, 0, len(models))
 	for _, m := range models {
 		payload = append(payload, toCreateFields(m))
 	}
-	recs, err := t.client.createRecords(ctx, t.tableID, payload, false)
+	recs, err := t.client.createRecords(ctx, t.tableID, payload, o.typecast)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +98,12 @@ func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT) ([]PT, error
 
 // UpdateOne PATCHes a model's dirty fields (or all writable fields when it has
 // no snapshot), hydrating it from the response. The model carries its own ID.
-func (t *Table[T, PT]) UpdateOne(ctx context.Context, m PT) (PT, error) {
+func (t *Table[T, PT]) UpdateOne(ctx context.Context, m PT, opts ...WriteOption) (PT, error) {
 	if m.ID() == "" {
 		return nil, ErrNotFound
 	}
-	recs, err := t.client.updateRecords(ctx, t.tableID, []recordPayload{{ID: m.ID(), Fields: dirtyFields(m)}}, false)
+	o := resolveWriteOptions(opts)
+	recs, err := t.client.updateRecords(ctx, t.tableID, []recordPayload{{ID: m.ID(), Fields: dirtyFields(m)}}, o.typecast)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +117,8 @@ func (t *Table[T, PT]) UpdateOne(ctx context.Context, m PT) (PT, error) {
 }
 
 // UpdateMany PATCHes multiple models (batched), each by its own ID.
-func (t *Table[T, PT]) UpdateMany(ctx context.Context, models []PT) ([]PT, error) {
+func (t *Table[T, PT]) UpdateMany(ctx context.Context, models []PT, opts ...WriteOption) ([]PT, error) {
+	o := resolveWriteOptions(opts)
 	payload := make([]recordPayload, 0, len(models))
 	for _, m := range models {
 		if m.ID() == "" {
@@ -122,7 +126,7 @@ func (t *Table[T, PT]) UpdateMany(ctx context.Context, models []PT) ([]PT, error
 		}
 		payload = append(payload, recordPayload{ID: m.ID(), Fields: dirtyFields(m)})
 	}
-	recs, err := t.client.updateRecords(ctx, t.tableID, payload, false)
+	recs, err := t.client.updateRecords(ctx, t.tableID, payload, o.typecast)
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +154,9 @@ func (t *Table[T, PT]) DeleteOne(ctx context.Context, id string) error {
 }
 
 // Upsert inserts or updates m, matching existing records on matchFields (field IDs).
-func (t *Table[T, PT]) Upsert(ctx context.Context, m PT, matchFields []string) (PT, error) {
-	recs, err := t.client.upsertRecords(ctx, t.tableID, []recordPayload{{Fields: toCreateFields(m)}}, matchFields)
+func (t *Table[T, PT]) Upsert(ctx context.Context, m PT, matchFields []string, opts ...WriteOption) (PT, error) {
+	o := resolveWriteOptions(opts)
+	recs, err := t.client.upsertRecords(ctx, t.tableID, []recordPayload{{Fields: toCreateFields(m)}}, matchFields, o.typecast)
 	if err != nil {
 		return nil, err
 	}

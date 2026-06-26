@@ -121,15 +121,29 @@ struct AirtableListResponse<M: Decodable>: Decodable {
 
 /// Body for POST /records: `{records: [{fields: {<fieldId>: <value>}}], returnFieldsByFieldId: true}`.
 ///
-/// `typecast` is intentionally omitted — Airtable's server-side default is
-/// false, which matches the Rust / Python / TypeScript targets' behavior.
-/// Cross-target typecast support is tracked at beads myairtable-hbph.
+/// `typecast` is encoded only when `true` (Airtable's server-side default is
+/// false). When set, Airtable coerces string inputs to the cell's type
+/// (creating missing select options, parsing dates/numbers, etc.). Exposed via
+/// the `typecast:` parameter on the public create methods.
 struct AirtableCreateBody: Encodable {
     struct Record: Encodable {
         let fields: [String: AirtableJSONValue]
     }
     let records: [Record]
     let returnFieldsByFieldId: Bool
+    /// Omitted from the wire body when nil/false; emitted as `true` when set.
+    var typecast: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case records, returnFieldsByFieldId, typecast
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(records, forKey: .records)
+        try c.encode(returnFieldsByFieldId, forKey: .returnFieldsByFieldId)
+        if typecast == true { try c.encode(true, forKey: .typecast) }
+    }
 }
 
 /// Body for PATCH /records: `{records: [{id, fields: <dirty>}], returnFieldsByFieldId: true}`.
@@ -140,6 +154,19 @@ struct AirtableUpdateBody: Encodable {
     }
     let records: [Record]
     let returnFieldsByFieldId: Bool
+    /// Omitted from the wire body when nil/false; emitted as `true` when set.
+    var typecast: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case records, returnFieldsByFieldId, typecast
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(records, forKey: .records)
+        try c.encode(returnFieldsByFieldId, forKey: .returnFieldsByFieldId)
+        if typecast == true { try c.encode(true, forKey: .typecast) }
+    }
 }
 
 /// Body for POST /records with upsert: same as create + `performUpsert: { fieldsToMergeOn: [...] }`.
@@ -153,6 +180,20 @@ struct AirtableUpsertBody: Encodable {
     let records: [Record]
     let performUpsert: PerformUpsert
     let returnFieldsByFieldId: Bool
+    /// Omitted from the wire body when nil/false; emitted as `true` when set.
+    var typecast: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case records, performUpsert, returnFieldsByFieldId, typecast
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(records, forKey: .records)
+        try c.encode(performUpsert, forKey: .performUpsert)
+        try c.encode(returnFieldsByFieldId, forKey: .returnFieldsByFieldId)
+        if typecast == true { try c.encode(true, forKey: .typecast) }
+    }
 }
 
 /// Upsert response adds `createdRecords: [recordId]` / `updatedRecords: [recordId]`

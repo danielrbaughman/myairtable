@@ -149,41 +149,50 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
 
     /// Create a new record from an ORM model. Only writable fields are sent;
     /// computed fields and record metadata are omitted.
-    pub async fn create_one(&self, model: &T) -> Result<T, AirtableError> {
+    pub async fn create_one(&self, model: &T, typecast: bool) -> Result<T, AirtableError> {
         self.invalidate_cache();
         let fields = model.to_save_json();
         let record = self
             .client
-            .create_record(self.table_id, &fields, true)
+            .create_record(self.table_id, &fields, true, typecast)
             .await?;
         self.record_to_model(record)
     }
 
     /// Create multiple records from ORM models.
-    pub async fn create_many(&self, models: &[T]) -> Result<Vec<T>, AirtableError> {
+    pub async fn create_many(&self, models: &[T], typecast: bool) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
         let payloads: Vec<serde_json::Value> = models.iter().map(|m| m.to_save_json()).collect();
         let raw = self
             .client
-            .create_records(self.table_id, &payloads, true)
+            .create_records(self.table_id, &payloads, true, typecast)
             .await?;
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
 
     /// Update an existing record. Sends the model's dirty diff if a snapshot
     /// exists, otherwise the full set of writable fields.
-    pub async fn update_one(&self, record_id: &RecordId, model: &T) -> Result<T, AirtableError> {
+    pub async fn update_one(
+        &self,
+        record_id: &RecordId,
+        model: &T,
+        typecast: bool,
+    ) -> Result<T, AirtableError> {
         self.invalidate_cache();
         let fields = model.to_save_json();
         let record = self
             .client
-            .update_record(self.table_id, record_id, &fields, true)
+            .update_record(self.table_id, record_id, &fields, true, typecast)
             .await?;
         self.record_to_model(record)
     }
 
     /// Update multiple records.
-    pub async fn update_many(&self, records: &[(&RecordId, &T)]) -> Result<Vec<T>, AirtableError> {
+    pub async fn update_many(
+        &self,
+        records: &[(&RecordId, &T)],
+        typecast: bool,
+    ) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
         let payloads: Vec<(&RecordId, serde_json::Value)> = records
             .iter()
@@ -193,7 +202,7 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
             payloads.iter().map(|(id, v)| (*id, v)).collect();
         let raw = self
             .client
-            .update_records(self.table_id, &borrowed, true)
+            .update_records(self.table_id, &borrowed, true, typecast)
             .await?;
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
@@ -219,6 +228,7 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
         &self,
         model: &mut T,
         fields_to_merge_on: Option<&[&str]>,
+        typecast: bool,
     ) -> Result<(), AirtableError> {
         self.invalidate_cache();
         let fields = model.to_save_json();
@@ -227,7 +237,7 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
                 let id = model.get_id().clone();
                 let recs = [(id.as_ref(), &fields)];
                 self.client
-                    .upsert_records(self.table_id, &recs, merge, true)
+                    .upsert_records(self.table_id, &recs, merge, true, typecast)
                     .await?
                     .into_iter()
                     .next()
@@ -239,13 +249,13 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
             }
             None if model.is_new() => {
                 self.client
-                    .create_record(self.table_id, &fields, true)
+                    .create_record(self.table_id, &fields, true, typecast)
                     .await?
             }
             None => {
                 let id = model.get_id().as_ref().expect("Record has no ID");
                 self.client
-                    .update_record(self.table_id, id, &fields, true)
+                    .update_record(self.table_id, id, &fields, true, typecast)
                     .await?
             }
         };
@@ -259,6 +269,7 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
         &self,
         models: &[T],
         fields_to_merge_on: &[&str],
+        typecast: bool,
     ) -> Result<Vec<T>, AirtableError> {
         self.invalidate_cache();
         if models.is_empty() {
@@ -272,7 +283,7 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
             .collect();
         let records = self
             .client
-            .upsert_records(self.table_id, &recs, fields_to_merge_on, true)
+            .upsert_records(self.table_id, &recs, fields_to_merge_on, true, typecast)
             .await?;
         records
             .into_iter()

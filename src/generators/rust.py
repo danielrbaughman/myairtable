@@ -575,7 +575,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line('/// println!("{:?}", record);')
             write.line("///")
             write.line(f"/// let new = {model_name} {{ ..Default::default() }};")
-            write.line(f"/// let created = airtable.{table_snake}.create_one(&new).await?;")
+            write.line(f"/// let created = airtable.{table_snake}.create_one(&new, false).await?;")
             write.line("/// ```")
             write.derive("Debug", "Clone", "Serialize", "Deserialize", "Default")
             write.line(f"pub struct {model_name} {{")
@@ -798,19 +798,19 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             )
             write.doc_comment("Create a new record.", indent=1)
             write.line_indented(
-                f"pub async fn create_one(&self, model: &{model}) -> Result<{model}, AirtableError> {{ self.orm.create_one(model).await }}"
+                f"pub async fn create_one(&self, model: &{model}, typecast: bool) -> Result<{model}, AirtableError> {{ self.orm.create_one(model, typecast).await }}"
             )
             write.doc_comment("Create multiple records.", indent=1)
             write.line_indented(
-                f"pub async fn create_many(&self, models: &[{model}]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(models).await }}"
+                f"pub async fn create_many(&self, models: &[{model}], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(models, typecast).await }}"
             )
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
-                f"pub async fn update_one(&self, record_id: &RecordId, model: &{model}) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, model).await }}"
+                f"pub async fn update_one(&self, record_id: &RecordId, model: &{model}, typecast: bool) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, model, typecast).await }}"
             )
             write.doc_comment("Update multiple records.", indent=1)
             write.line_indented(
-                f"pub async fn update_many(&self, records: &[(&RecordId, &{model})]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records).await }}"
+                f"pub async fn update_many(&self, records: &[(&RecordId, &{model})], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records, typecast).await }}"
             )
             write.doc_comment(
                 "Upsert a model, updated in place. With `fields_to_merge_on`, Airtable matches an "
@@ -819,14 +819,14 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
                 indent=1,
             )
             write.line_indented(
-                f"pub async fn upsert(&self, model: &mut {model}, fields_to_merge_on: Option<&[&str]>) -> Result<(), AirtableError> {{ self.orm.upsert(model, fields_to_merge_on).await }}"
+                f"pub async fn upsert(&self, model: &mut {model}, fields_to_merge_on: Option<&[&str]>, typecast: bool) -> Result<(), AirtableError> {{ self.orm.upsert(model, fields_to_merge_on, typecast).await }}"
             )
             write.doc_comment(
                 "Upsert multiple models in one batched server-side performUpsert, matching by `fields_to_merge_on`. Returns the upserted models.",
                 indent=1,
             )
             write.line_indented(
-                f"pub async fn upsert_many(&self, models: &[{model}], fields_to_merge_on: &[&str]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.upsert_many(models, fields_to_merge_on).await }}"
+                f"pub async fn upsert_many(&self, models: &[{model}], fields_to_merge_on: &[&str], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.upsert_many(models, fields_to_merge_on, typecast).await }}"
             )
             write.doc_comment("Delete a record.", indent=1)
             write.line_indented(

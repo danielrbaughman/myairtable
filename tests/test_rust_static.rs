@@ -6,6 +6,52 @@ fn creates_client() {
 }
 
 #[test]
+fn apply_write_options_adds_typecast_only_when_set() {
+    // The create/update/upsert write methods all build their JSON body and then call
+    // `apply_write_options`, which is where typecast reaches the request body. Assert that helper
+    // directly so the body shaping is verified without standing up an HTTP server.
+
+    // Default (typecast = false): the body MUST NOT carry "typecast" (no behavior change).
+    let mut body = serde_json::json!({ "fields": { "Name": "x" } });
+    AirtableClient::apply_write_options(&mut body, false, false);
+    assert!(
+        body.get("typecast").is_none(),
+        "typecast must be absent by default, got: {body}"
+    );
+    assert!(
+        body.get("returnFieldsByFieldId").is_none(),
+        "returnFieldsByFieldId must be absent when use_field_ids=false"
+    );
+
+    // typecast = true: the body carries "typecast": true.
+    let mut body = serde_json::json!({ "fields": { "Name": "x" } });
+    AirtableClient::apply_write_options(&mut body, false, true);
+    assert_eq!(
+        body.get("typecast"),
+        Some(&serde_json::json!(true)),
+        "typecast must be true when opted in, got: {body}"
+    );
+
+    // The two flags are independent: use_field_ids on, typecast off.
+    let mut body = serde_json::json!({ "records": [] });
+    AirtableClient::apply_write_options(&mut body, true, false);
+    assert_eq!(
+        body.get("returnFieldsByFieldId"),
+        Some(&serde_json::json!(true))
+    );
+    assert!(body.get("typecast").is_none());
+
+    // Both on.
+    let mut body = serde_json::json!({ "records": [] });
+    AirtableClient::apply_write_options(&mut body, true, true);
+    assert_eq!(
+        body.get("returnFieldsByFieldId"),
+        Some(&serde_json::json!(true))
+    );
+    assert_eq!(body.get("typecast"), Some(&serde_json::json!(true)));
+}
+
+#[test]
 fn retry_delay_honors_retry_after_and_caps_backoff() {
     // Retry-After path: the (capped) value plus a small bounded jitter of up to value/4.
     // With jitter=0.0 the value is used directly.

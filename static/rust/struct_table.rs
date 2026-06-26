@@ -135,7 +135,7 @@ impl StructTable {
     ) -> Result<Record, AirtableError> {
         self.invalidate_cache();
         self.client
-            .create_record(self.table_id, fields, use_field_ids)
+            .create_record(self.table_id, fields, use_field_ids, false)
             .await
     }
 
@@ -147,7 +147,7 @@ impl StructTable {
     ) -> Result<Vec<Record>, AirtableError> {
         self.invalidate_cache();
         self.client
-            .create_records(self.table_id, records, use_field_ids)
+            .create_records(self.table_id, records, use_field_ids, false)
             .await
     }
 
@@ -160,7 +160,7 @@ impl StructTable {
     ) -> Result<Record, AirtableError> {
         self.invalidate_cache();
         self.client
-            .update_record(self.table_id, record_id, fields, use_field_ids)
+            .update_record(self.table_id, record_id, fields, use_field_ids, false)
             .await
     }
 
@@ -172,7 +172,7 @@ impl StructTable {
     ) -> Result<Vec<Record>, AirtableError> {
         self.invalidate_cache();
         self.client
-            .update_records(self.table_id, records, use_field_ids)
+            .update_records(self.table_id, records, use_field_ids, false)
             .await
     }
 
@@ -187,12 +187,12 @@ impl StructTable {
         match record_id {
             Some(id) => {
                 self.client
-                    .update_record(self.table_id, id, fields, use_field_ids)
+                    .update_record(self.table_id, id, fields, use_field_ids, false)
                     .await
             }
             None => {
                 self.client
-                    .create_record(self.table_id, fields, use_field_ids)
+                    .create_record(self.table_id, fields, use_field_ids, false)
                     .await
             }
         }

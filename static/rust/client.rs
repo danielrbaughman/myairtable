@@ -82,6 +82,19 @@ impl AirtableClient {
         format!("https://api.airtable.com/v0/{}/{}", self.base_id, table_id)
     }
 
+    /// Apply the optional write flags to a request `body`, mutating it in place: set
+    /// `returnFieldsByFieldId` when `use_field_ids`, and set `typecast` ONLY when `typecast` is true
+    /// (omitted otherwise, so default behavior is unchanged and matches the other language clients).
+    /// Pure given its inputs, so the typecast/field-id body shaping can be unit-tested without a server.
+    pub fn apply_write_options(body: &mut serde_json::Value, use_field_ids: bool, typecast: bool) {
+        if use_field_ids {
+            body["returnFieldsByFieldId"] = serde_json::json!(true);
+        }
+        if typecast {
+            body["typecast"] = serde_json::json!(true);
+        }
+    }
+
     /// Backoff delay (seconds) before the next retry, with `jitter` in [0, 1). Two paths:
     ///
     /// - Server `Retry-After` present: honor it, but CAP at [`RETRY_MAX_DELAY_SECS`] (a broken
@@ -266,12 +279,11 @@ impl AirtableClient {
         table_id: &str,
         fields: &U,
         use_field_ids: bool,
+        typecast: bool,
     ) -> Result<Record, AirtableError> {
         let url = self.table_url(table_id);
         let mut body = serde_json::json!({ "fields": fields });
-        if use_field_ids {
-            body["returnFieldsByFieldId"] = serde_json::json!(true);
-        }
+        Self::apply_write_options(&mut body, use_field_ids, typecast);
 
         let response = self
             .send_with_retry(
@@ -299,12 +311,11 @@ impl AirtableClient {
         record_id: &RecordId,
         fields: &U,
         use_field_ids: bool,
+        typecast: bool,
     ) -> Result<Record, AirtableError> {
         let url = format!("{}/{}", self.table_url(table_id), record_id);
         let mut body = serde_json::json!({ "fields": fields });
-        if use_field_ids {
-            body["returnFieldsByFieldId"] = serde_json::json!(true);
-        }
+        Self::apply_write_options(&mut body, use_field_ids, typecast);
 
         let response = self
             .send_with_retry(
@@ -355,6 +366,7 @@ impl AirtableClient {
         table_id: &str,
         records: &[U],
         use_field_ids: bool,
+        typecast: bool,
     ) -> Result<Vec<Record>, AirtableError> {
         let url = self.table_url(table_id);
         let mut results = Vec::with_capacity(records.len());
@@ -365,9 +377,7 @@ impl AirtableClient {
                 .map(|f| serde_json::json!({"fields": f}))
                 .collect();
             let mut body = serde_json::json!({ "records": recs });
-            if use_field_ids {
-                body["returnFieldsByFieldId"] = serde_json::json!(true);
-            }
+            Self::apply_write_options(&mut body, use_field_ids, typecast);
 
             let response = self
                 .send_with_retry(
@@ -402,6 +412,7 @@ impl AirtableClient {
         table_id: &str,
         records: &[(&RecordId, &U)],
         use_field_ids: bool,
+        typecast: bool,
     ) -> Result<Vec<Record>, AirtableError> {
         let url = self.table_url(table_id);
         let mut results = Vec::with_capacity(records.len());
@@ -417,9 +428,7 @@ impl AirtableClient {
                 })
                 .collect();
             let mut body = serde_json::json!({ "records": recs });
-            if use_field_ids {
-                body["returnFieldsByFieldId"] = serde_json::json!(true);
-            }
+            Self::apply_write_options(&mut body, use_field_ids, typecast);
 
             let response = self
                 .send_with_retry(
@@ -457,6 +466,7 @@ impl AirtableClient {
         records: &[(Option<&RecordId>, &U)],
         fields_to_merge_on: &[&str],
         use_field_ids: bool,
+        typecast: bool,
     ) -> Result<Vec<Record>, AirtableError> {
         let url = self.table_url(table_id);
         let mut results = Vec::with_capacity(records.len());
@@ -476,9 +486,7 @@ impl AirtableClient {
                 "records": recs,
                 "performUpsert": { "fieldsToMergeOn": fields_to_merge_on },
             });
-            if use_field_ids {
-                body["returnFieldsByFieldId"] = serde_json::json!(true);
-            }
+            Self::apply_write_options(&mut body, use_field_ids, typecast);
 
             // Upsert is idempotent only when a merge key identifies records (a retried insert with
             // no merge key would create duplicates). With merge fields, a retried PATCH converges to
