@@ -286,8 +286,17 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             if len(records) == 0:
                 return []
             self._orm_cls.batch_save(records)
-            new_records = self.get(record_ids=[r.id for r in records])
-            return new_records
+            fetched = self.get(record_ids=[r.id for r in records])
+            fetched_list: list[ORMType] = fetched if isinstance(fetched, list) else [fetched]
+            # get(record_ids=...) re-fetches via all(formula=ID.in_list(...)), which returns
+            # Airtable's natural (table/view) order, NOT the input order. Re-key by id so the
+            # returned list matches the input order: callers rely on positional correspondence
+            # (notably upsert()'s no-merge branch, which zips this result against its inputs).
+            by_id = {rec.id: rec for rec in fetched_list}
+            missing = [r.id for r in records if r.id not in by_id]
+            if missing:
+                raise RuntimeError(f"create: re-fetch did not return created record(s): {missing}")
+            return [by_id[r.id] for r in records]
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
