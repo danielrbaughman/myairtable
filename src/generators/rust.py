@@ -812,8 +812,22 @@ def write_lib(base: Base, output_folder: Path, formulas: bool = True, wrappers: 
             write.line_indented(
                 f"pub async fn update_many(&self, records: &[(&RecordId, &{model})]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.update_many(records).await }}"
             )
-            write.doc_comment("Upsert a model. Creates if no ID, updates if ID exists.", indent=1)
-            write.line_indented(f"pub async fn upsert(&self, model: &mut {model}) -> Result<(), AirtableError> {{ self.orm.upsert(model).await }}")
+            write.doc_comment(
+                "Upsert a model, updated in place. With `fields_to_merge_on`, Airtable matches an "
+                "existing record by those field values (server-side performUpsert); otherwise it "
+                "creates if no ID / updates by ID.",
+                indent=1,
+            )
+            write.line_indented(
+                f"pub async fn upsert(&self, model: &mut {model}, fields_to_merge_on: Option<&[&str]>) -> Result<(), AirtableError> {{ self.orm.upsert(model, fields_to_merge_on).await }}"
+            )
+            write.doc_comment(
+                "Upsert multiple models in one batched server-side performUpsert, matching by `fields_to_merge_on`. Returns the upserted models.",
+                indent=1,
+            )
+            write.line_indented(
+                f"pub async fn upsert_many(&self, models: &[{model}], fields_to_merge_on: &[&str]) -> Result<Vec<{model}>, AirtableError> {{ self.orm.upsert_many(models, fields_to_merge_on).await }}"
+            )
             write.doc_comment("Delete a record.", indent=1)
             write.line_indented(
                 "pub async fn delete_one(&self, record_id: &RecordId) -> Result<(), AirtableError> { self.orm.delete_one(record_id).await }"

@@ -377,6 +377,64 @@ impl AirtableClient {
         Ok(results)
     }
 
+    /// Upsert records via Airtable's `performUpsert` (match each record against existing ones by
+    /// `fields_to_merge_on`), in batches of 10. Records with an `id` are matched by id; the rest by
+    /// the merge fields (exactly-one match updates, no match inserts, more than one match errors).
+    pub async fn upsert_records<U: Serialize>(
+        &self,
+        table_id: &str,
+        records: &[(Option<&RecordId>, &U)],
+        fields_to_merge_on: &[&str],
+        use_field_ids: bool,
+    ) -> Result<Vec<Record>, AirtableError> {
+        let url = self.table_url(table_id);
+        let mut results = Vec::with_capacity(records.len());
+
+        for chunk in records.chunks(10) {
+            let recs: Vec<_> = chunk
+                .iter()
+                .map(|(id, fields)| {
+                    let mut rec = serde_json::json!({ "fields": fields });
+                    if let Some(id) = id {
+                        rec["id"] = serde_json::json!(id);
+                    }
+                    rec
+                })
+                .collect();
+            let mut body = serde_json::json!({
+                "records": recs,
+                "performUpsert": { "fieldsToMergeOn": fields_to_merge_on },
+            });
+            if use_field_ids {
+                body["returnFieldsByFieldId"] = serde_json::json!(true);
+            }
+
+            let response = self
+                .send_with_retry(
+                    self.client
+                        .patch(&url)
+                        .headers(self.headers.clone())
+                        .json(&body),
+                )
+                .await?;
+
+            if !response.status().is_success() {
+                let status = response.status().as_u16();
+                let body = response.text().await.unwrap_or_default();
+                return Err(AirtableError::from_response(status, body));
+            }
+
+            let batch: serde_json::Value = response.json().await?;
+            if let Some(recs) = batch["records"].as_array() {
+                for rec in recs {
+                    results.push(serde_json::from_value(rec.clone())?);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Delete multiple records in batches of 10 (Airtable API limit).
     pub async fn delete_records(
         &self,

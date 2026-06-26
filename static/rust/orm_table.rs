@@ -198,20 +198,8 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }
 
-    /// Upsert a single record. Creates if no ID, updates if ID exists.
-    pub async fn upsert(&self, model: &mut T) -> Result<(), AirtableError> {
-        self.invalidate_cache();
-        let fields = model.to_save_json();
-        let record = if model.is_new() {
-            self.client
-                .create_record(self.table_id, &fields, true)
-                .await?
-        } else {
-            let id = model.get_id().as_ref().expect("Record has no ID");
-            self.client
-                .update_record(self.table_id, id, &fields, true)
-                .await?
-        };
+    /// Install a freshly-returned `record` into `model` in place, preserving the ORM meta + snapshot.
+    fn install_record(&self, model: &mut T, record: Record) -> Result<(), AirtableError> {
         let result = self.record_to_model(record)?;
         let meta = model.meta_mut();
         let client = meta.client.take();
@@ -222,6 +210,74 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
         meta.table_id = table_id;
         model.take_snapshot();
         Ok(())
+    }
+
+    /// Upsert a single record, updating `model` in place with the server result. With
+    /// `fields_to_merge_on`, Airtable matches an existing record by those field values (server-side
+    /// performUpsert); otherwise it creates when the model is new / updates by id.
+    pub async fn upsert(
+        &self,
+        model: &mut T,
+        fields_to_merge_on: Option<&[&str]>,
+    ) -> Result<(), AirtableError> {
+        self.invalidate_cache();
+        let fields = model.to_save_json();
+        let record = match fields_to_merge_on {
+            Some(merge) => {
+                let id = model.get_id().clone();
+                let recs = [(id.as_ref(), &fields)];
+                self.client
+                    .upsert_records(self.table_id, &recs, merge, true)
+                    .await?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| AirtableError::Api {
+                        status: 500,
+                        code: "UNEXPECTED_RESPONSE".to_string(),
+                        body: "upsert returned no records".to_string(),
+                    })?
+            }
+            None if model.is_new() => {
+                self.client
+                    .create_record(self.table_id, &fields, true)
+                    .await?
+            }
+            None => {
+                let id = model.get_id().as_ref().expect("Record has no ID");
+                self.client
+                    .update_record(self.table_id, id, &fields, true)
+                    .await?
+            }
+        };
+        self.install_record(model, record)
+    }
+
+    /// Upsert multiple records in one batched server-side performUpsert, matching by
+    /// `fields_to_merge_on`. Returns the upserted models. (For id-based batch create/update, use
+    /// `create_many` / `update_many`.)
+    pub async fn upsert_many(
+        &self,
+        models: &[T],
+        fields_to_merge_on: &[&str],
+    ) -> Result<Vec<T>, AirtableError> {
+        self.invalidate_cache();
+        if models.is_empty() {
+            return Ok(Vec::new());
+        }
+        let fields: Vec<_> = models.iter().map(|m| m.to_save_json()).collect();
+        let recs: Vec<(Option<&RecordId>, &serde_json::Value)> = models
+            .iter()
+            .zip(fields.iter())
+            .map(|(m, f)| (m.get_id().as_ref(), f))
+            .collect();
+        let records = self
+            .client
+            .upsert_records(self.table_id, &recs, fields_to_merge_on, true)
+            .await?;
+        records
+            .into_iter()
+            .map(|r| self.record_to_model(r))
+            .collect()
     }
 
     /// Delete a record.
