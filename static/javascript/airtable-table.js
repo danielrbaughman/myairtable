@@ -348,13 +348,25 @@ class AirtableTable {
 	 * Upsert record(s) - creates if doesn't exist, updates if exists.
 	 * @param {object|object[]} recordOrRecords - Single record or array of records
 	 */
-	async upsert(recordOrRecords) {
+	async upsert(recordOrRecords, options) {
 		this.invalidateCache();
 		const isArray = Array.isArray(recordOrRecords);
 		if (isArray && recordOrRecords.length === 0) return [];
 		const firstItem = isArray ? recordOrRecords[0] : recordOrRecords;
 		const inputType = this.detectInputType(firstItem);
 		const records = isArray ? recordOrRecords : [recordOrRecords];
+
+		// Merge-field upsert: Airtable matches each record against existing ones by the given field
+		// IDs/names (server-side performUpsert). airtable.js doesn't expose this, so issue the PATCH
+		// directly, then rehydrate the upserted records (returned in input order) via get().
+		if (options?.fieldsToMergeOn && options.fieldsToMergeOn.length > 0) {
+			const orderedIds = await this.performMergeUpsert(records, inputType, options.fieldsToMergeOn);
+			const fetched = await this.get(orderedIds, { returnAs: inputType });
+			const byId = new Map();
+			for (const item of fetched) byId.set(item.id, item);
+			const ordered = orderedIds.map((id) => byId.get(id));
+			return isArray ? ordered : ordered[0];
+		}
 
 		// Batch fetch all records to check which exist
 		const recordIds = records.map((r) => r.id).filter((id) => !!id);
@@ -387,6 +399,50 @@ class AirtableTable {
 			return isArray ? asInterfaces : asInterfaces[0];
 		}
 		return isArray ? upsertedRecords : upsertedRecords[0];
+	}
+
+	/**
+	 * Issue a server-side performUpsert PATCH for the given records, matching by `fieldsToMergeOn`,
+	 * in batches of 10. Returns the upserted record IDs in input order. Records carrying an `id` are
+	 * matched by id; the rest by the merge fields (one match updates, none inserts, many → 422).
+	 */
+	async performMergeUpsert(records, inputType, fieldsToMergeOn) {
+		const payloads =
+			inputType === "model"
+				? records.map((r) => ({ id: r.id, fields: r.toCreateRecordData(true).fields }))
+				: this.mapToIds(records).map((r) => ({ id: r.id, fields: this.toWritableRecord(r).fields }));
+
+		const apiKey = this._options.apiKey ?? process.env.AIRTABLE_API_KEY;
+		const endpoint = this._options.endpointUrl ?? "https://api.airtable.com";
+		const url = `${endpoint}/v0/${this.baseId}/${encodeURIComponent(this.id)}`;
+
+		const ids = [];
+		for (let i = 0; i < payloads.length; i += 10) {
+			const batch = payloads.slice(i, i + 10);
+			const body = {
+				performUpsert: { fieldsToMergeOn },
+				records: batch.map((p) => (p.id ? { id: p.id, fields: p.fields } : { fields: p.fields })),
+				returnFieldsByFieldId: true,
+				typecast: false,
+			};
+			let response;
+			try {
+				response = await fetch(url, {
+					method: "PATCH",
+					headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				});
+			} catch (error) {
+				throw new Error(String(error));
+			}
+			if (!response.ok) {
+				const text = await response.text().catch(() => "");
+				throw new Error(`Airtable upsert failed (${response.status}): ${text}`);
+			}
+			const json = await response.json();
+			for (const rec of json.records) ids.push(rec.id);
+		}
+		return ids;
 	}
 
 	//#endregion
