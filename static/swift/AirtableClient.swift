@@ -35,6 +35,11 @@ public actor AirtableClient {
     /// must never hang the call.
     public static let maxRetryDelay: TimeInterval = 30.0
 
+    /// Upper bound (seconds) on the jitter added to a server-provided `Retry-After`, so concurrent
+    /// callers honoring the same value don't wake in lockstep and re-stampede the API (JR-M6, mirrors
+    /// the Kotlin/Java targets' RETRY_AFTER_JITTER_CAP).
+    public static let retryAfterJitterCap: TimeInterval = 1.0
+
     // MARK: - Init
 
     public init(
@@ -169,8 +174,10 @@ public actor AirtableClient {
             if isRetryable && attempt < maxRetries {
                 let nanos: UInt64
                 if let retryAfter = retryAfterSeconds(from: http) {
-                    // Honor (and cap) a server-provided Retry-After.
-                    nanos = UInt64(retryAfter * 1_000_000_000)
+                    // Honor (and cap) a server-provided Retry-After, plus bounded jitter so concurrent
+                    // callers don't wake in lockstep and re-stampede the API (JR-M6).
+                    let jitter = Double.random(in: 0..<1) * min(retryAfter, Self.retryAfterJitterCap)
+                    nanos = UInt64(min(retryAfter + jitter, Self.maxRetryDelay) * 1_000_000_000)
                 } else {
                     nanos = backoffNanoseconds(attempt: attempt)
                 }
