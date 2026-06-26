@@ -104,6 +104,22 @@ impl AirtableClient {
         }
     }
 
+    /// The retry DECISION for an HTTP status: should the loop retry an attempt that produced `status`,
+    /// given whether the request is `idempotent` and how many retries have already happened (`attempt`)?
+    ///
+    /// - HTTP 429: ALWAYS retry (the request was rejected, nothing was applied).
+    /// - HTTP 5xx: retry ONLY IF `idempotent` (a non-idempotent op may have been partially applied).
+    /// - Any other status (2xx/3xx/4xx): never retry.
+    ///
+    /// In all cases retrying stops once `attempt` reaches [`RETRY_MAX_ATTEMPTS`]. Pure + deterministic,
+    /// so it can be unit-tested exhaustively. (Transport errors use the same idempotency rule inline in
+    /// [`Self::send_with_retry`], gated on `e.is_timeout() || e.is_connect()`.)
+    pub fn should_retry(status: u16, idempotent: bool, attempt: u32) -> bool {
+        let is_429 = status == 429;
+        let is_5xx = (500..600).contains(&status);
+        (is_429 || (is_5xx && idempotent)) && attempt < RETRY_MAX_ATTEMPTS
+    }
+
     /// Send a request, retrying transient failures with jittered, capped exponential backoff (honoring
     /// a 429 `Retry-After`), up to [`RETRY_MAX_ATTEMPTS`] times. The retry policy depends on whether the
     /// caller classified the request as `idempotent`:
@@ -131,10 +147,8 @@ impl AirtableClient {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
                     let is_429 = status == 429;
-                    let is_5xx = (500..600).contains(&status);
-                    // 429 always retries; 5xx only when the request is idempotent.
-                    let retryable = is_429 || (is_5xx && idempotent);
-                    if retryable && attempt < RETRY_MAX_ATTEMPTS {
+                    // 429 always retries; 5xx only when the request is idempotent; capped at MAX.
+                    if Self::should_retry(status, idempotent, attempt) {
                         let delay = Self::retry_delay_secs(
                             parse_retry_after(resp.headers()),
                             attempt,

@@ -58,6 +58,14 @@ func NewClient(apiKey, baseID string, cacheSeconds float64) *Client {
 	}
 }
 
+// setHTTPClient swaps the underlying *http.Client. It is an unexported,
+// test-only seam: production code never calls it, so the default behavior of
+// NewClient (its own *http.Client with a 60s timeout) is unchanged. A test can
+// install a client whose Transport is a scripted http.RoundTripper to drive the
+// retry policy hermetically — a RoundTripper sees every request regardless of
+// the (hardcoded) apiBaseURL, so no URL plumbing is needed.
+func (c *Client) setHTTPClient(hc *http.Client) { c.httpClient = hc }
+
 // BaseID returns the configured base ID.
 func (c *Client) BaseID() string { return c.baseID }
 

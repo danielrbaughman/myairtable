@@ -46,6 +46,59 @@ fn retry_delay_honors_retry_after_and_caps_backoff() {
 }
 
 #[test]
+fn should_retry_429_regardless_of_idempotency() {
+    // 429 means the request was rejected and nothing was applied, so it is always safe to retry
+    // whether or not the operation is idempotent.
+    assert!(AirtableClient::should_retry(429, true, 0));
+    assert!(AirtableClient::should_retry(429, false, 0));
+}
+
+#[test]
+fn should_retry_5xx_only_when_idempotent() {
+    // A non-idempotent op (e.g. POST create) may have been partially applied on a 5xx, so it must
+    // NOT be retried; an idempotent op is safe to retry.
+    for status in [500u16, 502, 503, 599] {
+        assert!(
+            AirtableClient::should_retry(status, true, 0),
+            "idempotent {status} should retry"
+        );
+        assert!(
+            !AirtableClient::should_retry(status, false, 0),
+            "non-idempotent {status} must not retry"
+        );
+    }
+}
+
+#[test]
+fn should_retry_never_retries_success_or_4xx() {
+    // 2xx/3xx and non-429 4xx are terminal regardless of idempotency.
+    for status in [200u16, 201, 204, 301, 400, 401, 403, 404, 422] {
+        assert!(
+            !AirtableClient::should_retry(status, true, 0),
+            "idempotent {status} must not retry"
+        );
+        assert!(
+            !AirtableClient::should_retry(status, false, 0),
+            "non-idempotent {status} must not retry"
+        );
+    }
+    // 499 is below the 5xx range and must not retry even though 599 (in range) does.
+    assert!(!AirtableClient::should_retry(499, true, 0));
+}
+
+#[test]
+fn should_retry_respects_attempt_cap() {
+    // RETRY_MAX_ATTEMPTS is 5: attempts 0..=4 may retry, attempt 5+ must stop, even for a 429.
+    assert!(AirtableClient::should_retry(429, false, 4));
+    assert!(!AirtableClient::should_retry(429, false, 5));
+    assert!(!AirtableClient::should_retry(429, true, 5));
+    // The cap also applies to retryable 5xx on idempotent requests.
+    assert!(AirtableClient::should_retry(503, true, 4));
+    assert!(!AirtableClient::should_retry(503, true, 5));
+    assert!(!AirtableClient::should_retry(503, true, 100));
+}
+
+#[test]
 fn vec_or_value_deserializes_single() {
     let json = r#""hello""#;
     let val: VecOrValue<String> = serde_json::from_str(json).unwrap();
