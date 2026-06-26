@@ -45,6 +45,14 @@ pub fn XOR(args: &[&str]) -> String {
 // Helpers
 // =============================================================================
 
+/// Escape a string for embedding in a double-quoted Airtable formula literal. Backslashes are
+/// escaped FIRST, then quotes — otherwise a trailing `\` would leave the closing quote live and the
+/// remainder of the formula would be misparsed. (Regex escapes like `\d` become `\\d` in the formula
+/// source, which Airtable's parser unescapes back to `\d` before the regex engine sees them.)
+fn escape_formula_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn wrap_field(field: &str, case_sensitive: bool, trim: bool) -> String {
     let mut v = field.to_string();
     if trim {
@@ -57,7 +65,7 @@ fn wrap_field(field: &str, case_sensitive: bool, trim: bool) -> String {
 }
 
 fn wrap_value_str(value: &str, case_sensitive: bool, trim: bool) -> String {
-    let escaped = value.replace('"', "\\\"");
+    let escaped = escape_formula_string(value);
     let mut v = format!("\"{escaped}\"");
     if trim {
         v = format!("TRIM({v})");
@@ -198,7 +206,7 @@ pub trait FormulaTextOps: FormulaField {
 
     /// Regex match.
     fn regex_match(&self, pattern: &str) -> String {
-        let escaped = pattern.replace('"', "\\\"");
+        let escaped = escape_formula_string(pattern);
         format!("REGEX_MATCH({},\"{escaped}\")", self.field())
     }
 }

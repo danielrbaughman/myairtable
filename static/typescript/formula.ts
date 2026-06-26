@@ -78,7 +78,7 @@ function LEN(value: string | Field): string {
 	return `LEN(${wrapValue(value)})`;
 }
 function REGEX(value: string | Field, pattern: string): string {
-	return `REGEX(${wrapValue(value)}, "${pattern}")`;
+	return `REGEX(${wrapValue(value)}, "${escapeFormulaString(pattern)}")`;
 }
 function DATETIME_PARSE(value: string | Field): string {
 	if (value instanceof Field) {
@@ -95,10 +95,10 @@ function DATETIME_DIFF(left: string | Field, right: string | Field, unit: string
 	return `DATETIME_DIFF(${leftVal}, ${rightVal}, '${unit}')`;
 }
 function SUBSTITUTE(value: string | Field, oldText: string, newText: string): string {
-	return `SUBSTITUTE(${wrapValue(value)}, "${oldText}", "${newText}")`;
+	return `SUBSTITUTE(${wrapValue(value)}, "${escapeFormulaString(oldText)}", "${escapeFormulaString(newText)}")`;
 }
 function ARRAYJOIN(value: string | Field, separator: string = ", "): string {
-	return `ARRAYJOIN(${wrapValue(value)}, "${separator}")`;
+	return `ARRAYJOIN(${wrapValue(value)}, "${escapeFormulaString(separator)}")`;
 }
 
 /** Record ID formulas */
