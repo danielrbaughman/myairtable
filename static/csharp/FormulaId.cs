@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace MyAirtable;
 
 /// <summary>Formula builder for record IDs.</summary>

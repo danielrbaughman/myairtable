@@ -1,3 +1,5 @@
+using System;
+
 namespace MyAirtable;
 
 /// <summary>The Airtable REST envelope for one record: id, createdTime, and typed fields.</summary>
