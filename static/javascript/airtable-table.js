@@ -5,6 +5,13 @@ const { baseIdSchema, validateRecordIds } = require("./special-types");
 const { buildUrl } = require("./helpers");
 
 class AirtableTable {
+	/** Max retry attempts for transient (429 / 5xx) failures. */
+	static RETRY_MAX_ATTEMPTS = 5;
+	/** Base backoff in ms; doubled each attempt. */
+	static RETRY_BASE_MS = 500;
+	/** Cap for a single backoff wait, in ms. */
+	static RETRY_MAX_DELAY_MS = 30_000;
+
 	/** Underlying Airtable.js Table instance */
 	_table;
 	id;
@@ -99,15 +106,11 @@ class AirtableTable {
 			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
-			try {
-				const records = await this._table.select(selectOptions).all();
-				if (records.length === 0) {
-					throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
-				}
-				result = this.convertGetResult(records[0], returnAs);
-			} catch (error) {
-				throw new Error(String(error));
+			const records = await this.withRetry(() => this._table.select(selectOptions).all());
+			if (records.length === 0) {
+				throw new Error(`Record ${recordIdOrIdsOrOptions} not found`);
 			}
+			result = this.convertGetResult(records[0], returnAs);
 		}
 
 		// Multiple records by IDs
@@ -133,12 +136,8 @@ class AirtableTable {
 			if (options?.userLocale) selectOptions.userLocale = options.userLocale;
 			selectOptions.returnFieldsByFieldId = options?.useFieldIds ?? returnAs === "model";
 
-			try {
-				const records = await this._table.select(selectOptions).all();
-				result = this.convertGetResults([...records], returnAs);
-			} catch (error) {
-				throw new Error(String(error));
-			}
+			const records = await this.withRetry(() => this._table.select(selectOptions).all());
+			result = this.convertGetResults([...records], returnAs);
 		}
 
 		// Query with options (first parameter is options object)
@@ -161,12 +160,8 @@ class AirtableTable {
 			if (queryOptions.userLocale) selectOptions.userLocale = queryOptions.userLocale;
 			selectOptions.returnFieldsByFieldId = queryOptions.useFieldIds ?? returnAs === "model";
 
-			try {
-				const records = await this._table.select(selectOptions).all();
-				result = this.convertGetResults([...records], returnAs);
-			} catch (error) {
-				throw new Error(String(error));
-			}
+			const records = await this.withRetry(() => this._table.select(selectOptions).all());
+			result = this.convertGetResults([...records], returnAs);
 		}
 
 		// Cache store
@@ -199,15 +194,8 @@ class AirtableTable {
 				const payloads = items.map((r) => r.toCreateRecordData());
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
-					try {
-						const batchCreated = await this._table.create(batch);
-						createdRecords.push(...batchCreated);
-					} catch (error) {
-						// I am aware of how stupid this looks,
-						// but without it, errors from Airtable's API don't surface properly;
-						// you get a generic "UnhandledPromiseRejectionWarning" instead.
-						throw new Error(String(error));
-					}
+					const batchCreated = await this.withRetry(() => this._table.create(batch));
+					createdRecords.push(...batchCreated);
 				}
 				return createdRecords.map((r) => this.recordCtor(r));
 			} else {
@@ -215,15 +203,10 @@ class AirtableTable {
 				const isUsingFieldNames = this.isUsingFieldNames(records);
 				for (let i = 0; i < records.length; i += 10) {
 					const batch = records.slice(i, i + 10);
-					try {
-						const batchCreated = await this._table.create(batch.map((r) => this.toWritableRecord(r)));
-						createdRecords.push(...batchCreated);
-					} catch (error) {
-						// I am aware of how stupid this looks,
-						// but without it, errors from Airtable's API don't surface properly;
-						// you get a generic "UnhandledPromiseRejectionWarning" instead.
-						throw new Error(String(error));
-					}
+					const batchCreated = await this.withRetry(() =>
+						this._table.create(batch.map((r) => this.toWritableRecord(r))),
+					);
+					createdRecords.push(...batchCreated);
 				}
 				if (isUsingFieldNames) this.mapToNames(createdRecords);
 				return inputType === "interface" ? createdRecords.map((r) => this.toInterface(r)) : createdRecords;
@@ -231,29 +214,15 @@ class AirtableTable {
 		} else {
 			if (inputType === "model") {
 				const payload = recordOrRecords.toCreateRecordData();
-				try {
-					const createdRecords = await this._table.create([payload]);
-					return this.recordCtor(createdRecords[0]);
-				} catch (error) {
-					// I am aware of how stupid this looks,
-					// but without it, errors from Airtable's API don't surface properly;
-					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
-				}
+				const createdRecords = await this.withRetry(() => this._table.create([payload]));
+				return this.recordCtor(createdRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
-				try {
-					const createdRecords = await this._table.create([this.toWritableRecord(record)]);
-					if (isUsingFieldNames) this.mapToNames(createdRecords);
-					const created = createdRecords[0];
-					return inputType === "interface" ? this.toInterface(created) : created;
-				} catch (error) {
-					// I am aware of how stupid this looks,
-					// but without it, errors from Airtable's API don't surface properly;
-					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
-				}
+				const createdRecords = await this.withRetry(() => this._table.create([this.toWritableRecord(record)]));
+				if (isUsingFieldNames) this.mapToNames(createdRecords);
+				const created = createdRecords[0];
+				return inputType === "interface" ? this.toInterface(created) : created;
 			}
 		}
 	}
@@ -281,15 +250,8 @@ class AirtableTable {
 				const payloads = items.map((r) => r.toUpdateRecordData());
 				for (let i = 0; i < payloads.length; i += 10) {
 					const batch = payloads.slice(i, i + 10);
-					try {
-						const batchUpdated = await this._table.update(batch);
-						updatedRecords.push(...batchUpdated);
-					} catch (error) {
-						// I am aware of how stupid this looks,
-						// but without it, errors from Airtable's API don't surface properly;
-						// you get a generic "UnhandledPromiseRejectionWarning" instead.
-						throw new Error(String(error));
-					}
+					const batchUpdated = await this.withRetry(() => this._table.update(batch));
+					updatedRecords.push(...batchUpdated);
 				}
 				return updatedRecords.map((r) => this.recordCtor(r));
 			} else {
@@ -297,15 +259,10 @@ class AirtableTable {
 				const isUsingFieldNames = this.isUsingFieldNames(records);
 				for (let i = 0; i < records.length; i += 10) {
 					const batch = records.slice(i, i + 10);
-					try {
-						const batchUpdated = await this._table.update(batch.map((r) => this.toWritableRecord(r)));
-						updatedRecords.push(...batchUpdated);
-					} catch (error) {
-						// I am aware of how stupid this looks,
-						// but without it, errors from Airtable's API don't surface properly;
-						// you get a generic "UnhandledPromiseRejectionWarning" instead.
-						throw new Error(String(error));
-					}
+					const batchUpdated = await this.withRetry(() =>
+						this._table.update(batch.map((r) => this.toWritableRecord(r))),
+					);
+					updatedRecords.push(...batchUpdated);
 				}
 				if (isUsingFieldNames) this.mapToNames(updatedRecords);
 				return inputType === "interface" ? updatedRecords.map((r) => this.toInterface(r)) : updatedRecords;
@@ -313,29 +270,15 @@ class AirtableTable {
 		} else {
 			if (inputType === "model") {
 				const payload = recordOrRecords.toUpdateRecordData();
-				try {
-					const updatedRecords = await this._table.update([payload]);
-					return this.recordCtor(updatedRecords[0]);
-				} catch (error) {
-					// I am aware of how stupid this looks,
-					// but without it, errors from Airtable's API don't surface properly;
-					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
-				}
+				const updatedRecords = await this.withRetry(() => this._table.update([payload]));
+				return this.recordCtor(updatedRecords[0]);
 			} else {
 				const record = this.mapToIds([recordOrRecords])[0];
 				const isUsingFieldNames = this.isUsingFieldNames([record]);
-				try {
-					const updatedRecords = await this._table.update([this.toWritableRecord(record)]);
-					if (isUsingFieldNames) this.mapToNames(updatedRecords);
-					const updated = updatedRecords[0];
-					return inputType === "interface" ? this.toInterface(updated) : updated;
-				} catch (error) {
-					// I am aware of how stupid this looks,
-					// but without it, errors from Airtable's API don't surface properly;
-					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
-				}
+				const updatedRecords = await this.withRetry(() => this._table.update([this.toWritableRecord(record)]));
+				if (isUsingFieldNames) this.mapToNames(updatedRecords);
+				const updated = updatedRecords[0];
+				return inputType === "interface" ? this.toInterface(updated) : updated;
 			}
 		}
 	}
@@ -426,16 +369,22 @@ class AirtableTable {
 				typecast: false,
 			};
 			let response;
-			try {
-				response = await fetch(url, {
-					method: "PATCH",
-					headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-					body: JSON.stringify(body),
-				});
-			} catch (error) {
-				throw new Error(String(error));
-			}
-			if (!response.ok) {
+			for (let attempt = 0; ; attempt++) {
+				try {
+					response = await fetch(url, {
+						method: "PATCH",
+						headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+						body: JSON.stringify(body),
+					});
+				} catch (error) {
+					throw new Error(String(error));
+				}
+				if (response.ok) break;
+				// Retry transient 429/5xx (e.g. 503 SERVICE_UNAVAILABLE) with backoff, mirroring withRetry().
+				if (this.isRetryableStatus(response.status) && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
+					await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs(attempt)));
+					continue;
+				}
 				const text = await response.text().catch(() => "");
 				throw new Error(`Airtable upsert failed (${response.status}): ${text}`);
 			}
@@ -443,6 +392,46 @@ class AirtableTable {
 			for (const rec of json.records) ids.push(rec.id);
 		}
 		return ids;
+	}
+
+	//#endregion
+
+	//#region RETRY
+
+	/** Whether an HTTP status is a transient failure worth retrying. */
+	isRetryableStatus(status) {
+		return status !== undefined && (status === 429 || (status >= 500 && status <= 599));
+	}
+
+	/** Full-jittered exponential backoff (matches airtable.js's own 429 backoff shape). */
+	retryDelayMs(attempt) {
+		const capped = Math.min(AirtableTable.RETRY_MAX_DELAY_MS, AirtableTable.RETRY_BASE_MS * 2 ** attempt);
+		return Math.random() * capped;
+	}
+
+	/**
+	 * Run an airtable.js operation, retrying transient 429/5xx failures with backoff. airtable.js
+	 * only retries 429 itself (and never surfaces it), so this adds 5xx coverage — e.g. a 503
+	 * SERVICE_UNAVAILABLE. On a non-retryable error or once attempts are exhausted, preserves the
+	 * existing contract by throwing `new Error(String(error))`. airtable.js's error carries no
+	 * Retry-After, so 5xx uses pure backoff.
+	 */
+	async withRetry(op) {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await op();
+			} catch (error) {
+				const status = error?.statusCode;
+				if (this.isRetryableStatus(status) && attempt < AirtableTable.RETRY_MAX_ATTEMPTS) {
+					await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs(attempt)));
+					continue;
+				}
+				// I am aware of how stupid this looks,
+				// but without it, errors from Airtable's API don't surface properly;
+				// you get a generic "UnhandledPromiseRejectionWarning" instead.
+				throw new Error(String(error));
+			}
+		}
 	}
 
 	//#endregion
@@ -460,25 +449,11 @@ class AirtableTable {
 			// Delete in batches of 10 (Airtable API limit)
 			for (let i = 0; i < recordIdOrIds.length; i += 10) {
 				const batch = recordIdOrIds.slice(i, i + 10);
-				try {
-					await this._table.destroy(batch);
-				} catch (error) {
-					// I am aware of how stupid this looks,
-					// but without it, errors from Airtable's API don't surface properly;
-					// you get a generic "UnhandledPromiseRejectionWarning" instead.
-					throw new Error(String(error));
-				}
+				await this.withRetry(() => this._table.destroy(batch));
 			}
 		} else {
 			validateRecordIds(recordIdOrIds);
-			try {
-				await this._table.destroy([recordIdOrIds]);
-			} catch (error) {
-				// I am aware of how stupid this looks,
-				// but without it, errors from Airtable's API don't surface properly;
-				// you get a generic "UnhandledPromiseRejectionWarning" instead.
-				throw new Error(String(error));
-			}
+			await this.withRetry(() => this._table.destroy([recordIdOrIds]));
 		}
 	}
 

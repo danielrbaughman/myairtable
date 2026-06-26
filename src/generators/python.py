@@ -762,7 +762,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.region("IMPORTS")
         write.mark_imports()
         write.add_import("typing", ["cast"])
-        write.add_import("pyairtable", ["Api"])
+        write.add_import("pyairtable", ["Api", "retry_strategy"])
         write.add_import(".types", ["TableName"])
         write.add_import("..static.airtable_table", ["AirtableTable", "TableType"])
         write.add_import("..static.helpers", ["get_api_key", "get_base_id", "set_airtable_config", "build_url"])
@@ -796,7 +796,11 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("# Register config so ORM models can look it up", 2)
         write.line_indented("set_airtable_config(self.base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._cache_seconds: int = cache_seconds", 2)
-        write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
+        write.line_indented("# pyairtable retries 429 only by default; also retry transient 5xx (incl. 503).", 2)
+        write.line_indented(
+            "self._api = Api(api_key=api_key, endpoint_url=endpoint_url, retry_strategy=retry_strategy(status_forcelist=(429, 500, 502, 503, 504)))",
+            2,
+        )
         write.line_empty()
 
         write.line_indented("def table(self, table_name: TableName) -> AirtableTable:")
