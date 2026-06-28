@@ -146,18 +146,30 @@ class DictTable(
 
     // region create
 
-    /** Create one record and return the populated envelope. */
-    suspend fun create(fields: Fields): Record =
-        createBatch(listOf(fields)).firstOrNull()
+    /**
+     * Create one record and return the populated envelope.
+     *
+     * When [typecast] is true, Airtable coerces string inputs to the cell's
+     * type (creating missing select options, parsing dates/numbers, etc.).
+     */
+    suspend fun create(
+        fields: Fields,
+        typecast: Boolean = false,
+    ): Record =
+        createBatch(listOf(fields), typecast).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "create returned no records")
 
     /** Create many records. Chunks into Airtable's 10-per-call batch limit. */
-    suspend fun create(fields: List<Fields>): List<Record> = fields.chunked(BATCH_SIZE).flatMap { createBatch(it) }
+    suspend fun create(
+        fields: List<Fields>,
+        typecast: Boolean = false,
+    ): List<Record> = fields.chunked(BATCH_SIZE).flatMap { createBatch(it, typecast) }
 
-    private suspend fun createBatch(fields: List<Fields>): List<Record> {
+    private suspend fun createBatch(
+        fields: List<Fields>,
+        typecast: Boolean,
+    ): List<Record> {
         if (fields.isEmpty()) return emptyList()
-        // `typecast` is intentionally omitted — matches the Rust / Py / TS
-        // behavior (Airtable defaults it to false).
         val body =
             buildJsonObject {
                 put(
@@ -171,6 +183,8 @@ class DictTable(
                 // Airtable echoes the inserted records back keyed by field ID,
                 // matching `returnFieldsByFieldId=true` on list/get requests.
                 put("returnFieldsByFieldId", JsonPrimitive(true))
+                // Only emit `typecast` when opted in; Airtable defaults it to false.
+                if (typecast) put("typecast", JsonPrimitive(true))
             }
         val payload = client.createRecords(tableId, body.toString())
         val envelope = decoding { json.decodeFromString<RawListResponse>(payload) }
@@ -181,18 +195,29 @@ class DictTable(
 
     // region update
 
-    /** Update a single record's field values. */
+    /**
+     * Update a single record's field values.
+     *
+     * When [typecast] is true, Airtable coerces string inputs to the cell's type.
+     */
     suspend fun update(
         recordId: String,
         fields: Fields,
+        typecast: Boolean = false,
     ): Record =
-        updateBatch(listOf(recordId to fields)).firstOrNull()
+        updateBatch(listOf(recordId to fields), typecast).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records")
 
     /** Update many records. Chunks into Airtable's 10-per-call batch limit. */
-    suspend fun update(updates: List<Pair<String, Fields>>): List<Record> = updates.chunked(BATCH_SIZE).flatMap { updateBatch(it) }
+    suspend fun update(
+        updates: List<Pair<String, Fields>>,
+        typecast: Boolean = false,
+    ): List<Record> = updates.chunked(BATCH_SIZE).flatMap { updateBatch(it, typecast) }
 
-    private suspend fun updateBatch(updates: List<Pair<String, Fields>>): List<Record> {
+    private suspend fun updateBatch(
+        updates: List<Pair<String, Fields>>,
+        typecast: Boolean,
+    ): List<Record> {
         if (updates.isEmpty()) return emptyList()
         val body =
             buildJsonObject {
@@ -210,6 +235,7 @@ class DictTable(
                     },
                 )
                 put("returnFieldsByFieldId", JsonPrimitive(true))
+                if (typecast) put("typecast", JsonPrimitive(true))
             }
         val payload = client.updateRecords(tableId, body.toString())
         val envelope = decoding { json.decodeFromString<RawListResponse>(payload) }

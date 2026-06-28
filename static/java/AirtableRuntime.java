@@ -123,7 +123,15 @@ public final class AirtableRuntime {
       return Double.toString(d);
     }
     if (value.isArray()) {
-      return value.isEmpty() ? "" : S(value.get(0));
+      // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+      StringBuilder sb = new StringBuilder();
+      for (int i = 0; i < value.size(); i++) {
+        if (i > 0) {
+          sb.append(", ");
+        }
+        sb.append(S(value.get(i)));
+      }
+      return sb.toString();
     }
     return "";
   }
@@ -651,8 +659,8 @@ public final class AirtableRuntime {
     return TextNode.valueOf(out.toString());
   }
 
-  /** Characters NOT percent-encoded, mirroring Swift's {@code CharacterSet.urlQueryAllowed}. */
-  private static final String URL_QUERY_ALLOWED_EXTRA = "-._~!$&'()*+,;=:@/?";
+  /** Non-alphanumerics left literal by JS {@code encodeURIComponent} (Airtable matches it). */
+  private static final String URL_QUERY_ALLOWED_EXTRA = "-_.!~*'()";
 
   public static JsonNode ENCODE_URL_COMPONENT(JsonNode value) {
     String s = S(value);

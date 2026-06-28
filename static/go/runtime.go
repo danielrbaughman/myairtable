@@ -9,6 +9,7 @@ package airtable
 import (
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -66,10 +67,12 @@ func S(value any) string {
 	case int:
 		return strconv.Itoa(v)
 	case []any:
-		if len(v) == 0 {
-			return ""
+		// Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+		parts := make([]string, len(v))
+		for i, e := range v {
+			parts[i] = S(e)
 		}
-		return S(v[0])
+		return strings.Join(parts, ", ")
 	default:
 		return ""
 	}

@@ -76,28 +76,40 @@ public class TestClientRetryAndCancellation
     public void ExponentialBackoffDoublesPerAttempt()
     {
         // jitterCap 0 => jitter term is 0 regardless of rand, isolating the exponential growth.
-        Assert.Equal(0.5, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 0, 0, 1.0));
-        Assert.Equal(1.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 1, 0, 1.0));
-        Assert.Equal(2.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 2, 0, 1.0));
-        Assert.Equal(4.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 3, 0, 1.0));
+        // maxDelay 1000 is above every value here, so the final cap is a no-op.
+        Assert.Equal(0.5, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 0, 0, 1000, 1.0));
+        Assert.Equal(1.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 1, 0, 1000, 1.0));
+        Assert.Equal(2.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 2, 0, 1000, 1.0));
+        Assert.Equal(4.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 3, 0, 1000, 1.0));
     }
 
     [Fact]
     public void RetryAfterOverridesExponentialBackoff()
     {
         // base/attempt are ignored when an explicit Retry-After is supplied; jitter still applies.
-        Assert.Equal(30.0, AirtableClient.ComputeRetryDelaySeconds(30.0, 0.5, 3, 0, 1.0));
+        Assert.Equal(30.0, AirtableClient.ComputeRetryDelaySeconds(30.0, 0.5, 3, 0, 1000, 1.0));
         // jitter = rand * min(delay, cap) = 1.0 * min(30, 1) = 1.
-        Assert.Equal(31.0, AirtableClient.ComputeRetryDelaySeconds(30.0, 0.5, 3, 1.0, 1.0));
+        Assert.Equal(31.0, AirtableClient.ComputeRetryDelaySeconds(30.0, 0.5, 3, 1.0, 1000, 1.0));
+    }
+
+    [Fact]
+    public void RetryAfterAndBackoffAreBothCappedAtMaxDelay()
+    {
+        // A broken Retry-After must never exceed the cap.
+        Assert.Equal(30.0, AirtableClient.ComputeRetryDelaySeconds(999999, 0.5, 0, 0, 30, 1.0));
+        // Computed backoff (with jitter) is capped too: delay=0.5*2^10≈512, capped to 30.
+        Assert.Equal(30.0, AirtableClient.ComputeRetryDelaySeconds(null, 0.5, 10, 1.0, 30, 1.0));
+        // A negative Retry-After floors to 0 (never reaches the sleep as a negative).
+        Assert.Equal(0.0, AirtableClient.ComputeRetryDelaySeconds(-5, 0.5, 0, 0, 30, 1.0));
     }
 
     [Fact]
     public void JitterIsBoundedByTheCapNotTheFullDelay()
     {
-        // delay = 1 * 2^3 = 8; jitter is capped at 2, so rand=1 adds 2 (not 8).
-        Assert.Equal(8.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 0.0));
-        Assert.Equal(9.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 0.5));
-        Assert.Equal(10.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 1.0));
+        // delay = 1 * 2^3 = 8; jitter is capped at 2, so rand=1 adds 2 (not 8). maxDelay 1000 no-op.
+        Assert.Equal(8.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 1000, 0.0));
+        Assert.Equal(9.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 1000, 0.5));
+        Assert.Equal(10.0, AirtableClient.ComputeRetryDelaySeconds(null, 1.0, 3, 2.0, 1000, 1.0));
     }
 
     // ---- Retry-After parsing -------------------------------------------------

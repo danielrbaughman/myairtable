@@ -80,6 +80,11 @@ class AirtableClient(
         if (apiKey.isBlank() || baseId.isBlank()) throw AirtableException.MissingCredentials()
     }
 
+    private companion object {
+        /** Upper bound (seconds) on the jitter added to a server `Retry-After`. */
+        const val RETRY_AFTER_JITTER_CAP_SECONDS = 1.0
+    }
+
     /**
      * Convenience constructor wiring a cache with the given TTL (seconds).
      * Matches the other targets' `with_cache(apiKey, baseId, seconds)` shape.
@@ -150,7 +155,21 @@ class AirtableClient(
     // region Request execution
 
     /**
-     * Send a request with bearer auth and automatic retry on 429/5xx.
+     * Send a request with bearer auth and automatic retry on transient
+     * failures.
+     *
+     * [idempotent] classifies the request at the call site and drives the
+     * retry policy:
+     * - HTTP 429 is ALWAYS retried (the server rejected the request; nothing
+     *   was applied). The `Retry-After` header is honored.
+     * - HTTP 5xx (500-599) and transport/IO errors are retried ONLY when
+     *   [idempotent] is true; otherwise the error is surfaced immediately, so a
+     *   non-idempotent op (a create POST) is never re-applied after a failure
+     *   that may already have mutated state.
+     *
+     * We deliberately do NOT distinguish connect-before-send from
+     * read-timeout on a transport error — that is not portably available, and
+     * the conservative uniform rule (retry only if idempotent) is correct.
      *
      * Transport failures (connect/DNS/socket errors, request timeouts) are
      * wrapped as [AirtableException.Network] so `catch (e: AirtableException)`
@@ -160,6 +179,7 @@ class AirtableClient(
         method: HttpMethod,
         url: Url,
         body: String? = null,
+        idempotent: Boolean = true,
     ): String {
         var attempt = 0
         while (true) {
@@ -176,11 +196,23 @@ class AirtableClient(
                 } catch (e: HttpRequestTimeoutException) {
                     // Ktor's request timeout must be wrapped *before* the
                     // CancellationException rethrow below: depending on Ktor
-                    // version it can subclass CancellationException.
+                    // version it can subclass CancellationException. Retry the
+                    // transport failure only when the call is idempotent.
+                    if (idempotent && attempt < maxRetries) {
+                        delay(backoffDelaySeconds(attempt).seconds)
+                        attempt += 1
+                        continue
+                    }
                     throw AirtableException.Network(e)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: IOException) {
+                    // Transport/IO error: retry only if idempotent.
+                    if (idempotent && attempt < maxRetries) {
+                        delay(backoffDelaySeconds(attempt).seconds)
+                        attempt += 1
+                        continue
+                    }
                     throw AirtableException.Network(e)
                 }
             val status = response.status.value
@@ -194,15 +226,25 @@ class AirtableClient(
             val bodyText = runCatching { response.bodyAsText() }.getOrNull()
 
             val retryAfterSeconds = parseRetryAfter(response.headers["Retry-After"])
-            val isRetryable = status == 429 || status in 500..599
+            // 429 always retries; 5xx retries only when the call is idempotent.
+            val isRetryable = status == 429 || (idempotent && status in 500..599)
             if (isRetryable && attempt < maxRetries) {
                 val waitSeconds =
                     if (retryAfterSeconds != null) {
-                        // Honor a server-provided Retry-After exactly (no jitter), capped.
-                        min(retryAfterSeconds, maxRetryDelaySeconds)
+                        // Honor a server-provided Retry-After, floored at 0 (a
+                        // negative/garbage numeric header must never reach the
+                        // sleep call), then add a small bounded jitter so
+                        // concurrent callers don't all wake on the same
+                        // millisecond and re-stampede the API. The jitter is
+                        // bounded by RETRY_AFTER_JITTER_CAP_SECONDS so it stays
+                        // a decorrelation nudge, never a material delay. Capped
+                        // at maxRetryDelaySeconds so a malicious `Retry-After:
+                        // 999999` can never hang the call.
+                        val floored = max(0.0, retryAfterSeconds)
+                        val jitter = Random.nextDouble() * min(floored, RETRY_AFTER_JITTER_CAP_SECONDS)
+                        min(floored + jitter, maxRetryDelaySeconds)
                     } else {
-                        val backoff = baseRetryDelaySeconds * 2.0.pow(attempt)
-                        min(backoff * (0.5 + Random.nextDouble() * 0.5), maxRetryDelaySeconds)
+                        backoffDelaySeconds(attempt)
                     }
                 delay(waitSeconds.seconds)
                 attempt += 1
@@ -222,6 +264,17 @@ class AirtableClient(
             }
             throw AirtableException.Http(statusCode = status, body = bodyText)
         }
+    }
+
+    /**
+     * Computed exponential backoff for a retry [attempt], with jitter, capped
+     * at [maxRetryDelaySeconds]. `jitter = base * 2^attempt * [0.5, 1.0)` keeps
+     * a randomized but bounded wait so concurrent callers fan out instead of
+     * re-stampeding the API.
+     */
+    private fun backoffDelaySeconds(attempt: Int): Double {
+        val backoff = baseRetryDelaySeconds * 2.0.pow(attempt)
+        return min(backoff * (0.5 + Random.nextDouble() * 0.5), maxRetryDelaySeconds)
     }
 
     /**
@@ -270,7 +323,7 @@ class AirtableClient(
     ): String {
         val key = CacheStore.Key(tableId = tableId, keyedOn = cacheKeyForQuery(query))
         cache.get(key)?.let { return it }
-        val payload = send(HttpMethod.Get, tableUrl(tableId, query.toParameters()))
+        val payload = send(HttpMethod.Get, tableUrl(tableId, query.toParameters()), idempotent = true)
         // Multi-page payloads carry a server-side `offset` continuation token
         // that expires after a few minutes — caching one would serve a dead
         // token on the next hit and fail the follow-up page fetch
@@ -304,7 +357,7 @@ class AirtableClient(
         val key = CacheStore.Key(tableId = tableId, keyedOn = "rec:$recordId")
         cache.get(key)?.let { return it }
         val url = recordUrl(tableId, recordId, listOf("returnFieldsByFieldId" to "true"))
-        val payload = send(HttpMethod.Get, url)
+        val payload = send(HttpMethod.Get, url, idempotent = true)
         cache.set(key, payload)
         return payload
     }
@@ -312,12 +365,16 @@ class AirtableClient(
     /**
      * POST to create records. [body] is a JSON `{records: [{fields: {...}},
      * ...]}` envelope. Cache is invalidated for the table on success.
+     *
+     * A create is NOT idempotent — a 5xx or transport failure after the server
+     * may already have inserted records must not be retried, so it surfaces
+     * immediately.
      */
     suspend fun createRecords(
         tableId: String,
         body: String,
     ): String {
-        val response = send(HttpMethod.Post, tableUrl(tableId), body)
+        val response = send(HttpMethod.Post, tableUrl(tableId), body, idempotent = false)
         invalidateCache(tableId)
         return response
     }
@@ -325,12 +382,18 @@ class AirtableClient(
     /**
      * PATCH to update records. [body] is `{records: [{id, fields}, ...]}`.
      * Cache is invalidated for the table on success.
+     *
+     * A plain update-by-id is idempotent. The upsert path forwards here too,
+     * so [idempotent] is exposed: an upsert is idempotent only when it merges
+     * on a key (the merge fields determine identity); an upsert without merge
+     * fields inserts and must pass `idempotent = false`.
      */
     suspend fun updateRecords(
         tableId: String,
         body: String,
+        idempotent: Boolean = true,
     ): String {
-        val response = send(HttpMethod.Patch, tableUrl(tableId), body)
+        val response = send(HttpMethod.Patch, tableUrl(tableId), body, idempotent = idempotent)
         invalidateCache(tableId)
         return response
     }
@@ -340,7 +403,7 @@ class AirtableClient(
         tableId: String,
         recordId: String,
     ): String {
-        val response = send(HttpMethod.Delete, recordUrl(tableId, recordId))
+        val response = send(HttpMethod.Delete, recordUrl(tableId, recordId), idempotent = true)
         invalidateCache(tableId)
         return response
     }
@@ -351,7 +414,7 @@ class AirtableClient(
         recordIds: List<String>,
     ): String {
         val params = recordIds.map { "records[]" to it }
-        val response = send(HttpMethod.Delete, tableUrl(tableId, params))
+        val response = send(HttpMethod.Delete, tableUrl(tableId, params), idempotent = true)
         invalidateCache(tableId)
         return response
     }

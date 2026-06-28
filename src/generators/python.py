@@ -762,7 +762,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.region("IMPORTS")
         write.mark_imports()
         write.add_import("typing", ["cast"])
-        write.add_import("pyairtable", ["Api"])
+        write.add_import("pyairtable", ["Api", "retry_strategy"])
         write.add_import(".types", ["TableName"])
         write.add_import("..static.airtable_table", ["AirtableTable", "TableType"])
         write.add_import("..static.helpers", ["get_api_key", "get_base_id", "set_airtable_config", "build_url"])
@@ -796,7 +796,27 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.line_indented("# Register config so ORM models can look it up", 2)
         write.line_indented("set_airtable_config(self.base_id, api_key, endpoint_url)", 2)
         write.line_indented("self._cache_seconds: int = cache_seconds", 2)
-        write.line_indented("self._api = Api(api_key=api_key, endpoint_url=endpoint_url)", 2)
+        write.line_indented("# pyairtable retries 429 only by default; also retry transient 5xx (incl. 503).", 2)
+        write.line_indented(
+            "# allowed_methods excludes POST so create (POST) is never retried (urllib3 is method-based,",
+            2,
+        )
+        write.line_indented(
+            "# so it can't distinguish idempotent from non-idempotent at the body level). Residuals:",
+            2,
+        )
+        write.line_indented(
+            "# (1) PATCH upsert-without-merge is still retried (can't be told apart from update-by-id);",
+            2,
+        )
+        write.line_indented(
+            "# (2) POST no longer retries even on 429 (safe: 429 means the request was rejected, nothing applied).",
+            2,
+        )
+        write.line_indented(
+            'self._api = Api(api_key=api_key, endpoint_url=endpoint_url, retry_strategy=retry_strategy(status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset({"GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "PATCH"})))',
+            2,
+        )
         write.line_empty()
 
         write.line_indented("def table(self, table_name: TableName) -> AirtableTable:")
@@ -1016,4 +1036,6 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
         case _:
             pass
 
-    return "Any"
+    # Unknown/unmapped field type: emit a default so the attribute is always bound (an unset
+    # `rating: Any` with no default raises AttributeError when read, e.g. in runtime formula eval).
+    return "Any = None"

@@ -136,13 +136,16 @@ class TestClientHardening {
         }
 
     @Test
-    fun numericRetryAfterIsHonoredExactly() =
+    fun numericRetryAfterIsHonoredWithBoundedJitter() =
         runTest {
             val engine = flakyEngine(failures = 1, retryAfter = "0.05")
             val client = AirtableClient(baseId = "appX", apiKey = "key", httpClient = HttpClient(engine))
             client.listRecords("tbl1")
-            // Server-provided value is honored exactly — no jitter.
-            assertEquals(50, currentTime, "Retry-After: 0.05 must wait exactly 50ms")
+            // Server-provided value is honored, plus a bounded decorrelation
+            // jitter: wait = 0.05 + random*[0, min(0.05, RETRY_AFTER_JITTER_CAP)),
+            // i.e. [50ms, 100ms). Jitter is present (spec: no path may be jitter-free)
+            // but bounded so it stays a nudge, never a material delay.
+            assertTrue(currentTime in 50..99, "Retry-After: 0.05 jittered into [50ms, 100ms), got ${currentTime}ms")
         }
 
     @Test

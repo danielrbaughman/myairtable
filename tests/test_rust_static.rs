@@ -6,6 +6,145 @@ fn creates_client() {
 }
 
 #[test]
+fn apply_write_options_adds_typecast_only_when_set() {
+    // The create/update/upsert write methods all build their JSON body and then call
+    // `apply_write_options`, which is where typecast reaches the request body. Assert that helper
+    // directly so the body shaping is verified without standing up an HTTP server.
+
+    // Default (typecast = false): the body MUST NOT carry "typecast" (no behavior change).
+    let mut body = serde_json::json!({ "fields": { "Name": "x" } });
+    AirtableClient::apply_write_options(&mut body, false, false);
+    assert!(
+        body.get("typecast").is_none(),
+        "typecast must be absent by default, got: {body}"
+    );
+    assert!(
+        body.get("returnFieldsByFieldId").is_none(),
+        "returnFieldsByFieldId must be absent when use_field_ids=false"
+    );
+
+    // typecast = true: the body carries "typecast": true.
+    let mut body = serde_json::json!({ "fields": { "Name": "x" } });
+    AirtableClient::apply_write_options(&mut body, false, true);
+    assert_eq!(
+        body.get("typecast"),
+        Some(&serde_json::json!(true)),
+        "typecast must be true when opted in, got: {body}"
+    );
+
+    // The two flags are independent: use_field_ids on, typecast off.
+    let mut body = serde_json::json!({ "records": [] });
+    AirtableClient::apply_write_options(&mut body, true, false);
+    assert_eq!(
+        body.get("returnFieldsByFieldId"),
+        Some(&serde_json::json!(true))
+    );
+    assert!(body.get("typecast").is_none());
+
+    // Both on.
+    let mut body = serde_json::json!({ "records": [] });
+    AirtableClient::apply_write_options(&mut body, true, true);
+    assert_eq!(
+        body.get("returnFieldsByFieldId"),
+        Some(&serde_json::json!(true))
+    );
+    assert_eq!(body.get("typecast"), Some(&serde_json::json!(true)));
+}
+
+#[test]
+fn retry_delay_honors_retry_after_and_caps_backoff() {
+    // Retry-After path: the (capped) value plus a small bounded jitter of up to value/4.
+    // With jitter=0.0 the value is used directly.
+    assert_eq!(AirtableClient::retry_delay_secs(Some(5.0), 0, 0.0), 5.0);
+    // A huge/broken Retry-After is capped at the 30s max even with jitter=0.0.
+    assert_eq!(
+        AirtableClient::retry_delay_secs(Some(999999.0), 0, 0.0),
+        30.0
+    );
+    // Retry-After jitter adds up to value/4 on top of the (capped) value.
+    let d = AirtableClient::retry_delay_secs(Some(8.0), 0, 0.999);
+    assert!(
+        (8.0..=10.0).contains(&d),
+        "jittered Retry-After {d} out of [8.0, 10.0]"
+    );
+
+    // No Retry-After: FULL jitter on exponential backoff -> jitter * min(cap, base * 2^attempt).
+    // With jitter=0.0 the delay is 0 (full jitter spans [0, window)).
+    assert_eq!(AirtableClient::retry_delay_secs(None, 0, 0.0), 0.0);
+    assert_eq!(AirtableClient::retry_delay_secs(None, 2, 0.0), 0.0);
+    // With jitter just under 1.0, the delay approaches the backoff window (base * 2^attempt).
+    let d0 = AirtableClient::retry_delay_secs(None, 0, 0.999);
+    assert!(
+        (0.0..=1.0).contains(&d0),
+        "attempt 0 jittered delay {d0} out of [0.0, 1.0]"
+    );
+    let d2 = AirtableClient::retry_delay_secs(None, 2, 0.999);
+    assert!(
+        (0.0..=4.0).contains(&d2),
+        "attempt 2 jittered delay {d2} out of [0.0, 4.0]"
+    );
+    // The backoff window is capped at the 30s max (1 * 2^10 = 1024 -> 30).
+    let dcap = AirtableClient::retry_delay_secs(None, 10, 0.999);
+    assert!(
+        (0.0..=30.0).contains(&dcap),
+        "capped jittered delay {dcap} out of [0.0, 30.0]"
+    );
+}
+
+#[test]
+fn should_retry_429_regardless_of_idempotency() {
+    // 429 means the request was rejected and nothing was applied, so it is always safe to retry
+    // whether or not the operation is idempotent.
+    assert!(AirtableClient::should_retry(429, true, 0));
+    assert!(AirtableClient::should_retry(429, false, 0));
+}
+
+#[test]
+fn should_retry_5xx_only_when_idempotent() {
+    // A non-idempotent op (e.g. POST create) may have been partially applied on a 5xx, so it must
+    // NOT be retried; an idempotent op is safe to retry.
+    for status in [500u16, 502, 503, 599] {
+        assert!(
+            AirtableClient::should_retry(status, true, 0),
+            "idempotent {status} should retry"
+        );
+        assert!(
+            !AirtableClient::should_retry(status, false, 0),
+            "non-idempotent {status} must not retry"
+        );
+    }
+}
+
+#[test]
+fn should_retry_never_retries_success_or_4xx() {
+    // 2xx/3xx and non-429 4xx are terminal regardless of idempotency.
+    for status in [200u16, 201, 204, 301, 400, 401, 403, 404, 422] {
+        assert!(
+            !AirtableClient::should_retry(status, true, 0),
+            "idempotent {status} must not retry"
+        );
+        assert!(
+            !AirtableClient::should_retry(status, false, 0),
+            "non-idempotent {status} must not retry"
+        );
+    }
+    // 499 is below the 5xx range and must not retry even though 599 (in range) does.
+    assert!(!AirtableClient::should_retry(499, true, 0));
+}
+
+#[test]
+fn should_retry_respects_attempt_cap() {
+    // RETRY_MAX_ATTEMPTS is 5: attempts 0..=4 may retry, attempt 5+ must stop, even for a 429.
+    assert!(AirtableClient::should_retry(429, false, 4));
+    assert!(!AirtableClient::should_retry(429, false, 5));
+    assert!(!AirtableClient::should_retry(429, true, 5));
+    // The cap also applies to retryable 5xx on idempotent requests.
+    assert!(AirtableClient::should_retry(503, true, 4));
+    assert!(!AirtableClient::should_retry(503, true, 5));
+    assert!(!AirtableClient::should_retry(503, true, 100));
+}
+
+#[test]
 fn vec_or_value_deserializes_single() {
     let json = r#""hello""#;
     let val: VecOrValue<String> = serde_json::from_str(json).unwrap();

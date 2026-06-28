@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -95,8 +98,10 @@ public static partial class AirtableRuntime
                     return ((long)d).ToString(CultureInfo.InvariantCulture);
                 return d.ToString("R", CultureInfo.InvariantCulture);
             case JsonValueKind.Array:
+                // Airtable coerces a multi-value field (multi-select, multi-lookup) to a string by
+                // joining its elements with ", " — not by taking the first element.
                 var arr = value.AsArray();
-                return arr.Count == 0 ? "" : S(arr[0]);
+                return string.Join(", ", arr.Select(S));
             default:
                 return "";
         }

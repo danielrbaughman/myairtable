@@ -45,6 +45,15 @@ function isFieldRef(value: string): boolean {
 	return /^\{[^{}]+\}$/.test(value);
 }
 
+/**
+ * Escape a value for an Airtable double-quoted formula string literal. Backslashes are escaped
+ * FIRST, then quotes — otherwise a trailing `\` would leave the closing quote live and the
+ * remainder of the formula would be misparsed.
+ */
+function escapeFormulaString(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 /** Wrap a value for use in a formula - quotes strings, passes through formulas and fields */
 function wrapValue(value: string | Field): string {
 	if (value instanceof Field) {
@@ -52,7 +61,7 @@ function wrapValue(value: string | Field): string {
 	} else if (isFormula(value) || isFieldRef(value)) {
 		return value;
 	} else {
-		return `"${value}"`;
+		return `"${escapeFormulaString(value)}"`;
 	}
 }
 
@@ -69,7 +78,7 @@ function LEN(value: string | Field): string {
 	return `LEN(${wrapValue(value)})`;
 }
 function REGEX(value: string | Field, pattern: string): string {
-	return `REGEX(${wrapValue(value)}, "${pattern}")`;
+	return `REGEX(${wrapValue(value)}, "${escapeFormulaString(pattern)}")`;
 }
 function DATETIME_PARSE(value: string | Field): string {
 	if (value instanceof Field) {
@@ -86,10 +95,10 @@ function DATETIME_DIFF(left: string | Field, right: string | Field, unit: string
 	return `DATETIME_DIFF(${leftVal}, ${rightVal}, '${unit}')`;
 }
 function SUBSTITUTE(value: string | Field, oldText: string, newText: string): string {
-	return `SUBSTITUTE(${wrapValue(value)}, "${oldText}", "${newText}")`;
+	return `SUBSTITUTE(${wrapValue(value)}, "${escapeFormulaString(oldText)}", "${escapeFormulaString(newText)}")`;
 }
 function ARRAYJOIN(value: string | Field, separator: string = ", "): string {
-	return `ARRAYJOIN(${wrapValue(value)}, "${separator}")`;
+	return `ARRAYJOIN(${wrapValue(value)}, "${escapeFormulaString(separator)}")`;
 }
 
 /** Record ID formulas */
@@ -148,24 +157,23 @@ export class TextField extends Field {
 	 */
 	equals(value: string, caseSensitive: boolean = true, trim: boolean = false): string {
 		StringSchema.parse(value);
-		const escapedValue = value.replace(/"/g, '\\"');
 
 		if (caseSensitive) {
 			if (trim) {
 				const left = TRIM(this);
-				const right = TRIM(escapedValue);
+				const right = TRIM(value);
 				return `${left}=${right}`;
 			} else {
-				return `${this.field}="${escapedValue}"`;
+				return `${this.field}="${escapeFormulaString(value)}"`;
 			}
 		} else {
 			if (trim) {
 				const left = TRIM(LOWER(this));
-				const right = TRIM(LOWER(escapedValue));
+				const right = TRIM(LOWER(value));
 				return `${left}=${right}`;
 			} else {
 				const left = LOWER(this);
-				const right = LOWER(escapedValue);
+				const right = LOWER(value);
 				return `${left}=${right}`;
 			}
 		}
@@ -196,8 +204,7 @@ export class TextField extends Field {
 	/** {field}!="value" */
 	notEquals(value: string): string {
 		StringSchema.parse(value);
-		const escapedValue = value.replace(/"/g, '\\"');
-		return `${this.field}!="${escapedValue}"`;
+		return `${this.field}!="${escapeFormulaString(value)}"`;
 	}
 
 	/**

@@ -61,7 +61,8 @@ class AirtableRuntime:
     def S(v: Any) -> str:  # noqa: N802
         """Coerce value to string. Airtable strips .0 from whole-number floats."""
         if isinstance(v, list):
-            return AirtableRuntime.S(v[0] if v else None)
+            # Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+            return ", ".join(AirtableRuntime.S(x) for x in v)
         if v is None:
             return ""
         if isinstance(v, bool):

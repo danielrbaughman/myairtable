@@ -224,13 +224,33 @@ public final class AirtableClient implements AutoCloseable {
   // ---- Request execution ----
 
   /**
-   * Send a request with bearer auth and automatic retry on 429/5xx.
+   * Send a request with bearer auth and automatic retry on 429/5xx. Defaults to the idempotent
+   * retry policy — safe for GETs, which is what the table front-ends route through this overload.
+   *
+   * @see #send(String, URI, String, boolean)
+   */
+  String send(String method, URI url, String body) {
+    return send(method, url, body, true);
+  }
+
+  /**
+   * Send a request with bearer auth and automatic retry.
+   *
+   * <p>Retry policy (unified spec, child kx1m): a 429 is ALWAYS retried — the server rejected the
+   * request, so nothing was applied. A 5xx or a transport/IO error is retried ONLY when {@code
+   * idempotent} is true; for a non-idempotent request (record creation, or an upsert with no
+   * merge-on fields) a retry could duplicate the write, so the error is surfaced immediately. We do
+   * NOT try to distinguish connect-before-send from a read-timeout (not portably available across
+   * the sibling targets); the conservative uniform rule above is correct.
    *
    * <p>Transport failures (connect/DNS/socket errors, request timeouts) are wrapped as {@link
    * AirtableException.Network} so {@code catch (AirtableException e)} covers every failure mode.
    * Thread interruption is re-asserted before wrapping.
+   *
+   * @param idempotent whether retrying the request is safe (GET / list / get-by-id / update-by-id /
+   *     delete / upsert-with-merge-fields). {@code false} for create (POST) and merge-less upsert.
    */
-  String send(String method, URI url, String body) {
+  String send(String method, URI url, String body, boolean idempotent) {
     int attempt = 0;
     while (true) {
       HttpResponse<String> response;
@@ -262,7 +282,10 @@ public final class AirtableClient implements AutoCloseable {
       String bodyText = response.body();
       Double retryAfterSeconds =
           parseRetryAfter(response.headers().firstValue("Retry-After").orElse(null));
-      boolean isRetryable = status == 429 || (status >= 500 && status <= 599);
+      // 429 is always retryable (rejected, nothing applied). A 5xx is retryable
+      // only for an idempotent request — retrying a failed non-idempotent write
+      // could duplicate it (unified retry spec, child kx1m).
+      boolean isRetryable = status == 429 || (idempotent && status >= 500 && status <= 599);
       if (isRetryable && attempt < maxRetries) {
         double waitSeconds;
         if (retryAfterSeconds != null) {
@@ -411,17 +434,28 @@ public final class AirtableClient implements AutoCloseable {
    * envelope. Cache is invalidated for the table on success.
    */
   public String createRecords(String tableId, String body) {
-    String response = send("POST", tableUrl(tableId, List.of()), body);
+    // Create is NOT idempotent — a retried POST would duplicate the records.
+    String response = send("POST", tableUrl(tableId, List.of()), body, false);
     invalidateCache(tableId);
     return response;
   }
 
   /**
-   * PATCH to update records. {@code body} is {@code {records: [{id, fields}, ...]}}. Cache is
-   * invalidated for the table on success.
+   * PATCH to update records by id. {@code body} is {@code {records: [{id, fields}, ...]}}. Update-
+   * by-id is idempotent. Cache is invalidated for the table on success.
    */
   public String updateRecords(String tableId, String body) {
-    String response = send("PATCH", tableUrl(tableId, List.of()), body);
+    return updateRecords(tableId, body, true);
+  }
+
+  /**
+   * PATCH to update/upsert records. Update-by-id is idempotent; an upsert is idempotent only when
+   * it carries {@code fieldsToMergeOn} (the merge key determines identity), so callers pass {@code
+   * idempotent=false} for a merge-less upsert, which inserts and must not be retried on 5xx. Cache
+   * is invalidated for the table on success.
+   */
+  public String updateRecords(String tableId, String body, boolean idempotent) {
+    String response = send("PATCH", tableUrl(tableId, List.of()), body, idempotent);
     invalidateCache(tableId);
     return response;
   }

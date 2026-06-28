@@ -24,7 +24,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     _field_names: Sequence[str]
 
     _cache_seconds: int = 0
-    _cache: dict[str, tuple[Any, float]] = {}
+    # Per-instance cache; always assigned in from_table() (the sole constructor). Declared as a bare
+    # annotation rather than `= {}` so instances never share a class-level mutable dict.
+    _cache: dict[str, tuple[Any, float]]
 
     @classmethod
     def from_table(
@@ -248,22 +250,26 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         return result
 
     @overload
-    def create(self, record: ORMType) -> ORMType:
+    def create(self, record: ORMType, *, typecast: bool = False) -> ORMType:
         """
         Creates a single Airtable record.
 
         Args:
             record (Model): The record to create.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
+                (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
         """
         ...
 
     @overload
-    def create(self, records: list[ORMType]) -> list[ORMType]:
+    def create(self, records: list[ORMType], *, typecast: bool = False) -> list[ORMType]:
         """
         Creates multiple Airtable records.
 
         Args:
             records (list[Model]): The records to create.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
+                (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
         """
         ...
 
@@ -271,6 +277,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
+        typecast: bool = False,
     ) -> ORMType | list[ORMType]:
         self.invalidate_cache()
         if isinstance(record, list):
@@ -285,33 +292,67 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 raise ValueError("Records to create cannot be None.")
             if len(records) == 0:
                 return []
-            self._orm_cls.batch_save(records)
-            new_records = self.get(record_ids=[r.id for r in records])
-            return new_records
+            if typecast:
+                # pyairtable's Model.batch_save() does not accept typecast, so when typecast is
+                # requested we route the create through Table.batch_create (which does), building the
+                # field dicts the same way update() does, then assign the returned ids back onto the
+                # input models so the re-fetch/re-key below works identically to the batch_save path.
+                create_dicts: list[dict[str, Any]] = []
+                for r in records:
+                    rec = r.to_record()
+                    create_dicts.append(prepare_fields_for_save(rec["fields"], self._calculated_field_ids))
+                created = self._table.batch_create(create_dicts, typecast=True, use_field_ids=True)
+                for model, created_rec in zip(records, created):
+                    model.id = created_rec["id"]
+            else:
+                self._orm_cls.batch_save(records)
+            fetched = self.get(record_ids=[r.id for r in records])
+            fetched_list: list[ORMType] = fetched if isinstance(fetched, list) else [fetched]
+            # get(record_ids=...) re-fetches via all(formula=ID.in_list(...)), which returns
+            # Airtable's natural (table/view) order, NOT the input order. Re-key by id so the
+            # returned list matches the input order: callers rely on positional correspondence
+            # (notably upsert()'s no-merge branch, which zips this result against its inputs).
+            by_id = {rec.id: rec for rec in fetched_list}
+            missing = [r.id for r in records if r.id not in by_id]
+            if missing:
+                raise RuntimeError(f"create: re-fetch did not return created record(s): {missing}")
+            return [by_id[r.id] for r in records]
         else:
             if record is None:
                 raise ValueError("Record to create cannot be None.")
-            record.save()
+            if typecast:
+                # Model.save() does not accept typecast; route through Table.create instead, then
+                # assign the new id back onto the model before re-fetching.
+                rec = record.to_record()
+                fields = prepare_fields_for_save(rec["fields"], self._calculated_field_ids)
+                created = self._table.create(fields, typecast=True, use_field_ids=True)
+                record.id = created["id"]
+            else:
+                record.save()
             new_record = self.get(record_id=record.id)
             return new_record
 
     @overload
-    def update(self, record: ORMType) -> ORMType:
+    def update(self, record: ORMType, *, typecast: bool = False) -> ORMType:
         """
         Updates a single Airtable record.
 
         Args:
             record (Model): The record to update.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
+                (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
         """
         ...
 
     @overload
-    def update(self, records: list[ORMType]) -> list[ORMType]:
+    def update(self, records: list[ORMType], *, typecast: bool = False) -> list[ORMType]:
         """
         Updates multiple Airtable records.
 
         Args:
             records (list[Model]): The records to update.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
+                (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
         """
         ...
 
@@ -319,6 +360,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         self,
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
+        typecast: bool = False,
     ) -> ORMType | list[ORMType]:
         self.invalidate_cache()
         if isinstance(record, list):
@@ -337,7 +379,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             for r in records:
                 r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)
             update_dicts: list[RecordDict] = [{"id": r["id"], "createdTime": r.get("createdTime", ""), "fields": r["fields"]} for r in records]
-            records = self._table.batch_update(update_dicts, use_field_ids=True)
+            records = self._table.batch_update(update_dicts, use_field_ids=True, typecast=typecast)
             records = [sanitize_record_dict(r) for r in records]
             orm_records = [self._orm_cls.from_record(r) for r in records]
             return orm_records
@@ -346,10 +388,65 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 raise ValueError("Record to update cannot be None.")
             record: RecordDict = record.to_record()
             record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)
-            record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True)
+            record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True, typecast=typecast)
             record = sanitize_record_dict(record)
             orm_record = self._orm_cls.from_record(record)
             return orm_record
+
+    def upsert(
+        self,
+        record: ORMType | list[ORMType],
+        fields_to_merge_on: list[str] | None = None,
+        typecast: bool = False,
+    ) -> ORMType | list[ORMType]:
+        """
+        Update-or-insert one or more records.
+
+        With ``fields_to_merge_on`` (a list of field ids), Airtable matches each input record
+        against existing records by those field values via its server-side ``performUpsert`` (an
+        exact-one match updates, no match inserts, more than one match is rejected). Without it,
+        records are matched by ``id`` (those carrying an id are updated, the rest created). Batches
+        are handled by the underlying client (10 records per request).
+
+        With ``typecast`` true, Airtable coerces string inputs to the cell's type (creating missing
+        select options, parsing dates/numbers, etc.). Defaults to False.
+        """
+        self.invalidate_cache()
+        is_list = isinstance(record, list)
+        models: list[ORMType] = list(record) if isinstance(record, list) else [record]
+        if not models:
+            return []  # only reachable for an empty list input
+
+        if fields_to_merge_on is not None:
+            upsert_dicts: list[dict[str, Any]] = []
+            for model in models:
+                rec = model.to_record()
+                fields = prepare_fields_for_save(rec["fields"], self._calculated_field_ids)
+                entry: dict[str, Any] = {"fields": fields}
+                rid = rec.get("id")
+                if rid:
+                    entry["id"] = rid
+                upsert_dicts.append(entry)
+            result = self._table.batch_upsert(upsert_dicts, key_fields=fields_to_merge_on, use_field_ids=True, typecast=typecast)
+            out = [self._orm_cls.from_record(sanitize_record_dict(r)) for r in result["records"]]
+        else:
+            # No merge fields: update records that already have an id, create the rest.
+            ordered: dict[int, ORMType] = {}
+            with_id = [(i, m) for i, m in enumerate(models) if m.id]
+            without_id = [(i, m) for i, m in enumerate(models) if not m.id]
+            if with_id:
+                updated = self.update([m for _, m in with_id], typecast=typecast)
+                updated_list: list[ORMType] = updated if isinstance(updated, list) else [updated]
+                for (i, _), upd in zip(with_id, updated_list):
+                    ordered[i] = upd
+            if without_id:
+                created = self.create([m for _, m in without_id], typecast=typecast)
+                created_list: list[ORMType] = created if isinstance(created, list) else [created]
+                for (i, _), crt in zip(without_id, created_list):
+                    ordered[i] = crt
+            out = [ordered[i] for i in range(len(models))]
+
+        return out if is_list else out[0]
 
     @overload
     def delete(
@@ -400,9 +497,9 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
     def delete(
         self,
         record: ORMType | None = None,
-        records: list[ORMType] = [],
+        records: list[ORMType] | None = None,
         record_id: str = "",
-        record_ids: list[str] = [],
+        record_ids: list[str] | None = None,
     ) -> None:
         self.invalidate_cache()
         if record:

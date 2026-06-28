@@ -58,6 +58,14 @@ func NewClient(apiKey, baseID string, cacheSeconds float64) *Client {
 	}
 }
 
+// setHTTPClient swaps the underlying *http.Client. It is an unexported,
+// test-only seam: production code never calls it, so the default behavior of
+// NewClient (its own *http.Client with a 60s timeout) is unchanged. A test can
+// install a client whose Transport is a scripted http.RoundTripper to drive the
+// retry policy hermetically — a RoundTripper sees every request regardless of
+// the (hardcoded) apiBaseURL, so no URL plumbing is needed.
+func (c *Client) setHTTPClient(hc *http.Client) { c.httpClient = hc }
+
 // BaseID returns the configured base ID.
 func (c *Client) BaseID() string { return c.baseID }
 
@@ -99,7 +107,15 @@ func (c *Client) recordURL(tableID, recordID string, query url.Values) string {
 // do performs an HTTP request with bearer auth and 429/5xx retry with jittered
 // backoff (honoring a server Retry-After). It returns
 // the response body for 2xx, or a typed error otherwise.
-func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([]byte, error) {
+//
+// The idempotent flag controls which failures are retried. A 429 is ALWAYS
+// retried (the server rejected the request; nothing was applied). A 5xx or a
+// transport/IO error is retried ONLY IF idempotent — otherwise it returns
+// immediately, since a non-idempotent op (e.g. create POST) may have been
+// applied server-side even though the response failed. We deliberately do NOT
+// try to distinguish a connect-before-send failure from a read-timeout: that is
+// not portably available, and the conservative uniform rule is correct.
+func (c *Client) do(ctx context.Context, method, fullURL string, body []byte, idempotent bool) ([]byte, error) {
 	if c.apiKey == "" || c.baseID == "" {
 		return nil, ErrMissingCredentials
 	}
@@ -121,7 +137,20 @@ func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			// Transport/IO error: retry only if idempotent, else surface it now.
+			if !idempotent {
+				return nil, err
+			}
+			lastErr = err
+			if attempt < maxRetries {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(retryWait(attempt, 0)):
+				}
+				continue
+			}
+			break
 		}
 		respBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -132,25 +161,26 @@ func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return respBody, nil
 		}
-		// Only 429 and 5xx are transient; other 4xx fail immediately.
+		// 429 is always transient; 5xx is transient only for idempotent ops.
+		// Every other 4xx fails immediately.
 		if resp.StatusCode != 429 && resp.StatusCode < 500 {
 			return nil, errorFromResponse(resp.StatusCode, respBody)
 		}
 
 		var retryAfter time.Duration
 		if resp.StatusCode == 429 {
-			if ra := resp.Header.Get("Retry-After"); ra != "" {
-				if secs, err := strconv.Atoi(ra); err == nil {
-					retryAfter = time.Duration(secs) * time.Second
-				}
-			}
+			retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
 			reported := retryAfter
 			if reported == 0 {
 				reported = defaultRetryWait
 			}
 			lastErr = &RateLimitError{RetryAfter: reported}
 		} else {
+			// 5xx
 			lastErr = errorFromResponse(resp.StatusCode, respBody)
+			if !idempotent {
+				return nil, lastErr
+			}
 		}
 
 		if attempt < maxRetries {
@@ -165,19 +195,53 @@ func (c *Client) do(ctx context.Context, method, fullURL string, body []byte) ([
 	return nil, lastErr
 }
 
+// parseRetryAfter parses a Retry-After header value per RFC 9110. It accepts
+// either delta-seconds ("120") or an HTTP-date ("Wed, 21 Oct 2015 07:28:00
+// GMT"); for the date form it returns max(0, date-now). A garbage or negative
+// value floors to 0 (never returns a negative duration).
+func parseRetryAfter(ra string) time.Duration {
+	if ra == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(strings.TrimSpace(ra)); err == nil {
+		if secs < 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(strings.TrimSpace(ra)); err == nil {
+		d := time.Until(t)
+		if d < 0 {
+			return 0
+		}
+		return d
+	}
+	return 0
+}
+
 // retryWait computes the delay before the next retry. An explicit server
 // Retry-After is honored as a floor (plus small jitter); otherwise an
-// exponential backoff (capped at maxRetryWait) with decorrelated jitter is used
-// to avoid a thundering herd.
+// exponential backoff with decorrelated jitter is used to avoid a thundering
+// herd. The final delay — for BOTH paths — is capped at maxRetryWait, so a
+// broken/malicious Retry-After (e.g. "999999") can never hang the call.
 func retryWait(attempt int, retryAfter time.Duration) time.Duration {
+	var d time.Duration
 	if retryAfter > 0 {
-		return retryAfter + jitter(retryAfter/4)
+		if retryAfter > maxRetryWait {
+			retryAfter = maxRetryWait
+		}
+		d = retryAfter + jitter(retryAfter/4)
+	} else {
+		base := retryBaseDelay << uint(attempt)
+		if base > maxRetryWait {
+			base = maxRetryWait
+		}
+		d = base + jitter(base/2)
 	}
-	d := retryBaseDelay << uint(attempt)
 	if d > maxRetryWait {
 		d = maxRetryWait
 	}
-	return d + jitter(d/2)
+	return d
 }
 
 // jitter returns a random duration in [0, max). The global rand source is
@@ -201,7 +265,7 @@ func (c *Client) getRecord(ctx context.Context, tableID, recordID string) (*rawR
 		}
 		return &rec, nil
 	}
-	data, err := c.do(ctx, http.MethodGet, c.recordURL(tableID, recordID, q), nil)
+	data, err := c.do(ctx, http.MethodGet, c.recordURL(tableID, recordID, q), nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +303,7 @@ func (c *Client) listRecords(ctx context.Context, tableID string, q *Query) ([]r
 	offset := ""
 	for {
 		values := effective.toValues(offset)
-		data, err := c.do(ctx, http.MethodGet, c.recordURL(tableID, "", values), nil)
+		data, err := c.do(ctx, http.MethodGet, c.recordURL(tableID, "", values), nil, true)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +333,8 @@ func (c *Client) createRecords(ctx context.Context, tableID string, fields []map
 		for _, f := range fields[start:end] {
 			payload = append(payload, recordPayload{Fields: f})
 		}
-		recs, err := c.writeBatch(ctx, http.MethodPost, tableID, payload, typecast)
+		// create = POST = non-idempotent: do not retry 5xx/transport errors.
+		recs, err := c.writeBatch(ctx, http.MethodPost, tableID, payload, typecast, false)
 		if err != nil {
 			return nil, err
 		}
@@ -284,7 +349,8 @@ func (c *Client) updateRecords(ctx context.Context, tableID string, updates []re
 	var updated []rawRecord
 	for start := 0; start < len(updates); start += maxBatch {
 		end := min(start+maxBatch, len(updates))
-		recs, err := c.writeBatch(ctx, http.MethodPatch, tableID, updates[start:end], typecast)
+		// update-by-id = PATCH with record IDs = idempotent.
+		recs, err := c.writeBatch(ctx, http.MethodPatch, tableID, updates[start:end], typecast, true)
 		if err != nil {
 			return nil, err
 		}
@@ -295,17 +361,23 @@ func (c *Client) updateRecords(ctx context.Context, tableID string, updates []re
 }
 
 // upsertRecords PATCHes records with performUpsert, matching on fieldsToMergeOn.
-func (c *Client) upsertRecords(ctx context.Context, tableID string, records []recordPayload, matchFields []string) ([]rawRecord, error) {
+func (c *Client) upsertRecords(ctx context.Context, tableID string, records []recordPayload, matchFields []string, typecast bool) ([]rawRecord, error) {
 	reqBody := map[string]any{
 		"records":               records,
 		"returnFieldsByFieldId": true,
 		"performUpsert":         map[string]any{"fieldsToMergeOn": matchFields},
 	}
+	if typecast {
+		reqBody["typecast"] = true
+	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, &DecodingError{Err: err}
 	}
-	data, err := c.do(ctx, http.MethodPatch, c.recordURL(tableID, "", nil), body)
+	// Upsert is idempotent only when a merge key identifies records; with no
+	// fieldsToMergeOn it inserts (like create) and must not retry 5xx/transport.
+	idempotent := len(matchFields) > 0
+	data, err := c.do(ctx, http.MethodPatch, c.recordURL(tableID, "", nil), body, idempotent)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +389,7 @@ func (c *Client) upsertRecords(ctx context.Context, tableID string, records []re
 	return resp.Records, nil
 }
 
-func (c *Client) writeBatch(ctx context.Context, method, tableID string, records []recordPayload, typecast bool) ([]rawRecord, error) {
+func (c *Client) writeBatch(ctx context.Context, method, tableID string, records []recordPayload, typecast, idempotent bool) ([]rawRecord, error) {
 	reqBody := map[string]any{"records": records, "returnFieldsByFieldId": true}
 	if typecast {
 		reqBody["typecast"] = true
@@ -326,7 +398,7 @@ func (c *Client) writeBatch(ctx context.Context, method, tableID string, records
 	if err != nil {
 		return nil, &DecodingError{Err: err}
 	}
-	data, err := c.do(ctx, method, c.recordURL(tableID, "", nil), body)
+	data, err := c.do(ctx, method, c.recordURL(tableID, "", nil), body, idempotent)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +417,7 @@ func (c *Client) deleteRecords(ctx context.Context, tableID string, ids []string
 		for _, id := range ids[start:end] {
 			q.Add("records[]", id)
 		}
-		if _, err := c.do(ctx, http.MethodDelete, c.recordURL(tableID, "", q), nil); err != nil {
+		if _, err := c.do(ctx, http.MethodDelete, c.recordURL(tableID, "", q), nil, true); err != nil {
 			return err
 		}
 	}

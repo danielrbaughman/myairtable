@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace MyAirtable;
 
 /// <summary>Text operations shared by text, select, and lookup fields.</summary>

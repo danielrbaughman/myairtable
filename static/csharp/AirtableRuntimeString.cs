@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -161,8 +162,8 @@ public static partial class AirtableRuntime
         return JsonValue.Create(sb.ToString());
     }
 
-    /// <summary>Characters NOT percent-encoded (Swift's <c>CharacterSet.urlQueryAllowed</c>).</summary>
-    private const string UrlQueryAllowedExtra = "-._~!$&'()*+,;=:@/?";
+    /// <summary>Non-alphanumerics left literal by JS <c>encodeURIComponent</c> (Airtable matches it).</summary>
+    private const string UrlQueryAllowedExtra = "-_.!~*'()";
 
     public static JsonNode? ENCODE_URL_COMPONENT(JsonNode? value)
     {

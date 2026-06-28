@@ -180,7 +180,16 @@ public final class OrmTable<T extends AirtableModel> {
    * PrimaryModel.builder().primaryKey("x").build()}); only writable fields are sent.
    */
   public T create(T model) {
-    List<T> created = createBatch(List.of(model.toCreateFields()));
+    return create(model, false);
+  }
+
+  /**
+   * Create one record with optional {@code typecast}. When {@code typecast} is true Airtable
+   * coerces string inputs to the cell's type (parsing dates/numbers, creating missing select
+   * options).
+   */
+  public T create(T model, boolean typecast) {
+    List<T> created = createBatch(List.of(model.toCreateFields()), typecast);
     if (created.isEmpty()) {
       throw new AirtableException.Api("UNEXPECTED_RESPONSE", "create returned no records");
     }
@@ -189,22 +198,28 @@ public final class OrmTable<T extends AirtableModel> {
 
   /** Create many records. Chunks into Airtable's batch limit (10). */
   public List<T> create(List<T> models) {
+    return create(models, false);
+  }
+
+  /**
+   * Create many records with optional {@code typecast}. Chunks into Airtable's batch limit (10).
+   */
+  public List<T> create(List<T> models, boolean typecast) {
     List<Map<String, JsonNode>> payloads =
         models.stream().map(AirtableModel::toCreateFields).toList();
     List<T> collected = new ArrayList<>(models.size());
     for (int start = 0; start < payloads.size(); start += BATCH_SIZE) {
       collected.addAll(
-          createBatch(payloads.subList(start, Math.min(start + BATCH_SIZE, payloads.size()))));
+          createBatch(
+              payloads.subList(start, Math.min(start + BATCH_SIZE, payloads.size())), typecast));
     }
     return collected;
   }
 
-  private List<T> createBatch(List<Map<String, JsonNode>> records) {
+  private List<T> createBatch(List<Map<String, JsonNode>> records, boolean typecast) {
     if (records.isEmpty()) {
       return List.of();
     }
-    // `typecast` is intentionally omitted — Airtable's server-side default is
-    // false, matching the Rust / Python / TypeScript targets.
     ObjectNode body = AirtableJson.MAPPER.createObjectNode();
     ArrayNode recordsNode = body.putArray("records");
     for (Map<String, JsonNode> fields : records) {
@@ -212,6 +227,10 @@ public final class OrmTable<T extends AirtableModel> {
       fields.forEach(fieldsNode::set);
     }
     body.put("returnFieldsByFieldId", true);
+    // Only emit `typecast` when opted in; Airtable's server-side default is false.
+    if (typecast) {
+      body.put("typecast", true);
+    }
     String payload = client.createRecords(tableId, body.toString());
     return decodeListPayload(payload).getKey();
   }
@@ -223,7 +242,12 @@ public final class OrmTable<T extends AirtableModel> {
    * since the last {@code takeSnapshot()}.
    */
   public T update(T model) {
-    List<T> updated = update(List.of(model));
+    return update(model, false);
+  }
+
+  /** Update a single model with optional {@code typecast}. */
+  public T update(T model, boolean typecast) {
+    List<T> updated = update(List.of(model), typecast);
     if (updated.isEmpty()) {
       throw new AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records");
     }
@@ -236,6 +260,11 @@ public final class OrmTable<T extends AirtableModel> {
    * their original positions.
    */
   public List<T> update(List<T> models) {
+    return update(models, false);
+  }
+
+  /** Update many models (dirty fields only) with optional {@code typecast}. */
+  public List<T> update(List<T> models, boolean typecast) {
     if (models.isEmpty()) {
       return List.of();
     }
@@ -260,7 +289,8 @@ public final class OrmTable<T extends AirtableModel> {
     for (int start = 0; start < dirtyPatches.size(); start += BATCH_SIZE) {
       updated.addAll(
           updateBatch(
-              dirtyPatches.subList(start, Math.min(start + BATCH_SIZE, dirtyPatches.size()))));
+              dirtyPatches.subList(start, Math.min(start + BATCH_SIZE, dirtyPatches.size())),
+              typecast));
     }
     for (int i = 0; i < dirtyIndices.size() && i < updated.size(); i++) {
       results.set(dirtyIndices.get(i), updated.get(i));
@@ -276,15 +306,21 @@ public final class OrmTable<T extends AirtableModel> {
 
   /** Update a record's fields directly by ID (no model required). */
   public T updateFields(String recordId, Map<String, JsonNode> fields) {
+    return updateFields(recordId, fields, false);
+  }
+
+  /** Update a record's fields directly by ID with optional {@code typecast}. */
+  public T updateFields(String recordId, Map<String, JsonNode> fields, boolean typecast) {
     List<T> updated =
-        updateBatch(List.of(new AbstractMap.SimpleImmutableEntry<>(recordId, fields)));
+        updateBatch(List.of(new AbstractMap.SimpleImmutableEntry<>(recordId, fields)), typecast);
     if (updated.isEmpty()) {
       throw new AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records");
     }
     return updated.get(0);
   }
 
-  private List<T> updateBatch(List<Map.Entry<String, Map<String, JsonNode>>> patches) {
+  private List<T> updateBatch(
+      List<Map.Entry<String, Map<String, JsonNode>>> patches, boolean typecast) {
     if (patches.isEmpty()) {
       return List.of();
     }
@@ -297,6 +333,9 @@ public final class OrmTable<T extends AirtableModel> {
       patch.getValue().forEach(fieldsNode::set);
     }
     body.put("returnFieldsByFieldId", true);
+    if (typecast) {
+      body.put("typecast", true);
+    }
     String payload = client.updateRecords(tableId, body.toString());
     return decodeListPayload(payload).getKey();
   }
@@ -308,6 +347,11 @@ public final class OrmTable<T extends AirtableModel> {
    * record was inserted (vs updated).
    */
   public UpsertResult<T> upsert(T model, List<String> fieldsToMergeOn) {
+    return upsert(model, fieldsToMergeOn, false);
+  }
+
+  /** Upsert a record with optional {@code typecast}. See {@link #upsert(AirtableModel, List)}. */
+  public UpsertResult<T> upsert(T model, List<String> fieldsToMergeOn, boolean typecast) {
     ObjectNode body = AirtableJson.MAPPER.createObjectNode();
     ArrayNode recordsNode = body.putArray("records");
     ObjectNode fieldsNode = recordsNode.addObject().putObject("fields");
@@ -316,8 +360,14 @@ public final class OrmTable<T extends AirtableModel> {
     ArrayNode mergeOn = performUpsert.putArray("fieldsToMergeOn");
     fieldsToMergeOn.forEach(mergeOn::add);
     body.put("returnFieldsByFieldId", true);
+    if (typecast) {
+      body.put("typecast", true);
+    }
 
-    String payload = client.updateRecords(tableId, body.toString());
+    // Idempotent only when a merge key is supplied: with fieldsToMergeOn the
+    // request targets a stable identity (safe to retry on 5xx); without it the
+    // upsert inserts, so a retry could duplicate (unified retry spec, kx1m).
+    String payload = client.updateRecords(tableId, body.toString(), !fieldsToMergeOn.isEmpty());
     JsonNode obj = parseTree(payload);
     List<T> records = new ArrayList<>();
     for (JsonNode record : obj.path("records")) {

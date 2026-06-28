@@ -284,6 +284,10 @@ class AirtableModel {
 					fields[key] = this._fields[desc.propertyName];
 					break;
 			}
+			// On update, an included field is dirty; a nullish value is an explicit clear and must
+			// serialize as JSON null (undefined keys are dropped by JSON.stringify, leaving the cell
+			// unchanged). On create, undefined is left to be dropped (sparse write).
+			if (!this._isNew && fields[key] == null) fields[key] = null;
 		}
 		return fields;
 	}

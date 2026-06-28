@@ -129,10 +129,12 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
             let table_id = self.meta().table_id.expect("No table_id attached.");
             let fields = self.to_save_json();
             let record = if self.is_new() {
-                client.create_record(table_id, &fields, true).await?
+                client.create_record(table_id, &fields, true, false).await?
             } else {
                 let id = self.get_id().as_ref().expect("Record has no ID");
-                client.update_record(table_id, id, &fields, true).await?
+                client
+                    .update_record(table_id, id, &fields, true, false)
+                    .await?
             };
             self.apply_record(record)
         }

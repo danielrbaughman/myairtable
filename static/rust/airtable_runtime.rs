@@ -67,13 +67,8 @@ pub fn S(v: &Value) -> String {
             }
         }
         Value::String(s) => s.clone(),
-        Value::Array(arr) => {
-            if let Some(first) = arr.first() {
-                S(first)
-            } else {
-                String::new()
-            }
-        }
+        // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+        Value::Array(arr) => arr.iter().map(S).collect::<Vec<_>>().join(", "),
         _ => String::new(),
     }
 }

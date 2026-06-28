@@ -166,7 +166,16 @@ public final class DictTable {
 
   /** Create one record and return the populated envelope. */
   public Record create(Fields fields) {
-    List<Record> created = createBatch(List.of(fields));
+    return create(fields, false);
+  }
+
+  /**
+   * Create one record with optional {@code typecast}. When {@code typecast} is true Airtable
+   * coerces string inputs to the cell's type (parsing dates/numbers, creating missing select
+   * options).
+   */
+  public Record create(Fields fields, boolean typecast) {
+    List<Record> created = createBatch(List.of(fields), typecast);
     if (created.isEmpty()) {
       throw new AirtableException.Api("UNEXPECTED_RESPONSE", "create returned no records");
     }
@@ -175,20 +184,24 @@ public final class DictTable {
 
   /** Create many records. Chunks into Airtable's 10-per-call batch limit. */
   public List<Record> create(List<Fields> fields) {
+    return create(fields, false);
+  }
+
+  /** Create many records with optional {@code typecast}. Chunks into Airtable's batch limit. */
+  public List<Record> create(List<Fields> fields, boolean typecast) {
     List<Record> collected = new ArrayList<>(fields.size());
     for (int start = 0; start < fields.size(); start += BATCH_SIZE) {
       collected.addAll(
-          createBatch(fields.subList(start, Math.min(start + BATCH_SIZE, fields.size()))));
+          createBatch(
+              fields.subList(start, Math.min(start + BATCH_SIZE, fields.size())), typecast));
     }
     return collected;
   }
 
-  private List<Record> createBatch(List<Fields> fields) {
+  private List<Record> createBatch(List<Fields> fields, boolean typecast) {
     if (fields.isEmpty()) {
       return List.of();
     }
-    // `typecast` is intentionally omitted — matches the Rust / Py / TS behavior
-    // (Airtable defaults it to false).
     ObjectNode body = AirtableJson.MAPPER.createObjectNode();
     ArrayNode records = body.putArray("records");
     for (Fields f : fields) {
@@ -199,6 +212,10 @@ public final class DictTable {
     // Airtable echoes the inserted records back keyed by field ID, matching
     // `returnFieldsByFieldId=true` on list/get requests.
     body.put("returnFieldsByFieldId", true);
+    // Only emit `typecast` when opted in; Airtable's server-side default is false.
+    if (typecast) {
+      body.put("typecast", true);
+    }
     String payload = client.createRecords(tableId, body.toString());
     RawListResponse envelope = decode(payload, RawListResponse.class);
     List<Record> created = new ArrayList<>();
@@ -214,7 +231,12 @@ public final class DictTable {
 
   /** Update a single record's field values. */
   public Record update(String recordId, Fields fields) {
-    List<Record> updated = updateBatch(List.of(new Update(recordId, fields)));
+    return update(recordId, fields, false);
+  }
+
+  /** Update a single record's field values with optional {@code typecast}. */
+  public Record update(String recordId, Fields fields, boolean typecast) {
+    List<Record> updated = updateBatch(List.of(new Update(recordId, fields)), typecast);
     if (updated.isEmpty()) {
       throw new AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records");
     }
@@ -223,15 +245,21 @@ public final class DictTable {
 
   /** Update many records. Chunks into Airtable's 10-per-call batch limit. */
   public List<Record> update(List<Update> updates) {
+    return update(updates, false);
+  }
+
+  /** Update many records with optional {@code typecast}. Chunks into Airtable's batch limit. */
+  public List<Record> update(List<Update> updates, boolean typecast) {
     List<Record> collected = new ArrayList<>(updates.size());
     for (int start = 0; start < updates.size(); start += BATCH_SIZE) {
       collected.addAll(
-          updateBatch(updates.subList(start, Math.min(start + BATCH_SIZE, updates.size()))));
+          updateBatch(
+              updates.subList(start, Math.min(start + BATCH_SIZE, updates.size())), typecast));
     }
     return collected;
   }
 
-  private List<Record> updateBatch(List<Update> updates) {
+  private List<Record> updateBatch(List<Update> updates, boolean typecast) {
     if (updates.isEmpty()) {
       return List.of();
     }
@@ -244,6 +272,9 @@ public final class DictTable {
       update.fields().toMap().forEach(fieldsNode::set);
     }
     body.put("returnFieldsByFieldId", true);
+    if (typecast) {
+      body.put("typecast", true);
+    }
     String payload = client.updateRecords(tableId, body.toString());
     RawListResponse envelope = decode(payload, RawListResponse.class);
     List<Record> updated = new ArrayList<>();

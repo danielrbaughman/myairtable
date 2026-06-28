@@ -30,6 +30,16 @@ public actor AirtableClient {
     public let maxRetries: Int
     public let baseRetryDelay: TimeInterval
 
+    /// Hard ceiling applied to BOTH the computed exponential backoff AND a
+    /// server-provided `Retry-After`. A broken/hostile `Retry-After: 999999`
+    /// must never hang the call.
+    public static let maxRetryDelay: TimeInterval = 30.0
+
+    /// Upper bound (seconds) on the jitter added to a server-provided `Retry-After`, so concurrent
+    /// callers honoring the same value don't wake in lockstep and re-stampede the API (JR-M6, mirrors
+    /// the Kotlin/Java targets' RETRY_AFTER_JITTER_CAP).
+    public static let retryAfterJitterCap: TimeInterval = 1.0
+
     // MARK: - Init
 
     public init(
@@ -116,11 +126,40 @@ public actor AirtableClient {
 
     // MARK: - Request execution
 
-    /// Send a request with automatic retry on 429/5xx.
-    func send(_ request: URLRequest) async throws -> Data {
+    /// Send a request with automatic retry on transient failures.
+    ///
+    /// Retry policy (must stay semantically aligned with the other targets):
+    ///   - HTTP 429            -> ALWAYS retry (the request was rejected; nothing
+    ///                            was applied). Honors `Retry-After`.
+    ///   - HTTP 5xx (500-599)  -> retry ONLY IF `idempotent`.
+    ///   - transport/URLError  -> retry ONLY IF `idempotent`. We deliberately do
+    ///                            NOT try to distinguish connect-before-send from a
+    ///                            read-timeout: that distinction is not portably
+    ///                            available across the generator's targets, and the
+    ///                            conservative uniform rule (retry only when the op
+    ///                            is safe to repeat) is correct.
+    ///   - otherwise (2xx / non-retryable 4xx) -> return / throw.
+    ///
+    /// `idempotent` is classified at the call site: list/get/update-by-id/delete
+    /// are idempotent; create (POST) is not; upsert is idempotent iff it carries a
+    /// non-empty merge key (the key determines record identity).
+    func send(_ request: URLRequest, idempotent: Bool = true) async throws -> Data {
         var attempt = 0
         while true {
-            let (data, response) = try await session.data(for: request)
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await session.data(for: request)
+            } catch {
+                // Transport/IO failure (URLError etc.): retry only if the op is
+                // safe to repeat, otherwise surface the error immediately.
+                if idempotent && attempt < maxRetries {
+                    try await Task.sleep(nanoseconds: backoffNanoseconds(attempt: attempt))
+                    attempt += 1
+                    continue
+                }
+                throw error
+            }
             guard let http = response as? HTTPURLResponse else {
                 throw AirtableError.http(statusCode: 0, body: nil)
             }
@@ -128,10 +167,21 @@ public actor AirtableClient {
                 return data
             }
 
-            let isRetryable = http.statusCode == 429 || (500..<600).contains(http.statusCode)
+            // 429 always retries; 5xx retries only for idempotent requests.
+            let isRateLimited = http.statusCode == 429
+            let isServerError = (500..<600).contains(http.statusCode)
+            let isRetryable = isRateLimited || (isServerError && idempotent)
             if isRetryable && attempt < maxRetries {
-                let retryAfter = retryAfterSeconds(from: http) ?? baseRetryDelay * pow(2.0, Double(attempt))
-                try await Task.sleep(nanoseconds: UInt64(retryAfter * 1_000_000_000))
+                let nanos: UInt64
+                if let retryAfter = retryAfterSeconds(from: http) {
+                    // Honor (and cap) a server-provided Retry-After, plus bounded jitter so concurrent
+                    // callers don't wake in lockstep and re-stampede the API (JR-M6).
+                    let jitter = Double.random(in: 0..<1) * min(retryAfter, Self.retryAfterJitterCap)
+                    nanos = UInt64(min(retryAfter + jitter, Self.maxRetryDelay) * 1_000_000_000)
+                } else {
+                    nanos = backoffNanoseconds(attempt: attempt)
+                }
+                try await Task.sleep(nanoseconds: nanos)
                 attempt += 1
                 continue
             }
@@ -149,10 +199,49 @@ public actor AirtableClient {
         }
     }
 
-    private func retryAfterSeconds(from response: HTTPURLResponse) -> TimeInterval? {
-        guard let raw = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
-        return Double(raw)
+    /// Full-jitter exponential backoff for a given attempt, in nanoseconds.
+    /// Delay = random_in[0,1) * min(maxRetryDelay, baseRetryDelay * 2^attempt).
+    /// This both adds jitter (previously absent) and caps the backoff.
+    private func backoffNanoseconds(attempt: Int) -> UInt64 {
+        let exponential = baseRetryDelay * pow(2.0, Double(attempt))
+        let capped = min(Self.maxRetryDelay, exponential)
+        let jittered = Double.random(in: 0..<1) * capped
+        return UInt64(jittered * 1_000_000_000)
     }
+
+    /// Parse a `Retry-After` header per RFC 9110: either delta-seconds
+    /// ("120" / "1.5") or an HTTP-date (IMF-fixdate, e.g.
+    /// "Wed, 21 Oct 2015 07:28:00 GMT"). The result is floored at 0 (a garbage
+    /// or past date must never reach `Task.sleep` as a negative) and capped at
+    /// `maxRetryDelay` so a hostile value can't hang the call.
+    private func retryAfterSeconds(from response: HTTPURLResponse) -> TimeInterval? {
+        guard
+            let raw = response.value(forHTTPHeaderField: "Retry-After")?
+                .trimmingCharacters(in: .whitespaces),
+            !raw.isEmpty
+        else { return nil }
+
+        let seconds: TimeInterval
+        if let delta = Double(raw) {
+            seconds = delta
+        } else if let date = Self.httpDateFormatter.date(from: raw) {
+            seconds = date.timeIntervalSinceNow
+        } else {
+            return nil
+        }
+        // Floor negatives to 0, then cap at the max delay.
+        return min(Self.maxRetryDelay, max(0, seconds))
+    }
+
+    /// RFC 9110 IMF-fixdate parser for the `Retry-After` HTTP-date form.
+    /// Fixed to GMT + POSIX locale so it parses regardless of host locale.
+    private static let httpDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f
+    }()
 
     /// Decorate a request with Authorization + Content-Type headers.
     func authorized(_ url: URL, method: String = "GET", body: Data? = nil) -> URLRequest {
@@ -243,17 +332,24 @@ public actor AirtableClient {
     public func createRecords(tableId: String, body: Data) async throws -> Data {
         let url = try tableURL(tableId)
         let req = authorized(url, method: "POST", body: body)
-        let response = try await send(req)
+        // create (POST) is NOT idempotent: a retried 5xx/transport failure could
+        // duplicate records. Only 429 (rejected, nothing applied) is retried.
+        let response = try await send(req, idempotent: false)
         await cache.invalidate(.table(tableId))
         return response
     }
 
     /// PATCH to update records. `body` is `{records: [{id, fields}, ...]}`.
     /// Cache is invalidated for the table on success.
-    public func updateRecords(tableId: String, body: Data) async throws -> Data {
+    ///
+    /// This is also the upsert choke point (the body may carry `performUpsert`).
+    /// Plain update-by-id is idempotent; upsert is idempotent iff it merges on a
+    /// non-empty key, so callers pass `idempotent` explicitly (default `true`
+    /// covers the plain update-by-id case).
+    public func updateRecords(tableId: String, body: Data, idempotent: Bool = true) async throws -> Data {
         let url = try tableURL(tableId)
         let req = authorized(url, method: "PATCH", body: body)
-        let response = try await send(req)
+        let response = try await send(req, idempotent: idempotent)
         await cache.invalidate(.table(tableId))
         return response
     }

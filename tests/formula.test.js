@@ -183,6 +183,11 @@ describe("TextField", () => {
 			expect(field.equals('Say "Hello"')).toBe('{Name}="Say \\"Hello\\""');
 		});
 
+		it("escapes backslashes in value (TC2 regression)", () => {
+			const field = new TextField("Name");
+			expect(field.equals("back\\slash")).toBe('{Name}="back\\\\slash"');
+		});
+
 		it("case sensitive with trim", () => {
 			const field = new TextField("Name");
 			const result = field.equals("John", true, true);
@@ -293,6 +298,18 @@ describe("TextField", () => {
 			const field = new TextField("Description");
 			const result = field.contains("keyword");
 			expect(result).toContain(">0");
+		});
+
+		it("escapes double quotes in the value (TC2 regression)", () => {
+			const field = new TextField("Description");
+			// Unescaped, the embedded quote terminates the string literal early and Airtable
+			// rejects the formula (INVALID_FILTER_BY_FORMULA).
+			expect(field.contains('say "hi"')).toContain('say \\"hi\\"');
+		});
+
+		it("escapes backslashes in the value (TC2 regression)", () => {
+			const field = new TextField("Description");
+			expect(field.contains("back\\slash")).toContain("back\\\\slash");
 		});
 	});
 

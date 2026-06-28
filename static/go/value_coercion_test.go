@@ -47,7 +47,7 @@ func TestSCoercion(t *testing.T) {
 		{float64(3.14), "3.14"}, // fractional kept
 		{int64(8), "8"},
 		{int(9), "9"},
-		{[]any{"first", "second"}, "first"}, // first element
+		{[]any{"first", "second"}, "first, second"}, // multi-value joins with ", "
 		{[]any{}, ""},
 		{map[string]any{}, ""},
 	}

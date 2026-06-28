@@ -717,7 +717,8 @@ class CodeEmitter:
             return None  # Fall through to ENCODE_URL_COMPONENT in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
-            return f'urllib.parse.quote({arg}, safe="")'
+            # Match JS encodeURIComponent: leave -_.!~*'() literal (urllib already keeps -_.~).
+            return f'urllib.parse.quote({arg}, safe="!*\'()")'
         return f"encodeURIComponent({arg})"
 
     def _emit_fn_int(self, node: FunctionCall) -> str | None:
@@ -1064,9 +1065,13 @@ class CodeEmitter:
         if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
             return None  # Fall through to runtime CONCATENATE
         args = ", ".join(self.emit(arg) for arg in node.args)
+        # Each argument is string-coerced as a WHOLE via S() (a multi-value field joins with ", ");
+        # do NOT route through AS()/A(), which would flatten an array arg into separate elements and
+        # drop the separator (matches the runtime CONCATENATE used by the other targets).
         if self.language == "python":
-            return f'"".join({self._runtime}.AS(({args},)))'
-        return f'{self._runtime}.AS([{args}]).join("")'
+            # map() (not a comprehension) so a walrus-bearing arg (e.g. REGEX_EXTRACT) stays legal.
+            return f'"".join(map({self._runtime}.S, ({args},)))'
+        return f'[{args}].map((_x) => {self._runtime}.S(_x)).join("")'
 
     def _emit_fn_rept(self, node: FunctionCall) -> str | None:
         if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):

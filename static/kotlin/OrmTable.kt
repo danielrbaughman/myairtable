@@ -146,18 +146,28 @@ class OrmTable<T : AirtableModel>(
     /**
      * Create one record. Pass a fresh model built with its constructor (e.g.
      * `PrimaryModel(primaryKey = "x")`); only writable fields are sent.
+     *
+     * When [typecast] is true, Airtable coerces string inputs to the cell's
+     * type (creating missing select options, parsing dates/numbers, etc.).
      */
-    suspend fun create(model: T): T =
-        createBatch(listOf(model.toCreateFields())).firstOrNull()
+    suspend fun create(
+        model: T,
+        typecast: Boolean = false,
+    ): T =
+        createBatch(listOf(model.toCreateFields()), typecast).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "create returned no records")
 
     /** Create many records. Chunks into Airtable's batch limit (10). */
-    suspend fun create(models: List<T>): List<T> = models.map { it.toCreateFields() }.chunked(BATCH_SIZE).flatMap { createBatch(it) }
+    suspend fun create(
+        models: List<T>,
+        typecast: Boolean = false,
+    ): List<T> = models.map { it.toCreateFields() }.chunked(BATCH_SIZE).flatMap { createBatch(it, typecast) }
 
-    private suspend fun createBatch(records: List<Map<String, JsonElement>>): List<T> {
+    private suspend fun createBatch(
+        records: List<Map<String, JsonElement>>,
+        typecast: Boolean,
+    ): List<T> {
         if (records.isEmpty()) return emptyList()
-        // `typecast` is intentionally omitted — Airtable's server-side default
-        // is false, matching the Rust / Python / TypeScript targets.
         val body =
             buildJsonObject {
                 put(
@@ -167,6 +177,8 @@ class OrmTable<T : AirtableModel>(
                     },
                 )
                 put("returnFieldsByFieldId", JsonPrimitive(true))
+                // Only emit `typecast` when opted in; Airtable defaults it to false.
+                if (typecast) put("typecast", JsonPrimitive(true))
             }
         val payload = client.createRecords(tableId, body.toString())
         return decodeListPayload(payload).first
@@ -179,9 +191,14 @@ class OrmTable<T : AirtableModel>(
     /**
      * Update a single model. Diffs against the model's snapshot and sends
      * only fields that changed since the last `takeSnapshot()`.
+     *
+     * When [typecast] is true, Airtable coerces string inputs to the cell's type.
      */
-    suspend fun update(model: T): T =
-        update(listOf(model)).firstOrNull()
+    suspend fun update(
+        model: T,
+        typecast: Boolean = false,
+    ): T =
+        update(listOf(model), typecast).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records")
 
     /**
@@ -189,7 +206,10 @@ class OrmTable<T : AirtableModel>(
      * Models with no dirty fields already match server state, so they are
      * never PATCHed — they come back unchanged, in their original positions.
      */
-    suspend fun update(models: List<T>): List<T> {
+    suspend fun update(
+        models: List<T>,
+        typecast: Boolean = false,
+    ): List<T> {
         if (models.isEmpty()) return emptyList()
         val results = MutableList<T?>(models.size) { null }
         val dirtyIndices = mutableListOf<Int>()
@@ -207,7 +227,7 @@ class OrmTable<T : AirtableModel>(
                 dirtyPatches.add(recordId to dirty)
             }
         }
-        val updated = dirtyPatches.chunked(BATCH_SIZE).flatMap { updateBatch(it) }
+        val updated = dirtyPatches.chunked(BATCH_SIZE).flatMap { updateBatch(it, typecast) }
         for ((slot, model) in dirtyIndices.zip(updated)) {
             results[slot] = model
         }
@@ -220,11 +240,15 @@ class OrmTable<T : AirtableModel>(
     suspend fun updateFields(
         recordId: String,
         fields: Map<String, JsonElement>,
+        typecast: Boolean = false,
     ): T =
-        updateBatch(listOf(recordId to fields)).firstOrNull()
+        updateBatch(listOf(recordId to fields), typecast).firstOrNull()
             ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "update returned no records")
 
-    private suspend fun updateBatch(patches: List<Pair<String, Map<String, JsonElement>>>): List<T> {
+    private suspend fun updateBatch(
+        patches: List<Pair<String, Map<String, JsonElement>>>,
+        typecast: Boolean,
+    ): List<T> {
         if (patches.isEmpty()) return emptyList()
         val body =
             buildJsonObject {
@@ -242,6 +266,7 @@ class OrmTable<T : AirtableModel>(
                     },
                 )
                 put("returnFieldsByFieldId", JsonPrimitive(true))
+                if (typecast) put("typecast", JsonPrimitive(true))
             }
         val payload = client.updateRecords(tableId, body.toString())
         return decodeListPayload(payload).first
@@ -258,6 +283,7 @@ class OrmTable<T : AirtableModel>(
     suspend fun upsert(
         model: T,
         fieldsToMergeOn: List<String>,
+        typecast: Boolean = false,
     ): UpsertResult<T> {
         val body =
             buildJsonObject {
@@ -267,8 +293,12 @@ class OrmTable<T : AirtableModel>(
                 )
                 put("performUpsert", buildJsonObject { put("fieldsToMergeOn", buildJsonArray { fieldsToMergeOn.forEach { add(JsonPrimitive(it)) } }) })
                 put("returnFieldsByFieldId", JsonPrimitive(true))
+                if (typecast) put("typecast", JsonPrimitive(true))
             }
-        val payload = client.updateRecords(tableId, body.toString())
+        // An upsert is idempotent only when it merges on a key — the merge
+        // fields determine record identity, so a retried PATCH converges. With
+        // no merge fields the upsert inserts, so it must not retry on 5xx/IO.
+        val payload = client.updateRecords(tableId, body.toString(), idempotent = fieldsToMergeOn.isNotEmpty())
         val obj = decoding { json.parseToJsonElement(payload) as JsonObject }
         val records = (obj["records"] as? JsonArray)?.map { decodeEnvelope(it) } ?: emptyList()
         val first =

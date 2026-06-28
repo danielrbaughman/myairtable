@@ -401,8 +401,8 @@ object AirtableRuntime {
 
     fun CONCATENATE(vararg args: JsonElement?): JsonElement = JsonPrimitive(args.joinToString("") { S(it) })
 
-    /** Characters NOT percent-encoded, mirroring Swift's `CharacterSet.urlQueryAllowed`. */
-    private const val URL_QUERY_ALLOWED_EXTRA = "-._~!\$&'()*+,;=:@/?"
+    /** Non-alphanumerics left literal by JS `encodeURIComponent` (Airtable matches it). */
+    private const val URL_QUERY_ALLOWED_EXTRA = "-_.!~*'()"
 
     fun ENCODE_URL_COMPONENT(value: JsonElement?): JsonElement {
         val s = S(value)

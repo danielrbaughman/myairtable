@@ -141,7 +141,8 @@ fun S(value: JsonElement?): String =
         }
 
         is JsonArray -> {
-            if (value.isEmpty()) "" else S(value[0])
+            // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+            value.joinToString(", ") { S(it) }
         }
 
         is JsonObject -> {

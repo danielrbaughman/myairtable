@@ -79,8 +79,8 @@ fn s_string() {
     assert_eq!(S(&json!("hello")), "hello");
 }
 #[test]
-fn s_array_first() {
-    assert_eq!(S(&json!(["hello", "world"])), "hello");
+fn s_array_joins_with_comma() {
+    assert_eq!(S(&json!(["hello", "world"])), "hello, world");
 }
 
 // =============================================================================

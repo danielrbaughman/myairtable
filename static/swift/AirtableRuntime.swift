@@ -44,7 +44,8 @@ public enum AirtableRuntime {
             }
             return String(d)
         case .string(let s): return s
-        case .array(let arr): return arr.isEmpty ? "" : S(arr[0])
+        // Airtable coerces a multi-value field to a string by joining with ", ", not first element.
+        case .array(let arr): return arr.map { S($0) }.joined(separator: ", ")
         case .object: return ""
         }
     }
@@ -448,9 +449,20 @@ public enum AirtableRuntime {
         .string(args.map { S($0) }.joined())
     }
 
+    /// Non-alphanumerics left literal by JS `encodeURIComponent` (Airtable matches it). Note this
+    /// is ASCII-only — `.urlQueryAllowed` is far too permissive (keeps `+,;=:@/?&$` literal).
+    private static let urlComponentAllowed: CharacterSet = {
+        var set = CharacterSet()
+        set.insert(charactersIn: "0123456789")
+        set.insert(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        set.insert(charactersIn: "abcdefghijklmnopqrstuvwxyz")
+        set.insert(charactersIn: "-_.!~*'()")
+        return set
+    }()
+
     public static func ENCODE_URL_COMPONENT(_ v: AirtableJSONValue?) -> AirtableJSONValue {
         let s = S(v)
-        return .string(s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s)
+        return .string(s.addingPercentEncoding(withAllowedCharacters: urlComponentAllowed) ?? s)
     }
 
     public static func T(_ v: AirtableJSONValue?) -> AirtableJSONValue {

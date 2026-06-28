@@ -57,7 +57,7 @@ func TestS(t *testing.T) {
 	eq(t, "s_fractional_float", S(2.5), "2.5")
 	eq(t, "s_int", S(42.0), "42")
 	eq(t, "s_string", S("hello"), "hello")
-	eq(t, "s_array_first", S(arr("hello", "world")), "hello")
+	eq(t, "s_array_join", S(arr("hello", "world")), "hello, world")
 }
 
 // =============================================================================

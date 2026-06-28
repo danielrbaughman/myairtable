@@ -1,5 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace MyAirtable;
 
@@ -99,16 +104,26 @@ public sealed class DictTable
     {
         var pars = query.ToParameters();
         pars.Add(new("offset", offset));
-        return _client.SendAsync(HttpMethod.Get, _client.TableUrl(_tableId, pars), null, ct);
+        return _client.SendAsync(
+            HttpMethod.Get,
+            _client.TableUrl(_tableId, pars),
+            null,
+            idempotent: true,
+            ct
+        );
     }
 
     // ---- creates ------------------------------------------------------------
 
-    public async Task<Record> CreateAsync(Fields fields, CancellationToken ct = default) =>
-        (await CreateAsync(new[] { fields }, ct).ConfigureAwait(false))[0];
+    public async Task<Record> CreateAsync(
+        Fields fields,
+        bool typecast = false,
+        CancellationToken ct = default
+    ) => (await CreateAsync(new[] { fields }, typecast, ct).ConfigureAwait(false))[0];
 
     public async Task<List<Record>> CreateAsync(
         IReadOnlyList<Fields> fields,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
@@ -124,6 +139,8 @@ public sealed class DictTable
                 ),
                 ["returnFieldsByFieldId"] = true,
             };
+            if (typecast)
+                body["typecast"] = true;
             var payload = await _client
                 .CreateRecordsAsync(_tableId, body.ToJsonString(), ct)
                 .ConfigureAwait(false);
@@ -138,11 +155,17 @@ public sealed class DictTable
     public async Task<Record> UpdateAsync(
         string recordId,
         Fields fields,
+        bool typecast = false,
         CancellationToken ct = default
-    ) => (await UpdateAsync(new[] { new Update(recordId, fields) }, ct).ConfigureAwait(false))[0];
+    ) =>
+        (
+            await UpdateAsync(new[] { new Update(recordId, fields) }, typecast, ct)
+                .ConfigureAwait(false)
+        )[0];
 
     public async Task<List<Record>> UpdateAsync(
         IReadOnlyList<Update> updates,
+        bool typecast = false,
         CancellationToken ct = default
     )
     {
@@ -165,8 +188,10 @@ public sealed class DictTable
                 ),
                 ["returnFieldsByFieldId"] = true,
             };
+            if (typecast)
+                body["typecast"] = true;
             var payload = await _client
-                .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct)
+                .UpdateRecordsAsync(_tableId, body.ToJsonString(), ct: ct)
                 .ConfigureAwait(false);
             foreach (var raw in Decode<RawList>(payload).Records ?? new())
                 updated.Add(ToRecord(raw));

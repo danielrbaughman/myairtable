@@ -65,8 +65,8 @@ func (t *DictTable) GetMany(ctx context.Context, q *Query) ([]*DictRecord, error
 }
 
 // CreateOne inserts a single record from the given fields.
-func (t *DictTable) CreateOne(ctx context.Context, fields *Fields) (*DictRecord, error) {
-	created, err := t.CreateMany(ctx, []*Fields{fields})
+func (t *DictTable) CreateOne(ctx context.Context, fields *Fields, opts ...WriteOption) (*DictRecord, error) {
+	created, err := t.CreateMany(ctx, []*Fields{fields}, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +77,13 @@ func (t *DictTable) CreateOne(ctx context.Context, fields *Fields) (*DictRecord,
 }
 
 // CreateMany inserts multiple records (batched in chunks of 10).
-func (t *DictTable) CreateMany(ctx context.Context, fields []*Fields) ([]*DictRecord, error) {
+func (t *DictTable) CreateMany(ctx context.Context, fields []*Fields, opts ...WriteOption) ([]*DictRecord, error) {
+	o := resolveWriteOptions(opts)
 	payload := make([]map[string]json.RawMessage, 0, len(fields))
 	for _, f := range fields {
 		payload = append(payload, f.Raw())
 	}
-	recs, err := t.client.createRecords(ctx, t.tableID, payload, false)
+	recs, err := t.client.createRecords(ctx, t.tableID, payload, o.typecast)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +91,9 @@ func (t *DictTable) CreateMany(ctx context.Context, fields []*Fields) ([]*DictRe
 }
 
 // UpdateOne PATCHes a single record's fields.
-func (t *DictTable) UpdateOne(ctx context.Context, id string, fields *Fields) (*DictRecord, error) {
-	recs, err := t.client.updateRecords(ctx, t.tableID, []recordPayload{{ID: id, Fields: fields.Raw()}}, false)
+func (t *DictTable) UpdateOne(ctx context.Context, id string, fields *Fields, opts ...WriteOption) (*DictRecord, error) {
+	o := resolveWriteOptions(opts)
+	recs, err := t.client.updateRecords(ctx, t.tableID, []recordPayload{{ID: id, Fields: fields.Raw()}}, o.typecast)
 	if err != nil {
 		return nil, err
 	}
