@@ -420,7 +420,7 @@ def write_models(
                 ],
                 indent=1,
             )
-            write.line_indented(f"public Task<{model_name}> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct);")
+            write.line_indented(f"public Task<{model_name}> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct: ct);")
             write.line_empty()
             _doc(write, "Re-fetch this model from the server. Returns a fresh instance.", indent=1)
             write.line_indented(f"public Task<{model_name}> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);")

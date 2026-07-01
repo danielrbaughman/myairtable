@@ -2842,7 +2842,7 @@ class TestCSharpComputedFields:
 
     def test_fluent_crud_methods_delegate_to_model_ops(self, tmp_path: Path):
         content = self._model([("My Text", "fld001", "singleLineText")], tmp_path)
-        assert "public Task<TestTableModel> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct);" in content
+        assert "public Task<TestTableModel> SaveAsync(CancellationToken ct = default) => ModelOps.SaveAsync(this, ct: ct);" in content
         assert "public Task<TestTableModel> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);" in content
         assert "public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);" in content
 

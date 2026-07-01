@@ -11,7 +11,13 @@
 /** Base class for all errors raised by the generated client. */
 export class AirtableError extends Error {
 	constructor(message: string, options?: { cause?: unknown }) {
-		super(message, options as ErrorOptions);
+		super(message);
+		// Assign `cause` manually rather than passing it to `super(message, options)`:
+		// the two-arg Error constructor and the `ErrorOptions` type only exist when the
+		// consumer's tsconfig lib includes ES2022, and we must compile under older targets.
+		if (options?.cause !== undefined) {
+			(this as { cause?: unknown }).cause = options.cause;
+		}
 		this.name = "AirtableError";
 		Object.setPrototypeOf(this, AirtableError.prototype);
 	}
