@@ -974,7 +974,15 @@ class Table(Named):
         return None
 
     def detect_duplicate_property_names(self) -> None:
-        """Detect duplicate property names in a table's fields."""
+        """Warn about fields whose property names collide within this table.
+
+        The generators deduplicate colliding property names automatically (the
+        second field becomes `name_v2` / `nameV2` — see
+        `deduplicated_field_property_map`), so output stays valid. This warning
+        surfaces the underlying Airtable collision — usually a custom property
+        name that duplicates another field's — so it can be fixed at the source
+        if the auto-suffixed name isn't wanted.
+        """
         from collections import Counter
 
         property_names = [field.name_snake() for field in self.fields]
@@ -982,7 +990,7 @@ class Table(Named):
 
         for name, count in counts.items():
             if count > 1:
-                print(f"[red]Warning: Duplicate property name detected:[/] '{name}' in table '{self.name}'")
+                print(f"[yellow]Warning: Duplicate property name '{name}' in table '{self.name}' — auto-suffixed (e.g. '{name}_v2').[/]")
 
     def select_fields(self) -> list[Field]:
         """Get fields with select options. Uses list comprehension for efficiency."""

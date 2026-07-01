@@ -41,12 +41,17 @@ if command -v swift &> /dev/null; then
     (cd tests/swift_static && swift build)
     (cd tests/swift_static && swift test)
     if command -v swift-format &> /dev/null; then
-        # swift-format major version must match the Swift toolchain major to avoid
-        # silent drift between local + CI. swift-format 602.x.x ships with Swift 6.
+        # Require a swift-format from the Swift 6.0+ toolchain. Two version
+        # schemes exist: the old swift-syntax numbering (5xx = Swift 5.x,
+        # 6xx = Swift 6.x, e.g. 600.x/602.x) and the newer semantic scheme that
+        # tracks the Swift release directly (6.x.x = Swift 6.x). Accept either.
         SWIFT_FORMAT_VERSION=$(swift-format --version | head -1)
         SWIFT_FORMAT_MAJOR=${SWIFT_FORMAT_VERSION%%.*}
-        if [ "$SWIFT_FORMAT_MAJOR" -lt 600 ]; then
-            echo "[error] swift-format $SWIFT_FORMAT_VERSION is too old. Need 600.x.x+ (Swift 6.0 toolchain)."
+        # OK when: new scheme major >= 6 (and < 100), or old scheme major >= 600.
+        if { [ "$SWIFT_FORMAT_MAJOR" -ge 6 ] && [ "$SWIFT_FORMAT_MAJOR" -lt 100 ]; } || [ "$SWIFT_FORMAT_MAJOR" -ge 600 ]; then
+            :
+        else
+            echo "[error] swift-format $SWIFT_FORMAT_VERSION is too old. Need Swift 6.0+ (6.x.x or 600.x.x+)."
             exit 1
         fi
         swift-format format --in-place --recursive --configuration .swift-format static/swift tests/swift_static/Tests
