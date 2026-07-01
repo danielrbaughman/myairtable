@@ -11,6 +11,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    deduplicated_field_property_map,
     escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
@@ -179,6 +180,7 @@ def write_types(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         # Track all exports for this file
         exports: list[str] = []
+        prop_map = deduplicated_field_property_map(table)
 
         with WriteToJavaScriptFile(path=types_dir / f"{table.name_camel()}.js") as write:
             # Field Options
@@ -208,7 +210,7 @@ def write_types(base: Base, output_folder: Path) -> None:
             # Table Types
             field_names = [sanitize_string(field.name) for field in table.fields]
             field_ids = [field.id for field in table.fields]
-            property_names = [field.name_camel() for field in table.fields]
+            property_names = [prop_map[field.id] for field in table.fields]
 
             write.region(table.name_upper())
 
@@ -270,7 +272,7 @@ def write_types(base: Base, output_folder: Path) -> None:
                     case "name_sanitized":
                         return sanitize_string(field.name)
                     case "name_camel":
-                        return field.name_camel()
+                        return prop_map[field.id]
                     case _:
                         raise ValueError(f"Unknown field attribute: {attr}")
 
@@ -377,6 +379,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
     zod_dir = create_dynamic_subdir(output_folder, Paths.ZOD)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map(table)
         with WriteToJavaScriptFile(path=zod_dir / f"{table.name_camel()}.js") as write:
             write.line('const z = require("zod");')
             write.mark_imports()
@@ -396,7 +399,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             write.line(f"const {table.name_pascal()}Schema = z.object({{")
             write.line_indented("id: recordIdSchema.optional(),")
             for field in table.fields:
-                write.line_indented(f"{field.name_camel()}: {field.zod_type()},")
+                write.line_indented(f"{prop_map[field.id]}: {field.zod_type()},")
             write.line("});")
             write.line_empty()
             write.endregion()
@@ -415,6 +418,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
     # Write individual table model files
     for table in base.tables:
+        prop_map = deduplicated_field_property_map(table)
         with WriteToJavaScriptFile(path=models_dir / f"{table.name_camel()}.js") as write:
             # Requires (registered as candidates; only symbols used in the body are emitted)
             write.region("REQUIRES")
@@ -455,7 +459,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             if runtime:
                 linked_record_field_ids = table.linked_record_field_ids()
                 single_linked_record_field_ids = table.single_linked_record_field_ids()
-                field_name_map = {f.id: f.name_camel() for f in table.fields}
+                field_name_map = {f.id: prop_map[f.id] for f in table.fields}
                 raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
                 if flatten and raw_formulas:
                     formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -496,7 +500,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # Field descriptors
             write.line_indented("static fieldDescriptors = [", 1)
             for field in table.fields:
-                field_name = field.name_camel()
+                field_name = prop_map[field.id]
                 field_type = field.typescript_type()
                 is_computed = "true" if field.is_computed() else "false"
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
@@ -539,24 +543,24 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 if field.is_formula() and runtime:
                     # Formula field -> computed property that checks evaluateFormulasAtRuntime
                     write.docstring(docstring)
-                    write.line_indented(f"get {field.name_camel()}() {{")
+                    write.line_indented(f"get {prop_map[field.id]}() {{")
                     if field.id in transpiled_formulas:
                         formula_code = transpiled_formulas[field.id]
-                        write.line_indented(f'if (this.evaluateFormulasAtRuntime) this._fields["{field.name_camel()}"] = {formula_code};', 2)
-                    write.line_indented(f'return this._fields["{field.name_camel()}"];', 2)
+                        write.line_indented(f'if (this.evaluateFormulasAtRuntime) this._fields["{prop_map[field.id]}"] = {formula_code};', 2)
+                    write.line_indented(f'return this._fields["{prop_map[field.id]}"];', 2)
                     write.line_indented("}")
                 else:
                     field_type = field.typescript_type()
                     write.docstring(docstring)
-                    write.line_indented(f'get {field.name_camel()}() {{ return this._fields["{field.name_camel()}"]; }}')
+                    write.line_indented(f'get {prop_map[field.id]}() {{ return this._fields["{prop_map[field.id]}"]; }}')
                     if not field.is_computed():
                         if field_type == "RecordId" and not field.is_computed():
-                            write.line_indented(f"set {field.name_camel()}(value) {{ this._setLinkedField('{field.name_camel()}', value); }}")
+                            write.line_indented(f"set {prop_map[field.id]}(value) {{ this._setLinkedField('{prop_map[field.id]}', value); }}")
                         elif field_type == "RecordId[]" and not field.is_computed():
-                            write.line_indented(f"set {field.name_camel()}(value) {{ this._setLinkedRecordsField('{field.name_camel()}', value); }}")
+                            write.line_indented(f"set {prop_map[field.id]}(value) {{ this._setLinkedRecordsField('{prop_map[field.id]}', value); }}")
                         else:
                             write.line_indented(
-                                f"set {field.name_camel()}(value) {{ this._fields[\"{field.name_camel()}\"] = value; this.markDirty('{field.name_camel()}'); }}"
+                                f"set {prop_map[field.id]}(value) {{ this._fields[\"{prop_map[field.id]}\"] = value; this.markDirty('{prop_map[field.id]}'); }}"
                             )
             write.line_empty()
 
@@ -573,7 +577,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_empty()
 
             # url
-            has_field_called_url: bool = any(field.name_camel() == "url" for field in table.fields)
+            has_field_called_url: bool = any(name == "url" for name in prop_map.values())
             url_method_name: str = "URL" if has_field_called_url else "url"
             write.docstring("Get the URL for this record in Airtable, with optional view.")
             write.line_indented(f"{url_method_name}(view) {{")
@@ -654,6 +658,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map(table)
         with WriteToJavaScriptFile(path=formulas_dir / f"{table.name_camel()}.js") as write:
             # Requires (only the formula classes actually instantiated are emitted)
             write.mark_imports()
@@ -678,7 +683,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line(f"const {table.name_pascal()}Formulas = {{")
             write.line_indented("id: new ID(),")
             for field in table.fields:
-                property_name = field.name_camel()
+                property_name = prop_map[field.id]
                 formula_class = field.formula_class()
                 write.line_indented(f"{property_name}: new {formula_class}('{field.id}'),")
             write.line("};")
@@ -694,6 +699,7 @@ def write_options(base: Base, output_folder: Path) -> None:
     options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map(table)
         select_fields = table.select_fields()
         with WriteToJavaScriptFile(path=options_dir / f"{table.name_camel()}.js") as write:
             if len(select_fields) > 0:
@@ -706,7 +712,7 @@ def write_options(base: Base, output_folder: Path) -> None:
             # Object with property per select field
             write.line(f"const {table.name_pascal()}Options = {{")
             for field in select_fields:
-                write.line_indented(f"{field.name_camel()}: {field.options_name()}s,")
+                write.line_indented(f"{prop_map[field.id]}: {field.options_name()}s,")
             write.line("};")
             write.line_empty()
 

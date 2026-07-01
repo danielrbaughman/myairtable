@@ -12,6 +12,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    deduplicated_field_property_map_snake,
     escape_for_double_quoted_string,
     reset_folder,
     sanitize_property_name,
@@ -291,6 +292,7 @@ def write_options(base: Base, output_folder: Path) -> None:
         if not select_fields:
             continue
 
+        prop_map = deduplicated_field_property_map_snake(table)
         mod_name = table.name_snake()
         mod_names.append(mod_name)
 
@@ -371,7 +373,7 @@ def write_options(base: Base, output_folder: Path) -> None:
                     continue
                 enum_name = field.options_name()
                 write.doc_comment(f"Valid options for `{sanitize_string(field.name)}`", indent=1)
-                write.pub_field(_rust_ident(field.name_snake()), f"&'static [{enum_name}]")
+                write.pub_field(_rust_ident(prop_map[field.id]), f"&'static [{enum_name}]")
             write.line("}")
             write.line_empty()
 
@@ -386,7 +388,7 @@ def write_options(base: Base, output_folder: Path) -> None:
                 raw_variants = [_choice_to_variant(c) for c in choices]
                 variants = _deduplicate_variants(raw_variants)
                 variant_list = ", ".join(f"{enum_name}::{v}" for v in variants)
-                write.line_indented(f"{_rust_ident(field.name_snake())}: &[{variant_list}],", 3)
+                write.line_indented(f"{_rust_ident(prop_map[field.id])}: &[{variant_list}],", 3)
             write.line_indented("}", 2)
             write.line_indented("}")
             write.line("}")
@@ -407,6 +409,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
     types_dir = create_dynamic_subdir(output_folder, Paths.TYPES)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         mod_name = table.name_snake()
         fields_name = f"{table.name_pascal()}Fields"
 
@@ -422,7 +425,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
 
             write.line(f"impl {fields_name} {{")
             for field in table.fields:
-                const_name = field.name_snake().upper()
+                const_name = prop_map[field.id].upper()
                 escaped_name = sanitize_string(field.name)
                 write.doc_comment(f"`{escaped_name}`", indent=1)
                 write.line_indented(f'pub const {const_name}: &\'static str = "{escaped_name}";')
@@ -459,7 +462,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.line_indented("pub fn property_by_id(id: &str) -> Option<&'static str> {")
             write.line_indented("match id {", 2)
             for field in table.fields:
-                prop = _rust_ident(field.name_snake())
+                prop = _rust_ident(prop_map[field.id])
                 write.line_indented(f'"{field.id}" => Some("{prop}"),', 3)
             write.line_indented("_ => None,", 3)
             write.line_indented("}", 2)
@@ -471,7 +474,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             write.line_indented("pub fn id_by_property(property: &str) -> Option<&'static str> {")
             write.line_indented("match property {", 2)
             for field in table.fields:
-                prop = _rust_ident(field.name_snake())
+                prop = _rust_ident(prop_map[field.id])
                 write.line_indented(f'"{prop}" => Some("{field.id}"),', 3)
             write.line_indented("_ => None,", 3)
             write.line_indented("}", 2)
@@ -523,7 +526,7 @@ def write_field_types(base: Base, output_folder: Path) -> None:
 
             write.line(f"impl {create_name} {{")
             for field in writable_fields:
-                const_name = field.name_snake().upper()
+                const_name = prop_map[field.id].upper()
                 escaped_name = sanitize_string(field.name)
                 write.doc_comment(f"`{escaped_name}`", indent=1)
                 write.line_indented(f'pub const {const_name}: &\'static str = "{escaped_name}";')
@@ -546,12 +549,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         mod_name = table.name_snake()
         model_name = table.name_model()
 
         # Pre-transpile formula fields for this table
         formula_field_ids = table.formula_field_ids()
-        field_name_map = {f.id: _rust_ident(f.name_snake()) for f in table.fields}
+        field_name_map = {f.id: _rust_ident(prop_map[f.id]) for f in table.fields}
         raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
         if flatten and raw_formulas:
             formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -603,7 +607,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # drops out on create/update; computed fields use skip_serializing so
             # they deserialize from API responses but never re-encode back.
             for field in table.fields:
-                field_name = _rust_ident(field.name_snake())
+                field_name = _rust_ident(prop_map[field.id])
                 rust_type = field.rust_type()
 
                 write.property_docstring(field, table)
@@ -620,7 +624,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
 
             # F constant, from_id, url
             formulas_name = f"{table.name_pascal()}Formulas"
-            has_url_field = any(field.name_snake() == "url" for field in table.fields)
+            has_url_field = any(name == "url" for name in prop_map.values())
             url_method_name = "record_url" if has_url_field else "url"
 
             write.line(f"impl {model_name} {{")
@@ -653,7 +657,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             for field in table.fields:
                 if not runtime or field.id not in transpiled_formulas:
                     continue
-                field_name = _rust_ident(field.name_snake())
+                field_name = _rust_ident(prop_map[field.id])
                 formula_code = transpiled_formulas[field.id]
                 raw_formula = raw_formulas.get(field.id, "")
                 write.line_empty()
@@ -706,6 +710,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         mod_name = table.name_snake()
         formulas_name = f"{table.name_pascal()}Formulas"
 
@@ -718,7 +723,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.doc_comment("Record ID formula.", indent=1)
             write.pub_field("id", "FormulaId")
             for field in table.fields:
-                property_name = field.name_snake()
+                property_name = prop_map[field.id]
                 formula_class = field.formula_class()
                 rust_formula_type = _FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
                 write.doc_comment(f"`{sanitize_string(field.name)}`", indent=1)
@@ -732,7 +737,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line_indented("Self {", 2)
             write.line_indented("id: FormulaId,", 3)
             for field in table.fields:
-                property_name = field.name_snake()
+                property_name = prop_map[field.id]
                 formula_class = field.formula_class()
                 rust_formula_type = _FORMULA_CLASS_MAP.get(formula_class, "FormulaTextField")
                 write.line_indented(f'{_rust_ident(property_name)}: {rust_formula_type}::new("{field.id}"),', 3)

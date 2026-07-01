@@ -11,6 +11,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    deduplicated_field_property_map,
     escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
@@ -177,6 +178,7 @@ def write_types(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
+        prop_map = deduplicated_field_property_map(table)
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -223,7 +225,7 @@ def write_types(base: Base, output_folder: Path) -> None:
             # Table Type
             field_names = [sanitize_string(field.name) for field in table.fields]
             field_ids = [field.id for field in table.fields]
-            property_names = [field.name_camel() for field in table.fields]
+            property_names = [prop_map[field.id] for field in table.fields]
 
             write.region(table.name_upper())
             write.types(f"{table_name}Field", field_names, f"Field names for `{table.name}`")
@@ -272,7 +274,7 @@ def write_types(base: Base, output_folder: Path) -> None:
                     case "name_sanitized":
                         return sanitize_string(field.name)
                     case "name_camel":
-                        return field.name_camel()
+                        return prop_map[field.id]
                     case _:
                         raise ValueError(f"Unknown field attribute: {attr}")
 
@@ -396,6 +398,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
     zod_dir = create_dynamic_subdir(output_folder, Paths.ZOD)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map(table)
         with WriteToTypeScriptFile(path=zod_dir / f"{table.name_camel()}.ts") as write:
             write.line('import * as z from "zod";')
             write.mark_imports()
@@ -413,7 +416,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             write.line_indented("id: recordIdSchema.optional(),")
             for field in table.fields:
                 field_type = field.zod_type()
-                write.line_indented(f"{field.name_camel()}: {field_type},")
+                write.line_indented(f"{prop_map[field.id]}: {field_type},")
             write.line("});")
             write.line_empty()
 
@@ -437,6 +440,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
         model_name = table.name_model()
+        prop_map = deduplicated_field_property_map(table)
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports (registered as candidates; only symbols used in the body are emitted)
             write.mark_imports()
@@ -484,7 +488,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             if runtime:
                 linked_record_field_ids = table.linked_record_field_ids()
                 single_linked_record_field_ids = table.single_linked_record_field_ids()
-                field_name_map = {f.id: f.name_camel() for f in table.fields}
+                field_name_map = {f.id: prop_map[f.id] for f in table.fields}
                 raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
                 if flatten and raw_formulas:
                     formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -525,7 +529,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # Field descriptors
             write.line_indented("protected static fieldDescriptors: FieldDescriptor[] = [", 1)
             for field in table.fields:
-                field_name = field.name_camel()
+                field_name = prop_map[field.id]
                 field_type = field.typescript_type()
                 is_computed = "true" if field.is_computed() else "false"
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
@@ -549,7 +553,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_empty()
 
             for field in table.fields:
-                field_name = field.name_camel()
+                field_name = prop_map[field.id]
                 field_type = field.typescript_type()
                 docstring: str | list[str]
                 if field.formula(sanitized=True, condense=True):
@@ -617,12 +621,12 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.line_indented("constructor({")
                 write.line_indented("id,", 2)
                 for field in table.fields:
-                    field_name = field.name_camel()
+                    field_name = prop_map[field.id]
                     write.line_indented(f"{field_name},", 2)
                 write.line_indented("}: {", 1)
                 write.line_indented("id?: string,", 2)
                 for field in table.fields:
-                    field_name = field.name_camel()
+                    field_name = prop_map[field.id]
                     field_type = field.typescript_type()
                     write.line_indented(f"{field_name}?: {field_type},", 2)
                 write.line_indented("} = {}) {")
@@ -632,7 +636,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.line_indented("this.initializeFields(data);", 2)
             else:
                 # Build data object from destructured params and use initializeFields
-                field_names = [field.name_camel() for field in table.fields]
+                field_names = [prop_map[field.id] for field in table.fields]
                 fields_obj = ", ".join(field_names)
                 write.line_indented(f"this.initializeFields({{ {fields_obj} }});", 2)
             write.line_indented(
@@ -644,7 +648,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_empty()
 
             # url
-            has_field_called_url: bool = any(field.name_camel() == "url" for field in table.fields)
+            has_field_called_url: bool = any(name == "url" for name in prop_map.values())
             url_method_name: str = "URL" if has_field_called_url else "url"
             write.docstring("Get the URL for this record in Airtable, with optional view.", 1)
             write.line_indented(f"public {url_method_name}(view?: {table_name}View): string {{")
@@ -762,6 +766,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
+        prop_map = deduplicated_field_property_map(table)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports (only the formula classes / option types actually referenced are emitted)
             write.mark_imports()
@@ -786,7 +791,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line(f"export namespace {table_name}Formulas {{")
             write.line_indented("export const id: ID = new ID();")
             for field in table.fields:
-                property_name = field.name_camel()
+                property_name = prop_map[field.id]
                 formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     type_param = field.options_name() if field.select_options() else "string"
@@ -806,6 +811,7 @@ def write_options(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
+        prop_map = deduplicated_field_property_map(table)
         select_fields = table.select_fields()
         with WriteToTypeScriptFile(path=options_dir / f"{table_name_camel}.ts") as write:
             if len(select_fields) > 0:
@@ -817,7 +823,7 @@ def write_options(base: Base, output_folder: Path) -> None:
             # Namespace with property per select field
             write.line(f"export namespace {table_name}Options {{")
             for field in select_fields:
-                write.line_indented(f"export const {field.name_camel()} = {field.options_name()}s;")
+                write.line_indented(f"export const {prop_map[field.id]} = {field.options_name()}s;")
             write.line("}")
             write.line_empty()
 

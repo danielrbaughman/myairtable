@@ -1819,6 +1819,120 @@ class TestIdentifierCollisionDedup:
         assert deduplicate_identifiers(["myField", "myField", "myField"]) == ["myField", "myFieldV2", "myFieldV3"]
 
 
+class TestOriginalGeneratorCollisionDedup:
+    """Python / TypeScript / Rust / JavaScript must deduplicate property names that
+    collapse to the same identifier (e.g. a custom property name duplicating another
+    field's), rather than emitting duplicate dict keys / struct fields (myairtable-xc8h).
+
+    snake_case languages (Python, Rust) suffix with `_v2`; camelCase (TS, JS) with `V2`.
+    """
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("My Field", "fld001", "singleLineText"),
+        ("my field", "fld002", "singleLineText"),
+        ("Calc", "fld003", "formula"),
+    ]
+    FORMULA_MAP = {"fld003": "{fld002}"}
+
+    # ---- Shared snake helper ----
+
+    def test_snake_map_suffixes_second_collider(self):
+        from src.utils.helpers import deduplicated_field_property_map_snake
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        table = base.tables[0]
+        prop_map = deduplicated_field_property_map_snake(table)
+        assert prop_map["fld001"] == "my_field"
+        assert prop_map["fld002"] == "my_field_v2"
+
+    # ---- Python ----
+
+    def test_python_types_dedup_property_map(self, tmp_path: Path):
+        from src.generators.python import write_types
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_types(base, out)
+        content = (out / "dynamic/types/test_table.py").read_text()
+        # The FieldPropertyId mapping is a dict keyed by property name — a duplicate
+        # key is the exact F601 defect this fixes.
+        assert '"my_field": "fld001"' in content
+        assert '"my_field_v2": "fld002"' in content
+        # Before the fix, fld002 also mapped to "my_field" -> duplicate key (F601).
+        assert '"my_field": "fld002"' not in content
+        # Each property-keyed dict (Id + Name mappings) lists my_field exactly once.
+        assert content.count('"my_field": "fld001"') == 1
+
+    def test_python_model_dedup_and_formula_reference(self, tmp_path: Path):
+        from src.generators.python import write_models
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, package_prefix="")
+        content = (out / "dynamic/models/test_table.py").read_text()
+        assert "my_field:" in content
+        assert "my_field_v2:" in content
+        # The formula references fld002 (the second collider) -> deduped property.
+        assert "self.my_field_v2" in content
+
+    # ---- Rust ----
+
+    def test_rust_types_and_model_dedup(self, tmp_path: Path):
+        from src.generators.rust import write_field_types, write_models
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        out = tmp_path / "rust_output"
+        out.mkdir()
+        map_types(base)
+        write_field_types(base, out)
+        write_models(base, out, formulas=False, runtime=True)
+
+        types = (out / "dynamic/types/test_table.rs").read_text()
+        assert '"fld001" => Some("my_field"),' in types
+        assert '"fld002" => Some("my_field_v2"),' in types
+        assert "pub const MY_FIELD:" in types
+        assert "pub const MY_FIELD_V2:" in types
+
+        model = (out / "dynamic/models/test_table.rs").read_text()
+        assert "pub my_field: Option<" in model
+        assert "pub my_field_v2: Option<" in model
+        assert "self.my_field_v2" in model
+
+    # ---- TypeScript ----
+
+    def test_typescript_model_dedup_and_formula_reference(self, tmp_path: Path):
+        from src.generators.typescript import write_models
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        out = tmp_path / "ts_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, zod=False)
+        content = (out / "dynamic/models/testTable.ts").read_text()
+        assert "get myField()" in content
+        assert "get myFieldV2()" in content
+        assert content.count('propertyName: "myField"') == 1
+        assert content.count('propertyName: "myFieldV2"') == 1
+        assert 'this._fields["myFieldV2"]' in content
+
+    # ---- JavaScript ----
+
+    def test_javascript_model_dedup_and_formula_reference(self, tmp_path: Path):
+        from src.generators.javascript import write_models
+
+        base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
+        out = tmp_path / "js_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, zod=False)
+        content = (out / "dynamic/models/testTable.js").read_text()
+        assert "get myField()" in content
+        assert "get myFieldV2()" in content
+        assert content.count('propertyName: "myFieldV2"') == 1
+        assert 'this._fields["myFieldV2"]' in content
+
+
 class TestKotlinGeneratorEdgeCases:
     """myairtable-dmiw — generator edge cases flagged by the ultra-review."""
 

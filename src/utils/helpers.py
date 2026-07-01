@@ -204,6 +204,27 @@ def deduplicated_field_property_map(table) -> dict[str, str]:
     return {field.id: name for field, name in zip(table.fields, deduped)}
 
 
+def deduplicated_field_property_map_snake(table) -> dict[str, str]:
+    """Per-table `{field_id: deduplicated snake_case property name}`.
+
+    The snake_case analog of `deduplicated_field_property_map`, for the Python
+    and Rust generators. Distinct Airtable field names — or a custom property
+    name that duplicates another field's — can collapse to the same snake_case
+    identifier, which would emit duplicate dict keys / struct fields. Computed
+    ONCE per table (deterministically, in schema order) and consumed by every
+    writer so all sites agree on the deduplicated names.
+
+    Uses suffix `_v` so `quantity_total` / `quantity_total` -> `quantity_total`
+    / `quantity_total_v2`, i.e. the snake_case of the camelCase `V2` convention.
+
+    Identifier escaping (e.g. Rust keyword raw-idents) is NOT applied here; call
+    sites wrap with their language's identifier escaper. An empty snake name
+    falls back to `field` (then deduplicates like any other collision).
+    """
+    deduped = deduplicate_identifiers([field.name_snake() or "field" for field in table.fields], suffix="_v")
+    return {field.id: name for field, name in zip(table.fields, deduped)}
+
+
 def deduplicated_table_prefix_map(base) -> dict[str, str]:
     """Per-base `{table_id: deduplicated PascalCase type prefix}`.
 

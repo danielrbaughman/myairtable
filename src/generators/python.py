@@ -10,6 +10,7 @@ from ..utils.helpers import (
     copy_static_files,
     create_dynamic_subdir,
     deduplicate_names,
+    deduplicated_field_property_map_snake,
     escape_for_double_quoted_string,
     reset_folder,
     sanitize_string,
@@ -198,6 +199,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
     # Table Types
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         with WriteToPythonFile(path=types_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
@@ -218,7 +220,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
             for field in table.fields:
                 name_sanitized = sanitize_string(field.name)
-                name_snake = field.name_snake()
+                name_snake = prop_map[field.id]
                 py_type = field.python_type()
 
                 # Store all field attributes for later use
@@ -489,7 +491,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
-        has_field_called_url: bool = any(field.name_snake() == "url" for field in table.fields)
+        prop_map = deduplicated_field_property_map_snake(table)
+        has_field_called_url: bool = any(name == "url" for name in prop_map.values())
         url_method_name: str = "URL" if has_field_called_url else "url"
 
         with WriteToPythonFile(path=models_dir / f"{table.name_snake()}.py") as write:
@@ -575,7 +578,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
             # Pre-transpile formula fields
             formula_field_ids = table.formula_field_ids()
             if runtime:
-                field_name_map = {f.id: f.name_snake() for f in table.fields}
+                field_name_map = {f.id: prop_map[f.id] for f in table.fields}
                 raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
                 if flatten and raw_formulas:
                     formula_map_tuple = table.base.get_formula_field_map_tuple()
@@ -586,7 +589,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
 
             # properties
             for field in table.fields:
-                field_name = field.name_snake()
+                field_name = prop_map[field.id]
                 pyairtable_type = pyairtable_orm_type(field, base, output_folder, package_prefix=package_prefix)
 
                 if field.is_formula() and runtime:
@@ -689,6 +692,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         with WriteToPythonFile(path=formulas_dir / f"{table.name_snake()}.py") as write:
             # Imports (only the formula classes / option types actually referenced are emitted)
             write.mark_imports()
@@ -714,7 +718,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
             write.line(f"class {table.name_pascal()}Formulas:")
             write.line_indented("id: ID = ID()")
             for field in table.fields:
-                property_name = field.name_snake()
+                property_name = prop_map[field.id]
                 formula_class = field.formula_class()
                 if formula_class == "SingleSelectField" or formula_class == "MultiSelectField":
                     type_param = field.options_name() if field.select_options() else "str"
@@ -732,6 +736,7 @@ def write_options(base: Base, output_folder: Path) -> None:
     options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
 
     for table in base.tables:
+        prop_map = deduplicated_field_property_map_snake(table)
         select_fields = table.select_fields()
         with WriteToPythonFile(path=options_dir / f"{table.name_snake()}.py") as write:
             if len(select_fields) > 0:
@@ -744,7 +749,7 @@ def write_options(base: Base, output_folder: Path) -> None:
             write.line(f"class {table.name_pascal()}Options:")
             if len(select_fields) > 0:
                 for field in select_fields:
-                    write.line_indented(f"{field.name_snake()} = {field.options_name()}s")
+                    write.line_indented(f"{prop_map[field.id]} = {field.options_name()}s")
             else:
                 write.line_indented("pass")
             write.line_empty()
