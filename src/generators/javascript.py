@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from rich import print
@@ -738,9 +737,7 @@ def write_main_class(base: Base, output_folder: Path) -> None:
 
         write.docstring("Airtable base wrapper", 0)
         write.line("class Airtable {")
-        schema_json = json.dumps(base.to_dict())
         write.line_indented("baseId;")
-        write.line_indented(f"static schema = {schema_json};")
         write.line_empty()
         for table in base.tables:
             write.docstring(f"`{table.name}` ({table.id})", 1)

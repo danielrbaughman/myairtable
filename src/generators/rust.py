@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 
@@ -941,15 +940,6 @@ def write_main_class(base: Base, output_folder: Path) -> None:
         write.doc_comment("Get the Airtable web URL for this base.", indent=1)
         write.line_indented("pub fn url(&self) -> String {")
         write.line_indented('build_url(self.client.base_id(), "", "", "")', 2)
-        write.line_indented("}")
-        write.line_empty()
-
-        # Embedded schema
-        schema_json = json.dumps(base.to_dict(), separators=(",", ":"))
-        escaped = schema_json.replace("\\", "\\\\").replace('"', '\\"')
-        write.doc_comment("The base schema, embedded at generation time.", indent=1)
-        write.line_indented("pub fn schema() -> serde_json::Value {")
-        write.line_indented(f'serde_json::from_str("{escaped}").unwrap()', 2)
         write.line_indented("}")
         write.line_empty()
 
