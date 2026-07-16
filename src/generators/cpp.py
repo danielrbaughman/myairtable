@@ -44,6 +44,10 @@ _DIR_TABLES = "tables"
 _DIR_MODELS = "models"
 _DIR_FORMULAS = "formulas"
 
+# Accessor-method names on the generated Airtable class that would collide with
+# its own members; colliding table names get a `_table` suffix.
+_CPP_RESERVED_TABLE_METHODS = frozenset({"client", "invalidate_all_caches", "base_id"})
+
 # Static formula-DSL headers excluded from the copy when formulas=False.
 _FORMULA_STATIC_FILES: list[str] = [
     "formulas.hpp",
@@ -291,6 +295,101 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.namespace_close()
 
 
+def _table_accessor(table: Table) -> str:
+    """snake_case accessor-method name on the Airtable class (e.g. `primary`)."""
+    accessor = _cpp_ident(to_snake(_table_type_prefix(table)))
+    if accessor in _CPP_RESERVED_TABLE_METHODS:
+        accessor = f"{accessor}_table"
+    return accessor
+
+
+def write_tables(base: Base, output_folder: Path) -> None:
+    """Generate `{table}_table.hpp` facades (dict access; the ORM surface is F4)."""
+    tables_dir = _create_dynamic_subdir(output_folder, _DIR_TABLES)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        table_name = f"{prefix}Table"
+        fields_name = f"{prefix}Fields"
+
+        with WriteToCppFile(path=tables_dir / _header_name(table_name)) as write:
+            write.pragma_once()
+            write.line_empty()
+            write.include_system("map")
+            write.include_system("memory")
+            write.include_system("string")
+            write.include_system("string_view")
+            write.include_system("utility")
+            write.line_empty()
+            write.include_local(f"dynamic/types/{_header_name(fields_name)}")
+            write.include_local("static/airtable_client.hpp")
+            write.include_local("static/dict_table.hpp")
+            write.line_empty()
+            write.namespace_open()
+            write.line_empty()
+            _doc(write, f"Table facade for {sanitize_string(table.name)}.")
+            write.class_open(table_name)
+            write.line_indented("public:", indent=0)
+            write.line_indented(f'static constexpr std::string_view kTableId = "{table.id}";')
+            write.line_empty()
+            write.line_indented(f"explicit {table_name}(std::shared_ptr<AirtableClient> client)")
+            write.line_indented(f": dict_(std::move(client), std::string(kTableId), {fields_name}::kNameToId) {{}}", indent=2)
+            write.line_empty()
+            _doc(write, "Raw field-bag access (records travel as Fields, dual id/name keyed).", indent=1)
+            write.line_indented("DictTable& dict() { return dict_; }")
+            write.line_indented("const DictTable& dict() const { return dict_; }")
+            write.line_empty()
+            write.line_indented("private:", indent=0)
+            write.line_indented("DictTable dict_;")
+            write.close()
+            write.line_empty()
+            write.namespace_close()
+
+
+def write_main(base: Base, output_folder: Path) -> None:
+    """Generate the `airtable.hpp` entry point at the output root."""
+    tables = list(base.tables)
+
+    with WriteToCppFile(path=output_folder / "airtable.hpp") as write:
+        write.pragma_once()
+        write.line_empty()
+        write.include_system("memory")
+        write.include_system("string")
+        write.include_system("string_view")
+        write.include_system("utility")
+        write.line_empty()
+        for table in tables:
+            write.include_local(f"dynamic/tables/{_header_name(f'{_table_type_prefix(table)}Table')}")
+        write.include_local("static/airtable_client.hpp")
+        write.line_empty()
+        write.namespace_open()
+        write.line_empty()
+        _doc(write, f"Entry point for base {base.id}: one accessor per table.")
+        write.class_open("Airtable")
+        write.line_indented("public:", indent=0)
+        write.line_indented(f'static constexpr std::string_view kBaseId = "{base.id}";')
+        write.line_empty()
+        _doc(write, "Connect with an API key; cache_seconds > 0 enables the read cache.", indent=1)
+        write.line_indented("explicit Airtable(const std::string& api_key, double cache_seconds = 0.0)")
+        write.line_indented(": client_(std::make_shared<AirtableClient>(std::string(kBaseId), api_key, cache_seconds)) {}", indent=2)
+        _doc(write, "Adopt an existing client (custom transport, shared cache).", indent=1)
+        write.line_indented("explicit Airtable(std::shared_ptr<AirtableClient> client) : client_(std::move(client)) {}")
+        write.line_empty()
+        for table in tables:
+            prefix = _table_type_prefix(table)
+            _doc(write, f"{sanitize_string(table.name)}", indent=1)
+            write.line_indented(f"{prefix}Table {_table_accessor(table)}() const {{ return {prefix}Table(client_); }}")
+        write.line_empty()
+        write.line_indented("const std::shared_ptr<AirtableClient>& client() const { return client_; }")
+        write.line_indented("void invalidate_all_caches() { client_->invalidate_all_caches(); }")
+        write.line_empty()
+        write.line_indented("private:", indent=0)
+        write.line_indented("std::shared_ptr<AirtableClient> client_;")
+        write.close()
+        write.line_empty()
+        write.namespace_close()
+
+
 def generate_cpp(
     base: Base,
     output_folder: Path,
@@ -301,11 +400,11 @@ def generate_cpp(
 ) -> None:
     """Generate C++ code for the given base into ``output_folder``.
 
-    F3 so far: static copy + options. Field types/tables/entry point land with
-    the remaining F3 tasks; models (F4), formula helpers (F7), and runtime
-    transpilation (F8) with their features.
+    F3: static copy, options, field types, dict-table facades, entry point.
+    Models (F4), formula helpers (F7), and runtime transpilation (F8) land
+    with their features.
     """
-    del wrappers, runtime, flatten  # consumed by later features (F3/F4/F8)
+    del runtime, flatten  # consumed by later features (F4/F8)
 
     output_folder = reset_folder(output_folder)
 
@@ -316,3 +415,6 @@ def generate_cpp(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    if wrappers:
+        write_tables(base, output_folder)
+        write_main(base, output_folder)

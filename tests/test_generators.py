@@ -2801,6 +2801,41 @@ class TestCppGenerator:
         assert 'static constexpr std::string_view kPrimaryKeyId = "fld001";' in content
         assert "kAutoId" not in content  # computed fields are not writable
 
+    # ---- tables + entry point (F3.3) -----------------------------------------
+
+    def test_table_facade_wraps_dict_table(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "tables" / "test_table_table.hpp").read_text()
+        assert "class TestTableTable {" in content
+        assert 'static constexpr std::string_view kTableId = "tblTEST123";' in content
+        assert "explicit TestTableTable(std::shared_ptr<AirtableClient> client)" in content
+        assert "TestTableFields::kNameToId" in content  # names resolve on the field bag
+        assert "DictTable& dict() { return dict_; }" in content
+        assert '#include "dynamic/types/test_table_fields.hpp"' in content
+
+    def test_entry_point_exposes_table_accessors(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "airtable.hpp").read_text()
+        assert "class Airtable {" in content
+        assert 'static constexpr std::string_view kBaseId = "appTEST123";' in content
+        assert "explicit Airtable(const std::string& api_key, double cache_seconds = 0.0)" in content
+        assert "explicit Airtable(std::shared_ptr<AirtableClient> client)" in content
+        assert "TestTableTable test_table() const { return TestTableTable(client_); }" in content
+        assert "void invalidate_all_caches() { client_->invalidate_all_caches(); }" in content
+        assert '#include "dynamic/tables/test_table_table.hpp"' in content
+
+    def test_wrappers_flag_suppresses_tables_and_entry_point(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, wrappers=False)
+        assert not (out / "airtable.hpp").exists()
+        assert not (out / "dynamic" / "tables").exists()
+        assert (out / "dynamic" / "types" / "test_table_fields.hpp").exists()
+
 
 class TestCppWriterHelpers:
     """Pure helpers in write_to_cpp_file.py (CPP F1.4)."""
