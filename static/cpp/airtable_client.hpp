@@ -14,6 +14,7 @@
 #include "airtable_exception.hpp"
 #include "airtable_json.hpp"
 #include "airtable_query.hpp"
+#include "cache_store.hpp"
 #include "curl_transport.hpp"
 
 namespace myairtable {
@@ -54,18 +55,18 @@ class AirtableClient {
     static constexpr double kRetryJitterCapSeconds = 1.0;
     static constexpr double kMaxRetryDelaySeconds = 30.0;
 
-    AirtableClient(std::string base_id, std::string api_key)
+    explicit AirtableClient(std::string base_id, std::string api_key, double cache_seconds = 0.0)
         : AirtableClient(std::move(base_id), std::move(api_key), &curl_perform,
-                         kBaseRetryDelaySeconds, kRetryJitterCapSeconds) {}
+                         kBaseRetryDelaySeconds, kRetryJitterCapSeconds, cache_seconds) {}
 
     /// Injectable-transport constructor: production uses the curl transport;
     /// tests inject a FakeTransport (and usually zero delays).
     AirtableClient(std::string base_id, std::string api_key, Transport transport,
                    double base_retry_delay = kBaseRetryDelaySeconds,
-                   double jitter_cap = kRetryJitterCapSeconds)
+                   double jitter_cap = kRetryJitterCapSeconds, double cache_seconds = 0.0)
         : base_id_(std::move(base_id)), api_key_(std::move(api_key)),
           transport_(std::move(transport)), base_retry_delay_(base_retry_delay),
-          jitter_cap_(jitter_cap) {
+          jitter_cap_(jitter_cap), cache_(cache_seconds) {
         if (base_id_.empty()) {
             throw MissingCredentialsError("base id is empty");
         }
@@ -75,30 +76,42 @@ class AirtableClient {
     }
 
     const std::string& base_id() const { return base_id_; }
+    CacheStore& cache() { return cache_; }
+    void invalidate_cache(const std::string& table_id) { cache_.invalidate(table_id); }
+    void invalidate_all_caches() { cache_.invalidate_all(); }
 
     // ---- record endpoints ------------------------------------------------------
 
-    /// GET one page of records for `query` (raw payload).
+    /// GET one page of records for `query` (cached by query). A payload with a
+    /// live `offset` continuation token is returned but never stored — the
+    /// token expires server-side and a cache hit would replay a dead token.
     std::string list_records(const std::string& table_id, const AirtableQuery& query) {
-        return send("GET", table_url(table_id, query.to_parameters()), std::nullopt,
-                    /*idempotent=*/true);
+        const std::string url = table_url(table_id, query.to_parameters());
+        return cache_.get_or_add(
+            table_id, "list:" + cache_key_for_query(query),
+            [&] { return send("GET", url, std::nullopt, /*idempotent=*/true); },
+            [](const std::string& payload) { return !has_continuation_offset(payload); });
     }
 
-    /// GET a single record by id.
+    /// GET a single record by id (cached).
     std::string get_record(const std::string& table_id, const std::string& record_id) {
         // returnFieldsByFieldId so the response keys match the generated field-id
         // constants (live-caught in the C# effort: without it, fields key by NAME).
         const std::string url = std::string(kApiRoot) + "/" + url_encode(base_id_) + "/" +
                                 url_encode(table_id) + "/" + url_encode(record_id) +
                                 "?returnFieldsByFieldId=true";
-        return send("GET", url, std::nullopt, /*idempotent=*/true);
+        return cache_.get_or_add(table_id, "rec:" + record_id, [&] {
+            return send("GET", url, std::nullopt, /*idempotent=*/true);
+        });
     }
 
     /// POST new records. NOT idempotent — a retried 5xx could double-insert.
     std::string create_records(const std::string& table_id, const std::string& body) {
         const std::string url =
             std::string(kApiRoot) + "/" + url_encode(base_id_) + "/" + url_encode(table_id);
-        return send("POST", url, body, /*idempotent=*/false);
+        std::string result = send("POST", url, body, /*idempotent=*/false);
+        cache_.invalidate(table_id);
+        return result;
     }
 
     /// PATCH the records collection (update-by-id and upsert). Update-by-id and
@@ -108,13 +121,17 @@ class AirtableClient {
                                bool idempotent = true) {
         const std::string url =
             std::string(kApiRoot) + "/" + url_encode(base_id_) + "/" + url_encode(table_id);
-        return send("PATCH", url, body, idempotent);
+        std::string result = send("PATCH", url, body, idempotent);
+        cache_.invalidate(table_id);
+        return result;
     }
 
     std::string delete_record(const std::string& table_id, const std::string& record_id) {
         const std::string url = std::string(kApiRoot) + "/" + url_encode(base_id_) + "/" +
                                 url_encode(table_id) + "/" + url_encode(record_id);
-        return send("DELETE", url, std::nullopt, /*idempotent=*/true);
+        std::string result = send("DELETE", url, std::nullopt, /*idempotent=*/true);
+        cache_.invalidate(table_id);
+        return result;
     }
 
     std::string delete_records(const std::string& table_id,
@@ -124,7 +141,36 @@ class AirtableClient {
         for (const auto& id : record_ids) {
             params.emplace_back("records[]", id);
         }
-        return send("DELETE", table_url(table_id, params), std::nullopt, /*idempotent=*/true);
+        std::string result =
+            send("DELETE", table_url(table_id, params), std::nullopt, /*idempotent=*/true);
+        cache_.invalidate(table_id);
+        return result;
+    }
+
+    /// A stable cache key: both halves encoded (a formula containing `=`/`&`
+    /// can't collide with a structurally different query) and sorted (parameter
+    /// order never splits the key). Java/Kotlin/C# parity.
+    static std::string cache_key_for_query(const AirtableQuery& query) {
+        std::vector<std::string> encoded;
+        for (const auto& [key, value] : query.to_parameters()) {
+            encoded.push_back(url_encode(key) + "=" + url_encode(value));
+        }
+        std::sort(encoded.begin(), encoded.end());
+        std::string out;
+        for (const auto& part : encoded) {
+            if (!out.empty()) {
+                out.push_back('&');
+            }
+            out += part;
+        }
+        return out;
+    }
+
+    /// Does a list payload carry a live continuation offset?
+    static bool has_continuation_offset(const std::string& payload) {
+        const json parsed = json::parse(payload, /*cb=*/nullptr, /*allow_exceptions=*/false);
+        return !parsed.is_discarded() && parsed.is_object() && parsed.contains("offset") &&
+               parsed.at("offset").is_string() && !parsed.at("offset").get<std::string>().empty();
     }
 
     // ---- URL building --------------------------------------------------------------
@@ -256,6 +302,7 @@ class AirtableClient {
     Transport transport_;
     double base_retry_delay_;
     double jitter_cap_;
+    CacheStore cache_;
 };
 
 } // namespace myairtable

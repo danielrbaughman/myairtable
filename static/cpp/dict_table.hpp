@@ -50,17 +50,23 @@ class DictTable {
 
     std::vector<Record> get_all() const { return get_all(AirtableQuery{}); }
 
-    /// Fetch every page for `query` (eager offset-loop accumulation).
+    /// Fetch every page for `query` (eager offset-loop accumulation). The
+    /// first page rides the client cache; continuation pages are always live
+    /// (their offset tokens are transient and single-use).
     std::vector<Record> get_all(const AirtableQuery& query) const {
         std::vector<Record> records;
         std::optional<std::string> offset;
         do {
-            auto params = query.to_parameters();
+            std::string payload;
             if (offset.has_value()) {
+                auto params = query.to_parameters();
                 params.emplace_back("offset", *offset);
+                payload = client_->send("GET", client_->table_url(table_id_, params), std::nullopt,
+                                        /*idempotent=*/true);
+            } else {
+                payload = client_->list_records(table_id_, query);
             }
-            const json page = decode(client_->send("GET", client_->table_url(table_id_, params),
-                                                   std::nullopt, /*idempotent=*/true));
+            const json page = decode(payload);
             if (page.contains("records")) {
                 for (const auto& raw : page.at("records")) {
                     records.push_back(to_record(raw));
