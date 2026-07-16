@@ -4,8 +4,8 @@ import json
 
 from typer.testing import CliRunner
 
-from main import app
-from src import result_store, schema_tools
+from myairtable import result_store, schema_tools
+from myairtable.main import app
 
 runner = CliRunner()
 

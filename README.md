@@ -366,7 +366,7 @@ Add the following to your MCP client config (e.g. `claude_desktop_config.json` f
 	"mcpServers": {
 		"myairtable": {
 			"command": "uv",
-			"args": ["run", "--directory", "/path/to/myairtable", "python", "mcp_server.py"],
+			"args": ["run", "--directory", "/path/to/myairtable", "python", "-m", "myairtable.mcp_server"],
 			"env": {
 				"AIRTABLE_API_KEY": "your_airtable_api_key_here",
 				"AIRTABLE_BASE_ID": "app1234567890"

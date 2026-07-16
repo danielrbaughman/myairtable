@@ -1,6 +1,6 @@
 """Shared scaffolding for the `myairtable tools` CLI group.
 
-The command module (src/schema_tools_cli.py) registers its commands onto the
+The command module (src/myairtable/schema_tools_cli.py) registers its commands onto the
 single `tools_app` defined here, so all tools surface under
 `myairtable tools <name>`.
 
@@ -16,7 +16,7 @@ from typing import Annotated, Any
 from rich import print as rich_print
 from typer import Exit, Option, Typer
 
-from src.result_store import offload
+from myairtable.result_store import offload
 
 tools_app = Typer(help="Schema introspection & analysis tools — CLI mirrors of the MCP tools.")
 

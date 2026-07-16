@@ -7,7 +7,7 @@ Kotlin (typed, routes through AirtableRuntime) but produces Jackson
 Object equality goes through .equals() — never ==.
 """
 
-from src.formulas.formula_transpiler import transpile_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
 
 
 class TestJavaEmitter:

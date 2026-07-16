@@ -9,8 +9,7 @@ import json
 
 from typer.testing import CliRunner
 
-import main  # import registers all tools-group commands
-from src import schema_tools
+from myairtable import main, schema_tools  # importing main registers all tools-group commands
 
 runner = CliRunner()
 
@@ -19,7 +18,7 @@ PUBLIC_COMMANDS = {fn.__name__.replace("_", "-"): fn.__name__ for fn in schema_t
 
 
 def test_all_public_commands_registered():
-    from src.tools_cli import tools_app
+    from myairtable.tools_cli import tools_app
 
     names = {c.name for c in tools_app.registered_commands}
     missing = [k for k in PUBLIC_COMMANDS if k not in names]
@@ -36,7 +35,7 @@ def test_public_command_emits_json(monkeypatch):
 
 
 def test_public_command_save_offloads(monkeypatch, tmp_path):
-    from src import result_store
+    from myairtable import result_store
 
     monkeypatch.setattr(result_store, "OUTPUT_DIR", tmp_path)
     monkeypatch.setenv("MYAIRTABLE_INLINE_MAX_BYTES", "200")
@@ -61,7 +60,7 @@ def test_public_command_error_path(monkeypatch):
 
 
 def test_mcp_still_exposes_all_tools():
-    import mcp_server
+    from myairtable import mcp_server
 
     async def names():
         return sorted(t.name for t in await mcp_server.mcp.list_tools())

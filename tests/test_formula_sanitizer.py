@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.formulas.formula_sanitizer import FIELD_REF_PATTERN, _sanitize_cached, sanitize_formula
+from myairtable.formulas.formula_sanitizer import FIELD_REF_PATTERN, _sanitize_cached, sanitize_formula
 
 
 class TestSanitizeBasic:

@@ -2,7 +2,7 @@
 
 Emits an idiomatic .NET 8 / C# 12 Airtable client (async/await, System.Text.Json,
 object-initializer models, single `MyAirtable` namespace). Mirrors the structure of the
-Java generator (`src/generators/java.py`) but in C# idioms.
+Java generator (`src/myairtable/generators/java.py`) but in C# idioms.
 
 Output layout (under <output>/):
     dynamic/Options/{OptionsName}.cs   — one enum + per-enum JsonConverter per select field

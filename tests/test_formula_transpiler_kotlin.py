@@ -6,7 +6,7 @@ Swift (typed, routes through AirtableRuntime) but produces kotlinx
 V/N/S/A/isTruthy coercion helpers (flat `myairtable` package — no qualifier).
 """
 
-from src.formulas.formula_transpiler import transpile_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
 
 
 class TestKotlinEmitter:

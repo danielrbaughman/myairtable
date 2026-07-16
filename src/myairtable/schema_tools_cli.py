@@ -1,8 +1,8 @@
 """CLI adapters for the public meta-API tools.
 
-Thin mirrors of the public MCP tools — all logic lives in src/schema_tools.py
+Thin mirrors of the public MCP tools — all logic lives in src/myairtable/schema_tools.py
 (the same functions the MCP server registers, so a CLI invocation verifies MCP
-behavior). Commands register onto the shared `tools_app` (src/tools_cli.py), so
+behavior). Commands register onto the shared `tools_app` (src/myairtable/tools_cli.py), so
 everything is `myairtable tools <name>`.
 
 Public tools raise ValueError on bad input; commands convert that to a JSON
@@ -13,8 +13,8 @@ from typing import Annotated
 
 from typer import Argument, Option
 
-from src import schema_tools
-from src.tools_cli import _emit, _fail, tools_app
+from myairtable import schema_tools
+from myairtable.tools_cli import _emit, _fail, tools_app
 
 _PRETTY = Option("--pretty", help="Rich output instead of plain JSON")
 

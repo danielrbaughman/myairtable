@@ -1,7 +1,7 @@
 """Tests for the formula transpiler - parsing and code emission."""
 
-from src.formulas.formula_tokenizer import tokenize_formula
-from src.formulas.formula_transpiler import (
+from myairtable.formulas.formula_tokenizer import tokenize_formula
+from myairtable.formulas.formula_transpiler import (
     ASTNode,
     BinaryOp,
     FieldRef,
@@ -607,7 +607,7 @@ class TestRustEqualityCoercion:
     type is inferable (serde Number f64 vs i64 variants are not cross-equal)."""
 
     def _transpile(self, formula: str) -> str:
-        from src.formulas.formula_transpiler import transpile_formula
+        from myairtable.formulas.formula_transpiler import transpile_formula
 
         result = transpile_formula(formula, "rust", {"fld1": "my_field", "fld2": "other_field"}, set())
         assert result is not None

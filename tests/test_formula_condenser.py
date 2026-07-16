@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from src.formulas.formula_condenser import condense_formula
-from src.formulas.formula_formatter import format_formula
+from myairtable.formulas.formula_condenser import condense_formula
+from myairtable.formulas.formula_formatter import format_formula
 
 
 class TestCondenseBasic:

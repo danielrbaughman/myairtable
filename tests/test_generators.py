@@ -4,8 +4,8 @@ import ast
 import re
 from pathlib import Path
 
-from src.meta import Base, Choice, Field, Options, Result, Table, View
-from src.meta_types import FieldType
+from myairtable.meta import Base, Choice, Field, Options, Result, Table, View
+from myairtable.meta_types import FieldType
 
 
 def make_test_base(fields_spec: list[tuple[str, str, FieldType]], formula_map: dict[str, str] | None = None) -> Base:
@@ -143,7 +143,7 @@ class TestTypeScriptComputedFields:
     """TypeScript generator should emit getter-only for computed fields."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.typescript import write_models
+        from myairtable.generators.typescript import write_models
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "ts_output"
@@ -204,7 +204,7 @@ class TestJavaScriptComputedFields:
     """JavaScript generator should emit getter-only for computed fields."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.javascript import write_models
+        from myairtable.generators.javascript import write_models
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "js_output"
@@ -243,7 +243,7 @@ class TestPythonComputedFields:
 
     def test_computed_field_has_readonly(self):
         """A createdTime field's ORM type should include readonly=True."""
-        from src.generators.python import pyairtable_orm_type
+        from myairtable.generators.python import pyairtable_orm_type
 
         base = make_test_base([("Created", "fld001", "createdTime")])
         field = base.tables[0].fields[0]
@@ -252,7 +252,7 @@ class TestPythonComputedFields:
 
     def test_writable_field_no_readonly(self):
         """A singleLineText field's ORM type should NOT include readonly=True."""
-        from src.generators.python import pyairtable_orm_type
+        from myairtable.generators.python import pyairtable_orm_type
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         field = base.tables[0].fields[0]
@@ -267,7 +267,7 @@ class TestTypeScriptFormulaFunctions:
     """TypeScript generator should emit getters for formula fields with transpilable formulas."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
-        from src.generators.typescript import write_models
+        from myairtable.generators.typescript import write_models
 
         base = make_test_base(fields_spec, formula_map=formula_map)
         output_folder = tmp_path / "ts_output"
@@ -330,7 +330,7 @@ class TestJavaScriptFormulaFunctions:
     """JavaScript generator should emit getters for formula fields with transpilable formulas."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
-        from src.generators.javascript import write_models
+        from myairtable.generators.javascript import write_models
 
         base = make_test_base(fields_spec, formula_map=formula_map)
         output_folder = tmp_path / "js_output"
@@ -363,7 +363,7 @@ class TestPythonFormulaFunctions:
     """Python generator should emit hidden ORM descriptors + properties for formula fields."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, formula_map: dict[str, str] | None = None) -> str:
-        from src.generators.python import write_models
+        from myairtable.generators.python import write_models
 
         base = make_test_base(fields_spec, formula_map=formula_map)
         output_folder = tmp_path / "py_output"
@@ -514,7 +514,7 @@ class TestSelectOptionEscaping:
     ]
 
     def test_python_emits_parseable_literal_and_list(self, tmp_path: Path):
-        from src.generators.python import write_types
+        from myairtable.generators.python import write_types
 
         base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
         write_types(base, tmp_path)
@@ -532,7 +532,7 @@ class TestSelectOptionEscaping:
         assert '"Bucyrus, OH"' in content
 
     def test_typescript_emits_escaped_literal_and_list(self, tmp_path: Path):
-        from src.generators.typescript import write_types
+        from myairtable.generators.typescript import write_types
 
         base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
         write_types(base, tmp_path)
@@ -546,7 +546,7 @@ class TestSelectOptionEscaping:
         assert '"Bucyrus, OH"' in content
 
     def test_javascript_emits_escaped_const_array(self, tmp_path: Path):
-        from src.generators.javascript import write_types
+        from myairtable.generators.javascript import write_types
 
         base = _make_base_with_select_field("Rig Assignments", "Vehicle Drop Point", "fld001", self.CHOICES_WITH_QUOTES)
         write_types(base, tmp_path)
@@ -572,7 +572,7 @@ class TestSelectOptionNameIdMappings:
     CHOICES = ["Open", "Completed", "Closed"]
 
     def test_python_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
-        from src.generators.python import write_types
+        from myairtable.generators.python import write_types
 
         base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
         write_types(base, tmp_path)
@@ -593,7 +593,7 @@ class TestSelectOptionNameIdMappings:
         assert '"sel002": "Closed"' in content
 
     def test_typescript_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
-        from src.generators.typescript import write_types
+        from myairtable.generators.typescript import write_types
 
         base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
         write_types(base, tmp_path)
@@ -606,7 +606,7 @@ class TestSelectOptionNameIdMappings:
         assert '"sel000": "Open"' in content
 
     def test_javascript_emits_name_id_and_id_name_mappings(self, tmp_path: Path):
-        from src.generators.javascript import write_types
+        from myairtable.generators.javascript import write_types
 
         base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
         write_types(base, tmp_path)
@@ -619,7 +619,7 @@ class TestSelectOptionNameIdMappings:
         assert '"sel000": "Open"' in content
 
     def test_rust_emits_id_and_from_id_helpers(self, tmp_path: Path):
-        from src.generators.rust import write_options
+        from myairtable.generators.rust import write_options
 
         base = _make_base_with_select_field("Jobs", "Status (Billing)", "fldBILLING", self.CHOICES)
         write_options(base, tmp_path)
@@ -660,7 +660,7 @@ class TestSmartImportsTypeScript:
     """The TS generator must only import symbols a file actually references."""
 
     def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.typescript import write_models
+        from myairtable.generators.typescript import write_models
 
         base = make_test_base(fields_spec)
         out = tmp_path / "ts_output"
@@ -669,7 +669,7 @@ class TestSmartImportsTypeScript:
         return _read_generated_model(out, "typescript")
 
     def _formula(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.typescript import write_formula_helpers
+        from myairtable.generators.typescript import write_formula_helpers
 
         base = make_test_base(fields_spec)
         out = tmp_path / "ts_output"
@@ -712,7 +712,7 @@ class TestSmartImportsJavaScript:
     """The JS generator must only require symbols a file actually references."""
 
     def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.javascript import write_models
+        from myairtable.generators.javascript import write_models
 
         base = make_test_base(fields_spec)
         out = tmp_path / "js_output"
@@ -731,7 +731,7 @@ class TestSmartImportsPython:
     """The Python generator must only import symbols a file actually references."""
 
     def _model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.python import write_models
+        from myairtable.generators.python import write_models
 
         base = make_test_base(fields_spec)
         out = tmp_path / "py_output"
@@ -770,8 +770,8 @@ class TestSwiftGeneratorOutput:
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
         """Generate Swift code to a fresh tmp dir and return the output folder."""
-        from src.generators.swift import write_field_types, write_main, write_options, write_tables
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import write_field_types, write_main, write_options, write_tables
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "swift_output"
@@ -887,8 +887,8 @@ class TestSwiftGeneratorOutput:
         """Each model carries an `_attachedClient: AirtableClient?` so
         `model.save()` / `.fetch()` / `.delete()` can call back without
         needing a table argument."""
-        from src.generators.swift import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         output_folder = tmp_path / "swift_output"
@@ -932,8 +932,8 @@ class TestSwiftComputedFields:
     """
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.swift import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "swift_output"
@@ -1087,8 +1087,8 @@ class TestSwiftFormulaFunctions:
     the F4 shape is stable before F8 adds on to it."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.swift import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "swift_output"
@@ -1116,8 +1116,8 @@ class TestSwiftOptionsGenerator:
 
     def _generate_with_options(self, tmp_path: Path) -> str:
         """Build a table with a singleSelect field and return its options file content."""
-        from src.generators.swift import write_options
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import write_options
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Status", "fld001", "singleSelect")])
         # Inject choices into the field's options (make_test_base gives us empty choices).
@@ -1167,8 +1167,8 @@ class TestSwiftFlagGating:
     ]
 
     def _generate(self, tmp_path: Path, **flags) -> Path:
-        from src.generators.swift import generate_swift
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.swift import generate_swift
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(self.FIELDS_SPEC)
         output_folder = tmp_path / "swift_output"
@@ -1227,8 +1227,8 @@ class TestKotlinGeneratorOutput:
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
         """Generate Kotlin code to a fresh tmp dir and return the output folder."""
-        from src.generators.kotlin import write_field_types, write_main, write_options, write_tables
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_field_types, write_main, write_options, write_tables
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "kotlin_output"
@@ -1326,7 +1326,7 @@ class TestKotlinGeneratorOutput:
 
     def test_view_enum_implements_airtable_view(self, tmp_path: Path):
         """Generated `{Table}View` enums implement the static `AirtableView` interface."""
-        from src.generators.kotlin import write_field_types
+        from myairtable.generators.kotlin import write_field_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         base.tables[0].views = [View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")]
@@ -1346,8 +1346,8 @@ class TestKotlinOptionsGenerator:
 
     def _generate_with_options(self, tmp_path: Path) -> str:
         """Build a table with a singleSelect field and return its options file content."""
-        from src.generators.kotlin import write_options
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_options
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Status", "fld001", "singleSelect")])
         field = base.tables[0].fields[0]
@@ -1392,8 +1392,8 @@ class TestKotlinFlagGating:
     is exercised once Formula.kt / AirtableRuntime.kt exist in K-F7/K-F8)."""
 
     def _generate(self, tmp_path: Path, **flags) -> Path:
-        from src.generators.kotlin import generate_kotlin
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import generate_kotlin
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         output_folder = tmp_path / "kotlin_output"
@@ -1420,8 +1420,8 @@ class TestKotlinComputedFields:
     """Kotlin model generation: constructor-property val/var split (plan §2.3.1)."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.kotlin import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "kotlin_output"
@@ -1508,8 +1508,8 @@ class TestKotlinComputedFields:
 
     def test_tables_forward_orm_methods(self, tmp_path: Path):
         """ORM is the default: get/create/update/upsert/delete live on the table."""
-        from src.generators.kotlin import write_tables
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_tables
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         output_folder = tmp_path / "kotlin_output"
@@ -1537,8 +1537,8 @@ class TestKotlinFormulas:
     """Kotlin formula-builder + runtime-evaluation generation (K-F7/K-F8)."""
 
     def _generate(self, tmp_path: Path, formula: str | None = None, **flags) -> Path:
-        from src.generators.kotlin import write_formula_helpers, write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_formula_helpers, write_models
+        from myairtable.utils.type_mapper import map_types
 
         fields_spec: list[tuple[str, str, FieldType]] = [("My Text", "fld001", "singleLineText")]
         formula_map = None
@@ -1595,10 +1595,10 @@ class TestGeneratedCommentAndLiteralEscaping:
 
     def _generate(self, language: str, tmp_path: Path) -> Path:
         if language == "kotlin":
-            from src.generators.kotlin import write_field_types, write_models
+            from myairtable.generators.kotlin import write_field_types, write_models
         else:
-            from src.generators.swift import write_field_types, write_models
-        from src.utils.type_mapper import map_types
+            from myairtable.generators.swift import write_field_types, write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(
             [
@@ -1679,10 +1679,10 @@ class TestIdentifierCollisionDedup:
 
     def _generate(self, language: str, tmp_path: Path) -> Path:
         if language == "kotlin":
-            from src.generators.kotlin import write_field_types, write_formula_helpers, write_models
+            from myairtable.generators.kotlin import write_field_types, write_formula_helpers, write_models
         else:
-            from src.generators.swift import write_field_types, write_formula_helpers, write_models
-        from src.utils.type_mapper import map_types
+            from myairtable.generators.swift import write_field_types, write_formula_helpers, write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         output_folder = tmp_path / f"{language}_output"
@@ -1782,7 +1782,7 @@ class TestIdentifierCollisionDedup:
         base._table_index[table.id] = table
 
     def test_kotlin_table_name_collision_dedup(self, tmp_path: Path):
-        from src.generators.kotlin import write_main
+        from myairtable.generators.kotlin import write_main
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         self._add_colliding_table(base)
@@ -1794,7 +1794,7 @@ class TestIdentifierCollisionDedup:
         assert "val testTableV2: TestTableV2Table = TestTableV2Table(client)" in content
 
     def test_swift_table_name_collision_dedup(self, tmp_path: Path):
-        from src.generators.swift import write_main
+        from myairtable.generators.swift import write_main
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         self._add_colliding_table(base)
@@ -1809,14 +1809,14 @@ class TestIdentifierCollisionDedup:
 
     def test_deduplicate_identifiers_residual_collision(self):
         """["A", "A", "A_V2"] must not yield two A_V2 — suffixes bump until free."""
-        from src.utils.helpers import deduplicate_identifiers
+        from myairtable.utils.helpers import deduplicate_identifiers
 
         result = deduplicate_identifiers(["A", "A", "A_V2"], suffix="_V")
         assert result == ["A", "A_V3", "A_V2"]
         assert len(set(result)) == len(result)
 
     def test_deduplicate_identifiers_camel_suffix(self):
-        from src.utils.helpers import deduplicate_identifiers
+        from myairtable.utils.helpers import deduplicate_identifiers
 
         assert deduplicate_identifiers(["myField", "myField", "myField"]) == ["myField", "myFieldV2", "myFieldV3"]
 
@@ -1839,7 +1839,7 @@ class TestOriginalGeneratorCollisionDedup:
     # ---- Shared snake helper ----
 
     def test_snake_map_suffixes_second_collider(self):
-        from src.utils.helpers import deduplicated_field_property_map_snake
+        from myairtable.utils.helpers import deduplicated_field_property_map_snake
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         table = base.tables[0]
@@ -1850,7 +1850,7 @@ class TestOriginalGeneratorCollisionDedup:
     # ---- Python ----
 
     def test_python_types_dedup_property_map(self, tmp_path: Path):
-        from src.generators.python import write_types
+        from myairtable.generators.python import write_types
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         out = tmp_path / "py_output"
@@ -1867,7 +1867,7 @@ class TestOriginalGeneratorCollisionDedup:
         assert content.count('"my_field": "fld001"') == 1
 
     def test_python_model_dedup_and_formula_reference(self, tmp_path: Path):
-        from src.generators.python import write_models
+        from myairtable.generators.python import write_models
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         out = tmp_path / "py_output"
@@ -1882,8 +1882,8 @@ class TestOriginalGeneratorCollisionDedup:
     # ---- Rust ----
 
     def test_rust_types_and_model_dedup(self, tmp_path: Path):
-        from src.generators.rust import write_field_types, write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.rust import write_field_types, write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         out = tmp_path / "rust_output"
@@ -1906,7 +1906,7 @@ class TestOriginalGeneratorCollisionDedup:
     # ---- TypeScript ----
 
     def test_typescript_model_dedup_and_formula_reference(self, tmp_path: Path):
-        from src.generators.typescript import write_models
+        from myairtable.generators.typescript import write_models
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         out = tmp_path / "ts_output"
@@ -1922,7 +1922,7 @@ class TestOriginalGeneratorCollisionDedup:
     # ---- JavaScript ----
 
     def test_javascript_model_dedup_and_formula_reference(self, tmp_path: Path):
-        from src.generators.javascript import write_models
+        from myairtable.generators.javascript import write_models
 
         base = make_test_base(self.FIELDS, formula_map=self.FORMULA_MAP)
         out = tmp_path / "js_output"
@@ -1939,8 +1939,8 @@ class TestKotlinGeneratorEdgeCases:
     """myairtable-dmiw — generator edge cases flagged by the ultra-review."""
 
     def _generate_model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.kotlin import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "kotlin_output"
@@ -1957,14 +1957,14 @@ class TestKotlinGeneratorEdgeCases:
         assert "`object`" not in content
 
     def test_keyword_named_field_in_formula_reference(self, tmp_path: Path):
-        from src.formulas.formula_transpiler import transpile_formula
+        from myairtable.formulas.formula_transpiler import transpile_formula
 
         result = transpile_formula('{fld001} & "!"', "kotlin", {"fld001": "`object`"}, set())
         assert result == 'JsonPrimitive(S(V(this.`object`)) + "!")'
 
     def test_zero_writable_fields_omits_create_object_and_empty_create_map(self, tmp_path: Path):
-        from src.generators.kotlin import write_field_types
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.kotlin import write_field_types
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("My Formula", "fld001", "formula")])
         out = tmp_path / "kotlin_output"
@@ -1986,7 +1986,7 @@ class TestKotlinGeneratorEdgeCases:
         assert 'override fun toString(): String = "TestTableModel(id=$id, ${toRecord().size} fields)"' in content
 
     def test_choice_to_entry_edges(self):
-        from src.utils.write_to_kotlin_file import _choice_to_entry
+        from myairtable.utils.write_to_kotlin_file import _choice_to_entry
 
         assert _choice_to_entry("3rd Party") == "N_3RD_PARTY"
         assert _choice_to_entry("") == "EMPTY"
@@ -2007,8 +2007,8 @@ class TestJavaOptionsGenerator:
 
     def _generate_options(self, choices: list[str], tmp_path: Path) -> Path:
         """Build a table with a singleSelect field and return the options dir."""
-        from src.generators.java import write_options
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_options
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Status", "fld001", "singleSelect")])
         field = base.tables[0].fields[0]
@@ -2076,8 +2076,8 @@ class TestJavaOptionsGenerator:
 
         `fields_spec` is `[(field_name, field_id, [choice, ...]), ...]`.
         """
-        from src.generators.java import write_options
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_options
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([(name, fid, "singleSelect") for name, fid, _ in fields_spec])
         for (_, _, choices), field in zip(fields_spec, base.tables[0].fields):
@@ -2109,8 +2109,8 @@ class TestJavaOptionsGenerator:
         """JR-H3: the raw options name uses the un-deduplicated table pascal, so
         same-named tables collide across tables too — the base-wide dedup map
         still keeps the enum names unique."""
-        from src.generators.java import write_options
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_options
+        from myairtable.utils.type_mapper import map_types
 
         # Two tables that both pascal-ize to `Foo`, each with a `Status` select.
         base = make_test_base([("Status", "fld001", "singleSelect")])
@@ -2151,8 +2151,8 @@ class TestJavaFieldTypes:
     """Java `{Table}Fields` / `{Table}View` / `Create{Table}Fields` generation."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
-        from src.generators.java import write_field_types
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_field_types
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "java_output"
@@ -2248,7 +2248,7 @@ class TestJavaFieldTypes:
 
     def test_view_enum_implements_airtable_view(self, tmp_path: Path):
         """Generated `{Table}View` enums implement the static `AirtableView` interface."""
-        from src.generators.java import write_field_types
+        from myairtable.generators.java import write_field_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         base.tables[0].views = [View.model_construct(id="viw001", name="Grid view", type="grid", table_id="tblTEST123")]
@@ -2277,8 +2277,8 @@ class TestJavaTablesAndMain:
     ]
 
     def _generate(self, tmp_path: Path, **flags) -> Path:
-        from src.generators.java import generate_java
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import generate_java
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(self.FIELDS_SPEC)
         output_folder = tmp_path / "java_output"
@@ -2343,8 +2343,8 @@ class TestJavaStringEscaping:
     CONTROL = "Tab\there\nNewline"
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.java import write_field_types
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_field_types
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         output_folder = tmp_path / "java_output"
@@ -2415,7 +2415,7 @@ class TestJavaStringEscaping:
 
     def test_java_ident_renames_keywords_with_underscore_suffix(self):
         """Java has no identifier escaping — keywords/literals get a `_` suffix."""
-        from src.utils.write_to_java_file import _java_ident
+        from myairtable.utils.write_to_java_file import _java_ident
 
         for kw in ("class", "switch", "true", "false", "null", "_", "var", "yield"):
             assert _java_ident(kw) == f"{kw}_"
@@ -2423,7 +2423,7 @@ class TestJavaStringEscaping:
 
     def test_keyword_table_name_gets_suffixed_accessor(self, tmp_path: Path):
         """A table named `Switch` yields a `switch_()` accessor on Airtable.java."""
-        from src.generators.java import write_main
+        from myairtable.generators.java import write_main
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         base.tables[0].name = "Switch"
@@ -2446,8 +2446,8 @@ class TestDedupJava:
     ]
 
     def _generate(self, tmp_path: Path) -> Path:
-        from src.generators.java import write_field_types
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_field_types
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(self.FIELDS)
         output_folder = tmp_path / "java_output"
@@ -2480,7 +2480,7 @@ class TestDedupJava:
         assert 'Map.entry("my field", "fld002")' in content
 
     def test_table_name_collision_dedup(self, tmp_path: Path):
-        from src.generators.java import write_main
+        from myairtable.generators.java import write_main
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         TestIdentifierCollisionDedup._add_colliding_table(base)
@@ -2500,18 +2500,18 @@ class TestJavaComputedTypes:
         return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
 
     def test_formula_number_wraps_maybe_special_or_error_double(self):
-        from src.utils.type_mapper import map_java_type
+        from myairtable.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<Double>"
 
     def test_auto_number_wraps_maybe_special_or_error_long(self):
-        from src.utils.type_mapper import map_java_type
+        from myairtable.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<Long>"
 
     def test_lookup_wraps_vec_or_value(self):
         """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_java_computed_wrapping
+        from myairtable.utils.type_mapper import apply_java_computed_wrapping
 
         field = self._field("Look", "fld001", "multipleLookupValues")
         assert apply_java_computed_wrapping("Double", field) == "VecOrValue<MaybeSpecialOrError<Double>>"
@@ -2520,32 +2520,32 @@ class TestJavaComputedTypes:
 
     def test_lookup_with_unresolvable_inner_falls_back_to_json_node(self):
         """An unresolvable lookup renders as VecOrValue<JsonNode> end-to-end."""
-        from src.utils.type_mapper import map_java_type
+        from myairtable.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<JsonNode>"
 
     def test_rollup_wraps_vec_or_value(self):
         """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_java_computed_wrapping
+        from myairtable.utils.type_mapper import apply_java_computed_wrapping
 
         field = self._field("Roll", "fld001", "rollup")
         assert apply_java_computed_wrapping("Double", field) == "VecOrValue<MaybeSpecialOrError<Double>>"
 
     def test_already_wrapped_type_is_left_alone(self):
         """apply_java_computed_wrapping is a no-op on already-wrapped types."""
-        from src.utils.type_mapper import apply_java_computed_wrapping
+        from myairtable.utils.type_mapper import apply_java_computed_wrapping
 
         field = self._field("Calc", "fld001", "formula")
         assert apply_java_computed_wrapping("MaybeSpecialOrError<Double>", field) == "MaybeSpecialOrError<Double>"
 
     def test_writable_field_is_never_wrapped(self):
-        from src.utils.type_mapper import apply_java_computed_wrapping
+        from myairtable.utils.type_mapper import apply_java_computed_wrapping
 
         field = self._field("My Text", "fld001", "singleLineText")
         assert apply_java_computed_wrapping("String", field) == "String"
 
     def test_writable_text_is_plain_string(self):
-        from src.utils.type_mapper import map_java_type
+        from myairtable.utils.type_mapper import map_java_type
 
         assert map_java_type(self._field("My Text", "fld001", "singleLineText")) == "String"
 
@@ -2558,18 +2558,18 @@ class TestCSharpComputedTypes:
         return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
 
     def test_formula_number_wraps_maybe_special_or_error_double(self):
-        from src.utils.type_mapper import map_csharp_type
+        from myairtable.utils.type_mapper import map_csharp_type
 
         assert map_csharp_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<double>"
 
     def test_auto_number_wraps_maybe_special_or_error_long(self):
-        from src.utils.type_mapper import map_csharp_type
+        from myairtable.utils.type_mapper import map_csharp_type
 
         assert map_csharp_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<long>"
 
     def test_lookup_wraps_vec_or_value(self):
         """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_csharp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_csharp_computed_wrapping
 
         field = self._field("Look", "fld001", "multipleLookupValues")
         assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
@@ -2578,32 +2578,32 @@ class TestCSharpComputedTypes:
 
     def test_lookup_with_unresolvable_inner_falls_back_to_json_node(self):
         """An unresolvable lookup renders as VecOrValue<JsonNode> end-to-end."""
-        from src.utils.type_mapper import map_csharp_type
+        from myairtable.utils.type_mapper import map_csharp_type
 
         assert map_csharp_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<JsonNode>"
 
     def test_rollup_wraps_vec_or_value(self):
         """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_csharp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_csharp_computed_wrapping
 
         field = self._field("Roll", "fld001", "rollup")
         assert apply_csharp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
 
     def test_already_wrapped_type_is_left_alone(self):
         """apply_csharp_computed_wrapping is a no-op on already-wrapped types."""
-        from src.utils.type_mapper import apply_csharp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_csharp_computed_wrapping
 
         field = self._field("Calc", "fld001", "formula")
         assert apply_csharp_computed_wrapping("MaybeSpecialOrError<double>", field) == "MaybeSpecialOrError<double>"
 
     def test_writable_field_is_never_wrapped(self):
-        from src.utils.type_mapper import apply_csharp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_csharp_computed_wrapping
 
         field = self._field("My Text", "fld001", "singleLineText")
         assert apply_csharp_computed_wrapping("string", field) == "string"
 
     def test_writable_text_is_plain_string(self):
-        from src.utils.type_mapper import map_csharp_type
+        from myairtable.utils.type_mapper import map_csharp_type
 
         assert map_csharp_type(self._field("My Text", "fld001", "singleLineText")) == "string"
 
@@ -2613,7 +2613,7 @@ class TestCSharpWriterHelpers:
 
     def test_csharp_ident_escapes_keywords_with_at_prefix(self):
         """C# uses verbatim identifiers — reserved words get a leading `@`."""
-        from src.utils.write_to_csharp_file import _csharp_ident
+        from myairtable.utils.write_to_csharp_file import _csharp_ident
 
         for kw in ("class", "switch", "true", "false", "null", "namespace", "string", "int"):
             assert _csharp_ident(kw) == f"@{kw}"
@@ -2624,7 +2624,7 @@ class TestCSharpWriterHelpers:
         assert _csharp_ident("async") == "async"
 
     def test_csharp_string_literal_escapes_quotes_and_controls(self):
-        from src.utils.write_to_csharp_file import _csharp_string_literal
+        from myairtable.utils.write_to_csharp_file import _csharp_string_literal
 
         assert _csharp_string_literal('a"b') == 'a\\"b'
         assert _csharp_string_literal("a\\b") == "a\\\\b"
@@ -2633,7 +2633,7 @@ class TestCSharpWriterHelpers:
         assert _csharp_string_literal("${x}") == "${x}"
 
     def test_xmldoc_escape_entities_and_double_dash(self):
-        from src.utils.write_to_csharp_file import _xmldoc_escape
+        from myairtable.utils.write_to_csharp_file import _xmldoc_escape
 
         assert _xmldoc_escape("a < b & c > d") == "a &lt; b &amp; c &gt; d"
         # `--` is illegal inside an XML comment body — neutralised.
@@ -2642,7 +2642,7 @@ class TestCSharpWriterHelpers:
         assert "&amp;lt;" not in _xmldoc_escape("<")
 
     def test_choice_to_entry_pascal_case_and_edges(self):
-        from src.utils.write_to_csharp_file import _choice_to_entry
+        from myairtable.utils.write_to_csharp_file import _choice_to_entry
 
         assert _choice_to_entry("open Invoices") == "OpenInvoices"
         assert _choice_to_entry("In Progress") == "InProgress"
@@ -2662,18 +2662,18 @@ class TestCppComputedTypes:
         return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
 
     def test_formula_number_wraps_maybe_special_or_error_double(self):
-        from src.utils.type_mapper import map_cpp_type
+        from myairtable.utils.type_mapper import map_cpp_type
 
         assert map_cpp_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<double>"
 
     def test_auto_number_wraps_maybe_special_or_error_int64(self):
-        from src.utils.type_mapper import map_cpp_type
+        from myairtable.utils.type_mapper import map_cpp_type
 
         assert map_cpp_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<int64_t>"
 
     def test_lookup_wraps_vec_or_value(self):
         """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_cpp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_cpp_computed_wrapping
 
         field = self._field("Look", "fld001", "multipleLookupValues")
         assert apply_cpp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
@@ -2682,32 +2682,32 @@ class TestCppComputedTypes:
 
     def test_lookup_with_unresolvable_inner_falls_back_to_json(self):
         """An unresolvable lookup renders as VecOrValue<nlohmann::json> end-to-end."""
-        from src.utils.type_mapper import map_cpp_type
+        from myairtable.utils.type_mapper import map_cpp_type
 
         assert map_cpp_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<nlohmann::json>"
 
     def test_rollup_wraps_vec_or_value(self):
         """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
-        from src.utils.type_mapper import apply_cpp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_cpp_computed_wrapping
 
         field = self._field("Roll", "fld001", "rollup")
         assert apply_cpp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
 
     def test_already_wrapped_type_is_left_alone(self):
         """apply_cpp_computed_wrapping is a no-op on already-wrapped types."""
-        from src.utils.type_mapper import apply_cpp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_cpp_computed_wrapping
 
         field = self._field("Calc", "fld001", "formula")
         assert apply_cpp_computed_wrapping("MaybeSpecialOrError<double>", field) == "MaybeSpecialOrError<double>"
 
     def test_writable_field_is_never_wrapped(self):
-        from src.utils.type_mapper import apply_cpp_computed_wrapping
+        from myairtable.utils.type_mapper import apply_cpp_computed_wrapping
 
         field = self._field("My Text", "fld001", "singleLineText")
         assert apply_cpp_computed_wrapping("std::string", field) == "std::string"
 
     def test_writable_text_is_plain_string(self):
-        from src.utils.type_mapper import map_cpp_type
+        from myairtable.utils.type_mapper import map_cpp_type
 
         assert map_cpp_type(self._field("My Text", "fld001", "singleLineText")) == "std::string"
 
@@ -2716,8 +2716,8 @@ class TestCppGenerator:
     """cpp.py F3 generator — offline content assertions (no compiler)."""
 
     def _generate(self, base: Base, tmp_path: Path) -> Path:
-        from src.generators.cpp import generate_cpp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.cpp import generate_cpp
+        from myairtable.utils.type_mapper import map_types
 
         map_types(base)
         out = tmp_path / "cpp"
@@ -2890,8 +2890,8 @@ class TestCppGenerator:
         assert '#include "static/runtime_math.hpp"' in content
 
     def test_runtime_flag_suppresses_evaluate_methods(self, tmp_path: Path):
-        from src.generators.cpp import generate_cpp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.cpp import generate_cpp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(
             [("Score", "fld001", "number"), ("Calc", "fld002", "formula")],
@@ -2932,8 +2932,8 @@ class TestCppGenerator:
         assert '#include "dynamic/formulas/test_table_filters.hpp"' in content
 
     def test_formulas_flag_suppresses_filters(self, tmp_path: Path):
-        from src.generators.cpp import generate_cpp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.cpp import generate_cpp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         map_types(base)
@@ -2946,8 +2946,8 @@ class TestCppGenerator:
         assert not (out / "static" / "formulas.hpp").exists()
 
     def test_wrappers_flag_suppresses_tables_and_entry_point(self, tmp_path: Path):
-        from src.generators.cpp import generate_cpp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.cpp import generate_cpp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         map_types(base)
@@ -2963,7 +2963,7 @@ class TestCppWriterHelpers:
 
     def test_cpp_ident_renames_keywords_with_trailing_underscore(self):
         """C++ has no verbatim-identifier escape — reserved words get a trailing `_`."""
-        from src.utils.write_to_cpp_file import _cpp_ident
+        from myairtable.utils.write_to_cpp_file import _cpp_ident
 
         for kw in ("class", "switch", "true", "false", "delete", "namespace", "int", "template"):
             assert _cpp_ident(kw) == f"{kw}_"
@@ -2979,7 +2979,7 @@ class TestCppWriterHelpers:
 
     def test_cpp_ident_normalises_implementation_reserved_patterns(self):
         """`__` anywhere and leading `_` are reserved for the implementation."""
-        from src.utils.write_to_cpp_file import _cpp_ident
+        from myairtable.utils.write_to_cpp_file import _cpp_ident
 
         assert _cpp_ident("foo__bar") == "foo_bar"
         assert _cpp_ident("_Reserved") == "Reserved"
@@ -2989,7 +2989,7 @@ class TestCppWriterHelpers:
         assert _cpp_ident("_") == "n"
 
     def test_cpp_string_literal_escapes_quotes_and_controls(self):
-        from src.utils.write_to_cpp_file import _cpp_string_literal
+        from myairtable.utils.write_to_cpp_file import _cpp_string_literal
 
         assert _cpp_string_literal('a"b') == 'a\\"b'
         assert _cpp_string_literal("a\\b") == "a\\\\b"
@@ -2998,14 +2998,14 @@ class TestCppWriterHelpers:
         assert _cpp_string_literal("${x}") == "${x}"
 
     def test_cppdoc_escape_strips_carriage_returns(self):
-        from src.utils.write_to_cpp_file import _cppdoc_escape
+        from myairtable.utils.write_to_cpp_file import _cppdoc_escape
 
         assert _cppdoc_escape("a\r\nb") == "a\nb"
         # `--` and XML entities are NOT special in a `///` comment — untouched.
         assert _cppdoc_escape("LEN({f})--1 < 2 & 3") == "LEN({f})--1 < 2 & 3"
 
     def test_choice_to_entry_pascal_case_and_edges(self):
-        from src.utils.write_to_cpp_file import _choice_to_entry
+        from myairtable.utils.write_to_cpp_file import _choice_to_entry
 
         assert _choice_to_entry("open Invoices") == "OpenInvoices"
         assert _choice_to_entry("In Progress") == "InProgress"
@@ -3021,8 +3021,8 @@ class TestCSharpGenerator:
     """csharp.py F3 generator — offline content assertions (no dotnet)."""
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
-        from src.generators.csharp import generate_csharp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.csharp import generate_csharp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         map_types(base)
@@ -3073,7 +3073,7 @@ class TestCSharpGenerator:
         property (`IsNew`) OR a base method (`ToRecord`, `DirtyFields`) — is suffixed
         `Field` so the generated property neither duplicates nor shadows the base member.
         Regression: `IsNew` and the method names were missing from the reserved set."""
-        from src.generators.csharp import _field_property_map
+        from myairtable.generators.csharp import _field_property_map
 
         base = make_test_base(
             [
@@ -3094,7 +3094,7 @@ class TestCSharpGenerator:
         """A table whose PascalCase accessor would collide with a root `Airtable`-class
         member is renamed `{Name}Table`. Covers the class name itself (`Airtable` →
         CS0542) and the `InvalidateAllCaches()` method (regression: was missing)."""
-        from src.generators.csharp import _table_property
+        from myairtable.generators.csharp import _table_property
 
         for name, expected in [
             ("Airtable", "AirtableTable"),
@@ -3107,8 +3107,8 @@ class TestCSharpGenerator:
             assert _table_property(base.tables[0]) == expected
 
     def test_options_enum_and_converter(self, tmp_path: Path):
-        from src.generators.csharp import generate_csharp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.csharp import generate_csharp
+        from myairtable.utils.type_mapper import map_types
 
         base = _make_base_with_select_field("Jobs", "Status", "fld001", ["To Do", "In Progress", "Done"])
         map_types(base)
@@ -3144,8 +3144,8 @@ class TestCSharpComputedFields:
         tmp_path: Path,
         **flags,
     ) -> str:
-        from src.generators.csharp import generate_csharp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.csharp import generate_csharp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         map_types(base)
@@ -3225,8 +3225,8 @@ class TestCSharpComputedFields:
     # ---- runtime formula evaluation (F8) ----
 
     def _model_with_formula(self, tmp_path: Path, **flags) -> str:
-        from src.generators.csharp import generate_csharp
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.csharp import generate_csharp
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(
             [("Primary Key", "fld001", "singleLineText"), ("My Formula", "fld002", "formula")],
@@ -3286,8 +3286,8 @@ class TestJavaModels:
         formula_map: dict[str, str] | None = None,
         **flags,
     ) -> Path:
-        from src.generators.java import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec, formula_map=formula_map)
         output_folder = tmp_path / "java_output"
@@ -3316,8 +3316,8 @@ class TestJavaModels:
 
     def test_model_file_generated_per_table_with_class_header(self, tmp_path: Path):
         """One dynamic/models/{Table}Model.java per table, implementing AirtableModel."""
-        from src.generators.java import write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.java import write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base([("My Text", "fld001", "singleLineText")])
         TestIdentifierCollisionDedup._add_colliding_table(base)
@@ -3517,7 +3517,7 @@ class TestJavaModels:
     def test_reserved_table_accessor_renamed(self, tmp_path: Path):
         """JR-M2: a table named `Client` would give the Airtable class a table
         accessor `client` colliding with its `AirtableClient client` field."""
-        from src.generators.java import _table_property
+        from myairtable.generators.java import _table_property
 
         base = make_test_base([("Primary Key", "fld001", "singleLineText")])
         base.tables[0].name = "Client"
@@ -3560,7 +3560,7 @@ class TestGoOptionsGenerator:
     """
 
     def _generate_options(self, choices: list[str], tmp_path: Path) -> str:
-        from src.generators.go import _gofmt, write_options
+        from myairtable.generators.go import _gofmt, write_options
 
         base = make_test_base([("Status", "fld001", "singleSelect")])
         field = base.tables[0].fields[0]
@@ -3614,7 +3614,7 @@ class TestGoFieldTypes:
     ]
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path, views: list[tuple[str, str]] | None = None) -> Path:
-        from src.generators.go import _gofmt, write_field_types
+        from myairtable.generators.go import _gofmt, write_field_types
 
         base = make_test_base(fields_spec)
         if views is not None:
@@ -3683,7 +3683,7 @@ class TestGoTablesAndMain:
     ]
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.go import _gofmt, write_main
+        from myairtable.generators.go import _gofmt, write_main
 
         base = make_test_base(fields_spec)
         out = tmp_path / "go_output"
@@ -3728,7 +3728,7 @@ class TestGoFlagGating:
 
     def test_wrappers_false_skips_airtable_go(self, tmp_path: Path):
         """With wrappers=False, write_main is not called so airtable.go is absent."""
-        from src.generators.go import _gofmt, write_field_types, write_main, write_options
+        from myairtable.generators.go import _gofmt, write_field_types, write_main, write_options
 
         base = make_test_base(self.FIELDS_SPEC)
         out = tmp_path / "go_output"
@@ -3747,7 +3747,7 @@ class TestGoFlagGating:
 
     def test_wrappers_true_emits_airtable_go(self, tmp_path: Path):
         """The complementary case: with wrappers=True airtable.go is emitted."""
-        from src.generators.go import _gofmt, write_field_types, write_main, write_options
+        from myairtable.generators.go import _gofmt, write_field_types, write_main, write_options
 
         base = make_test_base(self.FIELDS_SPEC)
         out = tmp_path / "go_output"
@@ -3783,8 +3783,8 @@ class TestGoComputedFields:
     ]
 
     def _generate_model(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.go import _gofmt, write_models
-        from src.utils.type_mapper import map_types
+        from myairtable.generators.go import _gofmt, write_models
+        from myairtable.utils.type_mapper import map_types
 
         base = make_test_base(fields_spec)
         out = tmp_path / "go_output"
@@ -3853,7 +3853,7 @@ class TestGoFormulaHelpers:
     ]
 
     def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
-        from src.generators.go import _gofmt, write_formula_helpers
+        from myairtable.generators.go import _gofmt, write_formula_helpers
 
         base = make_test_base(fields_spec)
         out = tmp_path / "go_output"
@@ -3887,7 +3887,7 @@ class TestGoFormulaHelpers:
     def test_generate_go_excludes_formula_statics_when_off(self, tmp_path: Path):
         """formulas=False must drop both the generated filters file and the static
         formula DSL files from the output (parity with runtime.go gating)."""
-        from src.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
+        from myairtable.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
 
         base = make_test_base(self.FIELDS_SPEC)
         out = tmp_path / "go_output"
@@ -3897,7 +3897,7 @@ class TestGoFormulaHelpers:
             assert not (out / name).exists()
 
     def test_generate_go_includes_formula_statics_when_on(self, tmp_path: Path):
-        from src.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
+        from myairtable.generators.go import _GO_FORMULA_STATIC_FILES, generate_go
 
         base = make_test_base(self.FIELDS_SPEC)
         out = tmp_path / "go_output"

@@ -3,7 +3,7 @@
 The logic behind myAirtable's public MCP tools and their `myairtable tools ...`
 CLI mirrors. Pure functions over the public Airtable meta API (src.meta.Base) —
 no MCP/FastMCP dependency, so both the MCP server (mcp_server.py) and the CLI
-(src/schema_tools_cli.py) import and register them without booting each other.
+(src/myairtable/schema_tools_cli.py) import and register them without booting each other.
 """
 
 from __future__ import annotations
@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Literal
 
-from src.formulas.formula_formatter import _count_nesting_depth
-from src.formulas.formula_tokenizer import TokenType, tokenize_formula
-from src.formulas.formula_transpiler import transpile_formula
-from src.generators.mermaid import mermaid_base
-from src.meta import Base, Field
+from myairtable.formulas.formula_formatter import _count_nesting_depth
+from myairtable.formulas.formula_tokenizer import TokenType, tokenize_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
+from myairtable.generators.mermaid import mermaid_base
+from myairtable.meta import Base, Field
 
 _base: Base | None = None
 
