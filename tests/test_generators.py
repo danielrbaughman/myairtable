@@ -2652,6 +2652,65 @@ class TestCSharpWriterHelpers:
         assert _choice_to_entry("3rd Party").startswith("N")
 
 
+class TestCppWriterHelpers:
+    """Pure helpers in write_to_cpp_file.py (CPP F1.4)."""
+
+    def test_cpp_ident_renames_keywords_with_trailing_underscore(self):
+        """C++ has no verbatim-identifier escape — reserved words get a trailing `_`."""
+        from src.utils.write_to_cpp_file import _cpp_ident
+
+        for kw in ("class", "switch", "true", "false", "delete", "namespace", "int", "template"):
+            assert _cpp_ident(kw) == f"{kw}_"
+        # Alternative tokens are operators — equally illegal as identifiers.
+        for alt in ("and", "or", "not", "xor", "bitand", "compl", "not_eq"):
+            assert _cpp_ident(alt) == f"{alt}_"
+        # Contextual identifiers escaped defensively.
+        assert _cpp_ident("final") == "final_"
+        assert _cpp_ident("override") == "override_"
+        # Ordinary names are left alone.
+        assert _cpp_ident("status") == "status"
+        assert _cpp_ident("value") == "value"
+
+    def test_cpp_ident_normalises_implementation_reserved_patterns(self):
+        """`__` anywhere and leading `_` are reserved for the implementation."""
+        from src.utils.write_to_cpp_file import _cpp_ident
+
+        assert _cpp_ident("foo__bar") == "foo_bar"
+        assert _cpp_ident("_Reserved") == "Reserved"
+        assert _cpp_ident("__x") == "x"
+        # Stripping may expose a digit or empty the name — validity is restored.
+        assert _cpp_ident("_1st") == "n_1st"
+        assert _cpp_ident("_") == "n"
+
+    def test_cpp_string_literal_escapes_quotes_and_controls(self):
+        from src.utils.write_to_cpp_file import _cpp_string_literal
+
+        assert _cpp_string_literal('a"b') == 'a\\"b'
+        assert _cpp_string_literal("a\\b") == "a\\\\b"
+        assert _cpp_string_literal("a\nb\tc") == "a\\nb\\tc"
+        # `{` and `$` carry no meaning in a C++ string literal — left alone.
+        assert _cpp_string_literal("${x}") == "${x}"
+
+    def test_cppdoc_escape_strips_carriage_returns(self):
+        from src.utils.write_to_cpp_file import _cppdoc_escape
+
+        assert _cppdoc_escape("a\r\nb") == "a\nb"
+        # `--` and XML entities are NOT special in a `///` comment — untouched.
+        assert _cppdoc_escape("LEN({f})--1 < 2 & 3") == "LEN({f})--1 < 2 & 3"
+
+    def test_choice_to_entry_pascal_case_and_edges(self):
+        from src.utils.write_to_cpp_file import _choice_to_entry
+
+        assert _choice_to_entry("open Invoices") == "OpenInvoices"
+        assert _choice_to_entry("In Progress") == "InProgress"
+        assert _choice_to_entry("") == "Empty"
+        assert _choice_to_entry("   ") == "Empty"
+        # Every result is a valid identifier that never starts with a digit.
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("!!!"))
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("3rd Party"))
+        assert _choice_to_entry("3rd Party").startswith("N")
+
+
 class TestCSharpGenerator:
     """csharp.py F3 generator — offline content assertions (no dotnet)."""
 
