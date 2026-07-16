@@ -35,7 +35,7 @@ class DictTable {
     };
 
     DictTable(std::shared_ptr<AirtableClient> client, std::string table_id,
-              std::map<std::string, std::string> name_to_id = {})
+              std::map<std::string, std::string, std::less<>> name_to_id = {})
         : client_(std::move(client)), table_id_(std::move(table_id)),
           name_to_id_(std::move(name_to_id)) {}
 
@@ -176,7 +176,7 @@ class DictTable {
 
     std::shared_ptr<AirtableClient> client_;
     std::string table_id_;
-    std::map<std::string, std::string> name_to_id_;
+    std::map<std::string, std::string, std::less<>> name_to_id_;
 };
 
 } // namespace myairtable

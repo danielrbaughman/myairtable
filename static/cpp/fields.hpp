@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "airtable_json.hpp"
@@ -19,15 +20,17 @@ namespace myairtable {
 class Fields {
   public:
     Fields() = default;
-    explicit Fields(std::map<std::string, json> storage,
-                    std::map<std::string, std::string> name_to_id = {})
+    explicit Fields(std::map<std::string, json, std::less<>> storage,
+                    std::map<std::string, std::string, std::less<>> name_to_id = {})
         : storage_(std::move(storage)), name_to_id_(std::move(name_to_id)) {}
 
     /// Field name → field id, supplied by the generated table so names resolve.
-    void set_name_to_id(std::map<std::string, std::string> name_to_id) {
+    void set_name_to_id(std::map<std::string, std::string, std::less<>> name_to_id) {
         name_to_id_ = std::move(name_to_id);
     }
-    const std::map<std::string, std::string>& name_to_id() const { return name_to_id_; }
+    const std::map<std::string, std::string, std::less<>>& name_to_id() const {
+        return name_to_id_;
+    }
 
     size_t count() const { return storage_.size(); }
 
@@ -40,10 +43,10 @@ class Fields {
         return out;
     }
 
-    const std::map<std::string, json>& to_map() const { return storage_; }
+    const std::map<std::string, json, std::less<>>& to_map() const { return storage_; }
 
     /// Id-first lookup, name fallback; JSON null when absent (BLANK semantics).
-    json get(const std::string& key) const {
+    json get(std::string_view key) const {
         if (const auto it = storage_.find(key); it != storage_.end()) {
             return it->second;
         }
@@ -55,7 +58,7 @@ class Fields {
         return json(nullptr);
     }
 
-    bool has(const std::string& key) const {
+    bool has(std::string_view key) const {
         if (storage_.contains(key)) {
             return true;
         }
@@ -65,21 +68,22 @@ class Fields {
 
     /// Id-first store: an existing storage key wins, then a known name resolves
     /// to its id, then the raw key is used as-is.
-    void set(const std::string& key, json value) {
-        if (storage_.contains(key)) {
-            storage_[key] = std::move(value);
+    void set(std::string_view key, json value) {
+        if (const auto it = storage_.find(key); it != storage_.end()) {
+            it->second = std::move(value);
             return;
         }
         if (const auto name = name_to_id_.find(key); name != name_to_id_.end()) {
-            storage_[name->second] = std::move(value);
+            storage_.insert_or_assign(name->second, std::move(value));
             return;
         }
-        storage_[key] = std::move(value);
+        storage_.insert_or_assign(std::string(key), std::move(value));
     }
 
     /// Remove the entry entirely (vs storing JSON null, which clears server-side).
-    void remove(const std::string& key) {
-        if (storage_.erase(key) > 0) {
+    void remove(std::string_view key) {
+        if (const auto it = storage_.find(key); it != storage_.end()) {
+            storage_.erase(it);
             return;
         }
         if (const auto name = name_to_id_.find(key); name != name_to_id_.end()) {
@@ -89,42 +93,42 @@ class Fields {
 
     // ---- typed convenience accessors -----------------------------------------
 
-    std::optional<std::string> get_string(const std::string& key) const {
+    std::optional<std::string> get_string(std::string_view key) const {
         const json value = get(key);
         return value.is_string() ? std::optional(value.get<std::string>()) : std::nullopt;
     }
-    std::optional<int64_t> get_long(const std::string& key) const {
+    std::optional<int64_t> get_long(std::string_view key) const {
         const json value = get(key);
         return value.is_number() ? std::optional(static_cast<int64_t>(value.get<double>()))
                                  : std::nullopt;
     }
-    std::optional<double> get_double(const std::string& key) const {
+    std::optional<double> get_double(std::string_view key) const {
         const json value = get(key);
         return value.is_number() ? std::optional(value.get<double>()) : std::nullopt;
     }
-    std::optional<bool> get_bool(const std::string& key) const {
+    std::optional<bool> get_bool(std::string_view key) const {
         const json value = get(key);
         return value.is_boolean() ? std::optional(value.get<bool>()) : std::nullopt;
     }
-    std::optional<std::vector<json>> get_array(const std::string& key) const {
+    std::optional<std::vector<json>> get_array(std::string_view key) const {
         const json value = get(key);
         return value.is_array() ? std::optional(std::vector<json>(value.begin(), value.end()))
                                 : std::nullopt;
     }
 
-    void set_string(const std::string& key, const std::optional<std::string>& value) {
+    void set_string(std::string_view key, const std::optional<std::string>& value) {
         set(key, value.has_value() ? json(*value) : json(nullptr));
     }
-    void set_long(const std::string& key, std::optional<int64_t> value) {
+    void set_long(std::string_view key, std::optional<int64_t> value) {
         set(key, value.has_value() ? json(*value) : json(nullptr));
     }
-    void set_double(const std::string& key, std::optional<double> value) {
+    void set_double(std::string_view key, std::optional<double> value) {
         set(key, value.has_value() ? json(*value) : json(nullptr));
     }
-    void set_bool(const std::string& key, std::optional<bool> value) {
+    void set_bool(std::string_view key, std::optional<bool> value) {
         set(key, value.has_value() ? json(*value) : json(nullptr));
     }
-    void set_strings(const std::string& key, const std::optional<std::vector<std::string>>& value) {
+    void set_strings(std::string_view key, const std::optional<std::vector<std::string>>& value) {
         set(key, value.has_value() ? json(*value) : json(nullptr));
     }
 
@@ -132,8 +136,8 @@ class Fields {
     friend bool operator==(const Fields& a, const Fields& b) { return a.storage_ == b.storage_; }
 
   private:
-    std::map<std::string, json> storage_;
-    std::map<std::string, std::string> name_to_id_;
+    std::map<std::string, json, std::less<>> storage_;
+    std::map<std::string, std::string, std::less<>> name_to_id_;
 };
 
 } // namespace myairtable
@@ -142,7 +146,7 @@ namespace nlohmann {
 
 template <> struct adl_serializer<myairtable::Fields> {
     static myairtable::Fields from_json(const json& j) {
-        std::map<std::string, json> storage;
+        std::map<std::string, json, std::less<>> storage;
         if (j.is_object()) {
             for (const auto& [key, value] : j.items()) {
                 storage[key] = value;

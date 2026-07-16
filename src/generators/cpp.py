@@ -217,12 +217,12 @@ def write_field_types(base: Base, output_folder: Path) -> None:
             name_to_id: dict[str, str] = {}
             for field in table.fields:
                 name_to_id[_cpp_string_literal(sanitize_string(field.name))] = field.id
-            write.line_indented("inline static const std::map<std::string, std::string> kNameToId = {")
+            write.line_indented("inline static const std::map<std::string, std::string, std::less<>> kNameToId = {")
             for name_lit, fid in name_to_id.items():
                 write.line_indented(f'{{"{name_lit}", "{fid}"}},', indent=2)
             write.line_indented("};")
             write.line_empty()
-            write.line_indented("inline static const std::map<std::string, std::string> kIdToName = {")
+            write.line_indented("inline static const std::map<std::string, std::string, std::less<>> kIdToName = {")
             for field in table.fields:
                 name_lit = _cpp_string_literal(sanitize_string(field.name))
                 write.line_indented(f'{{"{field.id}", "{name_lit}"}},', indent=2)
