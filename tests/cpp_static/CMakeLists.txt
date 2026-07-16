@@ -19,7 +19,7 @@ FetchContent_MakeAvailable(Catch2)
 
 find_package(CURL REQUIRED)
 
-file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 add_executable(cpp_static_tests ${TEST_SOURCES})
 target_include_directories(cpp_static_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../static/cpp")
 target_link_libraries(cpp_static_tests PRIVATE Catch2::Catch2WithMain CURL::libcurl)
