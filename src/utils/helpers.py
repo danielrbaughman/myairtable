@@ -249,14 +249,33 @@ def deduplicate_names(names: list[str]) -> list[str]:
     return result
 
 
+# static/ is bundled data, so it is anchored to this module's location and never
+# to the caller's cwd — codegen must emit identical output from any directory.
+# src/utils/helpers.py -> parents[2] == repo root. When static/ moves inside the
+# package this becomes parents[1].
+STATIC_ROOT = Path(__file__).resolve().parents[2] / "static"
+
+
+def static_dir(name: str) -> Path:
+    """Locate a bundled static runtime directory, e.g. static_dir("python").
+
+    Raises FileNotFoundError rather than returning a missing path: the generated
+    code imports these files, so skipping the copy yields a package that fails
+    to import later, far from the cause.
+    """
+    source = STATIC_ROOT / name
+    if not source.is_dir():
+        raise FileNotFoundError(f"Bundled static runtime '{name}' not found at {source}. The myairtable installation is incomplete.")
+    return source
+
+
 def copy_static_files(output_folder: Path, type: str, exclude: list[str] | None = None):
     """Copy static template files to output folder. Uses optimized copytree."""
-    source = Path(f"./static/{type}")
+    source = static_dir(type)
     destination = output_folder / "static"
 
-    if source.exists():
-        ignore = shutil.ignore_patterns(*exclude) if exclude else None
-        shutil.copytree(source, destination, dirs_exist_ok=True, ignore=ignore)
+    ignore = shutil.ignore_patterns(*exclude) if exclude else None
+    shutil.copytree(source, destination, dirs_exist_ok=True, ignore=ignore)
 
 
 def reset_folder(folder: Path | str, preserve: list[str] | None = None) -> Path:
