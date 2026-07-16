@@ -13,8 +13,9 @@ namespace myairtable::runtime {
 
 // Transpiled-formula string functions. Position/length semantics are UTF-8
 // CODE POINTS (the Rust/Go precedent), not bytes: LEN("héllo") == 5.
-// Case folding is ASCII-only (no ICU dependency); the live parity suites
-// exercise unicode through concatenation/positional ops, not case mapping.
+// Case folding covers ASCII, Latin-1 Supplement, and Latin Extended-A via a
+// built-in one-to-one mapping (no ICU dependency) — enough for the live parity
+// suites' accented-Latin inputs; other scripts pass through unchanged.
 
 namespace detail {
 
@@ -43,16 +44,123 @@ inline size_t cp_index(const std::string& text, size_t cp_offset) {
     return index;
 }
 
-inline std::string ascii_lower(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return text;
+/// Simple (one-to-one) lowercase mapping for ASCII, Latin-1 Supplement, and
+/// Latin Extended-A. Every mapping preserves UTF-8 byte length, so lowered
+/// strings stay offset-compatible (SEARCH relies on this). Other code points
+/// are returned unchanged.
+inline uint32_t cp_to_lower(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z') {
+        return cp + 0x20;
+    }
+    if (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) { // À-Þ except ×
+        return cp + 0x20;
+    }
+    if (cp == 0x178) { // Ÿ -> ÿ
+        return 0xFF;
+    }
+    // Latin Extended-A upper/lower pairs (0x130 İ excluded: its full lowering
+    // is multi-code-point, so it passes through).
+    if (cp >= 0x100 && cp <= 0x137 && cp != 0x130 && (cp % 2) == 0) {
+        return cp + 1;
+    }
+    if (cp >= 0x139 && cp <= 0x148 && (cp % 2) == 1) {
+        return cp + 1;
+    }
+    if (cp >= 0x14A && cp <= 0x177 && (cp % 2) == 0) {
+        return cp + 1;
+    }
+    if (cp >= 0x179 && cp <= 0x17E && (cp % 2) == 1) {
+        return cp + 1;
+    }
+    return cp;
 }
 
-inline std::string ascii_upper(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    return text;
+/// Simple uppercase mapping over the same ranges as cp_to_lower.
+inline uint32_t cp_to_upper(uint32_t cp) {
+    if (cp >= 'a' && cp <= 'z') {
+        return cp - 0x20;
+    }
+    if (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) { // à-þ except ÷
+        return cp - 0x20;
+    }
+    if (cp == 0xFF) { // ÿ -> Ÿ
+        return 0x178;
+    }
+    if (cp == 0x131) { // ı (dotless i) -> I
+        return 'I';
+    }
+    if (cp == 0x17F) { // ſ (long s) -> S
+        return 'S';
+    }
+    if (cp >= 0x101 && cp <= 0x137 && (cp % 2) == 1) {
+        return cp - 1;
+    }
+    if (cp >= 0x13A && cp <= 0x148 && (cp % 2) == 0) {
+        return cp - 1;
+    }
+    if (cp >= 0x14B && cp <= 0x177 && (cp % 2) == 1) {
+        return cp - 1;
+    }
+    if (cp >= 0x17A && cp <= 0x17E && (cp % 2) == 0) {
+        return cp - 1;
+    }
+    return cp;
+}
+
+/// Apply a code-point case mapping across a UTF-8 string. Unmapped code
+/// points (and any malformed byte sequences) are copied through verbatim; all
+/// mapped results are < U+0800, i.e. encode in 1-2 bytes.
+inline std::string map_case(const std::string& text, uint32_t (*map)(uint32_t)) {
+    std::string out;
+    out.reserve(text.size());
+    size_t i = 0;
+    while (i < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[i]);
+        size_t len = 1;
+        if ((lead & 0xE0) == 0xC0) {
+            len = 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            len = 3;
+        } else if ((lead & 0xF8) == 0xF0) {
+            len = 4;
+        }
+        if (i + len > text.size()) { // truncated sequence: copy the tail as-is
+            out.append(text, i, text.size() - i);
+            break;
+        }
+        uint32_t cp = lead;
+        bool valid = true;
+        if (len > 1) {
+            cp = lead & (0x7Fu >> len);
+            for (size_t k = 1; k < len; ++k) {
+                const auto cont = static_cast<unsigned char>(text[i + k]);
+                if ((cont & 0xC0) != 0x80) {
+                    valid = false;
+                    break;
+                }
+                cp = (cp << 6) | (cont & 0x3Fu);
+            }
+        }
+        const uint32_t mapped = valid ? map(cp) : cp;
+        if (!valid || mapped == cp) {
+            out.append(text, i, len);
+        } else if (mapped < 0x80) {
+            out.push_back(static_cast<char>(mapped));
+        } else {
+            out.push_back(static_cast<char>(0xC0 | (mapped >> 6)));
+            out.push_back(static_cast<char>(0x80 | (mapped & 0x3F)));
+        }
+        i += len;
+    }
+    return out;
+}
+
+inline std::string fold_lower(const std::string& text) {
+    return map_case(text, cp_to_lower);
+}
+
+inline std::string fold_upper(const std::string& text) {
+    return map_case(text, cp_to_upper);
 }
 
 } // namespace detail
@@ -106,8 +214,8 @@ inline json FIND(const json& needle, const json& haystack, const json& start = j
 }
 
 inline json SEARCH(const json& needle, const json& haystack, const json& start = json(nullptr)) {
-    const std::string hay = detail::ascii_lower(s(haystack));
-    const std::string nee = detail::ascii_lower(s(needle));
+    const std::string hay = detail::fold_lower(s(haystack));
+    const std::string nee = detail::fold_lower(s(needle));
     const auto offset = start.is_null()
                             ? size_t{0}
                             : static_cast<size_t>(std::max(0, static_cast<int>(n(start)) - 1));
@@ -177,11 +285,11 @@ inline json REPLACE(const json& text, const json& start, const json& count,
 }
 
 inline json LOWER(const json& value) {
-    return json(detail::ascii_lower(s(value)));
+    return json(detail::fold_lower(s(value)));
 }
 
 inline json UPPER(const json& value) {
-    return json(detail::ascii_upper(s(value)));
+    return json(detail::fold_upper(s(value)));
 }
 
 inline json TRIM(const json& value) {
