@@ -19,7 +19,7 @@ from myairtable.generators.python import generate_python
 from myairtable.generators.rust import generate_rust
 from myairtable.generators.swift import generate_swift
 from myairtable.generators.typescript import generate_typescript
-from myairtable.meta import AirtableCredentials, Base, Field, generate_meta, get_base_meta_data
+from myairtable.meta import Base, Field, configure_default, generate_meta, get_base_meta_data
 from myairtable.utils.helpers import create_folder, reset_folder
 from myairtable.utils.type_mapper import map_types
 from myairtable.utils.verbose import verbose
@@ -40,8 +40,10 @@ def main_callback(
     api_key: Annotated[str | None, Option("--api-key", help="Airtable API Key (overrides AIRTABLE_API_KEY env var)")] = None,
 ):
     """myAirtable CLI - Generate code and documentation from Airtable metadata."""
-    creds = AirtableCredentials.get_instance()
-    creds.set_credentials(api_key=api_key, base_id=base_id)
+    # The CLI is one base per process, so the flags become the process default and
+    # every command's bare Base(...) picks them up. Unset flags are ignored, so the
+    # environment fallback still applies.
+    configure_default(base_id=base_id, api_key=api_key)
 
 
 @app.command()

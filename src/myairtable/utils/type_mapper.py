@@ -7,7 +7,7 @@ import pyairtable
 from pyairtable.api.types import RecordDict
 from rich import print
 
-from ..meta import AirtableCredentials, Base, Field
+from ..meta import Base, Field
 from ..meta_types import FieldType, GenericType, ResolvedType
 from .verbose import verbose
 
@@ -313,9 +313,11 @@ def map_types(base: Base) -> None:
     if verbose:
         print("[dim] - Mapped unambiguous types[/]")
 
-    # Second pass: disambiguate fields that need it (handles both languages)
+    # Second pass: disambiguate fields that need it (handles both languages).
+    # The key comes off the base so the record fetches hit the base these fields
+    # actually belong to.
     if fields_to_disambiguate:
-        disambiguate_fields(fields_to_disambiguate)
+        disambiguate_fields(fields_to_disambiguate, base._api_key)
         if verbose:
             print("[dim] - Mapped ambiguous field types[/]")
 
@@ -936,12 +938,14 @@ def map_cpp_type(field: Field) -> str:
 # =============================================================================
 
 
-def disambiguate_fields(fields: list[Field]) -> None:
-    """Disambiguate multiple fields efficiently by batching API calls per table."""
+def disambiguate_fields(fields: list[Field], api_key: str) -> None:
+    """Disambiguate multiple fields efficiently by batching API calls per table.
 
-    try:
-        api_key = AirtableCredentials.get_instance().get_api_key()
-    except Exception:
+    The key is passed in rather than resolved here: these calls fetch records
+    from the SAME base the fields came from, so re-resolving from the
+    environment would use the wrong key for any base but the default.
+    """
+    if not api_key:
         return
 
     # Group fields by table

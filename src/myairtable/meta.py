@@ -26,43 +26,76 @@ from .utils.helpers import (
 )
 from .utils.verbose import verbose
 
+# --- base selection -------------------------------------------------------
+#
+# Callers name a base three ways, in precedence order:
+#
+#   1. an explicit `base=` — a registered alias ("crm") or a raw id ("appXXX")
+#   2. a configured default — where the CLI's --base-id/--api-key flags land
+#   3. the AIRTABLE_BASE_ID / AIRTABLE_API_KEY environment variables
+#
+# Aliases exist because a raw base id is not discoverable: an agent calling these
+# tools through an MCP server has no way to learn one, so a bare `base_id`
+# parameter would be unpopulatable. A host registers its bases up front and can
+# then expose them as an enum. This mirrors the runtime we generate, which ships
+# the same idea as set_airtable_config().
+#
+# The default is a convenience for single-base callers (the CLI), never the only
+# path — that was the flaw in the credentials singleton this replaces. Every
+# entry point still accepts an explicit base, so one process can serve many.
 
-class AirtableCredentials:
-    """Holds Airtable API credentials - CLI params override env vars."""
+_BASE_ALIASES: dict[str, tuple[str, str]] = {}
+_DEFAULT_BASE_ID: str | None = None
+_DEFAULT_API_KEY: str | None = None
 
-    _instance: "AirtableCredentials | None" = None
 
-    def __init__(self):
-        self._api_key: str | None = None
-        self._base_id: str | None = None
+def configure_bases(bases: dict[str, tuple[str, str]]) -> None:
+    """Register named bases: ``{alias: (base_id, api_key)}``.
 
-    @classmethod
-    def get_instance(cls) -> "AirtableCredentials":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+    Call once at startup. Callers then pass ``base="crm"`` instead of a raw id.
+    """
+    _BASE_ALIASES.update(bases)
 
-    def set_credentials(self, api_key: str | None = None, base_id: str | None = None):
-        if api_key:
-            self._api_key = api_key
-        if base_id:
-            self._base_id = base_id
 
-    def get_api_key(self) -> str:
-        if self._api_key:
-            return self._api_key
-        api_key = os.getenv("AIRTABLE_API_KEY")
-        if not api_key:
-            raise Exception("AIRTABLE_API_KEY not found. Provide --api-key or set environment variable.")
-        return api_key
+def configure_default(base_id: str | None = None, api_key: str | None = None) -> None:
+    """Set the base/key used when a caller names no base.
 
-    def get_base_id(self) -> str:
-        if self._base_id:
-            return self._base_id
-        base_id = os.getenv("AIRTABLE_BASE_ID")
-        if not base_id:
-            raise Exception("AIRTABLE_BASE_ID not found. Provide --base-id or set environment variable.")
-        return base_id
+    Falsy values are ignored, so passing an unset CLI flag leaves the
+    environment fallback intact.
+    """
+    global _DEFAULT_BASE_ID, _DEFAULT_API_KEY
+    if base_id:
+        _DEFAULT_BASE_ID = base_id
+    if api_key:
+        _DEFAULT_API_KEY = api_key
+
+
+def reset_configuration() -> None:
+    """Clear registered aliases and defaults. For tests."""
+    global _DEFAULT_BASE_ID, _DEFAULT_API_KEY
+    _BASE_ALIASES.clear()
+    _DEFAULT_BASE_ID = None
+    _DEFAULT_API_KEY = None
+
+
+def resolve_base(base: str = "", api_key: str | None = None) -> tuple[str, str]:
+    """Resolve a base selector to ``(base_id, api_key)``.
+
+    `base` is a registered alias or a raw base id; empty means "the default".
+    """
+    if base and base in _BASE_ALIASES:
+        alias_base_id, alias_api_key = _BASE_ALIASES[base]
+        return alias_base_id, (api_key or alias_api_key)
+
+    resolved_base_id = base or _DEFAULT_BASE_ID or os.getenv("AIRTABLE_BASE_ID")
+    if not resolved_base_id:
+        raise Exception("AIRTABLE_BASE_ID not found. Provide --base-id or set environment variable.")
+
+    resolved_api_key = api_key or _DEFAULT_API_KEY or os.getenv("AIRTABLE_API_KEY")
+    if not resolved_api_key:
+        raise Exception("AIRTABLE_API_KEY not found. Provide --api-key or set environment variable.")
+
+    return resolved_base_id, resolved_api_key
 
 
 PROPERTY_NAME = "Property Name (snake_case)"
@@ -124,10 +157,10 @@ def _fetch_with_retry(url: str, headers: dict[str, str]) -> httpx.Response:
     raise Exception(f"Failed to fetch after {_MAX_RETRIES} attempts") from last_exception
 
 
-def get_base_meta_data() -> BaseMetadata:
-    creds = AirtableCredentials.get_instance()
-    api_key = creds.get_api_key()
-    base_id = creds.get_base_id()
+def get_base_meta_data(base_id: str = "", api_key: str = "") -> BaseMetadata:
+    """Fetch a base's table metadata. Unnamed base/key resolve per `resolve_base`."""
+    if not (base_id and api_key):
+        base_id, api_key = resolve_base(base_id, api_key or None)
     url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
 
     response = _fetch_with_retry(url, headers={"Authorization": f"Bearer {api_key}"})
@@ -138,12 +171,6 @@ def get_base_meta_data() -> BaseMetadata:
     for table in data["tables"]:
         table["fields"].sort(key=lambda f: f["name"].lower())
     return data
-
-
-def get_base_id() -> str:
-    """Get the Airtable Base ID from CLI param or environment variable."""
-    creds = AirtableCredentials.get_instance()
-    return creds.get_base_id()
 
 
 def generate_meta(metadata: BaseMetadata, folder: Path):
@@ -1029,25 +1056,40 @@ class Base(BaseModel):
     tables: list[Table]
     _original_metadata: BaseMetadata
     _csv_cache: CsvCache | None = None
-    _involves_lookup_cache: dict[str, bool] = {}
-    _involves_rollup_cache: dict[str, bool] = {}
+    # default_factory rather than a bare `= {}`: a mutable class-scope default is
+    # shared by every instance, and these are per-base caches. It happens to work
+    # today only because pydantic reinterprets underscore attrs as deep-copied
+    # private attrs — don't depend on that.
+    _involves_lookup_cache: dict[str, bool] = PrivateAttr(default_factory=dict)
+    _involves_rollup_cache: dict[str, bool] = PrivateAttr(default_factory=dict)
     _field_index: dict[str, "Field"] = {}
     _table_index: dict[str, "Table"] = {}
     _select_fields_cache: list["Field"] | None = None
     _select_field_ids_cache: set[str] | None = None
     _options_name_map_cache: dict[str, str] | None = None
+    # The key this base was built with. Later calls (type_mapper's
+    # disambiguate_fields) fetch more from the SAME base, so they must reuse this
+    # key rather than re-resolving from the environment — which, for any base
+    # other than the default, would be the wrong key.
+    _api_key: str = PrivateAttr(default="")
 
-    def __init__(self, csv_folder: Path | None = None):
-        meta = get_base_meta_data()
+    def __init__(self, base: str = "", api_key: str | None = None, csv_folder: Path | None = None):
+        """Load a base's schema.
+
+        Args:
+            base: registered alias or raw base id. Empty resolves per `resolve_base`.
+            api_key: overrides the resolved key.
+            csv_folder: optional custom-name CSVs.
+        """
+        base_id, resolved_api_key = resolve_base(base, api_key)
+        meta = get_base_meta_data(base_id, resolved_api_key)
         super().__init__(
-            id=get_base_id(),
+            id=base_id,
             tables=[],
         )
+        self._api_key = resolved_api_key
         self._original_metadata = meta
         self._csv_cache = CsvCache(csv_folder) if csv_folder else None
-        # Initialize fresh caches for this base instance
-        self._involves_lookup_cache = {}
-        self._involves_rollup_cache = {}
 
         for table_meta in meta["tables"]:
             table = Table(
@@ -1140,10 +1182,15 @@ class Base(BaseModel):
             Dict mapping field_id -> formula for all formula-type fields with formulas.
         """
         if not hasattr(self, "_formula_field_map_cache"):
-            self._formula_field_map_cache: dict[str, str] = {}
+            # Build into a local and publish once. Assigning the empty dict first
+            # and filling it after lets a concurrent reader see `hasattr` succeed
+            # and return a half-populated map — which silently drops {fldXXX}
+            # expansions and yields a wrong-but-plausible flattened formula.
+            formula_map: dict[str, str] = {}
             for field in self.fields():
                 if field.type == "formula" and field.options and field.options.formula:
-                    self._formula_field_map_cache[field.id] = field.options.formula
+                    formula_map[field.id] = field.options.formula
+            self._formula_field_map_cache: dict[str, str] = formula_map
         return self._formula_field_map_cache
 
     def get_formula_field_map_tuple(self) -> tuple[tuple[str, str], ...]:
