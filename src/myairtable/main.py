@@ -543,8 +543,18 @@ def all(
     print("")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Console-script entry point (`myairtable`).
+
+    Loads .env before dispatching, so the installed command behaves the same as
+    `python main.py` did. [project.scripts] targets this, not `app`, precisely so
+    that step isn't skipped.
+    """
     from dotenv import load_dotenv
 
     load_dotenv()
     app()
+
+
+if __name__ == "__main__":
+    main()

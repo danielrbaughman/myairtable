@@ -1,34 +1,77 @@
 [project]
 name = "myairtable"
 version = "0.1.0"
-description = "Add your description here"
+description = "An Airtable code generator, focused on developer experience."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-	"dateparser>=1.2.2",
-	"dotenv>=0.9.9",
-	"fastmcp>=3.2.0",
-	"httpx>=0.28.1",
-	"mermaid-cli>=0.1.2",
-	"pyairtable>=3.2.0",
-	"pydantic>=2.11.7",
-	"pyperclip>=1.11.0",
-	"pytest>=9.0.2",
-	"typer>=0.16.1",
-	"typer-verbose>=0.1.2",
-	"typing-extensions>=4.12.0",
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Daniel Baughman" }]
+keywords = ["airtable", "codegen", "code-generation", "schema", "orm", "formula"]
+classifiers = [
+	"Development Status :: 3 - Alpha",
+	"Intended Audience :: Developers",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Topic :: Software Development :: Code Generators",
+	"Typing :: Typed",
 ]
 
-# Minimal build backend: src-layout only resolves once the project is installed
-# (without it uv treats this as a virtual project and src/ never lands on
-# sys.path). Full packaging metadata — license, authors, classifiers, extras,
-# entry points — lands in myairtable-d2mh.
+# Core: the analysis layer (myairtable.schema_tools and its closure). Deliberately
+# small — this is what an importing consumer such as ../rogo-mcp pins.
+#
+# typer arrives here transitively, via typer-verbose, because meta.py imports
+# utils/verbose at module level. That is a known, temporary compromise; see
+# myairtable-rm5o, which decouples it so typer moves to [cli].
+#
+# rich was previously UNDECLARED — 15 modules import it and it only resolved via
+# typer's transitive pull. Declaring it is load-bearing once typer leaves core.
+dependencies = [
+	"httpx>=0.28.1",
+	"pydantic>=2.11.7",
+	"rich>=13.0",
+	"typing-extensions>=4.12.0",
+	"typer-verbose>=0.1.2",
+]
+
+[project.optional-dependencies]
+# Everything the codegen CLI needs beyond the analysis core.
+# pyairtable is here rather than core because meta.py reaches it only through
+# lazy imports inside Field.map_python_type/map_typescript_type — the analysis
+# tools never call those.
+cli = [
+	"typer>=0.16.1",
+	"pyperclip>=1.11.0",
+	"mermaid-cli>=0.1.2",
+	"pyairtable>=3.2.0",
+	"dotenv>=0.9.9",
+]
+# Transitional: the MCP server moves to ../rogo-mcp in myairtable-vmj4, and this
+# extra goes with it.
+mcp = [
+	"fastmcp>=3.2.0",
+	"dotenv>=0.9.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/danielrbaughman/myairtable"
+Repository = "https://github.com/danielrbaughman/myairtable"
+Issues = "https://github.com/danielrbaughman/myairtable/issues"
+
+[project.scripts]
+myairtable = "myairtable.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
+# static/ is the bundled multi-language runtime the generators copy into output;
+# it is package data, not code, and MUST ship in the wheel (~3.4MB).
 packages = ["src/myairtable"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/myairtable", "README.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 150
@@ -59,7 +102,17 @@ unresolved-attribute = "ignore" # ty lacks type stubs for csv module
 pythonpath = ["src"]
 
 [dependency-groups]
+# pytest was previously a RUNTIME dependency — everyone installing myairtable got
+# it, though only tests/ import it.
+#
+# dateparser is a dependency of the GENERATED Python runtime
+# (myairtable/static/python/formula.py), not of myairtable itself. Consumers of
+# generated Python code own it — ../airtable already declares it. It is here only
+# because our own tests exercise that bundled runtime.
 dev = [
+	"pytest>=9.0.2",
 	"ruff>=0.15.18",
-	"ty>=0.0.51"
+	"ty>=0.0.51",
+	"dateparser>=1.2.2",
+	"myairtable[cli,mcp]",
 ]

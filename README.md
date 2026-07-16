@@ -338,20 +338,41 @@ myAirtable also includes support for generating documentation for your Airtable 
 
 Requires Python 3.12+.
 
-1. Clone the repo
+### Install
 
-2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+To run the code generator, install with the `cli` extra:
 
-3. Run `uv sync`
+```bash
+uv tool install "myairtable[cli]"
+myairtable --help
+```
 
-4. Add a `.env` file like so:
+Then provide credentials, either as flags (`--base-id`, `--api-key`) or via a `.env`
+file in the working directory:
 
 ```
 AIRTABLE_API_KEY=your_airtable_api_key_here
 AIRTABLE_BASE_ID=app1234567890
 ```
 
-5. Run `uv run main.py --help` to see all commands
+### Extras
+
+The package splits along what you actually need, so importing the analysis layer
+doesn't drag in the whole generator:
+
+| Install           | Gets you                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `myairtable`      | The analysis layer only — `myairtable.schema_tools` (28 read-only tools over the public meta API), for importing into your own code |
+| `myairtable[cli]` | The above plus the code generator for all 11 targets (the `myairtable` command)                                                     |
+| `myairtable[mcp]` | The above plus the MCP server                                                                                                       |
+
+### Developing on myAirtable itself
+
+1. Clone the repo
+2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+3. `uv sync` — installs the project editable, with every extra and dev tool
+4. Add the `.env` above
+5. `uv run myairtable --help`
 
 ## MCP Server
 
@@ -384,9 +405,9 @@ Every MCP tool is also a CLI subcommand under `myairtable tools` — handy for s
 piping to `jq`, or testing without an MCP client:
 
 ```bash
-uv run main.py tools list-tables            # public meta-API tools
-uv run main.py tools transpile Jobs "Total" --language python
-uv run main.py tools --help                 # list all commands
+myairtable tools list-tables            # public meta-API tools
+myairtable tools transpile Jobs "Total" --language python
+myairtable tools --help                 # list all commands
 ```
 
 Output is JSON by default (`--pretty` for rich rendering). Add `--save` (before the
