@@ -1,4 +1,7 @@
 {
-	"database": "beads.db",
-	"jsonl_export": "issues.jsonl"
+	"database": "dolt",
+	"backend": "dolt",
+	"dolt_mode": "embedded",
+	"dolt_database": "myairtable",
+	"project_id": "30dd8627-6215-4148-a40d-5ce389e8ab97"
 }

@@ -1,0 +1,14 @@
+# C++ formatting for static/cpp and tests/cpp_static (never generated output, never vendor/).
+# LLVM base, widened to 100 columns to match the hand-written runtime style.
+BasedOnStyle: LLVM
+Standard: c++20
+ColumnLimit: 100
+IndentWidth: 4
+AccessModifierOffset: -2
+PointerAlignment: Left
+ReferenceAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+BreakBeforeBraces: Attach
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive

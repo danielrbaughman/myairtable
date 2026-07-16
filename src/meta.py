@@ -383,6 +383,7 @@ class Field(Named):
     _java_type: str | None = PrivateAttr(default=None)
     _go_type: str | None = PrivateAttr(default=None)
     _csharp_type: str | None = PrivateAttr(default=None)
+    _cpp_type: str | None = PrivateAttr(default=None)
 
     def is_valid(self) -> bool:
         """Check if the field is `valid` according to Airtable."""
@@ -626,6 +627,14 @@ class Field(Named):
         from src.utils.type_mapper import map_csharp_type
 
         return map_csharp_type(self)
+
+    def cpp_type(self) -> str:
+        """Returns the C++ type for this field."""
+        if self._cpp_type:
+            return self._cpp_type
+        from src.utils.type_mapper import map_cpp_type
+
+        return map_cpp_type(self)
 
     def linked_table(self) -> "Table | None":
         """Get the linked table for a multipleRecordLinks field."""

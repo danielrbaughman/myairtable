@@ -87,6 +87,7 @@ def make_test_base(fields_spec: list[tuple[str, str, FieldType]], formula_map: d
             "_java_type": None,
             "_go_type": None,
             "_csharp_type": None,
+            "_cpp_type": None,
             "_snake": None,
             "_pascal": None,
             "_model": None,
@@ -484,6 +485,7 @@ def _make_base_with_select_field(table_name: str, field_name: str, field_id: str
         "_java_type": None,
         "_go_type": None,
         "_csharp_type": None,
+        "_cpp_type": None,
         "_snake": None,
         "_pascal": None,
         "_model": None,
@@ -2647,6 +2649,369 @@ class TestCSharpWriterHelpers:
         assert _choice_to_entry("") == "Empty"
         assert _choice_to_entry("   ") == "Empty"
         # Every result is a valid PascalCase-ish identifier (never starts with a digit).
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("!!!"))
+        assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("3rd Party"))
+        assert _choice_to_entry("3rd Party").startswith("N")
+
+
+class TestCppComputedTypes:
+    """map_cpp_type wrapping for computed fields (pure type_mapper assertions)."""
+
+    @staticmethod
+    def _field(name: str, field_id: str, field_type: FieldType):
+        return make_test_base([(name, field_id, field_type)]).tables[0].fields[0]
+
+    def test_formula_number_wraps_maybe_special_or_error_double(self):
+        from src.utils.type_mapper import map_cpp_type
+
+        assert map_cpp_type(self._field("Calc", "fld001", "formula")) == "MaybeSpecialOrError<double>"
+
+    def test_auto_number_wraps_maybe_special_or_error_int64(self):
+        from src.utils.type_mapper import map_cpp_type
+
+        assert map_cpp_type(self._field("Auto", "fld001", "autoNumber")) == "MaybeSpecialOrError<int64_t>"
+
+    def test_lookup_wraps_vec_or_value(self):
+        """A resolved lookup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_cpp_computed_wrapping
+
+        field = self._field("Look", "fld001", "multipleLookupValues")
+        assert apply_cpp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+        # Disambiguation-applied std::vector<...> is stripped so the inner primitive is wrapped.
+        assert apply_cpp_computed_wrapping("std::vector<std::string>", field) == "VecOrValue<MaybeSpecialOrError<std::string>>"
+
+    def test_lookup_with_unresolvable_inner_falls_back_to_json(self):
+        """An unresolvable lookup renders as VecOrValue<nlohmann::json> end-to-end."""
+        from src.utils.type_mapper import map_cpp_type
+
+        assert map_cpp_type(self._field("Look", "fld001", "multipleLookupValues")) == "VecOrValue<nlohmann::json>"
+
+    def test_rollup_wraps_vec_or_value(self):
+        """A resolved rollup inner type wraps as VecOrValue<MaybeSpecialOrError<T>>."""
+        from src.utils.type_mapper import apply_cpp_computed_wrapping
+
+        field = self._field("Roll", "fld001", "rollup")
+        assert apply_cpp_computed_wrapping("double", field) == "VecOrValue<MaybeSpecialOrError<double>>"
+
+    def test_already_wrapped_type_is_left_alone(self):
+        """apply_cpp_computed_wrapping is a no-op on already-wrapped types."""
+        from src.utils.type_mapper import apply_cpp_computed_wrapping
+
+        field = self._field("Calc", "fld001", "formula")
+        assert apply_cpp_computed_wrapping("MaybeSpecialOrError<double>", field) == "MaybeSpecialOrError<double>"
+
+    def test_writable_field_is_never_wrapped(self):
+        from src.utils.type_mapper import apply_cpp_computed_wrapping
+
+        field = self._field("My Text", "fld001", "singleLineText")
+        assert apply_cpp_computed_wrapping("std::string", field) == "std::string"
+
+    def test_writable_text_is_plain_string(self):
+        from src.utils.type_mapper import map_cpp_type
+
+        assert map_cpp_type(self._field("My Text", "fld001", "singleLineText")) == "std::string"
+
+
+class TestCppGenerator:
+    """cpp.py F3 generator — offline content assertions (no compiler)."""
+
+    def _generate(self, base: Base, tmp_path: Path) -> Path:
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out)
+        return out
+
+    def _generate_fields(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        return self._generate(make_test_base(fields_spec), tmp_path)
+
+    # ---- options (F3.1) ----------------------------------------------------
+
+    def test_options_enum_class_and_entries(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Todo", "In Progress", "Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "#pragma once" in content
+        assert "enum class JobsStatusOption {" in content
+        assert "Todo," in content
+        assert "InProgress," in content
+        assert "Done," in content
+        assert "namespace myairtable {" in content
+
+    def test_options_serializer_maps_raw_strings_and_throws_on_unknown(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["In Progress", "Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "struct adl_serializer<myairtable::JobsStatusOption> {" in content
+        assert 'if (raw == "In Progress") {' in content
+        assert "return myairtable::JobsStatusOption::InProgress;" in content
+        assert 'throw myairtable::DecodingError("Unknown JobsStatusOption: " + raw);' in content
+        # to_json switch maps members back to the raw wire strings.
+        assert "case myairtable::JobsStatusOption::InProgress:" in content
+        assert 'j = "In Progress";' in content
+        # NLOHMANN_JSON_SERIALIZE_ENUM would silently map unknowns to the first
+        # entry — the generated serializer must never use it.
+        assert "NLOHMANN_JSON_SERIALIZE_ENUM" not in content
+
+    def test_options_duplicate_entries_deduplicate_with_v_suffix(self, tmp_path: Path):
+        # Two choices that sanitize to the same member name.
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Done.", "done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "Done," in content
+        assert "Done_V2," in content
+        assert 'j = "Done.";' in content
+        assert 'j = "done";' in content
+
+    def test_options_escape_quotes_in_raw_strings(self, tmp_path: Path):
+        base = _make_base_with_select_field("Rigs", "Drop Point", "fld001", ['North "Gate"'])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "rigs_drop_point_option.hpp").read_text()
+        assert 'North \\"Gate\\"' in content
+
+    # ---- field types (F3.2) --------------------------------------------------
+
+    def test_fields_constants_and_maps(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Count", "fld002", "number")], tmp_path)
+        content = (out / "dynamic" / "types" / "test_table_fields.hpp").read_text()
+        assert "struct TestTableFields {" in content
+        assert 'static constexpr std::string_view kPrimaryKeyId = "fld001";' in content
+        assert 'static constexpr std::string_view kPrimaryKeyName = "Primary Key";' in content
+        assert 'static constexpr std::string_view kCountId = "fld002";' in content
+        assert 'inline static const std::vector<std::string> kAllIds = {"fld001", "fld002"};' in content
+        assert '{"Primary Key", "fld001"},' in content  # kNameToId
+        assert '{"fld002", "Count"},' in content  # kIdToName
+        assert "static std::optional<std::string> id_by_name(const std::string& name) {" in content
+        assert "static std::optional<std::string> name_by_id(const std::string& id) {" in content
+
+    def test_views_emit_static_instances(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "types" / "jobs_view.hpp").read_text()
+        assert "class JobsView {" in content
+        assert "static const JobsView GridView;" in content
+        assert 'inline const JobsView JobsView::GridView{"viw001"};' in content
+        assert "const std::string& id() const { return id_; }" in content
+
+    def test_create_fields_exclude_computed(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "types" / "create_test_table_fields.hpp").read_text()
+        assert 'static constexpr std::string_view kPrimaryKeyId = "fld001";' in content
+        assert "kAutoId" not in content  # computed fields are not writable
+
+    # ---- tables + entry point (F3.3) -----------------------------------------
+
+    def test_table_facade_wraps_dict_table(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "tables" / "test_table_table.hpp").read_text()
+        assert "class TestTableTable : public OrmTable<TestTableModel> {" in content  # ORM default
+        assert 'static constexpr std::string_view kTableId = "tblTEST123";' in content
+        assert "explicit TestTableTable(std::shared_ptr<AirtableClient> client)" in content
+        assert "TestTableFields::kNameToId" in content  # names resolve on the field bag
+        assert "DictTable& dict() { return dict_; }" in content
+        assert '#include "dynamic/models/test_table_model.hpp"' in content
+        assert '#include "dynamic/types/test_table_fields.hpp"' in content
+
+    def test_entry_point_exposes_table_accessors(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "airtable.hpp").read_text()
+        assert "class Airtable {" in content
+        assert 'static constexpr std::string_view kBaseId = "appTEST123";' in content
+        assert "explicit Airtable(const std::string& api_key, double cache_seconds = 0.0)" in content
+        assert "explicit Airtable(std::shared_ptr<AirtableClient> client)" in content
+        assert "TestTableTable test_table() const { return TestTableTable(client_); }" in content
+        assert "void invalidate_all_caches() { client_->invalidate_all_caches(); }" in content
+        assert '#include "dynamic/tables/test_table_table.hpp"' in content
+
+    # ---- models (F4.2) ---------------------------------------------------------
+
+    def test_model_aggregate_shape_and_members(self, tmp_path: Path):
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Count", "fld002", "number"),
+                ("Auto", "fld003", "autoNumber"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "struct TestTableModel : AirtableModel<TestTableModel> {" in content
+        assert 'static constexpr std::string_view kTableId = "tblTEST123";' in content
+        # meta members declared directly (the CRTP base holds no data)
+        assert "std::optional<std::string> id{};" in content
+        assert "std::optional<DateTime> created_time{};" in content
+        assert "std::shared_ptr<AirtableClient> client_{};" in content
+        assert "json snapshot_{};" in content
+        # schema-ordered optional members; computed wrapped
+        assert "std::optional<std::string> primary_key{};" in content
+        assert "std::optional<double> count{};" in content
+        assert "std::optional<MaybeSpecialOrError<int64_t>> auto_{};" in content  # `auto` is a keyword
+
+    def test_model_hooks_split_writable_and_computed(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        writable_hook = content.split("json collect_writable_fields() const {")[1].split("}")[0]
+        computed_hook = content.split("json collect_computed_fields() const {")[1].split("}")[0]
+        assert 'write_field(fields, "fld001", primary_key);' in writable_hook
+        assert "fld002" not in writable_hook  # computed never in a write payload (R21)
+        assert 'write_field(fields, "fld002", auto_);' in computed_hook
+
+    def test_model_from_json_decodes_envelope_by_field_id(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "inline void from_json(const json& record, TestTableModel& model) {" in content
+        assert 'model.id = record.at("id").get<std::string>();' in content
+        assert 'model.created_time = record.at("createdTime").get<DateTime>();' in content
+        assert 'model.primary_key = read_field<std::string>(fields, "fld001");' in content
+        assert 'model.auto_ = read_field<MaybeSpecialOrError<int64_t>>(fields, "fld002");' in content
+
+    def test_model_reserved_member_names_are_suffixed(self, tmp_path: Path):
+        out = self._generate_fields(
+            [("Primary Key", "fld001", "singleLineText"), ("Save", "fld002", "number"), ("Fetch", "fld003", "number")],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "std::optional<double> save_field{};" in content
+        assert "std::optional<double> fetch_field{};" in content
+        # "Id" is pre-sanitized to "identifier" upstream; the base's `id` member
+        # itself can never be shadowed because it is a reserved member name.
+
+    def test_model_emits_evaluate_methods_for_formula_fields(self, tmp_path: Path):
+        base = make_test_base(
+            [("Score", "fld001", "number"), ("Calc", "fld002", "formula")],
+            formula_map={"fld002": "{fld001} + 1"},
+        )
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "json evaluate_calc() const {" in content
+        assert "return runtime::v((runtime::n(runtime::v(this->score)) + 1.0));" in content
+        assert '#include "static/runtime_math.hpp"' in content
+
+    def test_runtime_flag_suppresses_evaluate_methods(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [("Score", "fld001", "number"), ("Calc", "fld002", "formula")],
+            formula_map={"fld002": "{fld001} + 1"},
+        )
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, runtime=False)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "evaluate_" not in content
+
+    # ---- formula helpers (F7.2) ---------------------------------------------
+
+    def test_filters_struct_maps_field_classes(self, tmp_path: Path):
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Count", "fld002", "number"),
+                ("Done", "fld003", "checkbox"),
+                ("When", "fld004", "date"),
+                ("Look", "fld005", "multipleLookupValues"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "formulas" / "test_table_filters.hpp").read_text()
+        assert "struct TestTableFilters {" in content
+        assert "FormulaId id{};" in content
+        assert 'FormulaTextField primary_key{"fld001"};' in content
+        assert 'FormulaNumberField count{"fld002"};' in content
+        assert 'FormulaBooleanField done{"fld003"};' in content
+        assert 'FormulaDateField when{"fld004"};' in content
+        assert 'FormulaLookupField look{"fld005"};' in content
+
+    def test_model_exposes_static_f_accessor(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "inline static const TestTableFilters F{};" in content
+        assert '#include "dynamic/formulas/test_table_filters.hpp"' in content
+
+    def test_formulas_flag_suppresses_filters(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, formulas=False)
+        assert not (out / "dynamic" / "formulas").exists()
+        model = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "Filters F" not in model
+        # the static DSL headers are excluded from the copy too
+        assert not (out / "static" / "formulas.hpp").exists()
+
+    def test_wrappers_flag_suppresses_tables_and_entry_point(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, wrappers=False)
+        assert not (out / "airtable.hpp").exists()
+        assert not (out / "dynamic" / "tables").exists()
+        assert (out / "dynamic" / "types" / "test_table_fields.hpp").exists()
+
+
+class TestCppWriterHelpers:
+    """Pure helpers in write_to_cpp_file.py (CPP F1.4)."""
+
+    def test_cpp_ident_renames_keywords_with_trailing_underscore(self):
+        """C++ has no verbatim-identifier escape — reserved words get a trailing `_`."""
+        from src.utils.write_to_cpp_file import _cpp_ident
+
+        for kw in ("class", "switch", "true", "false", "delete", "namespace", "int", "template"):
+            assert _cpp_ident(kw) == f"{kw}_"
+        # Alternative tokens are operators — equally illegal as identifiers.
+        for alt in ("and", "or", "not", "xor", "bitand", "compl", "not_eq"):
+            assert _cpp_ident(alt) == f"{alt}_"
+        # Contextual identifiers escaped defensively.
+        assert _cpp_ident("final") == "final_"
+        assert _cpp_ident("override") == "override_"
+        # Ordinary names are left alone.
+        assert _cpp_ident("status") == "status"
+        assert _cpp_ident("value") == "value"
+
+    def test_cpp_ident_normalises_implementation_reserved_patterns(self):
+        """`__` anywhere and leading `_` are reserved for the implementation."""
+        from src.utils.write_to_cpp_file import _cpp_ident
+
+        assert _cpp_ident("foo__bar") == "foo_bar"
+        assert _cpp_ident("_Reserved") == "Reserved"
+        assert _cpp_ident("__x") == "x"
+        # Stripping may expose a digit or empty the name — validity is restored.
+        assert _cpp_ident("_1st") == "n_1st"
+        assert _cpp_ident("_") == "n"
+
+    def test_cpp_string_literal_escapes_quotes_and_controls(self):
+        from src.utils.write_to_cpp_file import _cpp_string_literal
+
+        assert _cpp_string_literal('a"b') == 'a\\"b'
+        assert _cpp_string_literal("a\\b") == "a\\\\b"
+        assert _cpp_string_literal("a\nb\tc") == "a\\nb\\tc"
+        # `{` and `$` carry no meaning in a C++ string literal — left alone.
+        assert _cpp_string_literal("${x}") == "${x}"
+
+    def test_cppdoc_escape_strips_carriage_returns(self):
+        from src.utils.write_to_cpp_file import _cppdoc_escape
+
+        assert _cppdoc_escape("a\r\nb") == "a\nb"
+        # `--` and XML entities are NOT special in a `///` comment — untouched.
+        assert _cppdoc_escape("LEN({f})--1 < 2 & 3") == "LEN({f})--1 < 2 & 3"
+
+    def test_choice_to_entry_pascal_case_and_edges(self):
+        from src.utils.write_to_cpp_file import _choice_to_entry
+
+        assert _choice_to_entry("open Invoices") == "OpenInvoices"
+        assert _choice_to_entry("In Progress") == "InProgress"
+        assert _choice_to_entry("") == "Empty"
+        assert _choice_to_entry("   ") == "Empty"
+        # Every result is a valid identifier that never starts with a digit.
         assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("!!!"))
         assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", _choice_to_entry("3rd Party"))
         assert _choice_to_entry("3rd Party").startswith("N")

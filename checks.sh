@@ -139,3 +139,25 @@ if command -v dotnet &> /dev/null; then
 else
     echo "[warn] dotnet not on PATH; skipping C# checks."
 fi
+# C++
+# The static runtime is header-only at static/cpp/; its Catch2 unit tests live in
+# tests/cpp_static/ (a CMake project whose include path points at static/cpp directly).
+if command -v cmake &> /dev/null; then
+    echo "--- C++ checks ---"
+    CPP_GEN="-G Ninja"
+    command -v ninja &> /dev/null || CPP_GEN=""
+    (cd tests/cpp_static && cmake -B build $CPP_GEN -DCMAKE_BUILD_TYPE=Debug > /dev/null && cmake --build build && (cd build && ctest --output-on-failure))
+    # clang-format the hand-written runtime + tests; vendored headers and generated
+    # output are exempt by design. Apple ships clang-format inside the Xcode
+    # toolchain (not on PATH) — fall back to xcrun discovery.
+    CLANG_FORMAT="$(command -v clang-format || xcrun --find clang-format 2>/dev/null || true)"
+    if [ -n "$CLANG_FORMAT" ]; then
+        find static/cpp tests/cpp_static -name '*.hpp' -o -name '*.cpp' \
+            | grep -v '/vendor/' | grep -v '/build/' \
+            | xargs "$CLANG_FORMAT" -i --style=file
+    else
+        echo "[warn] clang-format not found; skipping format step. (xcode toolchain or brew install clang-format)"
+    fi
+else
+    echo "[warn] cmake not on PATH; skipping C++ checks. (brew install cmake ninja)"
+fi
