@@ -445,13 +445,18 @@ def _table_accessor(table: Table) -> str:
 
 
 def write_tables(base: Base, output_folder: Path) -> None:
-    """Generate `{table}_table.hpp` facades (dict access; the ORM surface is F4)."""
+    """Generate `{table}_table.hpp` facades.
+
+    The ORM surface is the DEFAULT (inherits `OrmTable<{Table}Model>`, the
+    cross-target post-C# decision); `.dict()` keeps raw field-bag access.
+    """
     tables_dir = _create_dynamic_subdir(output_folder, _DIR_TABLES)
 
     for table in base.tables:
         prefix = _table_type_prefix(table)
         table_name = f"{prefix}Table"
         fields_name = f"{prefix}Fields"
+        model_name = f"{prefix}Model"
 
         with WriteToCppFile(path=tables_dir / _header_name(table_name)) as write:
             write.pragma_once()
@@ -462,19 +467,27 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.include_system("string_view")
             write.include_system("utility")
             write.line_empty()
+            write.include_local(f"dynamic/models/{_header_name(model_name)}")
             write.include_local(f"dynamic/types/{_header_name(fields_name)}")
             write.include_local("static/airtable_client.hpp")
             write.include_local("static/dict_table.hpp")
+            write.include_local("static/orm_table.hpp")
             write.line_empty()
             write.namespace_open()
             write.line_empty()
-            _doc(write, f"Table facade for {sanitize_string(table.name)}.")
-            write.class_open(table_name)
+            _doc(
+                write,
+                f"Table accessor for {sanitize_string(table.name)}: the typed ORM surface\n"
+                f"(get/get_all/create/update/upsert/remove over {model_name}) is the default;\n"
+                f".dict() is the raw field-bag escape hatch.",
+            )
+            write.class_open(table_name, base=f"OrmTable<{model_name}>")
             write.line_indented("public:", indent=0)
             write.line_indented(f'static constexpr std::string_view kTableId = "{table.id}";')
             write.line_empty()
             write.line_indented(f"explicit {table_name}(std::shared_ptr<AirtableClient> client)")
-            write.line_indented(f": dict_(std::move(client), std::string(kTableId), {fields_name}::kNameToId) {{}}", indent=2)
+            write.line_indented(f": OrmTable<{model_name}>(client),", indent=2)
+            write.line_indented(f"dict_(std::move(client), std::string(kTableId), {fields_name}::kNameToId) {{}}", indent=3)
             write.line_empty()
             _doc(write, "Raw field-bag access (records travel as Fields, dual id/name keyed).", indent=1)
             write.line_indented("DictTable& dict() { return dict_; }")

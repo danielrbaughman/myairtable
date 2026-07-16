@@ -2806,11 +2806,12 @@ class TestCppGenerator:
     def test_table_facade_wraps_dict_table(self, tmp_path: Path):
         out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
         content = (out / "dynamic" / "tables" / "test_table_table.hpp").read_text()
-        assert "class TestTableTable {" in content
+        assert "class TestTableTable : public OrmTable<TestTableModel> {" in content  # ORM default
         assert 'static constexpr std::string_view kTableId = "tblTEST123";' in content
         assert "explicit TestTableTable(std::shared_ptr<AirtableClient> client)" in content
         assert "TestTableFields::kNameToId" in content  # names resolve on the field bag
         assert "DictTable& dict() { return dict_; }" in content
+        assert '#include "dynamic/models/test_table_model.hpp"' in content
         assert '#include "dynamic/types/test_table_fields.hpp"' in content
 
     def test_entry_point_exposes_table_accessors(self, tmp_path: Path):
