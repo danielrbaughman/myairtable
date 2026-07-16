@@ -31,6 +31,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     deduplicate_identifiers,
+    deduplicated_field_property_map_snake,
     deduplicated_table_prefix_map,
     reset_folder,
     sanitize_string,
@@ -47,6 +48,32 @@ _DIR_FORMULAS = "formulas"
 # Accessor-method names on the generated Airtable class that would collide with
 # its own members; colliding table names get a `_table` suffix.
 _CPP_RESERVED_TABLE_METHODS = frozenset({"client", "invalidate_all_caches", "base_id"})
+
+# Member names a generated model may not use: aggregate state members, the CRTP
+# base's methods, the generated hooks, and the F filter accessor. Colliding
+# field names get a `_field` suffix (then re-deduplicate).
+_CPP_RESERVED_MODEL_MEMBERS = frozenset(
+    {
+        "id",
+        "created_time",
+        "client_",
+        "snapshot_",
+        "is_new",
+        "take_snapshot",
+        "dirty_fields",
+        "to_record",
+        "to_create_fields",
+        "require_id",
+        "require_client",
+        "save",
+        "fetch",
+        "remove",
+        "collect_writable_fields",
+        "collect_computed_fields",
+        "F",
+        "k_table_id",
+    }
+)
 
 # Static formula-DSL headers excluded from the copy when formulas=False.
 _FORMULA_STATIC_FILES: list[str] = [
@@ -100,6 +127,24 @@ def _field_constant_map(table: Table) -> dict[str, str]:
 
 def _doc(write: WriteToCppFile, text: str, indent: int = 0) -> None:
     write.doc_comment(_cppdoc_escape(text), indent=indent)
+
+
+def _field_property_map(table: Table) -> dict[str, str]:
+    """`{field_id: deduplicated snake_case member name}` for one table.
+
+    snake_case via the shared helper, then keyword-escaped, reserved-member
+    suffixed, and re-deduplicated (escaping/suffixing can re-collide).
+    """
+    raw = deduplicated_field_property_map_snake(table)
+    adjusted = [f"{_cpp_ident(name)}_field" if _cpp_ident(name) in _CPP_RESERVED_MODEL_MEMBERS else _cpp_ident(name) for name in raw.values()]
+    deduped = deduplicate_identifiers(adjusted, suffix="_v")
+    return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
+
+
+def _model_option_includes(table: Table) -> list[str]:
+    """Option-enum headers referenced by this table's select fields, sorted."""
+    headers = {f"dynamic/options/{_header_name(field.options_name())}" for field in table.select_fields() if field.select_options()}
+    return sorted(headers)
 
 
 # =============================================================================
@@ -295,6 +340,102 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.namespace_close()
 
 
+def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
+    """Generate `{table}_model.hpp` ORM aggregates.
+
+    Aggregate struct over the CRTP `AirtableModel` behavior base: public
+    `std::optional<T>` members in schema order (designated-initializer
+    creation), the two collect hooks, and an ADL `from_json` over the full
+    record envelope. The `F` filter accessor (F7) and transpiled `evaluate_*`
+    methods (F8) land with their features.
+    """
+    del formulas, runtime, flatten  # consumed by F7 (F accessor) / F8 (evaluate methods)
+    models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        model_name = f"{prefix}Model"
+        props = _field_property_map(table)
+        writable = [f for f in table.fields if not f.is_computed()]
+        computed = [f for f in table.fields if f.is_computed()]
+
+        with WriteToCppFile(path=models_dir / _header_name(model_name)) as write:
+            write.pragma_once()
+            write.line_empty()
+            write.include_system("cstdint")
+            write.include_system("memory")
+            write.include_system("optional")
+            write.include_system("string")
+            write.include_system("string_view")
+            write.include_system("vector")
+            write.line_empty()
+            for header in _model_option_includes(table):
+                write.include_local(header)
+            write.include_local("static/airtable_attachment.hpp")
+            write.include_local("static/airtable_button.hpp")
+            write.include_local("static/airtable_collaborator.hpp")
+            write.include_local("static/airtable_date.hpp")
+            write.include_local("static/airtable_model.hpp")
+            write.include_local("static/maybe_special_or_error.hpp")
+            write.include_local("static/vec_or_value.hpp")
+            write.line_empty()
+            write.namespace_open()
+            write.line_empty()
+            first_writable = props[writable[0].id] if writable else "..."
+            _doc(
+                write,
+                f"ORM model for {sanitize_string(table.name)}.\n"
+                f"\n"
+                f"Create with a designated initializer — `{model_name}{{.{first_writable} = ...}}` —\n"
+                f"and pass to the table's create(). Computed members are public but never\n"
+                f"serialized on write: mutating one and calling save() sends nothing for it.",
+            )
+            write.struct_open(model_name, base=f"AirtableModel<{model_name}>")
+            write.line_indented(f'static constexpr std::string_view kTableId = "{table.id}";')
+            write.line_empty()
+            write.comment("record meta (the CRTP base holds no data)", indent=1)
+            write.line_indented("std::optional<std::string> id{};")
+            write.line_indented("std::optional<DateTime> created_time{};")
+            write.line_indented("std::shared_ptr<AirtableClient> client_{};  // internal: attached by tables")
+            write.line_indented("json snapshot_{};                           // internal: dirty-tracking baseline")
+            write.line_empty()
+            for field in table.fields:
+                write.property_docstring(field, table)
+                write.line_indented(f"std::optional<{field.cpp_type()}> {props[field.id]}{{}};")
+            write.line_empty()
+
+            write.comment("generated hooks consumed by the AirtableModel behavior base", indent=1)
+            write.line_indented("json collect_writable_fields() const {")
+            write.line_indented("json fields = json::object();", indent=2)
+            for field in writable:
+                write.line_indented(f'write_field(fields, "{field.id}", {props[field.id]});', indent=2)
+            write.line_indented("return fields;", indent=2)
+            write.line_indented("}")
+            write.line_indented("json collect_computed_fields() const {")
+            write.line_indented("json fields = json::object();", indent=2)
+            for field in computed:
+                write.line_indented(f'write_field(fields, "{field.id}", {props[field.id]});', indent=2)
+            write.line_indented("return fields;", indent=2)
+            write.line_indented("}")
+            write.close()
+            write.line_empty()
+
+            _doc(write, f"Decode one {{id, createdTime, fields}} envelope into a {model_name}.")
+            write.line(f"inline void from_json(const json& record, {model_name}& model) {{")
+            write.line_indented('if (record.contains("id")) {')
+            write.line_indented('model.id = record.at("id").get<std::string>();', indent=2)
+            write.line_indented("}")
+            write.line_indented('if (record.contains("createdTime")) {')
+            write.line_indented('model.created_time = record.at("createdTime").get<DateTime>();', indent=2)
+            write.line_indented("}")
+            write.line_indented('const json fields = record.contains("fields") ? record.at("fields") : json::object();')
+            for field in table.fields:
+                write.line_indented(f'model.{props[field.id]} = read_field<{field.cpp_type()}>(fields, "{field.id}");')
+            write.line("}")
+            write.line_empty()
+            write.namespace_close()
+
+
 def _table_accessor(table: Table) -> str:
     """snake_case accessor-method name on the Airtable class (e.g. `primary`)."""
     accessor = _cpp_ident(to_snake(_table_type_prefix(table)))
@@ -404,7 +545,6 @@ def generate_cpp(
     Models (F4), formula helpers (F7), and runtime transpilation (F8) land
     with their features.
     """
-    del runtime, flatten  # consumed by later features (F4/F8)
 
     output_folder = reset_folder(output_folder)
 
@@ -415,6 +555,7 @@ def generate_cpp(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if wrappers:
         write_tables(base, output_folder)
         write_main(base, output_folder)

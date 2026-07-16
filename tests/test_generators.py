@@ -2824,6 +2824,65 @@ class TestCppGenerator:
         assert "void invalidate_all_caches() { client_->invalidate_all_caches(); }" in content
         assert '#include "dynamic/tables/test_table_table.hpp"' in content
 
+    # ---- models (F4.2) ---------------------------------------------------------
+
+    def test_model_aggregate_shape_and_members(self, tmp_path: Path):
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Count", "fld002", "number"),
+                ("Auto", "fld003", "autoNumber"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "struct TestTableModel : AirtableModel<TestTableModel> {" in content
+        assert 'static constexpr std::string_view kTableId = "tblTEST123";' in content
+        # meta members declared directly (the CRTP base holds no data)
+        assert "std::optional<std::string> id{};" in content
+        assert "std::optional<DateTime> created_time{};" in content
+        assert "std::shared_ptr<AirtableClient> client_{};" in content
+        assert "json snapshot_{};" in content
+        # schema-ordered optional members; computed wrapped
+        assert "std::optional<std::string> primary_key{};" in content
+        assert "std::optional<double> count{};" in content
+        assert "std::optional<MaybeSpecialOrError<int64_t>> auto_{};" in content  # `auto` is a keyword
+
+    def test_model_hooks_split_writable_and_computed(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        writable_hook = content.split("json collect_writable_fields() const {")[1].split("}")[0]
+        computed_hook = content.split("json collect_computed_fields() const {")[1].split("}")[0]
+        assert 'write_field(fields, "fld001", primary_key);' in writable_hook
+        assert "fld002" not in writable_hook  # computed never in a write payload (R21)
+        assert 'write_field(fields, "fld002", auto_);' in computed_hook
+
+    def test_model_from_json_decodes_envelope_by_field_id(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "inline void from_json(const json& record, TestTableModel& model) {" in content
+        assert 'model.id = record.at("id").get<std::string>();' in content
+        assert 'model.created_time = record.at("createdTime").get<DateTime>();' in content
+        assert 'model.primary_key = read_field<std::string>(fields, "fld001");' in content
+        assert 'model.auto_ = read_field<MaybeSpecialOrError<int64_t>>(fields, "fld002");' in content
+
+    def test_model_reserved_member_names_are_suffixed(self, tmp_path: Path):
+        out = self._generate_fields(
+            [("Primary Key", "fld001", "singleLineText"), ("Save", "fld002", "number"), ("Fetch", "fld003", "number")],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "std::optional<double> save_field{};" in content
+        assert "std::optional<double> fetch_field{};" in content
+        # "Id" is pre-sanitized to "identifier" upstream; the base's `id` member
+        # itself can never be shadowed because it is a reserved member name.
+
+    def test_model_defers_filters_and_evaluate_to_later_features(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "Filters F" not in content  # F7 flips this
+        assert "evaluate_" not in content  # F8 flips this
+
     def test_wrappers_flag_suppresses_tables_and_entry_point(self, tmp_path: Path):
         from src.generators.cpp import generate_cpp
         from src.utils.type_mapper import map_types
