@@ -29,7 +29,7 @@
 
 Add full-parity **C++** code generation to `myairtable` — the tenth target, alongside Python,
 TypeScript, JavaScript, Rust, Go, Swift, Kotlin, Java, and C#. The closest structural template is
-**C#** (`src/generators/csharp.py`, 614 lines, newest and tightest design); the closest *cultural*
+**C#** (`src/generators/csharp.py`, 614 lines, newest and tightest design); the closest _cultural_
 templates are **Rust** (value semantics, snake_case, aggregate-style models) and **Java/C#**
 (boxed JSON-node runtime value, sum-type wrappers, one-public-type-per-file). The generated code
 must feel **idiomatic modern C++20** — not Java-with-headers: aggregate structs with designated
@@ -60,12 +60,12 @@ filter-DSL sugar (future enhancement); connection-pool tuning beyond the `CURLSH
 
 ### 2.1 User-approved (2026-07-15)
 
-| #   | Question       | Answer                                                              |
-| --- | -------------- | ------------------------------------------------------------------- |
-| 1   | C++ standard   | **C++20** (designated initializers, concepts; AppleClang 21 ready)  |
-| 2   | HTTP + JSON    | **libcurl** (system) + **nlohmann/json** (vendored single header)   |
-| 3   | Errors         | **Exceptions** — `AirtableException` + 7 variants (parity set)      |
-| 4   | Test framework | **Catch2 v3** (unit + integration), via CMake FetchContent          |
+| #   | Question       | Answer                                                             |
+| --- | -------------- | ------------------------------------------------------------------ |
+| 1   | C++ standard   | **C++20** (designated initializers, concepts; AppleClang 21 ready) |
+| 2   | HTTP + JSON    | **libcurl** (system) + **nlohmann/json** (vendored single header)  |
+| 3   | Errors         | **Exceptions** — `AirtableException` + 7 variants (parity set)     |
+| 4   | Test framework | **Catch2 v3** (unit + integration), via CMake FetchContent         |
 
 Build tooling: **CMake ≥ 3.25** + system clang. Hand-written `CMakeLists.txt` in the two test
 projects only. Toolchain gap on this machine: `brew install cmake ninja` is an F1 task; both
@@ -73,24 +73,24 @@ projects only. Toolchain gap on this machine: `brew install cmake ninja` is an F
 
 ### 2.2 C#-pattern → C++ idiom mapping
 
-| C# construct                                                | C++ equivalent                                                                                            |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `sealed class AirtableClient` + `HttpClient`, async         | `class AirtableClient` + libcurl easy API + `CURLSH*` share, **sync blocking** (Java/Go model), thread-safe |
-| Mutable class + parameterless ctor + auto-properties        | **Aggregate struct** + public `std::optional<T>` members (§2.3.1)                                           |
-| `JsonNode` (mutable DOM, JSON null = C# null)               | **`nlohmann::json`** (value semantics; JSON null = `json(nullptr)` — a *value*, no null-pointer state)      |
-| Object initializer `new M { X = 1 }`                        | **Designated initializer** `M{.x = 1}` (compile-verified on AppleClang 21, incl. empty CRTP base)           |
-| `abstract record VecOrValue<T>` + `JsonConverterFactory`    | Class template wrapping **`std::variant`** + public ctors + **`adl_serializer` partial specialization** (§2.3.4) |
-| enum + generated per-enum `JsonConverter`                   | `enum class` + **generated `to_json`/`from_json`** per enum (§2.4)                                          |
-| `AirtableException : Exception` + 7 sealed subclasses       | `AirtableException : std::runtime_error` + 7 subclasses (§2.3.7)                                            |
-| `async Task<T> …Async(ct)`                                  | Plain blocking `T method()` (no ct; parity with Java/Go/Py)                                                 |
-| `static class AirtableRuntime` (single transpiler qualifier)| **`namespace runtime`** inside `myairtable` — free functions, reopened across headers (§2.3.3)              |
-| `PrimaryModel.F.PrimaryKey.Eq("x")`                         | `PrimaryModel::F.primary_key.eq("x")` (inline static member on the aggregate — compile-verified)            |
-| `@`-verbatim keyword escape                                 | **No escape exists** → `_cpp_ident()` appends `_` (Java-style rename); reserved set incl. alt tokens (§2.3.5)|
-| `DateTimeOffset` + custom converter                         | `std::chrono::system_clock::time_point` + hand-rolled ISO-8601 codec (§2.3.6)                               |
-| `TimeSpan`, wire = numeric seconds                          | `std::chrono::duration<double>` (seconds), wire = numeric seconds                                           |
-| Per-model `SaveAsync/FetchAsync/DeleteAsync` → `ModelOps`   | CRTP base **`AirtableModel<T>`** supplies `save()/fetch()/remove()` (§2.3.12; `delete` is a C++ keyword)     |
-| Partial classes `AirtableRuntime{Math,…}.cs`                | Namespace reopened across `runtime_{logic,math,string,date,array,regex}.hpp`                                |
-| `namespace MyAirtable;` file-scoped, folders organizational | `namespace myairtable` everywhere; folders organizational only — **no include-path-vs-namespace gate**      |
+| C# construct                                                 | C++ equivalent                                                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `sealed class AirtableClient` + `HttpClient`, async          | `class AirtableClient` + libcurl easy API + `CURLSH*` share, **sync blocking** (Java/Go model), thread-safe      |
+| Mutable class + parameterless ctor + auto-properties         | **Aggregate struct** + public `std::optional<T>` members (§2.3.1)                                                |
+| `JsonNode` (mutable DOM, JSON null = C# null)                | **`nlohmann::json`** (value semantics; JSON null = `json(nullptr)` — a _value_, no null-pointer state)           |
+| Object initializer `new M { X = 1 }`                         | **Designated initializer** `M{.x = 1}` (compile-verified on AppleClang 21, incl. empty CRTP base)                |
+| `abstract record VecOrValue<T>` + `JsonConverterFactory`     | Class template wrapping **`std::variant`** + public ctors + **`adl_serializer` partial specialization** (§2.3.4) |
+| enum + generated per-enum `JsonConverter`                    | `enum class` + **generated `to_json`/`from_json`** per enum (§2.4)                                               |
+| `AirtableException : Exception` + 7 sealed subclasses        | `AirtableException : std::runtime_error` + 7 subclasses (§2.3.7)                                                 |
+| `async Task<T> …Async(ct)`                                   | Plain blocking `T method()` (no ct; parity with Java/Go/Py)                                                      |
+| `static class AirtableRuntime` (single transpiler qualifier) | **`namespace runtime`** inside `myairtable` — free functions, reopened across headers (§2.3.3)                   |
+| `PrimaryModel.F.PrimaryKey.Eq("x")`                          | `PrimaryModel::F.primary_key.eq("x")` (inline static member on the aggregate — compile-verified)                 |
+| `@`-verbatim keyword escape                                  | **No escape exists** → `_cpp_ident()` appends `_` (Java-style rename); reserved set incl. alt tokens (§2.3.5)    |
+| `DateTimeOffset` + custom converter                          | `std::chrono::system_clock::time_point` + hand-rolled ISO-8601 codec (§2.3.6)                                    |
+| `TimeSpan`, wire = numeric seconds                           | `std::chrono::duration<double>` (seconds), wire = numeric seconds                                                |
+| Per-model `SaveAsync/FetchAsync/DeleteAsync` → `ModelOps`    | CRTP base **`AirtableModel<T>`** supplies `save()/fetch()/remove()` (§2.3.12; `delete` is a C++ keyword)         |
+| Partial classes `AirtableRuntime{Math,…}.cs`                 | Namespace reopened across `runtime_{logic,math,string,date,array,regex}.hpp`                                     |
+| `namespace MyAirtable;` file-scoped, folders organizational  | `namespace myairtable` everywhere; folders organizational only — **no include-path-vs-namespace gate**           |
 
 ### 2.3 C++-specific decisions
 
@@ -160,7 +160,7 @@ reference-equality trap exists). BLANK = `json(nullptr)`.
   on `{Field} + 1` and `{Field} & "x"`).
 - `v(...)` is an **overload set** (the C++ answer to C#'s `object?` boxing): `v(json)` passthrough;
   `v(std::nullptr_t)`; `v(const std::optional<T>&)` → null or `v(T)`; `v(bool/int64_t/double/
-  const char*/std::string/time_point/duration/vector<T>)`.
+const char*/std::string/time_point/duration/vector<T>)`.
 - **`is_equal(a, b)`**: N/S cross-type coercion first, then structural `a == b`. Transpiler
   equality arms use number/string fast paths (`n()`/`s()` compares) with `is_equal` fallback (C# model).
 - **Number emission parity**: nlohmann stores int vs double distinctly; `s()` ports the C#/Go
@@ -233,7 +233,7 @@ class MaybeSpecialOrError {
   Consuming = add `output/` to include path + link `libcurl` (+ one stb-style TU macro for tz —
   §2.3.6). One exception to pure header-only, documented there.
 - `_cpp_ident()`: appends `_` to C++ keywords + alternative tokens (`and or not xor bitand bitor
-  compl not_eq and_eq or_eq xor_eq`) + contextual `final/override` (defensive); fixes identifiers
+compl not_eq and_eq or_eq xor_eq`) + contextual `final/override` (defensive); fixes identifiers
   that would start `_[A-Z]` or contain `__` (implementation-reserved).
 - Includes: generated files include from output root (`#include "static/vec_or_value.hpp"`);
   static files include each other bare; vendored json included ONLY via the `airtable_json.hpp`
@@ -265,7 +265,7 @@ AppleClang 21's libc++ **lacks `locate_zone`/`zoned_time`/`chrono::parse`** (ver
 
 `class AirtableException : public std::runtime_error` + **7** subclasses: `HttpError{status, body}`,
 `ApiError{code, message}`, `DecodingError`, `InvalidUrlError`, `MissingCredentialsError`,
-`NetworkError` (CURLE_* transport failure ≠ HTTP status), `RateLimitedError{retry_after_seconds}`.
+`NetworkError` (CURLE\_\* transport failure ≠ HTTP status), `RateLimitedError{retry_after_seconds}`.
 All carry formatted `what()`. Tests `catch (const HttpError& e)`.
 
 #### 2.3.8 Concurrency: sync blocking; thread-safe client & cache; CURLSH share
@@ -321,21 +321,21 @@ skip freely — documented in the generated header comment.
 
 ### 2.4 Other settled choices
 
-| Decision            | Value                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Test framework      | Catch2 v3 via FetchContent (pinned tag); `catch_discover_tests`+CTest in unit project; single sequential binary + tags in integration project |
+| Decision            | Value                                                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Test framework      | Catch2 v3 via FetchContent (pinned tag); `catch_discover_tests`+CTest in unit project; single sequential binary + tags in integration project                                                                                                                      |
 | Integration phasing | Catch2 TEST_CASEs run in declaration order within a TU — CRUD phases = ordered TEST_CASEs + file-local state struct; **ordering is PROVEN in the F1.13 gate** (3-case counter micro-spec run via the same binary+tag invocation test.sh uses), not assumed (MED-3) |
-| Test parallelism    | OFF by construction (one sequential binary); distinct PKs per file (`"Cpp {suite} {label} {ms}-{rand}"`); per-case cleanup + final sweep |
-| Select-option enums | `enum class` PascalCase; **generated `to_json`/`from_json` per enum** keyed on raw Airtable strings (NOT `NLOHMANN_JSON_SERIALIZE_ENUM` — unknown→first-entry default breaks parity); dedup v2/v3 |
-| Linked records      | Raw `std::optional<std::vector<std::string>>` IDs; resolve via `airtable.secondary().get(ids)`                |
-| Table accessors     | `airtable.primary()` methods → lightweight table structs (hold `shared_ptr<AirtableClient>`); ORM default, `.dict()` raw (C# post-epic default) |
-| Root object         | `class Airtable` — `(api_key)`, `(api_key, cache_seconds)`, `(shared_ptr<AirtableClient>)`; `invalidate_all_caches()` |
-| Fields dual access  | `Fields::get(id_or_name)` ID-first name-fallback; `{Table}Fields` emits `k{Field}Id`/`k{Field}Name` + both maps |
-| Upsert              | `upsert(model, merge_field_ids)` incl. multi-match error path (Rust/C# parity)                                |
-| Doc comments        | `///` Doxygen-style; field name, ID, formula text in fenced block                                             |
-| String functions    | **UTF-8 code-point semantics** (LEN/LEFT/RIGHT/MID — Rust/Go precedent); utf8 helper in `runtime_string.hpp`  |
-| Regex               | `std::regex` ECMAScript; **malformed pattern → `catch (const std::regex_error&)` degrade matching C# (`REGEX_MATCH("(", …)` returns false, never throws)** (MED-2); 3 parity cases early in F8 |
-| Version handle      | `my_airtable_runtime_info.hpp` — `constexpr std::string_view kVersion` (harness smoke)                        |
+| Test parallelism    | OFF by construction (one sequential binary); distinct PKs per file (`"Cpp {suite} {label} {ms}-{rand}"`); per-case cleanup + final sweep                                                                                                                           |
+| Select-option enums | `enum class` PascalCase; **generated `to_json`/`from_json` per enum** keyed on raw Airtable strings (NOT `NLOHMANN_JSON_SERIALIZE_ENUM` — unknown→first-entry default breaks parity); dedup v2/v3                                                                  |
+| Linked records      | Raw `std::optional<std::vector<std::string>>` IDs; resolve via `airtable.secondary().get(ids)`                                                                                                                                                                     |
+| Table accessors     | `airtable.primary()` methods → lightweight table structs (hold `shared_ptr<AirtableClient>`); ORM default, `.dict()` raw (C# post-epic default)                                                                                                                    |
+| Root object         | `class Airtable` — `(api_key)`, `(api_key, cache_seconds)`, `(shared_ptr<AirtableClient>)`; `invalidate_all_caches()`                                                                                                                                              |
+| Fields dual access  | `Fields::get(id_or_name)` ID-first name-fallback; `{Table}Fields` emits `k{Field}Id`/`k{Field}Name` + both maps                                                                                                                                                    |
+| Upsert              | `upsert(model, merge_field_ids)` incl. multi-match error path (Rust/C# parity)                                                                                                                                                                                     |
+| Doc comments        | `///` Doxygen-style; field name, ID, formula text in fenced block                                                                                                                                                                                                  |
+| String functions    | **UTF-8 code-point semantics** (LEN/LEFT/RIGHT/MID — Rust/Go precedent); utf8 helper in `runtime_string.hpp`                                                                                                                                                       |
+| Regex               | `std::regex` ECMAScript; **malformed pattern → `catch (const std::regex_error&)` degrade matching C# (`REGEX_MATCH("(", …)` returns false, never throws)** (MED-2); 3 parity cases early in F8                                                                     |
+| Version handle      | `my_airtable_runtime_info.hpp` — `constexpr std::string_view kVersion` (harness smoke)                                                                                                                                                                             |
 
 ## 3. File Layout & Integration Points
 
@@ -446,8 +446,8 @@ upsert-depth · `[json]` serializing + serializing-integration · `[filter]` fil
 16. `_emit_fn_switch` (:945/:988): **decided** — runtime sig
     `inline json SWITCH(const json& expr, const json& dflt, std::initializer_list<json> flat_pairs)`;
     arm emits `runtime::SWITCH({expr}, runtime::v(nullptr), {p1, v1, p2, v2, …})` (braced list) (MED-4).
-17. Fall-through `None` guards (~20 sites: len/str-methods/encode_url/int/abs/sqrt/exp/log10(→LOG)/
-    power/mod/regex_*/min/max/sum/round/concatenate/rept/date_part/datetime_parse): add `"cpp"`.
+17. Fall-through `None` guards (~20 sites: len/str-methods/encode*url/int/abs/sqrt/exp/log10(→LOG)/
+    power/mod/regex*\*/min/max/sum/round/concatenate/rept/date_part/datetime_parse): add `"cpp"`.
 18. `_emit_fn_countall` (:1040): `runtime::v(runtime::a(json::array({args})).size())`-shaped
     (finalize against the runtime `a()` signature in F8).
 19. ~~falls to qualified defaults~~ **REPLACED — see 24.**
@@ -492,7 +492,7 @@ One public type per header, all `namespace myairtable`, header-only inline (+ tz
   update/upsert/remove/remove_all), `airtable_model.hpp` (CRTP), `my_airtable_runtime_info.hpp`.
 - Formula DSL (`_FORMULA_STATIC_FILES` exclusion set): `formulas.hpp`, `formula_field.hpp`,
   `formula_id.hpp`, `formula_text_ops.hpp`, `formula_{text,number,boolean,date,single_select,
-  multi_select,lookup,attachments}_field.hpp`.
+multi_select,lookup,attachments}_field.hpp`.
 
 **cpp_static unit inventory (18 files = C# inventory):** test_poco_model (GATE), test_airtable_runtime
 (184), test_formula (98), test_airtable_query_build, test_airtable_exception_decoding,
@@ -504,6 +504,7 @@ test_value_carriers (+ fake_transport infra).
 ## 5. Feature Breakdown (→ beads epic, 11 features, ~75 tasks)
 
 ### F1 — Scaffolding & Infrastructure [P0]
+
 Toolchain (`brew install cmake ninja`; clang-format probe); `.clang-format` ×2; `write_to_file.py`;
 `write_to_cpp_file.py` (+escaping unit tests); full type wiring incl. **idempotency guard**;
 meta.py; `main.py cpp` + `all --cpp-folder`; vendored nlohmann + Hinnant date/tz pinned;
@@ -518,39 +519,49 @@ probe (curl.h included); (f) **Catch2 declaration-order micro-proof via binary+t
 green; cpp sections wired into all four scripts.
 
 ### F2 — Static Runtime Core [P0]
+
 Exceptions → sum types + serializers → value carriers → date codec (**tz vendoring verified
 here**) → query → fields → client (retry/pagination/batching/typecast/CURLSH/url-encode spike) →
 dict table → cache store. Unit tests alongside each (exception/special-error/coercion/date/fields/
-cache/client_* via FakeTransport seam). **Mid-F2 checkpoint (LOW-2): generate a real single-field
+cache/client\_\* via FakeTransport seam). **Mid-F2 checkpoint (LOW-2): generate a real single-field
 model against the real static/cpp headers and compile it** — real include paths and namespaces,
 not the gate's prototypes — before the remaining runtime lands.
 
 ### F3 — Minimal Generator → FIRST LIVE INTEGRATION [P0]
+
 `write_options`, `write_field_types`, `write_tables` (dict access), root `airtable.hpp`; offline
 content tests; **`test_struct_crud_via_table.cpp` live** — the fail-fast milestone.
 
 ### F4 — ORM Models & Model Ops [P1]
+
 CRTP base + `write_models` + orm_table (incl. bounded ops + empty-diff skip); offline model tests;
 **R21 pinning test** (mutated computed field absent from payload); `test_table_bounded_ops.cpp` +
 `test_typecast_option.cpp` (unit); live orm_crud_via_table + orm_crud_via_model.
 
 ### F5 — Complex Types [P1] — live `test_complex_properties.cpp`.
+
 ### F6 — Linked Records [P1] — live `test_linked_records.cpp`.
-### F7 — Formula Builder DSL [P1] — static formula_* headers + write_formula_helpers + F accessor;
+
+### F7 — Formula Builder DSL [P1] — static formula\_\* headers + write_formula_helpers + F accessor;
+
 `test_formula.cpp` (98); live filter_by_formula (18) + formula_escaping + multi_field_sort.
 
 ### F8 — Formula Runtime & Transpiler [P1] — biggest feature
+
 ~90 runtime functions with `test_airtable_runtime.cpp` ported case-for-case (184; regex degrade
 cases included); transpiler arms per §3.4 + full `test_formula_transpiler_cpp.py`; generator
 `evaluate_*()` methods; live runtime_formulas + runtime_formula_variety (unicode) +
 primary_formula_runtime.
 
 ### F9 — Caching [P2] — cache-policy units; live caching + cache_concurrency (**TSan variant**).
+
 ### F10 — Serialization & Hardening [P2]
+
 serializing (offline 16) + serializing_integration (null clears) + special_error_deser +
 error_paths + field_round_trip + pagination + upsert_depth; client hardening/url-encoding units.
 
 ### F11 — Parity Audit & Polish [P2]
+
 Cross-language inventory diff (18 static / 20 integration lists above); READMEs; full
 checks.sh/test.sh green; count parity ±5%; idiom pass (no C#-isms; clang-format clean).
 
@@ -567,31 +578,31 @@ All ─────────────────────────�
 
 ## 7. Risks & Mitigations
 
-| #   | Risk                                                                     | Mitigation                                                                                     |
-| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| R1  | Designated-init aggregate breaks on real shapes                          | Compile-verified up front; gate re-proves; fallback = default-construct + assign                  |
-| R2  | adl_serializer for nested template sums                                  | Public-ctor shapes (§2.3.4); gate (b) nested + time_point + null-computed, decode AND encode      |
-| R3  | libc++ no chrono tz (VERIFIED absent)                                    | Hand ISO codec + civil math; **vendored Hinnant tz (USE_OS_TZDB)**; stb-style TU macro            |
-| R4  | DATETIME_FORMAT moment tokens ≠ strftime                                 | Port token translator; 184-case suite pins                                                        |
-| R5  | UTF-8 vs code-point semantics                                            | utf8 helpers (Rust/Go precedent); unicode variety live test                                       |
-| R6  | `std::regex` gaps; malformed pattern THROWS (C# returns false)           | try/catch degrade in all 3 REGEX_* (MED-2); port C# patterns early in F8                          |
-| R7  | `and/or/not/xor` alt tokens; `delete` keyword; TRUE/FALSE macros         | `_cpp_ident` alt-token set; `remove()`; push_macro guard + gate probe (e)                         |
-| R8  | Transpiler emits `runtime.X` (dot) — incl. the `_emit_num/_str` TAILS    | §3.4-3/4/**24** explicit branches; **early F1 pin tests (§3.4-25)** (CRIT-1)                      |
-| R9  | `map_types` idempotency guard omission → stale types                     | §3.1 explicit edit + unit test (C# CRIT-2 precedent)                                              |
-| R10 | Vendored headers bloat/drift                                             | Pinned versions + comments; only choke-point includes; excluded from clang-format                 |
-| R11 | curl thread-safety / per-call DNS+TLS handshakes                         | Per-request handles **+ CURLSH share (DNS+SSL_SESSION)** + call_once init (HIGH-5)                |
-| R12 | Header-only compile times                                                | Bounded; choke points; non-goal to optimize                                                       |
-| R13 | `+` in filterByFormula                                                   | curl_easy_escape → %2B; verify-first live spike                                                   |
-| R14 | `std::exp(1.0)` ULP                                                      | Verify-first; pin EXP(1.0) if needed                                                              |
-| R15 | Date wire format rejected                                                | millis+Z from day one (C# lesson)                                                                 |
-| R16 | Catch2 ordering assumption wrong/version-dependent                       | **F1.13(f) micro-proof under the real invocation**; distinct PKs regardless (MED-3)               |
-| R17 | cmake/ninja missing                                                      | F1 brew task; `command -v` warn-skip guards                                                       |
-| R18 | Offset-token list pages cached                                           | Port C# skip; cache unit test                                                                     |
-| R19 | int vs double json storage breaks formatting/equality                    | `n()` coerces; `s()` ports number-format logic; tests use 42.0                                    |
-| R20 | GCC/MSVC portability of aggregate+CRTP idiom                             | **Unverified, not CI-gated** (P1975 DR timing); README note (LOW-1)                               |
-| R21 | **Public computed fields: `model.auto_number=…; save()` silently drops** | Divergence unique to C++ (compile error elsewhere); pinning unit test + doc comments on every generated computed member; snapshot_/client_ likewise pinned never-serialized (MED-6) |
-| R22 | Data race in split-lock CacheStore is UB, not an exception               | **TSan build variant for cache-concurrency suite** (Go `-race` precedent) (HIGH-3)                |
-| R23 | ODR collision from specializing serializers for std types                | **Dropped std-type specializations**; owned read_field/write_field helpers only (HIGH-1)          |
+| #   | Risk                                                                     | Mitigation                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | Designated-init aggregate breaks on real shapes                          | Compile-verified up front; gate re-proves; fallback = default-construct + assign                                                                                                    |
+| R2  | adl_serializer for nested template sums                                  | Public-ctor shapes (§2.3.4); gate (b) nested + time_point + null-computed, decode AND encode                                                                                        |
+| R3  | libc++ no chrono tz (VERIFIED absent)                                    | Hand ISO codec + civil math; **vendored Hinnant tz (USE_OS_TZDB)**; stb-style TU macro                                                                                              |
+| R4  | DATETIME_FORMAT moment tokens ≠ strftime                                 | Port token translator; 184-case suite pins                                                                                                                                          |
+| R5  | UTF-8 vs code-point semantics                                            | utf8 helpers (Rust/Go precedent); unicode variety live test                                                                                                                         |
+| R6  | `std::regex` gaps; malformed pattern THROWS (C# returns false)           | try/catch degrade in all 3 REGEX\_\* (MED-2); port C# patterns early in F8                                                                                                          |
+| R7  | `and/or/not/xor` alt tokens; `delete` keyword; TRUE/FALSE macros         | `_cpp_ident` alt-token set; `remove()`; push_macro guard + gate probe (e)                                                                                                           |
+| R8  | Transpiler emits `runtime.X` (dot) — incl. the `_emit_num/_str` TAILS    | §3.4-3/4/**24** explicit branches; **early F1 pin tests (§3.4-25)** (CRIT-1)                                                                                                        |
+| R9  | `map_types` idempotency guard omission → stale types                     | §3.1 explicit edit + unit test (C# CRIT-2 precedent)                                                                                                                                |
+| R10 | Vendored headers bloat/drift                                             | Pinned versions + comments; only choke-point includes; excluded from clang-format                                                                                                   |
+| R11 | curl thread-safety / per-call DNS+TLS handshakes                         | Per-request handles **+ CURLSH share (DNS+SSL_SESSION)** + call_once init (HIGH-5)                                                                                                  |
+| R12 | Header-only compile times                                                | Bounded; choke points; non-goal to optimize                                                                                                                                         |
+| R13 | `+` in filterByFormula                                                   | curl_easy_escape → %2B; verify-first live spike                                                                                                                                     |
+| R14 | `std::exp(1.0)` ULP                                                      | Verify-first; pin EXP(1.0) if needed                                                                                                                                                |
+| R15 | Date wire format rejected                                                | millis+Z from day one (C# lesson)                                                                                                                                                   |
+| R16 | Catch2 ordering assumption wrong/version-dependent                       | **F1.13(f) micro-proof under the real invocation**; distinct PKs regardless (MED-3)                                                                                                 |
+| R17 | cmake/ninja missing                                                      | F1 brew task; `command -v` warn-skip guards                                                                                                                                         |
+| R18 | Offset-token list pages cached                                           | Port C# skip; cache unit test                                                                                                                                                       |
+| R19 | int vs double json storage breaks formatting/equality                    | `n()` coerces; `s()` ports number-format logic; tests use 42.0                                                                                                                      |
+| R20 | GCC/MSVC portability of aggregate+CRTP idiom                             | **Unverified, not CI-gated** (P1975 DR timing); README note (LOW-1)                                                                                                                 |
+| R21 | **Public computed fields: `model.auto_number=…; save()` silently drops** | Divergence unique to C++ (compile error elsewhere); pinning unit test + doc comments on every generated computed member; snapshot*/client* likewise pinned never-serialized (MED-6) |
+| R22 | Data race in split-lock CacheStore is UB, not an exception               | **TSan build variant for cache-concurrency suite** (Go `-race` precedent) (HIGH-3)                                                                                                  |
+| R23 | ODR collision from specializing serializers for std types                | **Dropped std-type specializations**; owned read_field/write_field helpers only (HIGH-1)                                                                                            |
 
 ## 8. Exit Criteria (Full Parity)
 
