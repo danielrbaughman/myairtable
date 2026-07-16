@@ -2,8 +2,8 @@
 
 Thin mirrors of the public MCP tools — all logic lives in src/schema_tools.py
 (the same functions the MCP server registers, so a CLI invocation verifies MCP
-behavior). Commands register onto the shared `tools_app` (src/tools_cli.py)
-alongside the internal-API commands, so everything is `myairtable tools <name>`.
+behavior). Commands register onto the shared `tools_app` (src/tools_cli.py), so
+everything is `myairtable tools <name>`.
 
 Public tools raise ValueError on bad input; commands convert that to a JSON
 error + exit 1 via _fail.
@@ -321,13 +321,10 @@ def formula_function_usage_command(
 
 
 @tools_app.command("base-health-report")
-def base_health_report_command(
-    include_internal: Annotated[bool, Option("--include-internal", help="Add internal-API findings (slow: whole-base view scans)")] = False,
-    pretty: Annotated[bool, _PRETTY] = False,
-):
+def base_health_report_command(pretty: Annotated[bool, _PRETTY] = False):
     """One-call categorized roll-up of everything notable about the base."""
     try:
-        _emit("base_health_report", schema_tools.base_health_report(include_internal), pretty)
+        _emit("base_health_report", schema_tools.base_health_report(), pretty)
     except Exception as e:
         _fail(e)
 

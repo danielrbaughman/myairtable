@@ -1,15 +1,15 @@
 """Offload large tool results to disk and return a compact envelope.
 
-Several MCP tools return large payloads (whole-base scans, full automation
-config dumps). Returning them inline bloats the agent's context with data it
-usually wants to *query*, not read whole. When a serialized result exceeds the
-inline limit, the full result is written to a gitignored `.data/internal_api/`
-dir and a small envelope is returned instead: the file path, byte/record
-counts, the result's own `summary`, and a compact inferred *shape skeleton* so
-the agent knows the structure and can jq/grep the file without re-running.
+Several MCP tools return large payloads (whole-base scans, full schema dumps).
+Returning them inline bloats the agent's context with data it usually wants to
+*query*, not read whole. When a serialized result exceeds the inline limit, the
+full result is written to a gitignored `.data/tools/` dir and a small envelope
+is returned instead: the file path, byte/record counts, the result's own
+`summary`, and a compact inferred *shape skeleton* so the agent knows the
+structure and can jq/grep the file without re-running.
 
-Shared by the MCP middleware (src/internal_api/offload_middleware.py) and the
-CLI `--save` flag, so both exercise the identical path.
+Shared by the MCP middleware (src/offload_middleware.py) and the CLI `--save`
+flag, so both exercise the identical path.
 
 Mirrors the ../rogo-mcp `.data/` convention, adding a real schema.
 """
@@ -19,8 +19,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Repo root: src/internal_api/result_store.py -> parents[2] == repo root.
-OUTPUT_DIR = Path(__file__).resolve().parents[2] / ".data" / "internal_api"
+# Repo root: src/result_store.py -> parents[1] == repo root.
+OUTPUT_DIR = Path(__file__).resolve().parents[1] / ".data" / "tools"
 
 _DEFAULT_INLINE_MAX_BYTES = 16384
 

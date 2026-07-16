@@ -24,8 +24,8 @@ def test_all_public_commands_registered():
     names = {c.name for c in tools_app.registered_commands}
     missing = [k for k in PUBLIC_COMMANDS if k not in names]
     assert not missing, f"public commands missing from the tools group: {missing}"
-    # internal commands still present too
-    assert {"get-view", "count-records", "list-automations"} <= names
+    # the internal (unofficial) API is gone — no command may depend on it
+    assert not ({"get-view", "count-records", "list-automations"} & names)
 
 
 def test_public_command_emits_json(monkeypatch):
@@ -36,7 +36,7 @@ def test_public_command_emits_json(monkeypatch):
 
 
 def test_public_command_save_offloads(monkeypatch, tmp_path):
-    from src.internal_api import result_store
+    from src import result_store
 
     monkeypatch.setattr(result_store, "OUTPUT_DIR", tmp_path)
     monkeypatch.setenv("MYAIRTABLE_INLINE_MAX_BYTES", "200")
@@ -67,7 +67,7 @@ def test_mcp_still_exposes_all_tools():
         return sorted(t.name for t in await mcp_server.mcp.list_tools())
 
     all_names = set(asyncio.run(names()))
-    # every public tool registered, plus the 9 internal-API tools
+    # the public tools are the whole surface — the internal-API tools are gone
     assert {fn.__name__ for fn in schema_tools.PUBLIC_TOOLS} <= all_names
-    assert {"get_view", "list_automations"} <= all_names
-    assert len(all_names) == len(schema_tools.PUBLIC_TOOLS) + 9
+    assert not ({"get_view", "list_automations"} & all_names)
+    assert len(all_names) == len(schema_tools.PUBLIC_TOOLS)

@@ -52,6 +52,3 @@ dev = [
 	"ruff>=0.15.18",
 	"ty>=0.0.51"
 ]
-# Internal (unofficial) Airtable API support — `uv sync --group internal`,
-# then `uv run playwright install firefox`. See docs/airtable-internal-api.md.
-internal = ["playwright>=1.49"]

@@ -1,10 +1,10 @@
 """FastMCP middleware that offloads large tool results to disk.
 
-A single global hook (`on_call_tool`) covers every registered tool — public and
-internal, present and future — so no per-tool wiring is needed. When a tool's
-result exceeds the inline byte limit, the full result is written to disk and the
-agent receives a small envelope (path + schema + summary) instead. See
-src/internal_api/result_store.py for the shared offload core.
+A single global hook (`on_call_tool`) covers every registered tool, present and
+future, so no per-tool wiring is needed. When a tool's result exceeds the inline
+byte limit, the full result is written to disk and the agent receives a small
+envelope (path + schema + summary) instead. See src/result_store.py for the
+shared offload core.
 """
 
 import asyncio

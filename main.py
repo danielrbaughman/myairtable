@@ -28,13 +28,10 @@ app = Typer()
 
 # `tools` subcommand group: shared scaffolding (src/tools_cli.py) with command
 # modules registering onto it. Importing a command module registers its commands.
-import src.internal_api.cli  # noqa: E402,F401  (registers internal-API commands)
 import src.schema_tools_cli  # noqa: E402,F401  (registers public meta-API commands)
-from src.internal_api.cli import login_command  # noqa: E402
 from src.tools_cli import tools_app  # noqa: E402
 
 app.add_typer(tools_app, name="tools")
-app.command("login")(login_command)
 
 
 @app.callback()

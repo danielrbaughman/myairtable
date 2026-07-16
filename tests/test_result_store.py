@@ -1,4 +1,4 @@
-"""Tests for src/internal_api/result_store.py — schema inference + offload.
+"""Tests for src/result_store.py — schema inference + offload.
 
 No network; offload is exercised against synthetic results with the threshold
 and OUTPUT_DIR redirected to a tmp dir.
@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from src.internal_api import result_store
+from src import result_store
 
 
 @pytest.fixture

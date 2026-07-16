@@ -1,9 +1,8 @@
 """Shared scaffolding for the `myairtable tools` CLI group.
 
-Both the public-API command module (src/schema_tools_cli.py) and the
-internal-API command module (src/internal_api/cli.py) register their commands
-onto the single `tools_app` defined here, so all tools surface under
-`myairtable tools <name>` regardless of which API backs them.
+The command module (src/schema_tools_cli.py) registers its commands onto the
+single `tools_app` defined here, so all tools surface under
+`myairtable tools <name>`.
 
 Output is JSON on stdout by default (agent-testable, pipeable to jq); --pretty
 renders with rich; --save offloads large results to disk (mirroring the MCP
@@ -17,18 +16,16 @@ from typing import Annotated, Any
 from rich import print as rich_print
 from typer import Exit, Option, Typer
 
-from src.internal_api.result_store import offload
+from src.result_store import offload
 
-tools_app = Typer(help="Schema introspection & analysis tools — CLI mirrors of the MCP tools (public + internal API).")
+tools_app = Typer(help="Schema introspection & analysis tools — CLI mirrors of the MCP tools.")
 
 _save_state = {"on": False}
 
 
 @tools_app.callback()
 def _tools_callback(
-    save: Annotated[
-        bool, Option("--save", help="Offload large results to .data/internal_api/ and print the envelope (mirrors the MCP server)")
-    ] = False,
+    save: Annotated[bool, Option("--save", help="Offload large results to .data/tools/ and print the envelope (mirrors the MCP server)")] = False,
 ):
     """Schema introspection & analysis tools."""
     _save_state["on"] = save
