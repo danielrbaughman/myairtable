@@ -2712,6 +2712,66 @@ class TestCppComputedTypes:
         assert map_cpp_type(self._field("My Text", "fld001", "singleLineText")) == "std::string"
 
 
+class TestCppGenerator:
+    """cpp.py F3 generator — offline content assertions (no compiler)."""
+
+    def _generate(self, base: Base, tmp_path: Path) -> Path:
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out)
+        return out
+
+    def _generate_fields(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> Path:
+        return self._generate(make_test_base(fields_spec), tmp_path)
+
+    # ---- options (F3.1) ----------------------------------------------------
+
+    def test_options_enum_class_and_entries(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Todo", "In Progress", "Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "#pragma once" in content
+        assert "enum class JobsStatusOption {" in content
+        assert "Todo," in content
+        assert "InProgress," in content
+        assert "Done," in content
+        assert "namespace myairtable {" in content
+
+    def test_options_serializer_maps_raw_strings_and_throws_on_unknown(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["In Progress", "Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "struct adl_serializer<myairtable::JobsStatusOption> {" in content
+        assert 'if (raw == "In Progress") {' in content
+        assert "return myairtable::JobsStatusOption::InProgress;" in content
+        assert 'throw myairtable::DecodingError("Unknown JobsStatusOption: " + raw);' in content
+        # to_json switch maps members back to the raw wire strings.
+        assert "case myairtable::JobsStatusOption::InProgress:" in content
+        assert 'j = "In Progress";' in content
+        # NLOHMANN_JSON_SERIALIZE_ENUM would silently map unknowns to the first
+        # entry — the generated serializer must never use it.
+        assert "NLOHMANN_JSON_SERIALIZE_ENUM" not in content
+
+    def test_options_duplicate_entries_deduplicate_with_v_suffix(self, tmp_path: Path):
+        # Two choices that sanitize to the same member name.
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Done.", "done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "jobs_status_option.hpp").read_text()
+        assert "Done," in content
+        assert "Done_V2," in content
+        assert 'j = "Done.";' in content
+        assert 'j = "done";' in content
+
+    def test_options_escape_quotes_in_raw_strings(self, tmp_path: Path):
+        base = _make_base_with_select_field("Rigs", "Drop Point", "fld001", ['North "Gate"'])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "options" / "rigs_drop_point_option.hpp").read_text()
+        assert 'North \\"Gate\\"' in content
+
+
 class TestCppWriterHelpers:
     """Pure helpers in write_to_cpp_file.py (CPP F1.4)."""
 
