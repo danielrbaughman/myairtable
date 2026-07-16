@@ -16,6 +16,7 @@ Languages supported:
 - Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
 - Go (via a custom-built client on the standard library — `net/http` + `encoding/json`, zero third-party dependencies)
 - C# (via a custom-built .NET 8 client on `HttpClient` + `System.Text.Json`, async/await, zero third-party dependencies)
+- C++ (via a custom-built C++20 client on **libcurl** + a vendored [nlohmann/json](https://github.com/nlohmann/json); header-only distribution)
 
 ### Kotlin
 
@@ -196,6 +197,33 @@ Idioms:
 - **Filtering**: `at.Primary.GetAsync(new AirtableQuery().WithFormula(PrimaryModel.F.PrimaryKey.Eq("alice@example.com")))`.
 
 Generated code is formatted with [CSharpier](https://csharpier.com).
+
+### C++
+
+The generated C++ code targets **C++20** and is **header-only**: add the output folder to your include path, link **libcurl** (preinstalled on macOS/Linux), and compile the vendored timezone implementation in exactly one translation unit:
+
+```cpp
+// tz_impl.cpp — one file in your project (stb-style single-TU implementation)
+#define MYAIRTABLE_TZ_IMPLEMENTATION
+#include "static/airtable_tz.hpp"
+```
+
+```cpp
+#include "airtable.hpp"
+myairtable::Airtable at(apiKey, /*cache_seconds=*/0);  // 0 disables caching
+```
+
+Idioms:
+
+- **Models** are **aggregate structs** over a data-free CRTP behavior base: public `std::optional<T>` members, created with designated initializers — `PrimaryModel{.primary_key = "x"}` — and passed to the table's `create()`. Absent and JSON-null both decode to `std::nullopt`.
+- **Blocking, thread-safe client**: per-request curl handles over a shared DNS/TLS-session cache; 429/5xx retried with jittered backoff before surfacing.
+- **Errors** are exceptions rooted in `std::runtime_error` — `catch (const myairtable::AirtableException&)` or a specific subclass (`ApiError`, `RateLimitedError`, …).
+- **Typed ORM is the default** on each table accessor — `at.primary()` *is* an `OrmTable<PrimaryModel>`, so `get`/`get_all`/`create`/`update`/`upsert` return typed models; `.dict()` gives raw field-bag access. Per-model fluent `save()`/`fetch()`/**`remove()`** (`delete` is a C++ keyword — the one naming divergence).
+- **Select options** are `enum class`es with generated wire serializers; **computed fields** decode into `std::optional<MaybeSpecialOrError<T>>` (read with `->value()`), lookups/rollups into `std::optional<VecOrValue<MaybeSpecialOrError<T>>>` (read with `->clean_values()`). Computed members are public but **never serialized on write** — mutating one and calling `save()` sends nothing for it (pinned by tests).
+- **Filtering**: `at.primary().get_all(AirtableQuery{.formula = PrimaryModel::F.primary_key.eq("alice@example.com")})`. Combinators are `Formulas::and_`/`or_`/`not_` (`and`/`or`/`not` are C++ alternative tokens).
+- Portability note: designated-initializer-over-base relies on the C++20 P1975 defect resolution; AppleClang is the CI-gated compiler, GCC/MSVC are unverified.
+
+Generated code is formatted with [clang-format](https://clang.llvm.org/docs/ClangFormat.html) (vendored headers exempt).
 
 ## Features
 
