@@ -1,5 +1,5 @@
-// Unit-test harness for the hand-written Kotlin static runtime (static/kotlin/).
-// The main source set points directly at static/kotlin so the runtime is compiled
+// Unit-test harness for the hand-written Kotlin static runtime (src/myairtable/static/kotlin/).
+// The main source set points directly at src/myairtable/static/kotlin so the runtime is compiled
 // and tested in place — no symlinks, no copying.
 //
 // Version pins (K-F1 decision record):
@@ -20,7 +20,7 @@ repositories {
 
 sourceSets {
     main {
-        kotlin.srcDir("../../static/kotlin")
+        kotlin.srcDir("../../src/myairtable/static/kotlin")
     }
 }
 

@@ -27,7 +27,7 @@ cargo fmt
 # Swift
 # Requires swift-format from the Swift 6.0+ toolchain (brew install swift-format).
 # The static runtime tests live in their own SPM package at tests/swift_static/
-# which symlinks static/swift/ into its Sources tree.
+# which symlinks src/myairtable/static/swift/ into its Sources tree.
 if command -v swift &> /dev/null; then
     echo "--- Swift checks ---"
     # Swift toolchain version gate — require Swift 6 for @Observable + macros.
@@ -54,7 +54,7 @@ if command -v swift &> /dev/null; then
             echo "[error] swift-format $SWIFT_FORMAT_VERSION is too old. Need Swift 6.0+ (6.x.x or 600.x.x+)."
             exit 1
         fi
-        swift-format format --in-place --recursive --configuration .swift-format static/swift tests/swift_static/Tests
+        swift-format format --in-place --recursive --configuration .swift-format src/myairtable/static/swift tests/swift_static/Tests
     else
         echo "[warn] swift-format not installed; skipping format step. (brew install swift-format)"
     fi
@@ -64,13 +64,13 @@ fi
 
 # Kotlin
 # The static runtime unit tests live in a Gradle project at tests/kotlin_static/
-# whose main source set points directly at static/kotlin/.
+# whose main source set points directly at src/myairtable/static/kotlin/.
 if [ -x tests/kotlin_static/gradlew ] && command -v java &> /dev/null; then
     echo "--- Kotlin checks ---"
     (cd tests/kotlin_static && ./gradlew test)
     if command -v ktlint &> /dev/null; then
         # Format the hand-written runtime + tests; generated output is exempt by design.
-        ktlint --format "static/kotlin/**/*.kt" "tests/kotlin_static/src/**/*.kt"
+        ktlint --format "src/myairtable/static/kotlin/**/*.kt" "tests/kotlin_static/src/**/*.kt"
     else
         echo "[warn] ktlint not installed; skipping format step. (brew install ktlint)"
     fi
@@ -80,13 +80,13 @@ fi
 
 # Java
 # The static runtime unit tests live in a Gradle project at tests/java_static/
-# whose main source set points directly at static/java/.
+# whose main source set points directly at src/myairtable/static/java/.
 if [ -x tests/java_static/gradlew ] && command -v java &> /dev/null; then
     echo "--- Java checks ---"
     (cd tests/java_static && ./gradlew test)
     if command -v google-java-format &> /dev/null; then
         # Format the hand-written runtime + tests; generated output is exempt by design.
-        JAVA_SOURCES=$(find static/java tests/java_static/src -name '*.java')
+        JAVA_SOURCES=$(find src/myairtable/static/java tests/java_static/src -name '*.java')
         if [ -n "$JAVA_SOURCES" ]; then
             echo "$JAVA_SOURCES" | xargs google-java-format --replace
         fi
@@ -98,20 +98,20 @@ else
 fi
 
 # Go
-# The static runtime + its unit tests live in-place at static/go/ (a self-contained
+# The static runtime + its unit tests live in-place at src/myairtable/static/go/ (a self-contained
 # module; *_test.go and go.mod are excluded from the generator's flat static copy).
 if command -v go &> /dev/null; then
     echo "--- Go checks ---"
-    (cd static/go && go vet ./...)
-    (cd static/go && go test ./...)
+    (cd src/myairtable/static/go && go vet ./...)
+    (cd src/myairtable/static/go && go test ./...)
     # gofmt is part of the toolchain and deterministic; format the hand-written runtime.
-    GO_UNFORMATTED=$(gofmt -l static/go)
+    GO_UNFORMATTED=$(gofmt -l src/myairtable/static/go)
     if [ -n "$GO_UNFORMATTED" ]; then
         echo "[info] gofmt-formatting: $GO_UNFORMATTED"
-        gofmt -w static/go
+        gofmt -w src/myairtable/static/go
     fi
     if command -v golangci-lint &> /dev/null; then
-        (cd static/go && golangci-lint run ./...)
+        (cd src/myairtable/static/go && golangci-lint run ./...)
     else
         echo "[warn] golangci-lint not installed; skipping lint step. (brew install golangci-lint)"
     fi
@@ -121,7 +121,7 @@ fi
 
 # C#
 # The static runtime + its unit tests live in tests/csharp_static/ (an xUnit project
-# whose .csproj compiles static/csharp/ directly via <Compile Include>). Target net8.0;
+# whose .csproj compiles src/myairtable/static/csharp/ directly via <Compile Include>). Target net8.0;
 # RollForward=Major lets the test host run on a newer installed runtime (e.g. SDK 9).
 if command -v dotnet &> /dev/null; then
     echo "--- C# checks ---"
@@ -131,7 +131,7 @@ if command -v dotnet &> /dev/null; then
     export PATH="$PATH:$HOME/.dotnet/tools"
     if command -v csharpier &> /dev/null; then
         CS_FMT_TARGETS="tests/csharp_static"
-        [ -d static/csharp ] && CS_FMT_TARGETS="static/csharp $CS_FMT_TARGETS"
+        [ -d src/myairtable/static/csharp ] && CS_FMT_TARGETS="src/myairtable/static/csharp $CS_FMT_TARGETS"
         csharpier format $CS_FMT_TARGETS
     else
         echo "[warn] csharpier not installed; skipping format step. (dotnet tool install -g csharpier)"
@@ -140,8 +140,8 @@ else
     echo "[warn] dotnet not on PATH; skipping C# checks."
 fi
 # C++
-# The static runtime is header-only at static/cpp/; its Catch2 unit tests live in
-# tests/cpp_static/ (a CMake project whose include path points at static/cpp directly).
+# The static runtime is header-only at src/myairtable/static/cpp/; its Catch2 unit tests live in
+# tests/cpp_static/ (a CMake project whose include path points at src/myairtable/static/cpp directly).
 if command -v cmake &> /dev/null; then
     echo "--- C++ checks ---"
     CPP_GEN="-G Ninja"
@@ -152,7 +152,7 @@ if command -v cmake &> /dev/null; then
     # toolchain (not on PATH) — fall back to xcrun discovery.
     CLANG_FORMAT="$(command -v clang-format || xcrun --find clang-format 2>/dev/null || true)"
     if [ -n "$CLANG_FORMAT" ]; then
-        find static/cpp tests/cpp_static -name '*.hpp' -o -name '*.cpp' \
+        find src/myairtable/static/cpp tests/cpp_static -name '*.hpp' -o -name '*.cpp' \
             | grep -v '/vendor/' | grep -v '/build/' \
             | xargs "$CLANG_FORMAT" -i --style=file
     else

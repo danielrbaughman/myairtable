@@ -2,7 +2,7 @@
 
 import math
 
-from static.python.airtable_runtime import AirtableRuntime as _r  # noqa: N813
+from myairtable.static.python.airtable_runtime import AirtableRuntime as _r  # noqa: N813
 
 
 class TestBlankSemantics:

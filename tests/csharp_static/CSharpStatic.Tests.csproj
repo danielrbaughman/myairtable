@@ -13,9 +13,9 @@
     <!--
       Compile the hand-written static runtime directly into the test assembly
       (the C# analog of Gradle's srcDir). The glob is empty until F2 lands
-      static/csharp/; generated output is never compiled here.
+      src/myairtable/static/csharp/; generated output is never compiled here.
     -->
-    <Compile Include="../../static/csharp/**/*.cs" />
+    <Compile Include="../../src/myairtable/static/csharp/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

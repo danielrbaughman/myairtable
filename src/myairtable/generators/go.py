@@ -7,7 +7,7 @@ package. Generated files are name-prefixed by concern to avoid colliding with
 the static runtime:
 
   <output>/
-  ├── <static runtime *.go>      — copied flat from static/go/ (excl. go.mod, *_test.go)
+  ├── <static runtime *.go>      — copied flat from src/myairtable/static/go/ (excl. go.mod, *_test.go)
   ├── options_{table}.go         — per-table select-option typed-string consts
   ├── fields_{table}.go          — per-table field ID/name consts, maps, View consts
   ├── model_{table}.go           — ORM model structs (F4)
@@ -77,7 +77,7 @@ def _go_model_field_type(field) -> str:
 
 
 def _copy_static_go(output_folder: Path, exclude: list[str]) -> None:
-    """Flat-copy static/go/*.go into the output directory (single package)."""
+    """Flat-copy src/myairtable/static/go/*.go into the output directory (single package)."""
     source = static_dir("go")
     ignore = shutil.ignore_patterns(*_GO_STATIC_COPY_EXCLUDE, *exclude)
     shutil.copytree(source, output_folder, dirs_exist_ok=True, ignore=ignore)

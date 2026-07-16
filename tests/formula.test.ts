@@ -14,7 +14,7 @@ import {
 	BooleanField,
 	AttachmentsField,
 	DateField,
-} from "../static/typescript/formula";
+} from "../src/myairtable/static/typescript/formula";
 
 describe("Logic Functions", () => {
 	describe("AND", () => {

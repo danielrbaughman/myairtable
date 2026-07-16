@@ -56,10 +56,7 @@ unresolved-import = "ignore" # ty lacks type stubs for csv module
 unresolved-attribute = "ignore" # ty lacks type stubs for csv module
 
 [tool.pytest.ini_options]
-# "." is transitional: static/ is still at the repo root and tests import
-# static.python.airtable_runtime. Drops to ["src"] once static/ moves into the
-# package (myairtable-1mcd).
-pythonpath = ["src", "."]
+pythonpath = ["src"]
 
 [dependency-groups]
 dev = [
