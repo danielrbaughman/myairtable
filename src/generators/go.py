@@ -31,6 +31,7 @@ from ..utils.helpers import (
     deduplicated_table_prefix_map,
     reset_folder,
     sanitize_string,
+    static_dir,
 )
 from ..utils.write_to_go_file import (
     WriteToGoFile,
@@ -77,9 +78,7 @@ def _go_model_field_type(field) -> str:
 
 def _copy_static_go(output_folder: Path, exclude: list[str]) -> None:
     """Flat-copy static/go/*.go into the output directory (single package)."""
-    source = Path("./static/go")
-    if not source.exists():
-        return
+    source = static_dir("go")
     ignore = shutil.ignore_patterns(*_GO_STATIC_COPY_EXCLUDE, *exclude)
     shutil.copytree(source, output_folder, dirs_exist_ok=True, ignore=ignore)
 

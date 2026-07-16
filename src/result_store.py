@@ -19,8 +19,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Repo root: src/result_store.py -> parents[1] == repo root.
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / ".data" / "tools"
+# Per-invocation output, not bundled data: it follows the caller's cwd rather than
+# the install location, which would otherwise be site-packages. MYAIRTABLE_DATA_DIR
+# overrides for callers that run from somewhere they'd rather not write to.
+OUTPUT_DIR = Path(os.environ.get("MYAIRTABLE_DATA_DIR") or Path.cwd() / ".data" / "tools")
 
 _DEFAULT_INLINE_MAX_BYTES = 16384
 

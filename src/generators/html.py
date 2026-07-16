@@ -10,13 +10,14 @@ from rich import print
 from ..formulas.formula_formatter import _count_nesting_depth
 from ..formulas.formula_tokenizer import TokenType, tokenize_formula
 from ..meta import Base
+from ..utils.helpers import static_dir
 from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg, render_svgs_parallel
 from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
 from .mermaid import mermaid_base, mermaid_formula
 
 # Paths to static files bundled with the project
-_STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "html"
+_STATIC_DIR = static_dir("html")
 _STATIC_CSS = _STATIC_DIR / "style.css"
 _STATIC_JS = _STATIC_DIR / "script.js"
 _TEMPLATE_HEADER = (_STATIC_DIR / "template-header.html").read_text()
