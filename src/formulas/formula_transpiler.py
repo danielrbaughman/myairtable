@@ -18,7 +18,7 @@ from .formula_tokenizer import Token, TokenType, tokenize_formula
 
 logger = logging.getLogger(__name__)
 
-Language = Literal["typescript", "javascript", "python", "rust", "swift", "kotlin", "java", "go", "csharp"]
+Language = Literal["typescript", "javascript", "python", "rust", "swift", "kotlin", "java", "go", "csharp", "cpp"]
 
 
 # region AST Nodes
@@ -331,13 +331,23 @@ class CodeEmitter:
         # Keeping the name verbose avoids a file-level typealias in every generated model.
         # Go calls package-level runtime funcs BARE (same package) — the separator
         # below collapses to nothing, so `_rt("LOWER")` emits `LOWER`, not `.LOWER`.
-        self._runtime = "AirtableRuntime" if language in ("swift", "kotlin", "java", "csharp") else "F"
+        # C++ runtime functions are free functions in the nested `runtime` namespace,
+        # qualified with `::` (the only target whose separator is not `.`).
+        if language in ("swift", "kotlin", "java", "csharp"):
+            self._runtime = "AirtableRuntime"
+        elif language == "cpp":
+            self._runtime = "runtime"
+        else:
+            self._runtime = "F"
 
     def _rt(self, name: str) -> str:
-        """Qualified runtime function name. Go calls bare (same package); every
-        other native/boxed target qualifies with the runtime selector."""
+        """Qualified runtime function name. Go calls bare (same package); C++
+        qualifies with `::` (namespace, not a static class); every other
+        native/boxed target qualifies with `.`."""
         if self.language == "go":
             return name
+        if self.language == "cpp":
+            return f"{self._runtime}::{name}"
         return f"{self._runtime}.{name}"
 
     @staticmethod
@@ -365,6 +375,10 @@ class CodeEmitter:
                 # (the boxed literal type carries the distinction, matching Kotlin). C#:
                 # AirtableRuntime.V(42) / V(3.14) box via System.Text.Json the same way.
                 return f"{self._runtime}.V({value})"
+            if self.language == "cpp":
+                # runtime::v(42) boxes an integer json, v(3.14) a double — nlohmann
+                # stores the distinction the same way the other boxed targets do.
+                return f"{self._rt('v')}({value})"
             if self.language == "go":
                 # Bare native float64 literal — a whole number gets a `.0` so it
                 # boxes as float64 (not int) in the `any` runtime value.
@@ -384,6 +398,8 @@ class CodeEmitter:
                 return f"JsonPrimitive({val})"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V({_airtable_literal_to_double_quoted(node.value)})"
+            if self.language == "cpp":
+                return f"{self._rt('v')}({_airtable_literal_to_double_quoted(node.value)})"
             if self.language == "go":
                 # Go has only double-quoted strings (single quotes are runes), so
                 # convert Airtable single-quoted literals like the other targets.
@@ -427,6 +443,11 @@ class CodeEmitter:
             # (QUALIFIED, unlike Kotlin's bare call). field_name_map gives PascalCase props
             # for C#, so this emits AirtableRuntime.V(this.MyField).
             return f"{self._runtime}.V({self._self}.{prop_name})"
+        if self.language == "cpp":
+            # C++ member access from a member function is `this->`; v() is an overload
+            # set in the runtime namespace that boxes std::optional<T> fields (nullopt
+            # -> JSON null). field_name_map gives snake_case (escaped) props.
+            return f"{self._rt('v')}({self._self}->{prop_name})"
         if self.language == "go":
             # Go field access flows through the bare package-level V() helper, which
             # dereferences pointer struct fields (nil -> nil) into the native `any`.
@@ -1229,11 +1250,15 @@ class CodeEmitter:
     def _emit_str(self, node: ASTNode) -> str:
         """Emit node in string context. String literals pass through; concat recurses; others get F.S()."""
         if isinstance(node, StringLiteral):
-            if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
-                # Rust/Swift/Kotlin/Java use double-quoted string literals.
+            if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
+                # Rust/Swift/Kotlin/Java/C++ use double-quoted string literals.
                 val = _airtable_literal_to_double_quoted(node.value)
                 if self.language == "kotlin":
                     val = val.replace("$", "\\$")
+                if self.language == "cpp":
+                    # A bare C string literal would decay to const char* in the
+                    # `left + right` concat below — force std::string.
+                    val = f"std::string({val})"
                 return val
             return node.value
         if isinstance(node, BinaryOp) and node.op == "&":
@@ -1250,6 +1275,10 @@ class CodeEmitter:
         if self.language in ("kotlin", "go"):
             # Bare top-level S() — Java falls through to the QUALIFIED default below.
             return f"S({self.emit(node)})"
+        if self.language == "cpp":
+            # The dot-qualified default below would emit `runtime.s(...)` — invalid
+            # member access on a namespace. Route through _rt() for `::` (CRIT-1).
+            return f"{self._rt('s')}({self.emit(node)})"
         return f"{self._runtime}.S({self.emit(node)})"
 
     def _emit_num(self, node: ASTNode) -> str:
@@ -1261,10 +1290,10 @@ class CodeEmitter:
             if self.language == "swift":
                 # Swift Double literal — ensure decimal form so result is Double.
                 return value if "." in value else f"Double({value})"
-            if self.language in ("kotlin", "java", "go", "csharp"):
-                # Kotlin/Java/Go double literal — ensure decimal form so arithmetic
+            if self.language in ("kotlin", "java", "go", "csharp", "cpp"):
+                # Kotlin/Java/Go/C++ double literal — ensure decimal form so arithmetic
                 # stays floating-point (Java 5/2 would be integer division; a bare
-                # Go `5` would box as int, but N()/arithmetic want float64).
+                # Go `5` would box as int, but N()/arithmetic want float64/double).
                 return value if "." in value else f"{value}.0"
             return value
         if isinstance(node, BinaryOp) and node.op in ("+", "-", "*", "/"):
@@ -1278,6 +1307,10 @@ class CodeEmitter:
         if self.language in ("kotlin", "go"):
             # Bare top-level N() — Java falls through to the QUALIFIED default below.
             return f"N({self.emit(node)})"
+        if self.language == "cpp":
+            # The dot-qualified default below would emit `runtime.n(...)` — invalid
+            # member access on a namespace. Route through _rt() for `::` (CRIT-1).
+            return f"{self._rt('n')}({self.emit(node)})"
         return f"{self._runtime}.N({self.emit(node)})"
 
     @staticmethod
@@ -1325,6 +1358,8 @@ class CodeEmitter:
                 return f"JsonPrimitive({num_expr})"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V({num_expr})"
+            if self.language == "cpp":
+                return f"{self._rt('v')}({num_expr})"
             return num_expr
         if node.op in ("<", ">", "<=", ">="):
             left = self._emit_num(node.left)
@@ -1337,9 +1372,25 @@ class CodeEmitter:
                 return f"JsonPrimitive({left} {node.op} {right})"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V({left} {node.op} {right})"
+            if self.language == "cpp":
+                return f"{self._rt('v')}({left} {node.op} {right})"
             return f"({left} {node.op} {right})"
         if node.op in ("=", "!="):
             native_op = "==" if node.op == "=" else "!="
+            if self.language == "cpp":
+                # C++ std::string ==/!= is value equality and nlohmann json == is deep
+                # structural equality; is_equal adds N/S cross-type coercion. Box the
+                # native bool back into a json via v(). (Own block, C# precedent.)
+                left_type = self._infer_type(node.left)
+                right_type = self._infer_type(node.right)
+                left_raw = self.emit(node.left)
+                right_raw = self.emit(node.right)
+                if "number" in (left_type, right_type):
+                    return f"{self._rt('v')}({self._rt('n')}({left_raw}) {native_op} {self._rt('n')}({right_raw}))"
+                if "string" in (left_type, right_type):
+                    return f"{self._rt('v')}({self._rt('s')}({left_raw}) {native_op} {self._rt('s')}({right_raw}))"
+                bang = "!" if native_op == "!=" else ""
+                return f"{self._rt('v')}({bang}{self._rt('is_equal')}({left_raw}, {right_raw}))"
             if self.language == "csharp":
                 # C# string ==/!= is value equality and IsEqual is coercion-aware (number via N,
                 # else S/DeepEquals), so no .equals() dance is needed. Box the bool via V().
@@ -1432,6 +1483,13 @@ class CodeEmitter:
                 left = self._emit_str(node.left)
                 right = self._emit_str(node.right)
                 return f"{self._runtime}.V({left} + {right})"
+            if self.language == "cpp":
+                # std::string operator+ concatenates; literals were wrapped in
+                # std::string(...) by _emit_str so the chain never decays to
+                # const char* + const char*.
+                left = self._emit_str(node.left)
+                right = self._emit_str(node.right)
+                return f"{self._rt('v')}({left} + {right})"
             return self._emit_str(node)
         raise ParseError(f"Unknown operator: {node.op}")
 
@@ -1446,6 +1504,8 @@ class CodeEmitter:
                 return f"JsonPrimitive({num_expr})"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V({num_expr})"
+            if self.language == "cpp":
+                return f"{self._rt('v')}({num_expr})"
             return num_expr
         raise ParseError(f"Unknown unary operator: {node.op}")
 
