@@ -2878,10 +2878,30 @@ class TestCppGenerator:
         # "Id" is pre-sanitized to "identifier" upstream; the base's `id` member
         # itself can never be shadowed because it is a reserved member name.
 
-    def test_model_defers_evaluate_to_f8(self, tmp_path: Path):
-        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+    def test_model_emits_evaluate_methods_for_formula_fields(self, tmp_path: Path):
+        base = make_test_base(
+            [("Score", "fld001", "number"), ("Calc", "fld002", "formula")],
+            formula_map={"fld002": "{fld001} + 1"},
+        )
+        out = self._generate(base, tmp_path)
         content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
-        assert "evaluate_" not in content  # F8 flips this
+        assert "json evaluate_calc() const {" in content
+        assert "return runtime::v((runtime::n(runtime::v(this->score)) + 1.0));" in content
+        assert '#include "static/runtime_math.hpp"' in content
+
+    def test_runtime_flag_suppresses_evaluate_methods(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base(
+            [("Score", "fld001", "number"), ("Calc", "fld002", "formula")],
+            formula_map={"fld002": "{fld001} + 1"},
+        )
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, runtime=False)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "evaluate_" not in content
 
     # ---- formula helpers (F7.2) ---------------------------------------------
 

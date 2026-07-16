@@ -26,6 +26,8 @@ from pathlib import Path
 
 from pydantic.alias_generators import to_snake
 
+from ..formulas.formula_flattener import flatten_formula_for_transpilation
+from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Table
 from ..utils.helpers import (
     Paths,
@@ -404,7 +406,6 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     record envelope. The `F` filter accessor (F7) and transpiled `evaluate_*`
     methods (F8) land with their features.
     """
-    del runtime, flatten  # consumed by F8 (evaluate methods)
     models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
 
     for table in base.tables:
@@ -413,6 +414,20 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         props = _field_property_map(table)
         writable = [f for f in table.fields if not f.is_computed()]
         computed = [f for f in table.fields if f.is_computed()]
+
+        # Pre-transpile this table's formula fields into `evaluate_*` bodies (F8).
+        transpiled_formulas: dict[str, str] = {}
+        raw_formulas: dict[str, str] = {}
+        if runtime:
+            formula_field_ids = table.formula_field_ids()
+            # field_name_map uses the snake_case member names -> `this->my_field`.
+            field_name_map = {f.id: props[f.id] for f in table.fields}
+            raw_formulas = {f.id: f.options.formula for f in table.fields if f.is_formula() and f.options and f.options.formula}
+            if flatten and raw_formulas:
+                formula_map_tuple = table.base.get_formula_field_map_tuple()
+                raw_formulas = {fid: flatten_formula_for_transpilation(f, fid, formula_map_tuple) for fid, f in raw_formulas.items()}
+            if raw_formulas:
+                transpiled_formulas = transpile_table_formulas(raw_formulas, "cpp", field_name_map, formula_field_ids)
 
         with WriteToCppFile(path=models_dir / _header_name(model_name)) as write:
             write.pragma_once()
@@ -434,6 +449,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.include_local("static/airtable_date.hpp")
             write.include_local("static/airtable_model.hpp")
             write.include_local("static/maybe_special_or_error.hpp")
+            if transpiled_formulas:
+                write.include_local("static/runtime_array.hpp")
+                write.include_local("static/runtime_date.hpp")
+                write.include_local("static/runtime_logic.hpp")
+                write.include_local("static/runtime_math.hpp")
+                write.include_local("static/runtime_regex.hpp")
+                write.include_local("static/runtime_string.hpp")
             write.include_local("static/vec_or_value.hpp")
             write.line_empty()
             write.namespace_open()
@@ -478,6 +500,19 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.line_indented(f'write_field(fields, "{field.id}", {props[field.id]});', indent=2)
             write.line_indented("return fields;", indent=2)
             write.line_indented("}")
+            if transpiled_formulas:
+                write.line_empty()
+                write.comment("runtime formula evaluation (transpiled from the Airtable formulas)", indent=1)
+                for field in table.fields:
+                    if field.id not in transpiled_formulas:
+                        continue
+                    raw = raw_formulas.get(field.id, "")
+                    preview = sanitize_string(raw).replace("\n", " ")[:80]
+                    write.line_empty()
+                    _doc(write, f"Evaluate this formula locally: `{preview}`", indent=1)
+                    write.line_indented(f"json evaluate_{props[field.id]}() const {{")
+                    write.line_indented(f"return {transpiled_formulas[field.id]};", indent=2)
+                    write.line_indented("}")
             write.close()
             write.line_empty()
 
