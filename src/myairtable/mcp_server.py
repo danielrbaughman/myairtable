@@ -36,16 +36,16 @@ its structure. Read or jq/grep that file for the detail rather than re-running t
 )
 
 # ---------------------------------------------------------------------------
-# Public meta-API tools. Logic lives in src/schema_tools.py (shared with the
+# Public meta-API tools. Logic lives in src/myairtable/schema_tools.py (shared with the
 # `myairtable tools ...` CLI); here we register each as an MCP tool. The
 # decorator-free functions keep their names, signatures, and docstrings.
 # ---------------------------------------------------------------------------
-from src import schema_tools  # noqa: E402
+from myairtable import schema_tools  # noqa: E402
 
 for _public_tool in schema_tools.PUBLIC_TOOLS:
     mcp.tool()(_public_tool)
 
-from src.offload_middleware import ResultOffloadMiddleware, disable_output_schemas  # noqa: E402
+from myairtable.offload_middleware import ResultOffloadMiddleware, disable_output_schemas  # noqa: E402
 
 # Offload large results (any tool) to disk; the agent gets a path + schema.
 mcp.add_middleware(ResultOffloadMiddleware())

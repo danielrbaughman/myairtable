@@ -8,7 +8,7 @@ receiver `m`, and field refs flow through `V(m.Field)`. Go has NO ternary, so
 IF/IFS/SWITCH emit runtime FUNCTION calls; AND/OR/NOT/XOR emit inline IsTruthy().
 """
 
-from src.formulas.formula_transpiler import transpile_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
 
 
 class TestGoEmitter:

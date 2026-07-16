@@ -11,7 +11,7 @@ F1.12 lands the emitter core + these pin tests; the function-call arms (F8.6)
 extend this file to the full ~44-case suite.
 """
 
-from src.formulas.formula_transpiler import transpile_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
 
 
 class TestCppEmitter:

@@ -9,7 +9,7 @@ later as an ImportError in a consumer, far from the cause.
 
 import pytest
 
-from src.utils.helpers import copy_static_files, static_dir
+from myairtable.utils.helpers import copy_static_files, static_dir
 
 
 def test_static_dir_resolves_from_any_cwd(tmp_path, monkeypatch):
@@ -47,6 +47,6 @@ def test_copy_static_files_matches_repo_root_run(tmp_path, monkeypatch):
 
 def test_copy_static_files_raises_when_bundle_is_missing(tmp_path, monkeypatch):
     """A missing bundle must fail loudly rather than emit an incomplete package."""
-    monkeypatch.setattr("src.utils.helpers.STATIC_ROOT", tmp_path / "gone")
+    monkeypatch.setattr("myairtable.utils.helpers.STATIC_ROOT", tmp_path / "gone")
     with pytest.raises(FileNotFoundError):
         copy_static_files(tmp_path / "out", "python")

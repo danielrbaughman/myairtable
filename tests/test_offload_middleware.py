@@ -6,8 +6,8 @@ import json
 import pytest
 from fastmcp import Client, FastMCP
 
-from src import result_store
-from src.offload_middleware import ResultOffloadMiddleware, disable_output_schemas
+from myairtable import result_store
+from myairtable.offload_middleware import ResultOffloadMiddleware, disable_output_schemas
 
 
 @pytest.fixture

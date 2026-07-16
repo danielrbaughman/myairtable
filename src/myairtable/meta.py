@@ -560,7 +560,7 @@ class Field(Named):
         """Returns the Python type for this field."""
         if self._python_type:
             return self._python_type
-        from src.utils.type_mapper import map_python_type
+        from myairtable.utils.type_mapper import map_python_type
 
         return map_python_type(self)
 
@@ -568,7 +568,7 @@ class Field(Named):
         """Returns the TypeScript type for this field."""
         if self._typescript_type:
             return self._typescript_type
-        from src.utils.type_mapper import map_typescript_type
+        from myairtable.utils.type_mapper import map_typescript_type
 
         return map_typescript_type(self)
 
@@ -576,7 +576,7 @@ class Field(Named):
         """Returns the Zod schema for this field."""
         if self._zod_type:
             return self._zod_type
-        from src.utils.type_mapper import map_zod_type
+        from myairtable.utils.type_mapper import map_zod_type
 
         return map_zod_type(self)
 
@@ -584,7 +584,7 @@ class Field(Named):
         """Returns the Rust type for this field."""
         if self._rust_type:
             return self._rust_type
-        from src.utils.type_mapper import map_rust_type
+        from myairtable.utils.type_mapper import map_rust_type
 
         return map_rust_type(self)
 
@@ -592,7 +592,7 @@ class Field(Named):
         """Returns the Swift type for this field."""
         if self._swift_type:
             return self._swift_type
-        from src.utils.type_mapper import map_swift_type
+        from myairtable.utils.type_mapper import map_swift_type
 
         return map_swift_type(self)
 
@@ -600,7 +600,7 @@ class Field(Named):
         """Returns the Kotlin type for this field."""
         if self._kotlin_type:
             return self._kotlin_type
-        from src.utils.type_mapper import map_kotlin_type
+        from myairtable.utils.type_mapper import map_kotlin_type
 
         return map_kotlin_type(self)
 
@@ -608,7 +608,7 @@ class Field(Named):
         """Returns the Java type for this field."""
         if self._java_type:
             return self._java_type
-        from src.utils.type_mapper import map_java_type
+        from myairtable.utils.type_mapper import map_java_type
 
         return map_java_type(self)
 
@@ -616,7 +616,7 @@ class Field(Named):
         """Returns the Go type for this field."""
         if self._go_type:
             return self._go_type
-        from src.utils.type_mapper import map_go_type
+        from myairtable.utils.type_mapper import map_go_type
 
         return map_go_type(self)
 
@@ -624,7 +624,7 @@ class Field(Named):
         """Returns the C# type for this field."""
         if self._csharp_type:
             return self._csharp_type
-        from src.utils.type_mapper import map_csharp_type
+        from myairtable.utils.type_mapper import map_csharp_type
 
         return map_csharp_type(self)
 
@@ -632,7 +632,7 @@ class Field(Named):
         """Returns the C++ type for this field."""
         if self._cpp_type:
             return self._cpp_type
-        from src.utils.type_mapper import map_cpp_type
+        from myairtable.utils.type_mapper import map_cpp_type
 
         return map_cpp_type(self)
 
@@ -1179,7 +1179,7 @@ class Base(BaseModel):
         every entry equals the raw name, so output stays byte-identical.
         """
         if self._options_name_map_cache is None:
-            from src.utils.helpers import deduplicate_identifiers
+            from myairtable.utils.helpers import deduplicate_identifiers
 
             select_fields = self.select_fields()
             deduped = deduplicate_identifiers([field._raw_options_name() for field in select_fields], suffix="V")

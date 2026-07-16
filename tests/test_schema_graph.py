@@ -1,10 +1,10 @@
-"""Tests for the FieldDependencyGraph cycle-safe builder in src/schema_tools.py."""
+"""Tests for the FieldDependencyGraph cycle-safe builder in src/myairtable/schema_tools.py."""
 
 from typing import cast
 
-from src import schema_tools
-from src.meta import Base
-from src.schema_tools import FieldDependencyGraph
+from myairtable import schema_tools
+from myairtable.meta import Base
+from myairtable.schema_tools import FieldDependencyGraph
 
 
 class _FakeTable:

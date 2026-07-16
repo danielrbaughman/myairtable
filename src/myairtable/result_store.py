@@ -8,7 +8,7 @@ is returned instead: the file path, byte/record counts, the result's own
 `summary`, and a compact inferred *shape skeleton* so the agent knows the
 structure and can jq/grep the file without re-running.
 
-Shared by the MCP middleware (src/offload_middleware.py) and the CLI `--save`
+Shared by the MCP middleware (src/myairtable/offload_middleware.py) and the CLI `--save`
 flag, so both exercise the identical path.
 
 Mirrors the ../rogo-mcp `.data/` convention, adding a real schema.

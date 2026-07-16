@@ -6,7 +6,7 @@ PascalCase field refs (`this.MyField`), bare `null` for JSON-null (no NullNode),
 record id via `this.Id ?? ""`, and equality via C# value `==` + IsEqual (no .equals()).
 """
 
-from src.formulas.formula_transpiler import transpile_formula
+from myairtable.formulas.formula_transpiler import transpile_formula
 
 
 class TestCSharpEmitter:

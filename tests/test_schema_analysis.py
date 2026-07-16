@@ -1,10 +1,10 @@
-"""Tests for the base-wide analysis tools in src/schema_tools.py
+"""Tests for the base-wide analysis tools in src/myairtable/schema_tools.py
 (table_connectivity, formula_function_usage, base_health_report)."""
 
 from typing import cast
 
-from src import schema_tools
-from src.meta import Base
+from myairtable import schema_tools
+from myairtable.meta import Base
 
 
 class _Opts:
