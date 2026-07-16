@@ -12,7 +12,7 @@ Output layout (under <output>/):
     dynamic/Tables/{Table}Table.cs     — table facade (dict access; ORM added in F4)
     dynamic/Models/{Table}Model.cs     — ORM model (F4)
     dynamic/Formulas/{Table}Filters.cs — filter DSL (F7)
-    static/                            — copied from static/csharp/
+    static/                            — copied from src/myairtable/static/csharp/
     Airtable.cs                        — entry point with per-table accessor properties
 """
 

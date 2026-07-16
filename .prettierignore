@@ -10,5 +10,5 @@ coverage
 .ruff_cache
 __pycache__
 output
-static/html/template-*.html
+src/myairtable/static/html/template-*.html
 pyproject.toml

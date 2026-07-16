@@ -1,5 +1,5 @@
-// Unit-test harness for the hand-written Java static runtime (static/java/).
-// The main source set points directly at static/java so the runtime is compiled
+// Unit-test harness for the hand-written Java static runtime (src/myairtable/static/java/).
+// The main source set points directly at src/myairtable/static/java so the runtime is compiled
 // and tested in place — no symlinks, no copying. src/proofmain holds the
 // package-vs-directory compile proof (java-plan-v2 §2.3.5): a file declaring
 // `package myairtable` from a non-matching directory, mirroring the generated
@@ -27,7 +27,7 @@ repositories {
 
 sourceSets {
     main {
-        java.srcDir("../../static/java")
+        java.srcDir("../../src/myairtable/static/java")
         java.srcDir("src/proofmain")
     }
 }

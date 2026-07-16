@@ -120,7 +120,7 @@
 			}
 		},
 		{
-			"files": ["static/javascript/**/*.js", "playground.js"],
+			"files": ["src/myairtable/static/javascript/**/*.js", "playground.js"],
 			"rules": {
 				"@typescript-eslint/no-require-imports": "off",
 				"no-unused-vars": "off"

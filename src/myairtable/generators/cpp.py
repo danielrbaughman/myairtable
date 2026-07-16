@@ -18,7 +18,7 @@ Output structure:
     │   ├── formulas/   {table}_filters.hpp                     (F7)
     │   ├── models/     {table}_model.hpp                       (F4)
     │   └── tables/     {table}_table.hpp
-    ├── static/         copied verbatim from static/cpp/ (incl. vendor/)
+    ├── static/         copied verbatim from src/myairtable/static/cpp/ (incl. vendor/)
     └── airtable.hpp    entry point
 """
 

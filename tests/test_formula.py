@@ -1,15 +1,11 @@
 """Tests for the formula.py module - Airtable formula generation."""
 
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 from pyairtable import formulas as F  # noqa: N812
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "static" / "python"))
-
-from formula import (  # ty: ignore[unresolved-import]
+from myairtable.static.python.formula import (
     AND,
     ID,
     NOT,

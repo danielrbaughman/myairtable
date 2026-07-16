@@ -249,11 +249,12 @@ def deduplicate_names(names: list[str]) -> list[str]:
     return result
 
 
-# static/ is bundled data, so it is anchored to this module's location and never
-# to the caller's cwd — codegen must emit identical output from any directory.
-# src/myairtable/utils/helpers.py -> parents[3] == repo root, where static/ still
-# lives. Becomes parents[1] once static/ moves into the package (myairtable-1mcd).
-STATIC_ROOT = Path(__file__).resolve().parents[3] / "static"
+# static/ is bundled package data, so it is anchored to this module's location and
+# never to the caller's cwd — codegen must emit identical output from any
+# directory. utils/helpers.py -> parents[1] == the package root, which resolves
+# the same in a checkout (src/myairtable/static) and an install
+# (site-packages/myairtable/static).
+STATIC_ROOT = Path(__file__).resolve().parents[1] / "static"
 
 
 def static_dir(name: str) -> Path:

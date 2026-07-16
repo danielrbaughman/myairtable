@@ -1,7 +1,7 @@
-# Unit tests for the hand-written C++ static runtime at ../../static/cpp.
+# Unit tests for the hand-written C++ static runtime at ../../src/myairtable/static/cpp.
 # The runtime is header-only: this project compiles ONLY the test sources and
 # points the include path at the runtime (same in-place pattern as the C#
-# <Compile Include="../../static/csharp/**"> and Kotlin/Java srcDir harnesses).
+# <Compile Include="../../src/myairtable/static/csharp/**"> and Kotlin/Java srcDir harnesses).
 cmake_minimum_required(VERSION 3.25)
 project(cpp_static_tests CXX)
 
@@ -21,7 +21,7 @@ find_package(CURL REQUIRED)
 
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 add_executable(cpp_static_tests ${TEST_SOURCES})
-target_include_directories(cpp_static_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../static/cpp")
+target_include_directories(cpp_static_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../src/myairtable/static/cpp")
 target_link_libraries(cpp_static_tests PRIVATE Catch2::Catch2WithMain CURL::libcurl)
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)

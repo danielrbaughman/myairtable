@@ -7,7 +7,7 @@ Generates an idiomatic Java 21 source tree (flat `myairtable` package):
   │   ├── options/{Table}Options.java      — per-table select-option enums
   │   ├── types/{Table}Fields.java         — per-table field ID/name constants
   │   └── tables/{Table}Table.java         — per-table DictTable accessors
-  ├── static/                              — copied verbatim from static/java/
+  ├── static/                              — copied verbatim from src/myairtable/static/java/
   └── Airtable.java                        — top-level class + table accessors
 
 Emits the full surface: select-option enums, field-ID/name constants, ORM
