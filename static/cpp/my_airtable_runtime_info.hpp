@@ -10,4 +10,4 @@ namespace myairtable {
 /// harness smoke test to prove the generated output is wired into consumers.
 inline constexpr std::string_view kVersion = "0.1.0";
 
-}  // namespace myairtable
+} // namespace myairtable

@@ -20,8 +20,7 @@ using json = nlohmann::json;
 /// program-wide ODR collision surface (a consumer or future nlohmann release
 /// defining the same specialization would clash). These owned helpers are the
 /// supported path for optional fields.
-template <typename T>
-std::optional<T> read_field(const json& fields, const std::string& id) {
+template <typename T> std::optional<T> read_field(const json& fields, const std::string& id) {
     const auto it = fields.find(id);
     if (it == fields.end() || it->is_null()) {
         return std::nullopt;
@@ -42,4 +41,4 @@ void write_field(json& out, const std::string& id, const std::optional<T>& value
     }
 }
 
-}  // namespace myairtable
+} // namespace myairtable
