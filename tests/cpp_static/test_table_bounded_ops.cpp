@@ -51,7 +51,7 @@ TEST_CASE("orm multi-get preserves caller order", "[bounded]") {
     FakeTransport transport;
     transport.respond(200, envelope("recB", "b")).respond(200, envelope("recA", "a"));
     OrmTable<BoundedModel> table(fast_client(transport));
-    auto models = table.get(std::vector<std::string>{"recB", "recA"});
+    auto models = table.get_many(std::vector<std::string>{"recB", "recA"});
     REQUIRE(models.size() == 2);
     REQUIRE(models[0].id == "recB");
     REQUIRE(models[1].id == "recA");
@@ -60,7 +60,7 @@ TEST_CASE("orm multi-get preserves caller order", "[bounded]") {
 TEST_CASE("multi-get with empty input makes no requests", "[bounded]") {
     FakeTransport transport;
     OrmTable<BoundedModel> table(fast_client(transport));
-    REQUIRE(table.get(std::vector<std::string>{}).empty());
+    REQUIRE(table.get_many(std::vector<std::string>{}).empty());
     REQUIRE(transport.calls() == 0);
 }
 
@@ -68,9 +68,9 @@ TEST_CASE("all clean models update without any request", "[bounded]") {
     FakeTransport transport;
     transport.respond(200, envelope("rec1", "a")).respond(200, envelope("rec2", "b"));
     OrmTable<BoundedModel> table(fast_client(transport));
-    auto a = table.get("rec1");
-    auto b = table.get("rec2");
-    auto updated = table.update(std::vector<BoundedModel>{a, b});
+    auto a = table.get_one("rec1");
+    auto b = table.get_one("rec2");
+    auto updated = table.update_many(std::vector<BoundedModel>{a, b});
     REQUIRE(updated.size() == 2);
     REQUIRE(transport.calls() == 2); // the two gets, no PATCH
 }
@@ -81,10 +81,10 @@ TEST_CASE("mixed list patches only the dirty model and preserves order", "[bound
         .respond(200, envelope("rec2", "b"))
         .respond(200, R"({"records":[)" + envelope("rec2", "b2") + "]}");
     OrmTable<BoundedModel> table(fast_client(transport));
-    auto clean = table.get("rec1");
-    auto dirty = table.get("rec2");
+    auto clean = table.get_one("rec1");
+    auto dirty = table.get_one("rec2");
     dirty.name = "b2";
-    auto updated = table.update(std::vector<BoundedModel>{clean, dirty});
+    auto updated = table.update_many(std::vector<BoundedModel>{clean, dirty});
     REQUIRE(updated.size() == 2);
     REQUIRE(updated[0].id == "rec1"); // clean model in original position
     REQUIRE(updated[1].name == "b2");
@@ -96,7 +96,7 @@ TEST_CASE("update chunks past the batch limit", "[bounded]") {
     FakeTransport transport;
     transport.respond(200, envelope("seed", "s"));
     OrmTable<BoundedModel> table(fast_client(transport));
-    auto seed = table.get("seed");
+    auto seed = table.get_one("seed");
 
     std::vector<BoundedModel> models;
     json batch1 = json::array();
@@ -110,19 +110,19 @@ TEST_CASE("update chunks past the batch limit", "[bounded]") {
     }
     transport.respond(200, json{{"records", batch1}}.dump())
         .respond(200, json{{"records", batch2}}.dump());
-    auto updated = table.update(models);
+    auto updated = table.update_many(models);
     REQUIRE(updated.size() == 12);
     REQUIRE(transport.calls() == 3); // 1 get + 2 PATCH chunks
     REQUIRE(json::parse(*transport.requests()[1].body).at("records").size() == 10);
     REQUIRE(json::parse(*transport.requests()[2].body).at("records").size() == 2);
 }
 
-TEST_CASE("orm get_all follows offset, merges pages in order, terminates", "[bounded]") {
+TEST_CASE("orm get_many follows offset, merges pages in order, terminates", "[bounded]") {
     FakeTransport transport;
     transport.respond(200, R"({"records":[)" + envelope("rec1", "a") + R"(],"offset":"page2"})")
         .respond(200, R"({"records":[)" + envelope("rec2", "b") + "]}");
     OrmTable<BoundedModel> table(fast_client(transport));
-    auto models = table.get_all();
+    auto models = table.get_many();
     REQUIRE(models.size() == 2);
     REQUIRE(models[0].id == "rec1");
     REQUIRE(models[1].id == "rec2");
@@ -130,12 +130,12 @@ TEST_CASE("orm get_all follows offset, merges pages in order, terminates", "[bou
     REQUIRE(transport.requests()[1].url.find("offset=page2") != std::string::npos);
 }
 
-TEST_CASE("dict get_all follows offset and terminates", "[bounded]") {
+TEST_CASE("dict get_many follows offset and terminates", "[bounded]") {
     FakeTransport transport;
     transport.respond(200, R"({"records":[{"id":"r1","fields":{}}],"offset":"tok"})")
         .respond(200, R"({"records":[{"id":"r2","fields":{}}]})");
     DictTable table(fast_client(transport), "tblBounded");
-    REQUIRE(table.get_all().size() == 2);
+    REQUIRE(table.get_many().size() == 2);
     REQUIRE(transport.calls() == 2);
 }
 
@@ -147,6 +147,6 @@ TEST_CASE("remove chunks past the batch limit", "[bounded]") {
     for (int i = 0; i < 12; ++i) {
         ids.push_back("rec" + std::to_string(i));
     }
-    table.remove(ids);
+    table.delete_many(ids);
     REQUIRE(transport.calls() == 2); // 10 + 2
 }

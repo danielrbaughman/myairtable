@@ -220,7 +220,7 @@ Idioms:
 - **Errors** are exceptions rooted in `std::runtime_error` — `catch (const myairtable::AirtableException&)` or a specific subclass (`ApiError`, `RateLimitedError`, …).
 - **Typed ORM is the default** on each table accessor — `at.primary()` _is_ an `OrmTable<PrimaryModel>`, so `get`/`get_all`/`create`/`update`/`upsert` return typed models; `.dict()` gives raw field-bag access. Per-model fluent `save()`/`fetch()`/**`remove()`** (`delete` is a C++ keyword — the one naming divergence).
 - **Select options** are `enum class`es with generated wire serializers; **computed fields** decode into `std::optional<MaybeSpecialOrError<T>>` (read with `->value()`), lookups/rollups into `std::optional<VecOrValue<MaybeSpecialOrError<T>>>` (read with `->clean_values()`). Computed members are public but **never serialized on write** — mutating one and calling `save()` sends nothing for it (pinned by tests).
-- **Filtering**: `at.primary().get_all(AirtableQuery{.formula = PrimaryModel::F.primary_key.eq("alice@example.com")})`. Combinators are `Formulas::and_`/`or_`/`not_` (`and`/`or`/`not` are C++ alternative tokens).
+- **Filtering**: `at.primary().get_many(AirtableQuery{.formula = PrimaryModel::F.primary_key.eq("alice@example.com")})`. Combinators are `Formulas::and_`/`or_`/`not_` (`and`/`or`/`not` are C++ alternative tokens).
 - Portability note: designated-initializer-over-base relies on the C++20 P1975 defect resolution; AppleClang is the CI-gated compiler, GCC/MSVC are unverified.
 
 Generated code is formatted with [clang-format](https://clang.llvm.org/docs/ClangFormat.html) (vendored headers exempt).

@@ -159,7 +159,7 @@ TEST_CASE("dict table paginates until the offset token disappears", "[client][di
             R"({"records":[{"id":"r2","createdTime":"2024-01-15T00:00:00.000Z","fields":{"fldA":"b"}}]})");
     auto client = std::make_shared<AirtableClient>("app1", "key1", transport.fn(), 0.0, 0.0);
     DictTable table(client, "tbl1", {{"A", "fldA"}});
-    auto records = table.get_all();
+    auto records = table.get_many();
     REQUIRE(records.size() == 2);
     REQUIRE(records[0].id == "r1");
     REQUIRE(records[1].fields.get("A") == json("b")); // name→id map attached
@@ -172,7 +172,7 @@ TEST_CASE("dict table chunks creates at ten and forwards typecast", "[client][di
     auto client = std::make_shared<AirtableClient>("app1", "key1", transport.fn(), 0.0, 0.0);
     DictTable table(client, "tbl1");
     std::vector<Fields> batch(12); // 12 → two POSTs (10 + 2)
-    table.create(batch, /*typecast=*/true);
+    table.create_many(batch, /*typecast=*/true);
     REQUIRE(transport.calls() == 2);
     const json first = json::parse(*transport.requests()[0].body);
     REQUIRE(first.at("records").size() == 10);
@@ -186,6 +186,6 @@ TEST_CASE("dict table omits typecast by default", "[client][dict]") {
     transport.respond(200, R"({"records":[]})");
     auto client = std::make_shared<AirtableClient>("app1", "key1", transport.fn(), 0.0, 0.0);
     DictTable table(client, "tbl1");
-    table.create(std::vector<Fields>{Fields{}});
+    table.create_many(std::vector<Fields>{Fields{}});
     REQUIRE_FALSE(json::parse(*transport.requests()[0].body).contains("typecast"));
 }

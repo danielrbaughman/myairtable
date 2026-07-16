@@ -44,16 +44,16 @@ class DictTable {
 
     // ---- reads -----------------------------------------------------------------
 
-    Record get(const std::string& record_id) const {
+    Record get_one(const std::string& record_id) const {
         return to_record(decode(client_->get_record(table_id_, record_id)));
     }
 
-    std::vector<Record> get_all() const { return get_all(AirtableQuery{}); }
+    std::vector<Record> get_many() const { return get_many(AirtableQuery{}); }
 
     /// Fetch every page for `query` (eager offset-loop accumulation). The
     /// first page rides the client cache; continuation pages are always live
     /// (their offset tokens are transient and single-use).
-    std::vector<Record> get_all(const AirtableQuery& query) const {
+    std::vector<Record> get_many(const AirtableQuery& query) const {
         std::vector<Record> records;
         std::optional<std::string> offset;
         do {
@@ -81,11 +81,12 @@ class DictTable {
 
     // ---- creates ----------------------------------------------------------------
 
-    Record create(const Fields& fields, bool typecast = false) const {
-        return create(std::vector<Fields>{fields}, typecast).front();
+    Record create_one(const Fields& fields, bool typecast = false) const {
+        return create_many(std::vector<Fields>{fields}, typecast).front();
     }
 
-    std::vector<Record> create(const std::vector<Fields>& fields, bool typecast = false) const {
+    std::vector<Record> create_many(const std::vector<Fields>& fields,
+                                    bool typecast = false) const {
         std::vector<Record> created;
         created.reserve(fields.size());
         for (size_t start = 0; start < fields.size(); start += kBatchSize) {
@@ -105,11 +106,13 @@ class DictTable {
 
     // ---- updates -----------------------------------------------------------------
 
-    Record update(const std::string& record_id, const Fields& fields, bool typecast = false) const {
-        return update(std::vector<Update>{{record_id, fields}}, typecast).front();
+    Record update_one(const std::string& record_id, const Fields& fields,
+                      bool typecast = false) const {
+        return update_many(std::vector<Update>{{record_id, fields}}, typecast).front();
     }
 
-    std::vector<Record> update(const std::vector<Update>& updates, bool typecast = false) const {
+    std::vector<Record> update_many(const std::vector<Update>& updates,
+                                    bool typecast = false) const {
         std::vector<Record> updated;
         updated.reserve(updates.size());
         for (size_t start = 0; start < updates.size(); start += kBatchSize) {
@@ -130,11 +133,11 @@ class DictTable {
 
     // ---- deletes ------------------------------------------------------------------
 
-    void remove(const std::string& record_id) const {
+    void delete_one(const std::string& record_id) const {
         client_->delete_record(table_id_, record_id);
     }
 
-    void remove(const std::vector<std::string>& record_ids) const {
+    void delete_many(const std::vector<std::string>& record_ids) const {
         for (size_t start = 0; start < record_ids.size(); start += kBatchSize) {
             const std::vector<std::string> batch(
                 record_ids.begin() + static_cast<long>(start),

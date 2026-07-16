@@ -52,14 +52,15 @@ json last_body(const FakeTransport& transport) {
 TEST_CASE("orm create omits typecast by default", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, kOne);
-    OrmTable<CastModel>(fast_client(transport)).create(CastModel{.name = "a"});
+    OrmTable<CastModel>(fast_client(transport)).create_one(CastModel{.name = "a"});
     REQUIRE_FALSE(last_body(transport).contains("typecast"));
 }
 
 TEST_CASE("orm create emits typecast when set", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, kOne);
-    OrmTable<CastModel>(fast_client(transport)).create(CastModel{.name = "a"}, /*typecast=*/true);
+    OrmTable<CastModel>(fast_client(transport))
+        .create_one(CastModel{.name = "a"}, /*typecast=*/true);
     REQUIRE(last_body(transport).at("typecast") == true);
 }
 
@@ -67,9 +68,9 @@ TEST_CASE("orm update omits typecast by default", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, R"({"id":"rec1","fields":{"fldName":"a"}})").respond(200, kOne);
     OrmTable<CastModel> table(fast_client(transport));
-    auto m = table.get("rec1");
+    auto m = table.get_one("rec1");
     m.name = "b";
-    table.update(m);
+    table.update_one(m);
     REQUIRE_FALSE(last_body(transport).contains("typecast"));
 }
 
@@ -77,9 +78,9 @@ TEST_CASE("orm update emits typecast when set", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, R"({"id":"rec1","fields":{"fldName":"a"}})").respond(200, kOne);
     OrmTable<CastModel> table(fast_client(transport));
-    auto m = table.get("rec1");
+    auto m = table.get_one("rec1");
     m.name = "b";
-    table.update(m, /*typecast=*/true);
+    table.update_one(m, /*typecast=*/true);
     REQUIRE(last_body(transport).at("typecast") == true);
 }
 
@@ -102,9 +103,9 @@ TEST_CASE("dict create omits typecast by default and emits when set", "[typecast
     FakeTransport transport;
     transport.respond(200, kOne).respond(200, kOne);
     DictTable table(fast_client(transport), "tblCast");
-    table.create(Fields{});
+    table.create_one(Fields{});
     REQUIRE_FALSE(last_body(transport).contains("typecast"));
-    table.create(Fields{}, /*typecast=*/true);
+    table.create_one(Fields{}, /*typecast=*/true);
     REQUIRE(last_body(transport).at("typecast") == true);
 }
 
@@ -112,16 +113,16 @@ TEST_CASE("dict update omits typecast by default and emits when set", "[typecast
     FakeTransport transport;
     transport.respond(200, kOne).respond(200, kOne);
     DictTable table(fast_client(transport), "tblCast");
-    table.update("rec1", Fields{});
+    table.update_one("rec1", Fields{});
     REQUIRE_FALSE(last_body(transport).contains("typecast"));
-    table.update("rec1", Fields{}, /*typecast=*/true);
+    table.update_one("rec1", Fields{}, /*typecast=*/true);
     REQUIRE(last_body(transport).at("typecast") == true);
 }
 
 TEST_CASE("model save forwards typecast", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, R"({"id":"rec1","fields":{"fldName":"a"}})").respond(200, kOne);
-    auto m = OrmTable<CastModel>(fast_client(transport)).get("rec1");
+    auto m = OrmTable<CastModel>(fast_client(transport)).get_one("rec1");
     m.name = "b";
     m.save(/*typecast=*/true);
     REQUIRE(last_body(transport).at("typecast") == true);
@@ -130,7 +131,8 @@ TEST_CASE("model save forwards typecast", "[typecast]") {
 TEST_CASE("typecast=true always accompanies returnFieldsByFieldId", "[typecast]") {
     FakeTransport transport;
     transport.respond(200, kOne);
-    OrmTable<CastModel>(fast_client(transport)).create(CastModel{.name = "a"}, /*typecast=*/true);
+    OrmTable<CastModel>(fast_client(transport))
+        .create_one(CastModel{.name = "a"}, /*typecast=*/true);
     const auto body = last_body(transport);
     REQUIRE(body.at("typecast") == true);
     REQUIRE(body.at("returnFieldsByFieldId") == true);

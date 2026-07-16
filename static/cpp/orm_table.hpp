@@ -45,27 +45,27 @@ template <typename M> class OrmTable {
     // ---- get (read) -----------------------------------------------------------
 
     /// Fetch one record by ID.
-    M get(const std::string& record_id) const {
+    M get_one(const std::string& record_id) const {
         return decode_envelope(parse_tree(client_->get_record(table_id_, record_id)));
     }
 
     /// Fetch many records by ID (sequential — the client is blocking);
     /// preserves caller-supplied order.
-    std::vector<M> get(const std::vector<std::string>& record_ids) const {
+    std::vector<M> get_many(const std::vector<std::string>& record_ids) const {
         std::vector<M> collected;
         collected.reserve(record_ids.size());
         for (const auto& record_id : record_ids) {
-            collected.push_back(get(record_id));
+            collected.push_back(get_one(record_id));
         }
         return collected;
     }
 
     /// Fetch all records (default query).
-    std::vector<M> get_all() const { return get_all(AirtableQuery{}); }
+    std::vector<M> get_many() const { return get_many(AirtableQuery{}); }
 
     /// Fetch records matching the query. Paginates internally via the `offset`
     /// continuation token; returns the merged list in page-arrival order.
-    std::vector<M> get_all(const AirtableQuery& query) const {
+    std::vector<M> get_many(const AirtableQuery& query) const {
         std::vector<M> collected;
         std::optional<std::string> offset;
         do {
@@ -95,7 +95,7 @@ template <typename M> class OrmTable {
 
     /// Create one record from a fresh model built with a designated initializer
     /// (e.g. `PrimaryModel{.primary_key = "x"}`); only writable fields are sent.
-    M create(const M& model, bool typecast = false) const {
+    M create_one(const M& model, bool typecast = false) const {
         auto created = create_batch({model.to_create_fields()}, typecast);
         if (created.empty()) {
             throw ApiError("UNEXPECTED_RESPONSE", "create returned no records");
@@ -104,7 +104,7 @@ template <typename M> class OrmTable {
     }
 
     /// Create many records. Chunks into Airtable's batch limit (10).
-    std::vector<M> create(const std::vector<M>& models, bool typecast = false) const {
+    std::vector<M> create_many(const std::vector<M>& models, bool typecast = false) const {
         std::vector<M> collected;
         collected.reserve(models.size());
         std::vector<json> payloads;
@@ -128,8 +128,8 @@ template <typename M> class OrmTable {
 
     /// Update a single model: diffs against the model's snapshot and sends only
     /// fields that changed. A clean model is returned as-is, never PATCHed.
-    M update(const M& model, bool typecast = false) const {
-        auto updated = update(std::vector<M>{model}, typecast);
+    M update_one(const M& model, bool typecast = false) const {
+        auto updated = update_many(std::vector<M>{model}, typecast);
         if (updated.empty()) {
             throw ApiError("UNEXPECTED_RESPONSE", "update returned no records");
         }
@@ -138,7 +138,7 @@ template <typename M> class OrmTable {
 
     /// Update many models (dirty fields only). Clean models come back unchanged
     /// in their original positions.
-    std::vector<M> update(const std::vector<M>& models, bool typecast = false) const {
+    std::vector<M> update_many(const std::vector<M>& models, bool typecast = false) const {
         std::vector<std::optional<M>> results(models.size());
         std::vector<size_t> dirty_indices;
         std::vector<std::pair<std::string, json>> patches;
@@ -226,11 +226,11 @@ template <typename M> class OrmTable {
 
     // ---- delete -----------------------------------------------------------------
 
-    void remove(const std::string& record_id) const {
+    void delete_one(const std::string& record_id) const {
         client_->delete_record(table_id_, record_id);
     }
 
-    void remove(const std::vector<std::string>& record_ids) const {
+    void delete_many(const std::vector<std::string>& record_ids) const {
         for (size_t start = 0; start < record_ids.size(); start += kBatchSize) {
             const std::vector<std::string> batch(
                 record_ids.begin() + static_cast<long>(start),
@@ -242,14 +242,14 @@ template <typename M> class OrmTable {
 
     /// Delete every record matching the query (default: the whole table).
     /// Returns the number of records deleted.
-    size_t remove_all(const AirtableQuery& query = AirtableQuery{}) const {
+    size_t delete_all(const AirtableQuery& query = AirtableQuery{}) const {
         std::vector<std::string> ids;
-        for (const auto& model : get_all(query)) {
+        for (const auto& model : get_many(query)) {
             if (model.id.has_value()) {
                 ids.push_back(*model.id);
             }
         }
-        remove(ids);
+        delete_many(ids);
         return ids.size();
     }
 

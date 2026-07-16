@@ -101,14 +101,14 @@ template <typename Derived> struct AirtableModel {
     // ---- fluent CRUD (the C# ModelOps analog; templates need no class token) ----
 
     /// Persist this model's dirty fields. Requires a saved record — construct a
-    /// fresh model and pass it to the table's create(...) to insert a new row.
+    /// fresh model and pass it to the table's create_one(...) to insert a new row.
     Derived save(bool typecast = false) const {
         if (is_new()) {
             throw ApiError(
                 "UNSAVED_MODEL",
-                "Cannot save a model without an id; use the table's create(...) instead");
+                "Cannot save a model without an id; use the table's create_one(...) instead");
         }
-        return OrmTable<Derived>(require_client()).update(derived(), typecast);
+        return OrmTable<Derived>(require_client()).update_one(derived(), typecast);
     }
 
     /// Re-fetch this model from the server. Returns a fresh instance.
@@ -116,7 +116,7 @@ template <typename Derived> struct AirtableModel {
         if (is_new()) {
             throw ApiError("UNSAVED_MODEL", "Cannot fetch an unsaved model");
         }
-        return OrmTable<Derived>(require_client()).get(require_id());
+        return OrmTable<Derived>(require_client()).get_one(require_id());
     }
 
     /// Delete the record referenced by this model's id. (`delete` is a C++

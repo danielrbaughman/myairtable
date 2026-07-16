@@ -466,7 +466,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 f"ORM model for {sanitize_string(table.name)}.\n"
                 f"\n"
                 f"Create with a designated initializer — `{model_name}{{.{first_writable} = ...}}` —\n"
-                f"and pass to the table's create(). Computed members are public but never\n"
+                f"and pass to the table's create_one(). Computed members are public but never\n"
                 f"serialized on write: mutating one and calling save() sends nothing for it.",
             )
             write.struct_open(model_name, base=f"AirtableModel<{model_name}>")
@@ -574,7 +574,8 @@ def write_tables(base: Base, output_folder: Path) -> None:
             _doc(
                 write,
                 f"Table accessor for {sanitize_string(table.name)}: the typed ORM surface\n"
-                f"(get/get_all/create/update/upsert/remove over {model_name}) is the default;\n"
+                f"(get_one/get_many/create_one/create_many/update_one/update_many/upsert/\n"
+                f"delete_one/delete_many over {model_name}) is the default;\n"
                 f".dict() is the raw field-bag escape hatch.",
             )
             write.class_open(table_name, base=f"OrmTable<{model_name}>")
