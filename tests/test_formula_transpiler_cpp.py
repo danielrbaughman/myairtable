@@ -104,3 +104,119 @@ class TestCppEmitter:
 
     def test_concat_two_literals(self):
         assert self._transpile("'a' & 'b'") == 'runtime::v(std::string("a") + std::string("b"))'
+
+
+class TestCppEmitterFunctions:
+    """F8.6 arms: logic, control flow, and runtime function dispatch."""
+
+    def _transpile(self, formula: str, field_map: dict | None = None, formula_ids: set | None = None) -> str:
+        field_map = field_map or {"fld1": "my_field", "fld2": "other_field"}
+        result = transpile_formula(formula, "cpp", field_map, formula_ids or set())
+        assert result is not None
+        return result
+
+    # --- record id / booleans / logic ---
+
+    def test_record_id(self):
+        assert self._transpile("RECORD_ID()") == 'runtime::v(this->id.value_or(""))'
+
+    def test_true_false(self):
+        assert self._transpile("TRUE()") == "runtime::v(true)"
+        assert self._transpile("FALSE()") == "runtime::v(false)"
+
+    def test_blank_bare_emits_null_sentinel(self):
+        assert self._transpile("BLANK()") == "runtime::v(nullptr)"
+
+    def test_blank_with_arg_uses_is_blank(self):
+        assert self._transpile("BLANK({fld1})") == "runtime::v(runtime::is_blank(runtime::v(this->my_field)))"
+
+    def test_not(self):
+        assert self._transpile("NOT({fld1})") == "runtime::v(!runtime::is_truthy(runtime::v(this->my_field)))"
+
+    def test_and_joins_is_truthy(self):
+        assert (
+            self._transpile("AND({fld1}, {fld2})")
+            == "runtime::v(runtime::is_truthy(runtime::v(this->my_field)) && runtime::is_truthy(runtime::v(this->other_field)))"
+        )
+
+    def test_or_joins_is_truthy(self):
+        assert (
+            self._transpile("OR({fld1}, {fld2})")
+            == "runtime::v(runtime::is_truthy(runtime::v(this->my_field)) || runtime::is_truthy(runtime::v(this->other_field)))"
+        )
+
+    def test_xor(self):
+        assert (
+            self._transpile("XOR({fld1}, {fld2})")
+            == "runtime::v(runtime::is_truthy(runtime::v(this->my_field)) != runtime::is_truthy(runtime::v(this->other_field)))"
+        )
+
+    # --- control flow ---
+
+    def test_if_ternary(self):
+        assert self._transpile('IF({fld1}, "yes", "no")') == '(runtime::is_truthy(runtime::v(this->my_field)) ? runtime::v("yes") : runtime::v("no"))'
+
+    def test_if_without_else_falls_back_to_null(self):
+        assert self._transpile('IF({fld1}, "yes")') == '(runtime::is_truthy(runtime::v(this->my_field)) ? runtime::v("yes") : runtime::v(nullptr))'
+
+    def test_ifs_chains_ternaries(self):
+        assert (
+            self._transpile('IFS({fld1}, "a", {fld2}, "b")') == '(runtime::is_truthy(runtime::v(this->my_field)) ? runtime::v("a") : '
+            '(runtime::is_truthy(runtime::v(this->other_field)) ? runtime::v("b") : runtime::v(nullptr)))'
+        )
+
+    def test_switch_braced_flat_pairs(self):
+        # String patterns coerce the expr through s() (cross-shape match parity).
+        assert (
+            self._transpile('SWITCH({fld1}, "a", 1, "b", 2)')
+            == "runtime::SWITCH(runtime::v(runtime::s(runtime::v(this->my_field))), runtime::v(nullptr), "
+            '{runtime::v("a"), runtime::v(1), runtime::v("b"), runtime::v(2)})'
+        )
+
+    def test_switch_with_default(self):
+        assert (
+            self._transpile('SWITCH({fld1}, "a", 1, 99)') == "runtime::SWITCH(runtime::v(runtime::s(runtime::v(this->my_field))), runtime::v(99), "
+            '{runtime::v("a"), runtime::v(1)})'
+        )
+
+    # --- runtime function dispatch ---
+
+    def test_variadic_functions_brace_their_args(self):
+        assert self._transpile("SUM({fld1}, {fld2})") == "runtime::SUM({runtime::v(this->my_field), runtime::v(this->other_field)})"
+        assert self._transpile('CONCATENATE({fld1}, "x")') == 'runtime::CONCATENATE({runtime::v(this->my_field), runtime::v("x")})'
+        assert self._transpile("MIN(1, 2)") == "runtime::MIN({runtime::v(1), runtime::v(2)})"
+        assert self._transpile("MAX(1, 2)") == "runtime::MAX({runtime::v(1), runtime::v(2)})"
+
+    def test_fixed_arity_functions_pass_args_directly(self):
+        assert self._transpile("LEN({fld1})") == "runtime::LEN(runtime::v(this->my_field))"
+        assert self._transpile("UPPER({fld1})") == "runtime::UPPER(runtime::v(this->my_field))"
+        assert self._transpile("ROUND({fld1}, 2)") == "runtime::ROUND(runtime::v(this->my_field), runtime::v(2))"
+        assert self._transpile("ROUND({fld1})") == "runtime::ROUND(runtime::v(this->my_field))"
+
+    def test_countall_counts_flattened_args(self):
+        assert self._transpile("COUNTALL({fld1})") == "runtime::v(static_cast<int64_t>(runtime::a({runtime::v(this->my_field)}).size()))"
+
+    def test_log10_maps_to_single_arg_log(self):
+        assert self._transpile("LOG10({fld1})") == "runtime::LOG(runtime::v(this->my_field))"
+
+    def test_datetime_parse_single_arg(self):
+        assert self._transpile('DATETIME_PARSE("2024-01-15")') == 'runtime::DATETIME_PARSE(runtime::v("2024-01-15"))'
+
+    def test_date_part_functions_fall_through(self):
+        assert self._transpile("YEAR({fld1})") == "runtime::YEAR(runtime::v(this->my_field))"
+        assert self._transpile("WEEKDAY({fld1})") == "runtime::WEEKDAY(runtime::v(this->my_field))"
+
+    def test_regex_functions_fall_through(self):
+        assert self._transpile('REGEX_MATCH({fld1}, "a+")') == 'runtime::REGEX_MATCH(runtime::v(this->my_field), runtime::v("a+"))'
+
+    def test_rept_falls_through(self):
+        assert self._transpile('REPT("ab", 3)') == 'runtime::REPT(runtime::v("ab"), runtime::v(3))'
+
+    def test_never_emits_dot_qualified_runtime(self):
+        for formula in (
+            "SUM({fld1}, 1)",
+            'IF({fld1}, SUM(1, 2), CONCATENATE("a", {fld2}))',
+            'SWITCH({fld1}, "a", LEN({fld2}))',
+            "NOT(AND({fld1}, {fld2}))",
+        ):
+            assert "runtime." not in self._transpile(formula)

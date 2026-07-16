@@ -495,6 +495,17 @@ class CodeEmitter:
         "ERROR": 0,
     }
 
+    # C++ runtime functions taking std::vector<json> (brace-list at the call site).
+    _CPP_VARIADIC_FUNCTIONS: set[str] = {
+        "SUM",
+        "AVERAGE",
+        "MIN",
+        "MAX",
+        "COUNT",
+        "COUNTA",
+        "CONCATENATE",
+    }
+
     # Rust runtime functions: (required_count, default_trailing_args)
     # When fewer than required_count args are provided, append defaults
     _RUST_DEFAULT_ARGS: dict[str, tuple[int, list[str]]] = {
@@ -521,6 +532,13 @@ class CodeEmitter:
         # Swift's labeled `cases:` parameter.
         if self.language in ("swift", "kotlin", "java", "go", "csharp"):
             args = ", ".join(self.emit(arg) for arg in node.args)
+            return f"{self._rt(node.name)}({args})"
+
+        if self.language == "cpp":
+            # Variadic C++ runtime functions take std::vector<json> — brace the args.
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            if node.name in self._CPP_VARIADIC_FUNCTIONS:
+                return f"{self._rt(node.name)}({{{args}}})"
             return f"{self._rt(node.name)}({args})"
 
         # Default: runtime function call
@@ -572,6 +590,8 @@ class CodeEmitter:
             return f'{self._runtime}.V({self._self}.id != null ? {self._self}.id : "")'
         if self.language == "csharp":
             return f'{self._runtime}.V({self._self}.Id ?? "")'
+        if self.language == "cpp":
+            return f'{self._rt("v")}({self._self}->id.value_or(""))'
         if self.language == "go":
             return f"V({self._self}.ID())"
         return f"{self._self}.id"
@@ -585,6 +605,8 @@ class CodeEmitter:
             return "JsonPrimitive(true)"
         if self.language in ("java", "csharp"):
             return f"{self._runtime}.V(true)"
+        if self.language == "cpp":
+            return f"{self._rt('v')}(true)"
         return "True" if self.language == "python" else "true"
 
     def _emit_fn_false(self, node: FunctionCall) -> str:
@@ -596,6 +618,8 @@ class CodeEmitter:
             return "JsonPrimitive(false)"
         if self.language in ("java", "csharp"):
             return f"{self._runtime}.V(false)"
+        if self.language == "cpp":
+            return f"{self._rt('v')}(false)"
         return "False" if self.language == "python" else "false"
 
     def _emit_fn_blank(self, node: FunctionCall) -> str:
@@ -610,6 +634,8 @@ class CodeEmitter:
                 return "NullNode.getInstance()"
             if self.language == "go":
                 return "nil"
+            if self.language == "cpp":
+                return f"{self._rt('v')}(nullptr)"
             return "None" if self.language == "python" else "null"
         arg = self.emit(node.args[0])
         if self.language == "rust":
@@ -623,6 +649,8 @@ class CodeEmitter:
             return f"{self._runtime}.V({arg}.isNull())"
         if self.language == "csharp":
             return f"{self._runtime}.V(({arg}) == null)"
+        if self.language == "cpp":
+            return f"{self._rt('v')}({self._rt('is_blank')}({arg}))"
         if self.language == "go":
             return f"V(({arg}) == nil)"
         if self.language == "python":
@@ -641,6 +669,8 @@ class CodeEmitter:
             return f"{self._runtime}.V(!{self._runtime}.isTruthy({arg}))"
         if self.language == "csharp":
             return f"{self._runtime}.V(!{self._runtime}.IsTruthy({arg}))"
+        if self.language == "cpp":
+            return f"{self._rt('v')}(!{self._rt('is_truthy')}({arg}))"
         if self.language == "go":
             return f"!IsTruthy({arg})"
         return f"not {arg}" if self.language == "python" else f"!{arg}"
@@ -656,9 +686,14 @@ class CodeEmitter:
                 return "JsonPrimitive(true)"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V(true)"
+            if self.language == "cpp":
+                return f"{self._rt('v')}(true)"
             return "True" if self.language == "python" else "true"
         if len(parts) == 1:
             return parts[0]
+        if self.language == "cpp":
+            truthy_parts = [f"{self._rt('is_truthy')}({p})" for p in parts]
+            return f"{self._rt('v')}({' && '.join(truthy_parts)})"
         if self.language == "csharp":
             truthy_parts = [f"{self._runtime}.IsTruthy({p})" for p in parts]
             return f"{self._runtime}.V({' && '.join(truthy_parts)})"
@@ -691,9 +726,14 @@ class CodeEmitter:
                 return "JsonPrimitive(false)"
             if self.language in ("java", "csharp"):
                 return f"{self._runtime}.V(false)"
+            if self.language == "cpp":
+                return f"{self._rt('v')}(false)"
             return "False" if self.language == "python" else "false"
         if len(parts) == 1:
             return parts[0]
+        if self.language == "cpp":
+            truthy_parts = [f"{self._rt('is_truthy')}({p})" for p in parts]
+            return f"{self._rt('v')}({' || '.join(truthy_parts)})"
         if self.language == "csharp":
             truthy_parts = [f"{self._runtime}.IsTruthy({p})" for p in parts]
             return f"{self._runtime}.V({' || '.join(truthy_parts)})"
@@ -716,7 +756,7 @@ class CodeEmitter:
         return f"({op.join(parts)})"
 
     def _emit_fn_len(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to F::LEN(&arg) / AirtableRuntime.LEN(arg)
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -724,7 +764,7 @@ class CodeEmitter:
         return f"{arg}.length"
 
     def _emit_fn_str_method(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to LOWER/UPPER/TRIM in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -734,7 +774,7 @@ class CodeEmitter:
         return f"{arg}.{method}()"
 
     def _emit_fn_encode_url_component(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to ENCODE_URL_COMPONENT in the runtime
         arg = self._emit_str(node.args[0])
         if self.language == "python":
@@ -743,7 +783,7 @@ class CodeEmitter:
         return f"encodeURIComponent({arg})"
 
     def _emit_fn_int(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime INT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -751,7 +791,7 @@ class CodeEmitter:
         return f"Math.floor({arg})"
 
     def _emit_fn_abs(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime ABS
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -759,7 +799,7 @@ class CodeEmitter:
         return f"Math.abs({arg})"
 
     def _emit_fn_sqrt(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime SQRT
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -767,7 +807,7 @@ class CodeEmitter:
         return f"Math.sqrt({arg})"
 
     def _emit_fn_exp(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime EXP
         arg = self._emit_num(node.args[0])
         if self.language == "python":
@@ -777,7 +817,7 @@ class CodeEmitter:
     def _emit_fn_log10(self, node: FunctionCall) -> str | None:
         if self.language == "rust":
             return None  # Fall through to F::LOG10(&arg) — note: LOG10 not in runtime yet
-        if self.language in ("swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("swift", "kotlin", "java", "go", "csharp", "cpp"):
             # The runtime exposes LOG(v, base?); LOG10 is LOG(v) with default base 10.
             arg = self.emit(node.args[0])
             return f"{self._rt('LOG')}({arg})"
@@ -787,7 +827,7 @@ class CodeEmitter:
         return f"Math.log10({arg})"
 
     def _emit_fn_power(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime POWER
         base = self._emit_num(node.args[0])
         exp = self._emit_num(node.args[1])
@@ -796,14 +836,14 @@ class CodeEmitter:
         return f"Math.pow({base}, {exp})"
 
     def _emit_fn_mod(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime MOD
         value = self._emit_num(node.args[0])
         divisor = self._emit_num(node.args[1])
         return f"({value} % {divisor})"
 
     def _emit_fn_regex_extract(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime REGEX_EXTRACT
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -824,6 +864,8 @@ class CodeEmitter:
             return f"{self._runtime}.V({self._runtime}.isTruthy({left}) != {self._runtime}.isTruthy({right}))"
         if self.language == "csharp":
             return f"{self._runtime}.V({self._runtime}.IsTruthy({left}) != {self._runtime}.IsTruthy({right}))"
+        if self.language == "cpp":
+            return f"{self._rt('v')}({self._rt('is_truthy')}({left}) != {self._rt('is_truthy')}({right}))"
         if self.language == "go":
             return f"(IsTruthy({left}) != IsTruthy({right}))"
         if self.language == "python":
@@ -845,6 +887,8 @@ class CodeEmitter:
             if_false = "NullNode.getInstance()"
         elif self.language == "go":
             if_false = "nil"
+        elif self.language == "cpp":
+            if_false = f"{self._rt('v')}(nullptr)"
         elif self.language == "python":
             if_false = "None"
         else:
@@ -862,6 +906,8 @@ class CodeEmitter:
             return f"({self._runtime}.isTruthy({cond}) ? {if_true} : {if_false})"
         if self.language == "csharp":
             return f"({self._runtime}.IsTruthy({cond}) ? {if_true} : {if_false})"
+        if self.language == "cpp":
+            return f"({self._rt('is_truthy')}({cond}) ? {if_true} : {if_false})"
         if self.language == "python":
             return f"({if_true} if {cond} else {if_false})"
         return f"({cond} ? {if_true} : {if_false})"
@@ -901,6 +947,11 @@ class CodeEmitter:
             for cond, val in reversed(pairs):
                 result = f"({self._runtime}.IsTruthy({cond}) ? {val} : {result})"
             return result
+        if self.language == "cpp":
+            result = f"{self._rt('v')}(nullptr)"
+            for cond, val in reversed(pairs):
+                result = f"({self._rt('is_truthy')}({cond}) ? {val} : {result})"
+            return result
         fallback = "None" if self.language == "python" else "null"
         if self.language == "python":
             result = fallback
@@ -930,6 +981,8 @@ class CodeEmitter:
             fallback = "NullNode.getInstance()"
         elif self.language == "go":
             fallback = "nil"
+        elif self.language == "cpp":
+            fallback = f"{self._rt('v')}(nullptr)"
         elif self.language == "python":
             fallback = "None"
         else:
@@ -969,6 +1022,13 @@ class CodeEmitter:
                 expr = f"{rt}.V({rt}.S({self.emit(expr_node)}))"
             elif pattern_type == "number" and expr_type != "number":
                 expr = f"{rt}.V({rt}.N({self.emit(expr_node)}))"
+            else:
+                expr = self.emit(expr_node)
+        elif self.language == "cpp":
+            if pattern_type == "string" and expr_type != "string":
+                expr = f"{self._rt('v')}({self._rt('s')}({self.emit(expr_node)}))"
+            elif pattern_type == "number" and expr_type != "number":
+                expr = f"{self._rt('v')}({self._rt('n')}({self.emit(expr_node)}))"
             else:
                 expr = self.emit(expr_node)
         elif self.language == "go":
@@ -1011,6 +1071,11 @@ class CodeEmitter:
             flat = ", ".join(part for pat, val in pairs for part in (pat, val))
             suffix = f", {flat}" if flat else ""
             return f"{self._runtime}.SWITCH({expr}, {fallback}{suffix})"
+        if self.language == "cpp":
+            # C++ runtime::SWITCH(expr, default, {flatPairs}) — braced initializer_list.
+            flat = ", ".join(part for pat, val in pairs for part in (pat, val))
+            return f"{self._rt('SWITCH')}({expr}, {fallback}, {{{flat}}})"
+
         if self.language == "python":
             result = fallback
             for pattern, val in reversed(pairs):
@@ -1022,7 +1087,7 @@ class CodeEmitter:
         return f"({result})"
 
     def _emit_fn_min(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime MIN
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
@@ -1031,7 +1096,7 @@ class CodeEmitter:
         return f"Math.min(...{an})"
 
     def _emit_fn_max(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime MAX
         args = ", ".join(self.emit(arg) for arg in node.args)
         if self.language == "python":
@@ -1040,7 +1105,7 @@ class CodeEmitter:
         return f"Math.max(...{an})"
 
     def _emit_fn_sum(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "typescript", "javascript", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "typescript", "javascript", "go", "csharp", "cpp"):
             return None  # Fall through to F::SUM(&[args]) / F.SUM() / AirtableRuntime.SUM()
         args = ", ".join(self.emit(arg) for arg in node.args)
         return f"sum({self._runtime}.AN(({args},)))"
@@ -1061,6 +1126,10 @@ class CodeEmitter:
         if self.language == "csharp":
             args = ", ".join(self.emit(arg) for arg in node.args)
             return f"{self._runtime}.V({self._runtime}.A(new JsonNode?[] {{ {args} }}).Count)"
+        if self.language == "cpp":
+            args = ", ".join(self.emit(arg) for arg in node.args)
+            return f"{self._rt('v')}(static_cast<int64_t>({self._rt('a')}({{{args}}}).size()))"
+
         if self.language == "go":
             # Go has no COUNTALL runtime func; A(args...) flattens, count its length.
             args = ", ".join(self.emit(arg) for arg in node.args)
@@ -1071,7 +1140,7 @@ class CodeEmitter:
         return f"{self._runtime}.A([{args}]).length"
 
     def _emit_fn_round(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "typescript", "javascript", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "typescript", "javascript", "go", "csharp", "cpp"):
             return None  # Fall through to runtime ROUND
         val = self._emit_num(node.args[0])
         if len(node.args) > 1 and isinstance(node.args[1], NumberLiteral):
@@ -1083,7 +1152,7 @@ class CodeEmitter:
         return f"round({val}, {prec})"
 
     def _emit_fn_concatenate(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime CONCATENATE
         args = ", ".join(self.emit(arg) for arg in node.args)
         # Each argument is string-coerced as a WHOLE via S() (a multi-value field joins with ", ");
@@ -1095,7 +1164,7 @@ class CodeEmitter:
         return f'[{args}].map((_x) => {self._runtime}.S(_x)).join("")'
 
     def _emit_fn_rept(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime REPT
         text = self._emit_str(node.args[0])
         if self.language == "python":
@@ -1111,7 +1180,7 @@ class CodeEmitter:
         return f"{text}.repeat({count})"
 
     def _emit_fn_regex_match(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime REGEX_MATCH
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -1120,7 +1189,7 @@ class CodeEmitter:
         return f"new RegExp({regex}).test({text})"
 
     def _emit_fn_regex_replace(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime REGEX_REPLACE
         text = self._emit_str(node.args[0])
         regex = self._emit_str(node.args[1])
@@ -1146,8 +1215,8 @@ class CodeEmitter:
         if self.language == "rust":
             # Rust DATETIME_PARSE only takes 1 arg (ignores format string)
             return f"{self._runtime}::DATETIME_PARSE(&{self.emit(node.args[0])})"
-        if self.language in ("swift", "kotlin", "java", "go", "csharp"):
-            # Swift/Kotlin/Java/Go DATETIME_PARSE takes the value (ignores format string)
+        if self.language in ("swift", "kotlin", "java", "go", "csharp", "cpp"):
+            # Swift/Kotlin/Java/Go/C++ DATETIME_PARSE takes the value (ignores format string)
             return f"{self._rt('DATETIME_PARSE')}({self.emit(node.args[0])})"
         return f"{self._runtime}.D({self.emit(node.args[0])})"
 
@@ -1171,7 +1240,7 @@ class CodeEmitter:
     }
 
     def _emit_fn_date_part(self, node: FunctionCall) -> str | None:
-        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp"):
+        if self.language in ("rust", "swift", "kotlin", "java", "go", "csharp", "cpp"):
             return None  # Fall through to runtime YEAR/MONTH/DAY/etc.
         d = f"{self._runtime}.D({self.emit(node.args[0])})"
         if self.language != "python":
