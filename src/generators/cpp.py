@@ -75,6 +75,18 @@ _CPP_RESERVED_MODEL_MEMBERS = frozenset(
     }
 )
 
+# Airtable field class -> static DSL filter type (formula_class() keys).
+_CPP_FORMULA_CLASS_MAP = {
+    "TextField": "FormulaTextField",
+    "BooleanField": "FormulaBooleanField",
+    "DateField": "FormulaDateField",
+    "NumberField": "FormulaNumberField",
+    "AttachmentsField": "FormulaAttachmentsField",
+    "LookupField": "FormulaLookupField",
+    "SingleSelectField": "FormulaSingleSelectField",
+    "MultiSelectField": "FormulaMultiSelectField",
+}
+
 # Static formula-DSL headers excluded from the copy when formulas=False.
 _FORMULA_STATIC_FILES: list[str] = [
     "formulas.hpp",
@@ -340,6 +352,49 @@ def write_field_types(base: Base, output_folder: Path) -> None:
                 write.namespace_close()
 
 
+def write_formula_helpers(base: Base, output_folder: Path) -> None:
+    """Generate per-table `{table}_filters.hpp`, accessed via `{Table}Model::F`.
+
+    One const filter member per field typed to the appropriate Formula*Field
+    class, plus an `id` FormulaId for record-ID filters. Shape:
+    `PrimaryModel::F.primary_key.eq("x")`.
+    """
+    formulas_dir = _create_dynamic_subdir(output_folder, _DIR_FORMULAS)
+
+    for table in base.tables:
+        prefix = _table_type_prefix(table)
+        props = _field_property_map(table)
+        filters_name = f"{prefix}Filters"
+
+        with WriteToCppFile(path=formulas_dir / _header_name(filters_name)) as write:
+            write.pragma_once()
+            write.line_empty()
+            write.include_local("static/formula_attachments_field.hpp")
+            write.include_local("static/formula_boolean_field.hpp")
+            write.include_local("static/formula_date_field.hpp")
+            write.include_local("static/formula_id.hpp")
+            write.include_local("static/formula_lookup_field.hpp")
+            write.include_local("static/formula_multi_select_field.hpp")
+            write.include_local("static/formula_number_field.hpp")
+            write.include_local("static/formula_single_select_field.hpp")
+            write.include_local("static/formula_text_field.hpp")
+            write.line_empty()
+            write.namespace_open()
+            write.line_empty()
+            _doc(write, f"Formula builder for {sanitize_string(table.name)}.")
+            write.struct_open(filters_name)
+            _doc(write, "Record ID formula.", indent=1)
+            write.line_indented("FormulaId id{};")
+            write.line_empty()
+            for field in table.fields:
+                formula_class = _CPP_FORMULA_CLASS_MAP.get(field.formula_class(), "FormulaTextField")
+                _doc(write, sanitize_string(field.name), indent=1)
+                write.line_indented(f'{formula_class} {props[field.id]}{{"{field.id}"}};')
+            write.close()
+            write.line_empty()
+            write.namespace_close()
+
+
 def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime: bool = True, flatten: bool = False) -> None:
     """Generate `{table}_model.hpp` ORM aggregates.
 
@@ -349,7 +404,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
     record envelope. The `F` filter accessor (F7) and transpiled `evaluate_*`
     methods (F8) land with their features.
     """
-    del formulas, runtime, flatten  # consumed by F7 (F accessor) / F8 (evaluate methods)
+    del runtime, flatten  # consumed by F8 (evaluate methods)
     models_dir = _create_dynamic_subdir(output_folder, _DIR_MODELS)
 
     for table in base.tables:
@@ -369,6 +424,8 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.include_system("string_view")
             write.include_system("vector")
             write.line_empty()
+            if formulas:
+                write.include_local(f"dynamic/formulas/{_header_name(f'{prefix}Filters')}")
             for header in _model_option_includes(table):
                 write.include_local(header)
             write.include_local("static/airtable_attachment.hpp")
@@ -393,6 +450,10 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.struct_open(model_name, base=f"AirtableModel<{model_name}>")
             write.line_indented(f'static constexpr std::string_view kTableId = "{table.id}";')
             write.line_empty()
+            if formulas:
+                _doc(write, f"Filter builder: `{model_name}::F.field.eq(...)` -> filterByFormula.", indent=1)
+                write.line_indented(f"inline static const {prefix}Filters F{{}};")
+                write.line_empty()
             write.comment("record meta (the CRTP base holds no data)", indent=1)
             write.line_indented("std::optional<std::string> id{};")
             write.line_indented("std::optional<DateTime> created_time{};")
@@ -568,6 +629,8 @@ def generate_cpp(
 
     write_options(base, output_folder)
     write_field_types(base, output_folder)
+    if formulas:
+        write_formula_helpers(base, output_folder)
     write_models(base, output_folder, formulas=formulas, runtime=runtime, flatten=flatten)
     if wrappers:
         write_tables(base, output_folder)

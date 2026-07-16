@@ -2878,11 +2878,52 @@ class TestCppGenerator:
         # "Id" is pre-sanitized to "identifier" upstream; the base's `id` member
         # itself can never be shadowed because it is a reserved member name.
 
-    def test_model_defers_filters_and_evaluate_to_later_features(self, tmp_path: Path):
+    def test_model_defers_evaluate_to_f8(self, tmp_path: Path):
         out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
         content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
-        assert "Filters F" not in content  # F7 flips this
         assert "evaluate_" not in content  # F8 flips this
+
+    # ---- formula helpers (F7.2) ---------------------------------------------
+
+    def test_filters_struct_maps_field_classes(self, tmp_path: Path):
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Count", "fld002", "number"),
+                ("Done", "fld003", "checkbox"),
+                ("When", "fld004", "date"),
+                ("Look", "fld005", "multipleLookupValues"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "formulas" / "test_table_filters.hpp").read_text()
+        assert "struct TestTableFilters {" in content
+        assert "FormulaId id{};" in content
+        assert 'FormulaTextField primary_key{"fld001"};' in content
+        assert 'FormulaNumberField count{"fld002"};' in content
+        assert 'FormulaBooleanField done{"fld003"};' in content
+        assert 'FormulaDateField when{"fld004"};' in content
+        assert 'FormulaLookupField look{"fld005"};' in content
+
+    def test_model_exposes_static_f_accessor(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "inline static const TestTableFilters F{};" in content
+        assert '#include "dynamic/formulas/test_table_filters.hpp"' in content
+
+    def test_formulas_flag_suppresses_filters(self, tmp_path: Path):
+        from src.generators.cpp import generate_cpp
+        from src.utils.type_mapper import map_types
+
+        base = make_test_base([("Primary Key", "fld001", "singleLineText")])
+        map_types(base)
+        out = tmp_path / "cpp"
+        generate_cpp(base=base, output_folder=out, formulas=False)
+        assert not (out / "dynamic" / "formulas").exists()
+        model = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "Filters F" not in model
+        # the static DSL headers are excluded from the copy too
+        assert not (out / "static" / "formulas.hpp").exists()
 
     def test_wrappers_flag_suppresses_tables_and_entry_point(self, tmp_path: Path):
         from src.generators.cpp import generate_cpp
