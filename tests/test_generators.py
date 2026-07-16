@@ -2771,6 +2771,36 @@ class TestCppGenerator:
         content = (out / "dynamic" / "options" / "rigs_drop_point_option.hpp").read_text()
         assert 'North \\"Gate\\"' in content
 
+    # ---- field types (F3.2) --------------------------------------------------
+
+    def test_fields_constants_and_maps(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Count", "fld002", "number")], tmp_path)
+        content = (out / "dynamic" / "types" / "test_table_fields.hpp").read_text()
+        assert "struct TestTableFields {" in content
+        assert 'static constexpr std::string_view kPrimaryKeyId = "fld001";' in content
+        assert 'static constexpr std::string_view kPrimaryKeyName = "Primary Key";' in content
+        assert 'static constexpr std::string_view kCountId = "fld002";' in content
+        assert 'inline static const std::vector<std::string> kAllIds = {"fld001", "fld002"};' in content
+        assert '{"Primary Key", "fld001"},' in content  # kNameToId
+        assert '{"fld002", "Count"},' in content  # kIdToName
+        assert "static std::optional<std::string> id_by_name(const std::string& name) {" in content
+        assert "static std::optional<std::string> name_by_id(const std::string& id) {" in content
+
+    def test_views_emit_static_instances(self, tmp_path: Path):
+        base = _make_base_with_select_field("Jobs", "Status", "fld001", ["Done"])
+        out = self._generate(base, tmp_path)
+        content = (out / "dynamic" / "types" / "jobs_view.hpp").read_text()
+        assert "class JobsView {" in content
+        assert "static const JobsView GridView;" in content
+        assert 'inline const JobsView JobsView::GridView{"viw001"};' in content
+        assert "const std::string& id() const { return id_; }" in content
+
+    def test_create_fields_exclude_computed(self, tmp_path: Path):
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
+        content = (out / "dynamic" / "types" / "create_test_table_fields.hpp").read_text()
+        assert 'static constexpr std::string_view kPrimaryKeyId = "fld001";' in content
+        assert "kAutoId" not in content  # computed fields are not writable
+
 
 class TestCppWriterHelpers:
     """Pure helpers in write_to_cpp_file.py (CPP F1.4)."""
