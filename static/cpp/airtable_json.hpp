@@ -41,4 +41,13 @@ void write_field(json& out, const std::string& id, const std::optional<T>& value
     }
 }
 
+/// Write an optional member, OMITTING it when absent (value-carrier encoding —
+/// e.g. an attachment upload is `{"url": ...}` with no null metadata keys).
+template <typename T>
+void write_optional(json& out, const std::string& key, const std::optional<T>& value) {
+    if (value.has_value()) {
+        out[key] = *value;
+    }
+}
+
 } // namespace myairtable
