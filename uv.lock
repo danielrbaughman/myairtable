@@ -277,7 +277,7 @@ wheels = [
 
 [[package]]
 name = "myairtable"
-version = "0.1.0rc1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

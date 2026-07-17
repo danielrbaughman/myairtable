@@ -1,10 +1,6 @@
 [project]
 name = "myairtable"
-# Release candidate on purpose. Appending an optional param is easy to revert today,
-# but once rogo-mcp pins myairtable>=X and calls get_schema(base=...), reverting X is a
-# breaking change for rogo-mcp — and yanking from PyPI breaks resolvers rather than
-# helping. Serve all 3 real bases from the rc, then cut 0.1.0. See myairtable-8oig.
-version = "0.1.0rc1"
+version = "0.1.0"
 description = "An Airtable code generator, focused on developer experience."
 readme = "README.md"
 requires-python = ">=3.12"
