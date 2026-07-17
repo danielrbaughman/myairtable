@@ -1,0 +1,102 @@
+name: Release
+
+# Publishes to PyPI via a trusted publisher (OIDC) — no API token is stored anywhere.
+# PyPI verifies the request came from this repo, this workflow file, and the `pypi`
+# environment; the configuration on PyPI's side must match all three or it rejects the
+# upload. Renaming this file or the environment therefore breaks publishing until the
+# trusted publisher is updated to match.
+#
+# To cut a release:
+#   1. bump `version` in pyproject.toml   (rc first: 0.1.0rc1 — see myairtable-8oig)
+#   2. commit it to main
+#   3. git tag v0.1.0rc1 && git push origin v0.1.0rc1
+#
+# The tag drives everything, and `verify` refuses to publish if the tag and
+# pyproject.toml disagree — a mismatch would otherwise ship a version nobody can
+# reproduce from the tag. A PyPI version can never be reused or truly unpublished, so
+# the smoke test runs BEFORE the upload, not after. Never yank; roll forward.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and verify the artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Tag must match pyproject version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          version="$(uv run --no-project python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          echo "tag=$tag  pyproject=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag does not match pyproject.toml version $version. Bump one to match, delete the tag, and re-tag."
+            exit 1
+          fi
+
+      # The package is a code generator whose static templates live inside the wheel;
+      # Phase 0/1b bugs (paths resolved from cwd, static/ left out of the build) are
+      # invisible in the repo and only show up from an installed wheel elsewhere.
+      - name: Smoke test the built wheel outside the repo
+        run: |
+          set -e
+          uv venv /tmp/v
+          uv pip install --python /tmp/v/bin/python "$(echo dist/*.whl)[cli]"
+          cd /tmp
+          /tmp/v/bin/python - <<'PY'
+          import pathlib
+
+          import myairtable
+          from myairtable import schema_tools
+
+          pkg = pathlib.Path(myairtable.__file__).parent
+          static = pkg / "static"
+          assert static.is_dir(), f"static/ missing from the wheel: {static}"
+          assert any(static.iterdir()), "static/ is present but empty"
+          assert len(schema_tools.PUBLIC_TOOLS) == 28, f"expected 28 public tools, got {len(schema_tools.PUBLIC_TOOLS)}"
+          print("import OK:", myairtable.__file__)
+          PY
+          /tmp/v/bin/myairtable --help > /dev/null
+          echo "entry point OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    # Gates the upload on the `pypi` environment, so its protection rules (and the
+    # trusted publisher) apply. Only tags publish: a workflow_dispatch run stops at
+    # verify, which makes it a safe way to test this file without shipping anything.
+    if: startsWith(github.ref, 'refs/tags/')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/myairtable
+    permissions:
+      id-token: write # mints the OIDC token PyPI checks; the whole point of trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
