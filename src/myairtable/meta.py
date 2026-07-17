@@ -78,6 +78,21 @@ def reset_configuration() -> None:
     _DEFAULT_API_KEY = None
 
 
+def resolve_base_id(base: str = "") -> str:
+    """Resolve a base selector to a base id alone, requiring no API key.
+
+    Callers that only need to *identify* a base — cache invalidation, logging — must not
+    be forced to hold credentials to do it.
+    """
+    if base and base in _BASE_ALIASES:
+        return _BASE_ALIASES[base][0]
+
+    resolved_base_id = base or _DEFAULT_BASE_ID or os.getenv("AIRTABLE_BASE_ID")
+    if not resolved_base_id:
+        raise Exception("AIRTABLE_BASE_ID not found. Provide --base-id or set environment variable.")
+    return resolved_base_id
+
+
 def resolve_base(base: str = "", api_key: str | None = None) -> tuple[str, str]:
     """Resolve a base selector to ``(base_id, api_key)``.
 
@@ -87,9 +102,7 @@ def resolve_base(base: str = "", api_key: str | None = None) -> tuple[str, str]:
         alias_base_id, alias_api_key = _BASE_ALIASES[base]
         return alias_base_id, (api_key or alias_api_key)
 
-    resolved_base_id = base or _DEFAULT_BASE_ID or os.getenv("AIRTABLE_BASE_ID")
-    if not resolved_base_id:
-        raise Exception("AIRTABLE_BASE_ID not found. Provide --base-id or set environment variable.")
+    resolved_base_id = resolve_base_id(base)
 
     resolved_api_key = api_key or _DEFAULT_API_KEY or os.getenv("AIRTABLE_API_KEY")
     if not resolved_api_key:

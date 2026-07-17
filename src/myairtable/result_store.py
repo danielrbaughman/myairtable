@@ -172,6 +172,14 @@ def arg_slug(arguments: dict[str, Any] | None) -> str:
             parts.append(safe_filename(key))
         elif isinstance(val, (int, float)):
             parts.append(f"{safe_filename(key)}{val}")
+        elif key == "base":
+            # Qualified, because a bare base value collides with a table/field name of
+            # the same text: list_formula_fields(table_name="Equipment") and
+            # list_formula_fields(base="equipment") would otherwise share one path — the
+            # same file on a case-insensitive filesystem — and an agent re-reading that
+            # path would get a different base's data. An omitted (default) base still
+            # contributes nothing, so existing filenames are unaffected.
+            parts.append(f"base-{safe_filename(str(val))}")
         else:
             parts.append(safe_filename(str(val)))
     return "__".join(parts) if parts else "all"

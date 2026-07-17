@@ -15,37 +15,58 @@ from myairtable.formulas.formula_formatter import _count_nesting_depth
 from myairtable.formulas.formula_tokenizer import TokenType, tokenize_formula
 from myairtable.formulas.formula_transpiler import transpile_formula
 from myairtable.generators.mermaid import mermaid_base
-from myairtable.meta import Base, Field
+from myairtable.meta import Base, Field, resolve_base, resolve_base_id
 
-_base: Base | None = None
-
-
-def _get_base() -> Base:
-    """Get or lazily initialize the Base singleton."""
-    global _base
-    if _base is None:
-        _base = Base()
-    return _base
+# Cached Base per (base_id, api_key). The key includes the key deliberately: two
+# callers naming the same base with different credentials must not share a Base —
+# under transport="http" with per-request credentials that would hand caller B a
+# schema built with A's token.
+_base_cache: dict[tuple[str, str], Base] = {}
 
 
-def _find_table(name: str):
+def _get_base(base: str = "", api_key: str = "") -> Base:
+    """Get or lazily build the Base for a selector, memoized per (base_id, api_key)."""
+    base_id, resolved_key = resolve_base(base, api_key or None)
+    cache_key = (base_id, resolved_key)
+    if cache_key not in _base_cache:
+        _base_cache[cache_key] = Base(base_id, resolved_key)
+    return _base_cache[cache_key]
+
+
+def clear_base_cache(base: str = "") -> None:
+    """Drop cached schema so the next call refetches. Empty `base` clears every base.
+
+    The cache never evicts on its own, which is wrong for a long-lived server: an
+    agent that edits the base in the Airtable UI would otherwise read stale schema
+    until the process restarts. Clearing by base drops that base under every
+    credential, since staleness is a property of the base, not the token.
+    """
+    if not base:
+        _base_cache.clear()
+        return
+    base_id = resolve_base_id(base)
+    for cache_key in [k for k in _base_cache if k[0] == base_id]:
+        del _base_cache[cache_key]
+
+
+def _find_table(name: str, base: str = ""):
     """Find a table by name (case-insensitive) or ID."""
-    base = _get_base()
+    base_obj = _get_base(base)
     # Try ID first
-    table = base.table_by_id(name)
+    table = base_obj.table_by_id(name)
     if table:
         return table
     # Case-insensitive name match
     name_lower = name.lower()
-    for t in base.tables:
+    for t in base_obj.tables:
         if t.name.lower() == name_lower:
             return t
     raise ValueError(f"Table not found: {name}")
 
 
-def _find_field(table_name: str, field_name: str) -> Field:
+def _find_field(table_name: str, field_name: str, base: str = "") -> Field:
     """Find a field by table and field name/ID."""
-    table = _find_table(table_name)
+    table = _find_table(table_name, base)
     # Try ID first
     field = table.field_by_id(field_name)
     if field:
@@ -242,7 +263,7 @@ def _field_label(field: Field) -> str:
     return f"{field.table.name}.{field.name}"
 
 
-def dependency_graph_metrics(table_name: str = "", top_n: int = 20) -> dict:
+def dependency_graph_metrics(table_name: str = "", top_n: int = 20, *, base: str = "") -> dict:
     """Base-wide field dependency-graph metrics: blast radius, depth, centrality.
 
     For each field that participates in the dependency graph: fan_in (direct
@@ -259,9 +280,10 @@ def dependency_graph_metrics(table_name: str = "", top_n: int = 20) -> dict:
     Args:
         table_name: Optional table name or ID to scope the field list.
         top_n: How many entries to include in each ranking.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    graph = FieldDependencyGraph(_get_base())
-    scoped_table = _find_table(table_name) if table_name else None
+    graph = FieldDependencyGraph(_get_base(base))
+    scoped_table = _find_table(table_name, base) if table_name else None
     cycle_members = graph.cycle_members
 
     def metrics(fid: str) -> dict:
@@ -333,7 +355,7 @@ def _cardinality(field_single: bool, inverse_single: bool, has_inverse: bool) ->
     return "many-to-many"
 
 
-def table_connectivity() -> dict:
+def table_connectivity(*, base: str = "") -> dict:
     """Analyze the table link graph: connectivity, hubs, isolated and junction tables.
 
     Per table: how many link fields it has, how many distinct tables it
@@ -342,18 +364,21 @@ def table_connectivity() -> dict:
     two-link table with little else — a many-to-many join), and every
     relationship with its inferred cardinality (one-to-one / one-to-many /
     many-to-many). Quantifies what generate_schema_diagram only draws.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
 
     # Per-table aggregates
-    link_fields_by_table: dict[str, list] = {t.id: [] for t in base.tables}
-    connected: dict[str, set[str]] = {t.id: set() for t in base.tables}
-    inbound: dict[str, int] = {t.id: 0 for t in base.tables}
+    link_fields_by_table: dict[str, list] = {t.id: [] for t in base_obj.tables}
+    connected: dict[str, set[str]] = {t.id: set() for t in base_obj.tables}
+    inbound: dict[str, int] = {t.id: 0 for t in base_obj.tables}
 
     relationships: list[dict] = []
     seen: set[str] = set()
 
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.type != "multipleRecordLinks":
             continue
         linked = field.linked_table()
@@ -370,7 +395,7 @@ def table_connectivity() -> dict:
         seen.add(field.id)
         inverse = None
         if field.options and field.options.inverse_link_field_id:
-            inverse = base.field_by_id(field.options.inverse_link_field_id)
+            inverse = base_obj.field_by_id(field.options.inverse_link_field_id)
             if inverse:
                 seen.add(inverse.id)
         field_single = bool(field.options and field.options.prefers_single_record_link)
@@ -394,13 +419,13 @@ def table_connectivity() -> dict:
         return len(others) <= 2
 
     def _table_names(tids: set[str]) -> list[str]:
-        names = [base.table_by_id(tid) for tid in tids]
+        names = [base_obj.table_by_id(tid) for tid in tids]
         return sorted(t.name for t in names if t is not None)
 
     tables: list[dict[str, Any]] = []
     isolated = []
     junctions = []
-    for t in base.tables:
+    for t in base_obj.tables:
         degree = len(connected[t.id])
         entry: dict[str, Any] = {
             "name": t.name,
@@ -420,7 +445,7 @@ def table_connectivity() -> dict:
 
     return {
         "summary": {
-            "table_count": len(base.tables),
+            "table_count": len(base_obj.tables),
             "total_link_fields": sum(len(v) for v in link_fields_by_table.values()),
             "relationship_count": len(relationships),
             "isolated_count": len(isolated),
@@ -434,7 +459,7 @@ def table_connectivity() -> dict:
     }
 
 
-def formula_function_usage(table_name: str = "") -> dict:
+def formula_function_usage(table_name: str = "", *, base: str = "") -> dict:
     """Base-wide histogram of which functions formulas use, and where.
 
     For each function: total call count, how many formula fields use it, and
@@ -444,9 +469,10 @@ def formula_function_usage(table_name: str = "") -> dict:
 
     Args:
         table_name: Optional table name or ID; all tables if empty.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
-    tables = [_find_table(table_name)] if table_name else base.tables
+    base_obj = _get_base(base)
+    tables = [_find_table(table_name, base)] if table_name else base_obj.tables
 
     counts: Counter = Counter()
     fields_by_function: dict[str, list[dict]] = {}
@@ -482,7 +508,7 @@ _GOD_TABLE_FIELD_THRESHOLD = 100
 _HIGH_BLAST_RADIUS_THRESHOLD = 25
 
 
-def base_health_report() -> dict:
+def base_health_report(*, base: str = "") -> dict:
     """Information-only roll-up of everything notable about the base, in one call.
 
     Categorized findings (counts + items, no severity — the caller prioritizes),
@@ -490,8 +516,11 @@ def base_health_report() -> dict:
     dead/invalid fields, formula circular references, link asymmetry, type
     ambiguities/inconsistencies, high-blast-radius fields, isolated tables, and
     god tables.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
     categories: list[dict] = []
 
     def add(category: str, items: list, note: str | None = None) -> None:
@@ -501,20 +530,22 @@ def base_health_report() -> dict:
         categories.append(entry)
 
     # --- public meta-API signals ---
-    add("dead_fields", find_dead_fields(), "Not referenced by any formula/lookup/rollup (metadata only).")
-    add("invalid_fields", find_invalid_fields())
-    add("formula_circular_references", find_circular_references()["formula_circular_references"])
-    add("link_asymmetry", check_link_symmetry())
-    add("type_ambiguities", find_type_ambiguities())
-    add("type_inconsistencies", analyze_type_consistency())
+    # Every call below MUST thread `base`. These aggregate eight other tools, and a
+    # missed one reports another base's findings under this base's name, with no error.
+    add("dead_fields", find_dead_fields(base=base), "Not referenced by any formula/lookup/rollup (metadata only).")
+    add("invalid_fields", find_invalid_fields(base=base))
+    add("formula_circular_references", find_circular_references(base=base)["formula_circular_references"])
+    add("link_asymmetry", check_link_symmetry(base=base))
+    add("type_ambiguities", find_type_ambiguities(base=base))
+    add("type_inconsistencies", analyze_type_consistency(base=base))
 
-    metrics = dependency_graph_metrics(top_n=25)
+    metrics = dependency_graph_metrics(top_n=25, base=base)
     high_blast = [m for m in metrics["rankings"]["most_central"] if m["blast_radius"] >= _HIGH_BLAST_RADIUS_THRESHOLD]
     add("high_blast_radius_fields", high_blast, f"Fields whose change affects >= {_HIGH_BLAST_RADIUS_THRESHOLD} others.")
 
-    connectivity = table_connectivity()
+    connectivity = table_connectivity(base=base)
     add("isolated_tables", [{"table": n} for n in connectivity["isolated_tables"]], "No links in or out.")
-    god_tables = [{"table": t.name, "field_count": len(t.fields)} for t in base.tables if len(t.fields) > _GOD_TABLE_FIELD_THRESHOLD]
+    god_tables = [{"table": t.name, "field_count": len(t.fields)} for t in base_obj.tables if len(t.fields) > _GOD_TABLE_FIELD_THRESHOLD]
     add("god_tables", sorted(god_tables, key=lambda g: g["field_count"], reverse=True), f"More than {_GOD_TABLE_FIELD_THRESHOLD} fields.")
 
     return {
@@ -526,11 +557,15 @@ def base_health_report() -> dict:
     }
 
 
-def get_schema() -> dict:
-    """Return the full base schema: all tables with their fields and views."""
-    base = _get_base()
+def get_schema(*, base: str = "") -> dict:
+    """Return the full base schema: all tables with their fields and views.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     tables = []
-    for table in base.tables:
+    for table in base_obj.tables:
         fields = []
         for f in table.fields:
             field_info: dict = {"id": f.id, "name": f.name, "type": f.type}
@@ -548,14 +583,18 @@ def get_schema() -> dict:
                 "views": views,
             }
         )
-    return {"base_id": base.id, "tables": tables}
+    return {"base_id": base_obj.id, "tables": tables}
 
 
-def list_tables() -> list[dict]:
-    """List all tables with their name, field count, and primary field."""
-    base = _get_base()
+def list_tables(*, base: str = "") -> list[dict]:
+    """List all tables with their name, field count, and primary field.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     result = []
-    for table in base.tables:
+    for table in base_obj.tables:
         primary = table.field_by_id(table.primary_field_id)
         result.append(
             {
@@ -568,13 +607,14 @@ def list_tables() -> list[dict]:
     return result
 
 
-def describe_table(table_name: str) -> dict:
+def describe_table(table_name: str, *, base: str = "") -> dict:
     """Describe a table: all fields with types, descriptions, and options.
 
     Args:
         table_name: Table name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    table = _find_table(table_name)
+    table = _find_table(table_name, base)
     fields = [_field_detail(f) for f in table.fields]
     views = [{"id": v.id, "name": v.name, "type": v.type} for v in table.views]
     linked = [t.name for t in table.linked_tables()]
@@ -588,14 +628,15 @@ def describe_table(table_name: str) -> dict:
     }
 
 
-def describe_field(table_name: str, field_name: str) -> dict:
+def describe_field(table_name: str, field_name: str, *, base: str = "") -> dict:
     """Deep dive on a single field: type, options, linked table, formula, dependencies.
 
     Args:
         table_name: Table name or ID.
         field_name: Field name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    field = _find_field(table_name, field_name)
+    field = _find_field(table_name, field_name, base)
     info = _field_detail(field)
 
     # Add referenced fields
@@ -611,17 +652,18 @@ def describe_field(table_name: str, field_name: str) -> dict:
     return info
 
 
-def search_fields(query: str = "", field_type: str = "") -> list[dict]:
+def search_fields(query: str = "", field_type: str = "", *, base: str = "") -> list[dict]:
     """Search fields by name or type across all tables.
 
     Args:
         query: Substring to match against field names (case-insensitive). Leave empty to match all.
         field_type: Filter by Airtable field type (e.g. 'formula', 'multipleRecordLinks', 'singleSelect').
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
     query_lower = query.lower()
     results = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if query_lower and query_lower not in field.name.lower():
             continue
         if field_type and field.type != field_type:
@@ -630,12 +672,16 @@ def search_fields(query: str = "", field_type: str = "") -> list[dict]:
     return results
 
 
-def get_links() -> list[dict]:
-    """Get all link fields between tables, including their inverse fields."""
-    base = _get_base()
+def get_links(*, base: str = "") -> list[dict]:
+    """Get all link fields between tables, including their inverse fields.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     links = []
     seen: set[str] = set()
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.type != "multipleRecordLinks":
             continue
         if field.id in seen:
@@ -654,7 +700,7 @@ def get_links() -> list[dict]:
 
         # Find inverse
         if field.options and field.options.inverse_link_field_id:
-            inverse = base.field_by_id(field.options.inverse_link_field_id)
+            inverse = base_obj.field_by_id(field.options.inverse_link_field_id)
             if inverse:
                 link["inverse_field"] = inverse.name
                 link["inverse_field_id"] = inverse.id
@@ -665,13 +711,14 @@ def get_links() -> list[dict]:
     return links
 
 
-def get_lookups_and_rollups(table_name: str) -> list[dict]:
+def get_lookups_and_rollups(table_name: str, *, base: str = "") -> list[dict]:
     """Get all lookup and rollup fields for a table, showing what they derive from.
 
     Args:
         table_name: Table name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    table = _find_table(table_name)
+    table = _find_table(table_name, base)
     results = []
     for field in table.fields:
         if not field.is_lookup_rollup():
@@ -693,14 +740,15 @@ def get_lookups_and_rollups(table_name: str) -> list[dict]:
     return results
 
 
-def trace_field_dependencies(table_name: str, field_name: str) -> dict:
+def trace_field_dependencies(table_name: str, field_name: str, *, base: str = "") -> dict:
     """Walk the full dependency chain for a field (formulas, lookups, rollups).
 
     Args:
         table_name: Table name or ID.
         field_name: Field name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    field = _find_field(table_name, field_name)
+    field = _find_field(table_name, field_name, base)
 
     def _trace(f: Field, visited: set[str] | None = None) -> dict:
         if visited is None:
@@ -738,15 +786,16 @@ def trace_field_dependencies(table_name: str, field_name: str) -> dict:
     return _trace(field)
 
 
-def get_formula(table_name: str, field_name: str, flatten: bool = False) -> dict:
+def get_formula(table_name: str, field_name: str, flatten: bool = False, *, base: str = "") -> dict:
     """Get a formula field's expression with human-readable field names instead of IDs.
 
     Args:
         table_name: Table name or ID.
         field_name: Field name or ID.
         flatten: If True, expand nested formula references inline.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    field = _find_field(table_name, field_name)
+    field = _find_field(table_name, field_name, base)
     if not field.is_formula():
         raise ValueError(f"'{field.name}' is not a formula field (type: {field.type})")
 
@@ -771,17 +820,18 @@ def get_formula(table_name: str, field_name: str, flatten: bool = False) -> dict
 # ---------------------------------------------------------------------------
 
 
-def list_formula_fields(table_name: str = "") -> list[dict]:
+def list_formula_fields(table_name: str = "", *, base: str = "") -> list[dict]:
     """List all formula fields with their expressions and result types.
 
     Args:
         table_name: Optional table name or ID. If empty, returns formulas across all tables.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
     if table_name:
-        tables = [_find_table(table_name)]
+        tables = [_find_table(table_name, base)]
     else:
-        tables = base.tables
+        tables = base_obj.tables
     results = []
     for table in tables:
         for field in table.fields:
@@ -799,14 +849,15 @@ def list_formula_fields(table_name: str = "") -> list[dict]:
     return results
 
 
-def flatten_formula(table_name: str, field_name: str) -> dict:
+def flatten_formula(table_name: str, field_name: str, *, base: str = "") -> dict:
     """Expand nested formula references inline, showing the fully resolved expression.
 
     Args:
         table_name: Table name or ID.
         field_name: Field name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    field = _find_field(table_name, field_name)
+    field = _find_field(table_name, field_name, base)
     if not field.is_formula():
         raise ValueError(f"'{field.name}' is not a formula field (type: {field.type})")
     return {
@@ -818,11 +869,15 @@ def flatten_formula(table_name: str, field_name: str) -> dict:
     }
 
 
-def check_link_symmetry() -> list[dict]:
-    """Check all link fields for symmetry issues: missing inverses or broken inverse references."""
-    base = _get_base()
+def check_link_symmetry(*, base: str = "") -> list[dict]:
+    """Check all link fields for symmetry issues: missing inverses or broken inverse references.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     issues = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.type != "multipleRecordLinks":
             continue
         if not field.options:
@@ -862,7 +917,7 @@ def check_link_symmetry() -> list[dict]:
             )
             continue
 
-        inverse = base.field_by_id(field.options.inverse_link_field_id)
+        inverse = base_obj.field_by_id(field.options.inverse_link_field_id)
         if not inverse:
             issues.append(
                 {
@@ -887,11 +942,15 @@ def check_link_symmetry() -> list[dict]:
     return issues
 
 
-def find_invalid_fields() -> list[dict]:
-    """Find fields marked as invalid by Airtable or with broken references."""
-    base = _get_base()
+def find_invalid_fields(*, base: str = "") -> list[dict]:
+    """Find fields marked as invalid by Airtable or with broken references.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     issues = []
-    for field in base.fields():
+    for field in base_obj.fields():
         # Airtable validity flag
         if not field.is_valid():
             issues.append(
@@ -932,7 +991,7 @@ def find_invalid_fields() -> list[dict]:
         # Broken formula field references
         if field.is_formula() and field.options and field.options.referenced_field_ids:
             for ref_id in field.options.referenced_field_ids:
-                if not base.field_by_id(ref_id):
+                if not base_obj.field_by_id(ref_id):
                     issues.append(
                         {
                             "name": field.name,
@@ -950,17 +1009,18 @@ def find_invalid_fields() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def analyze_formula_complexity(table_name: str = "") -> list[dict]:
+def analyze_formula_complexity(table_name: str = "", *, base: str = "") -> list[dict]:
     """Analyze complexity of formula fields: nesting depth, function usage, field reference count.
 
     Args:
         table_name: Optional table name or ID. If empty, analyzes all tables.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
     if table_name:
-        tables = [_find_table(table_name)]
+        tables = [_find_table(table_name, base)]
     else:
-        tables = base.tables
+        tables = base_obj.tables
     results = []
     for table in tables:
         for field in table.fields:
@@ -990,6 +1050,8 @@ def transpile(
     table_name: str,
     field_name: str,
     language: Literal["typescript", "javascript", "python"] = "typescript",
+    *,
+    base: str = "",
 ) -> dict:
     """Convert an Airtable formula to Python, TypeScript, or JavaScript code.
 
@@ -997,8 +1059,9 @@ def transpile(
         table_name: Table name or ID.
         field_name: Field name or ID.
         language: Target language: 'typescript', 'javascript', or 'python'.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    field = _find_field(table_name, field_name)
+    field = _find_field(table_name, field_name, base)
     if not field.is_formula() or not field.options or not field.options.formula:
         raise ValueError(f"'{field.name}' is not a formula field or has no formula")
 
@@ -1030,17 +1093,18 @@ def transpile(
 # ---------------------------------------------------------------------------
 
 
-def reverse_dependencies(table_name: str, field_name: str) -> list[dict]:
+def reverse_dependencies(table_name: str, field_name: str, *, base: str = "") -> list[dict]:
     """Find all fields that depend on a given field (what breaks if this field changes).
 
     Args:
         table_name: Table name or ID.
         field_name: Field name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    target = _find_field(table_name, field_name)
-    base = _get_base()
+    target = _find_field(table_name, field_name, base)
+    base_obj = _get_base(base)
     dependents = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.id == target.id:
             continue
         refs = field.referenced_fields()
@@ -1059,13 +1123,17 @@ def reverse_dependencies(table_name: str, field_name: str) -> list[dict]:
     return dependents
 
 
-def find_circular_references() -> dict:
-    """Detect circular references in formula fields and link chains."""
-    base = _get_base()
+def find_circular_references(*, base: str = "") -> dict:
+    """Detect circular references in formula fields and link chains.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
 
     # Formula circular references
     formula_circles: list[dict] = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if not field.is_formula() or not field.options or not field.options.formula:
             continue
         visited: set[str] = set()
@@ -1089,7 +1157,7 @@ def find_circular_references() -> dict:
     # Link circular references (A -> B -> A)
     link_circles: list[dict] = []
     seen_pairs: set[tuple[str, str]] = set()
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.type != "multipleRecordLinks" or not field.options:
             continue
         linked_table = field.linked_table()
@@ -1120,10 +1188,13 @@ def find_circular_references() -> dict:
     }
 
 
-def generate_schema_diagram() -> str:
-    """Generate a Mermaid ER diagram showing all tables and their link relationships."""
-    base = _get_base()
-    return mermaid_base(base)
+def generate_schema_diagram(*, base: str = "") -> str:
+    """Generate a Mermaid ER diagram showing all tables and their link relationships.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    return mermaid_base(_get_base(base))
 
 
 # ---------------------------------------------------------------------------
@@ -1131,17 +1202,21 @@ def generate_schema_diagram() -> str:
 # ---------------------------------------------------------------------------
 
 
-def base_stats() -> dict:
-    """Get aggregate statistics about the base: table count, field counts by type, most connected tables."""
-    base = _get_base()
-    all_fields = base.fields()
+def base_stats(*, base: str = "") -> dict:
+    """Get aggregate statistics about the base: table count, field counts by type, most connected tables.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
+    all_fields = base_obj.fields()
 
     # Field type distribution
     type_counts: dict[str, int] = Counter(f.type for f in all_fields)
 
     # Per-table stats
     table_stats = []
-    for table in base.tables:
+    for table in base_obj.tables:
         link_count = sum(1 for f in table.fields if f.type == "multipleRecordLinks")
         formula_count = sum(1 for f in table.fields if f.is_formula())
         computed_count = sum(1 for f in table.fields if f.is_computed())
@@ -1158,7 +1233,7 @@ def base_stats() -> dict:
     table_stats.sort(key=lambda x: x["field_count"], reverse=True)
 
     return {
-        "table_count": len(base.tables),
+        "table_count": len(base_obj.tables),
         "total_fields": len(all_fields),
         "field_type_distribution": dict(sorted(type_counts.items(), key=lambda x: -x[1])),
         "formula_field_count": sum(1 for f in all_fields if f.is_formula()),
@@ -1168,13 +1243,17 @@ def base_stats() -> dict:
     }
 
 
-def find_dead_fields() -> list[dict]:
-    """Find fields that are not referenced by any formula, lookup, or rollup."""
-    base = _get_base()
+def find_dead_fields(*, base: str = "") -> list[dict]:
+    """Find fields that are not referenced by any formula, lookup, or rollup.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
 
     # Build set of all referenced field IDs
     referenced_ids: set[str] = set()
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.options and field.options.referenced_field_ids:
             referenced_ids.update(field.options.referenced_field_ids)
         if field.options and field.options.field_id_in_linked_table:
@@ -1188,7 +1267,7 @@ def find_dead_fields() -> list[dict]:
 
     # Find unreferenced non-computed fields (computed fields are expected to be leaf consumers)
     dead = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if field.id in referenced_ids:
             continue
         if field.is_computed():
@@ -1206,15 +1285,16 @@ def find_dead_fields() -> list[dict]:
     return dead
 
 
-def compare_tables(table_a: str, table_b: str) -> dict:
+def compare_tables(table_a: str, table_b: str, *, base: str = "") -> dict:
     """Compare field structures between two tables, showing shared and unique fields.
 
     Args:
         table_a: First table name or ID.
         table_b: Second table name or ID.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    ta = _find_table(table_a)
-    tb = _find_table(table_b)
+    ta = _find_table(table_a, base)
+    tb = _find_table(table_b, base)
 
     fields_a = {f.name.lower(): f for f in ta.fields}
     fields_b = {f.name.lower(): f for f in tb.fields}
@@ -1245,17 +1325,18 @@ def compare_tables(table_a: str, table_b: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def get_select_options(table_name: str = "") -> dict:
+def get_select_options(table_name: str = "", *, base: str = "") -> dict:
     """Get all select field options across tables. Shows option values and finds duplicates.
 
     Args:
         table_name: Optional table name or ID. If empty, returns options across all tables.
+        base: Registered base alias or Airtable base id; empty uses the default base.
     """
-    base = _get_base()
+    base_obj = _get_base(base)
     if table_name:
-        select_fields = [f for f in _find_table(table_name).fields if f.select_options()]
+        select_fields = [f for f in _find_table(table_name, base).fields if f.select_options()]
     else:
-        select_fields = base.select_fields()
+        select_fields = base_obj.select_fields()
 
     # Collect all options
     results = []
@@ -1284,11 +1365,15 @@ def get_select_options(table_name: str = "") -> dict:
     }
 
 
-def analyze_type_consistency() -> list[dict]:
-    """Find calculated fields where the result type may not match expectations."""
-    base = _get_base()
+def analyze_type_consistency(*, base: str = "") -> list[dict]:
+    """Find calculated fields where the result type may not match expectations.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     issues = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if not field.is_calculated():
             continue
         result_type = field.result_type()
@@ -1328,11 +1413,15 @@ def analyze_type_consistency() -> list[dict]:
     return issues
 
 
-def find_type_ambiguities() -> list[dict]:
-    """Find computed fields with ambiguous or unknown result types."""
-    base = _get_base()
+def find_type_ambiguities(*, base: str = "") -> list[dict]:
+    """Find computed fields with ambiguous or unknown result types.
+
+    Args:
+        base: Registered base alias or Airtable base id; empty uses the default base.
+    """
+    base_obj = _get_base(base)
     ambiguous = []
-    for field in base.fields():
+    for field in base_obj.fields():
         if not field.is_calculated():
             continue
         result_type = field.result_type()
