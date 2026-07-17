@@ -1,9 +1,9 @@
 """Public-API schema introspection & analysis tools.
 
-The logic behind myAirtable's public MCP tools and their `myairtable tools ...`
+The logic behind myAirtable's public schema tools and their `myairtable tools ...`
 CLI mirrors. Pure functions over the public Airtable meta API (src.meta.Base) —
-no MCP/FastMCP dependency, so both the MCP server (mcp_server.py) and the CLI
-(src/myairtable/schema_tools_cli.py) import and register them without booting each other.
+no MCP/FastMCP dependency, so the CLI (src/myairtable/schema_tools_cli.py) and the
+rogo-mcp server both import and register them without pulling in each other's deps.
 """
 
 from __future__ import annotations

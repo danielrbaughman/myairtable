@@ -1,10 +1,9 @@
 """The public meta-API tools are mirrored as `myairtable tools <name>` commands.
 
 Registration completeness + adapter behavior (monkeypatched schema_tools, no
-network) + error path + MCP parity.
+network) + error path.
 """
 
-import asyncio
 import json
 
 from typer.testing import CliRunner
@@ -57,16 +56,3 @@ def test_public_command_error_path(monkeypatch):
     result = runner.invoke(main.app, ["tools", "describe-table", "Nope"])
     assert result.exit_code == 1
     assert "Table not found" in result.stderr
-
-
-def test_mcp_still_exposes_all_tools():
-    from myairtable import mcp_server
-
-    async def names():
-        return sorted(t.name for t in await mcp_server.mcp.list_tools())
-
-    all_names = set(asyncio.run(names()))
-    # the public tools are the whole surface — the internal-API tools are gone
-    assert {fn.__name__ for fn in schema_tools.PUBLIC_TOOLS} <= all_names
-    assert not ({"get_view", "list_automations"} & all_names)
-    assert len(all_names) == len(schema_tools.PUBLIC_TOOLS)

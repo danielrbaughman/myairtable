@@ -1,14 +1,21 @@
-"""Golden snapshot of the MCP tool schema FastMCP emits for all 28 public tools.
+"""Golden snapshot of the public tool contract for all 28 tools.
 
-This schema — names, params, types, defaults, required-ness, descriptions — IS the artifact
-agents and PyPI consumers bind to. Nothing else in the suite pins it: the tools are
-registered by iterating PUBLIC_TOOLS, so a change to any signature or docstring silently
-changes the public contract.
+The 28 functions in PUBLIC_TOOLS are the artifact PyPI consumers bind to, and
+that rogo-mcp registers as MCP tools (via functools.wraps, so their signatures
+and docstrings become the tool schema and description agents read). Nothing else
+in the suite pins the whole surface at once: the tools are consumed by iterating
+PUBLIC_TOOLS, so a change to any signature or docstring silently changes the
+public contract.
 
-It makes a sweeping edit (28 docstrings) reviewable as one diff, and catches the specific
-regressions that are invisible in a signature audit: a `base` that became required, a
-default that drifted from "" to None (which renders as anyOf:[string,null] and degrades
-agent tool-calling), or a tool dropped from the roll-up.
+This snapshots each tool's name, parameters (kind/default/annotation), and
+docstring. It makes a sweeping edit (e.g. 28 docstrings) reviewable as one diff
+and catches the regressions a spot check misses: a `base` that became required
+or positional, a default that drifted from "" to None, a param renamed, or a
+docstring mangled.
+
+The snapshot is derived by introspection, not FastMCP — myairtable no longer
+ships an MCP server (the tools moved to rogo-mcp), but the contract is exactly
+the function signature + docstring.
 
 Regenerate after an intentional change:
 
@@ -17,9 +24,11 @@ Regenerate after an intentional change:
 
 from __future__ import annotations
 
-import asyncio
+import inspect
 import json
 from pathlib import Path
+
+from myairtable import schema_tools
 
 GOLDEN = Path(__file__).parent / "data" / "tool_schema_golden.json"
 
@@ -29,32 +38,32 @@ REGEN = "uv run python -m tests.test_tool_schema_golden"
 
 
 def _snapshot() -> dict:
-    """The tool schema exactly as an MCP client sees it, normalized for stable diffing."""
-    from myairtable.mcp_server import mcp
-
-    async def _collect():
-        return await mcp.list_tools()
-
-    tools = [t.to_mcp_tool() for t in asyncio.run(_collect())]
-    return {
-        "tools": {
-            t.name: {
-                "description": t.description,
-                "parameters": t.inputSchema,
+    """Each public tool's name, parameters, and docstring — the bound contract."""
+    tools = {}
+    for fn in schema_tools.PUBLIC_TOOLS:
+        sig = inspect.signature(fn)
+        params = {
+            name: {
+                "kind": p.kind.name,
+                "default": None if p.default is inspect.Parameter.empty else repr(p.default),
+                # schema_tools uses `from __future__ import annotations`, so these
+                # are already strings (e.g. "str", 'Literal["typescript", ...]').
+                "annotation": None if p.annotation is inspect.Parameter.empty else str(p.annotation),
             }
-            for t in sorted(tools, key=lambda t: t.name)
+            for name, p in sig.parameters.items()
         }
-    }
+        tools[fn.__name__] = {"doc": inspect.getdoc(fn), "params": params}
+    return {"tools": dict(sorted(tools.items()))}
 
 
-def test_tool_schema_matches_golden():
+def test_tool_contract_matches_golden():
     actual = _snapshot()
     assert GOLDEN.exists(), f"missing golden file; regenerate with: {REGEN}"
     expected = json.loads(GOLDEN.read_text())
 
     if actual != expected:
         changed = sorted(name for name in set(actual["tools"]) | set(expected["tools"]) if actual["tools"].get(name) != expected["tools"].get(name))
-        raise AssertionError("The public MCP tool schema changed for: " + ", ".join(changed) + f"\nIf intentional, regenerate: {REGEN}")
+        raise AssertionError("The public tool contract changed for: " + ", ".join(changed) + f"\nIf intentional, regenerate: {REGEN}")
 
 
 def test_golden_pins_the_multi_base_contract():
@@ -62,26 +71,24 @@ def test_golden_pins_the_multi_base_contract():
 
     A regenerated snapshot happily records a broken contract; these assertions do not.
     """
-    snapshot = _snapshot()
-    tools = snapshot["tools"]
+    tools = _snapshot()["tools"]
     assert len(tools) == 28, f"expected 28 public tools, found {len(tools)}"
 
     for name, tool in tools.items():
-        params = tool["parameters"]
-        base = params["properties"].get("base")
-        assert base is not None, f"{name}: no base param in the emitted schema"
-        assert base == {"type": "string", "default": ""}, f"{name}: base renders as {base}, want a plain optional string"
-        assert "base" not in params.get("required", []), f"{name}: base became required"
-        assert tool["description"].count(BASE_DOC) == 1, f"{name}: expected exactly one base doc line"
+        base = tool["params"].get("base")
+        assert base is not None, f"{name}: no base param"
+        assert base["kind"] == "KEYWORD_ONLY", f"{name}: base is {base['kind']}, not keyword-only"
+        assert base["default"] == "''", f"{name}: base default is {base['default']}, want an empty string"
+        assert base["annotation"] == "str", f"{name}: base annotation is {base['annotation']}, want str"
+        assert (tool["doc"] or "").count(BASE_DOC) == 1, f"{name}: expected exactly one base doc line"
 
 
 def test_summary_lines_stay_untouched():
     """Tool selection ranks primarily on the summary line; the base plumbing must not touch it."""
     for name, tool in _snapshot()["tools"].items():
-        summary = tool["description"].split("\n", 1)[0]
+        summary = (tool["doc"] or "").split("\n", 1)[0]
         assert "Registered base alias" not in summary, f"{name}: base doc leaked into the summary line"
         assert summary.strip(), f"{name}: empty summary line"
-        # The base doc belongs under Args:, which never appears on line one.
         assert not summary.startswith("Args:"), f"{name}: summary line is missing"
 
 

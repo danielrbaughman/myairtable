@@ -1,15 +1,15 @@
 """Offload large tool results to disk and return a compact envelope.
 
-Several MCP tools return large payloads (whole-base scans, full schema dumps).
-Returning them inline bloats the agent's context with data it usually wants to
+Several public tools return large payloads (whole-base scans, full schema dumps).
+Returning them inline bloats the caller's context with data it usually wants to
 *query*, not read whole. When a serialized result exceeds the inline limit, the
 full result is written to a gitignored `.data/tools/` dir and a small envelope
 is returned instead: the file path, byte/record counts, the result's own
-`summary`, and a compact inferred *shape skeleton* so the agent knows the
+`summary`, and a compact inferred *shape skeleton* so the caller knows the
 structure and can jq/grep the file without re-running.
 
-Shared by the MCP middleware (src/myairtable/offload_middleware.py) and the CLI `--save`
-flag, so both exercise the identical path.
+Backs the CLI `tools --save` flag. (The MCP integration moved to ../rogo-mcp,
+which has its own delivery; see myairtable-vmj4.)
 
 Mirrors the ../rogo-mcp `.data/` convention, adding a real schema.
 """
