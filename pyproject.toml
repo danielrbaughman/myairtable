@@ -50,12 +50,6 @@ cli = [
 	"pyairtable>=3.2.0",
 	"dotenv>=0.9.9",
 ]
-# Transitional: the MCP server moves to ../rogo-mcp in myairtable-vmj4, and this
-# extra goes with it.
-mcp = [
-	"fastmcp>=3.2.0",
-	"dotenv>=0.9.9",
-]
 
 [project.urls]
 Homepage = "https://github.com/danielrbaughman/myairtable"
@@ -118,5 +112,5 @@ dev = [
 	"ruff>=0.15.18",
 	"ty>=0.0.51",
 	"dateparser>=1.2.2",
-	"myairtable[cli,mcp]",
+	"myairtable[cli]",
 ]
