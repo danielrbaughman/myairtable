@@ -78,6 +78,26 @@ def test_arg_slug():
     assert result_store.arg_slug({"include_config": False}) == "all"
 
 
+def test_arg_slug_keeps_bases_apart():
+    """A base selector must never share a path with a same-named table.
+
+    Both of these are real: the equipment base contains a table called "Equipment", and
+    on a case-insensitive filesystem an unqualified slug makes them one file — so an
+    agent re-reading the path it was handed would silently get the other base's data.
+    """
+    table = result_store.arg_slug({"table_name": "Equipment"})
+    whole_base = result_store.arg_slug({"base": "equipment"})
+    assert table == "Equipment"
+    assert whole_base == "base-equipment"
+    assert table.lower() != whole_base.lower(), "collides on a case-insensitive filesystem"
+
+    # An omitted base leaves existing paths exactly as they were.
+    assert result_store.arg_slug({"table_name": "Jobs", "base": ""}) == "Jobs"
+    # Distinct bases stay distinct, and base composes with other args.
+    assert result_store.arg_slug({"base": "crm"}) != result_store.arg_slug({"base": "equipment"})
+    assert result_store.arg_slug({"table_name": "Jobs", "base": "crm"}) == "base-crm__Jobs"
+
+
 def test_record_count():
     assert result_store.record_count({"summary": {}, "fields": [1, 2, 3]}) == 3
     assert result_store.record_count([1, 2]) == 2

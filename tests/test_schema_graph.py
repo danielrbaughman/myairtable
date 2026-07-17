@@ -90,8 +90,8 @@ def test_cycle_detection_is_safe():
 
 
 def test_dependency_graph_metrics(monkeypatch):
-    base = _FakeBase()
-    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, base))
+    _graph_base = _FakeBase()
+    monkeypatch.setattr(schema_tools, "_get_base", lambda base="", api_key="": cast(Base, _graph_base))
 
     result = schema_tools.dependency_graph_metrics()
     assert result["summary"]["fields_in_graph"] == 6  # all participate

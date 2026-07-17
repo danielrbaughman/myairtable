@@ -88,7 +88,7 @@ _CONN_BASE = _ConnBase()  # module-level so _Fld.linked_table can resolve
 
 
 def test_table_connectivity(monkeypatch):
-    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, _CONN_BASE))
+    monkeypatch.setattr(schema_tools, "_get_base", lambda base="", api_key="": cast(Base, _CONN_BASE))
 
     result = schema_tools.table_connectivity()
     s = result["summary"]
@@ -154,7 +154,7 @@ class _FormulaBase:
 
 
 def test_formula_function_usage(monkeypatch):
-    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, _FormulaBase()))
+    monkeypatch.setattr(schema_tools, "_get_base", lambda base="", api_key="": cast(Base, _FormulaBase()))
 
     result = schema_tools.formula_function_usage()
     assert result["summary"]["formula_fields"] == 2  # plain field excluded
@@ -168,27 +168,29 @@ def test_formula_function_usage(monkeypatch):
 
 def _stub_public_finders(monkeypatch):
     """Make base_health_report's public aggregations return small canned data."""
-    monkeypatch.setattr(schema_tools, "find_dead_fields", lambda: [{"name": "X"}])
-    monkeypatch.setattr(schema_tools, "find_invalid_fields", lambda: [])
+    monkeypatch.setattr(schema_tools, "find_dead_fields", lambda *, base="": [{"name": "X"}])
+    monkeypatch.setattr(schema_tools, "find_invalid_fields", lambda *, base="": [])
     monkeypatch.setattr(
-        schema_tools, "find_circular_references", lambda: {"formula_circular_references": [{"f": 1}], "bidirectional_link_pairs": [1, 2]}
+        schema_tools, "find_circular_references", lambda *, base="": {"formula_circular_references": [{"f": 1}], "bidirectional_link_pairs": [1, 2]}
     )
-    monkeypatch.setattr(schema_tools, "check_link_symmetry", lambda: [{"issue": 1}])
-    monkeypatch.setattr(schema_tools, "find_type_ambiguities", lambda: [])
-    monkeypatch.setattr(schema_tools, "analyze_type_consistency", lambda: [])
+    monkeypatch.setattr(schema_tools, "check_link_symmetry", lambda *, base="": [{"issue": 1}])
+    monkeypatch.setattr(schema_tools, "find_type_ambiguities", lambda *, base="": [])
+    monkeypatch.setattr(schema_tools, "analyze_type_consistency", lambda *, base="": [])
     monkeypatch.setattr(
         schema_tools,
         "dependency_graph_metrics",
-        lambda top_n=25: {"rankings": {"most_central": [{"field": "T.A", "blast_radius": 99}, {"field": "T.B", "blast_radius": 3}]}},
+        lambda top_n=25, *, base="": {"rankings": {"most_central": [{"field": "T.A", "blast_radius": 99}, {"field": "T.B", "blast_radius": 3}]}},
     )
-    monkeypatch.setattr(schema_tools, "table_connectivity", lambda: {"isolated_tables": ["Lonely"]})
+    monkeypatch.setattr(schema_tools, "table_connectivity", lambda *, base="": {"isolated_tables": ["Lonely"]})
 
     class _T:
         def __init__(self, name, n):
             self.name = name
             self.fields = list(range(n))
 
-    monkeypatch.setattr(schema_tools, "_get_base", lambda: cast(Base, type("B", (), {"tables": [_T("Big", 150), _T("Small", 5)]})()))
+    monkeypatch.setattr(
+        schema_tools, "_get_base", lambda base="", api_key="": cast(Base, type("B", (), {"tables": [_T("Big", 150), _T("Small", 5)]})())
+    )
 
 
 def test_base_health_report_public_only(monkeypatch):

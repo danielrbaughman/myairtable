@@ -1,0 +1,495 @@
+{
+  "tools": {
+    "analyze_formula_complexity": {
+      "description": "Analyze complexity of formula fields: nesting depth, function usage, field reference count.\n\nArgs:\n    table_name: Optional table name or ID. If empty, analyzes all tables.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "analyze_type_consistency": {
+      "description": "Find calculated fields where the result type may not match expectations.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "base_health_report": {
+      "description": "Information-only roll-up of everything notable about the base, in one call.\n\nCategorized findings (counts + items, no severity \u2014 the caller prioritizes),\naggregating the public analysis tools plus the graph signals:\ndead/invalid fields, formula circular references, link asymmetry, type\nambiguities/inconsistencies, high-blast-radius fields, isolated tables, and\ngod tables.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "base_stats": {
+      "description": "Get aggregate statistics about the base: table count, field counts by type, most connected tables.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "check_link_symmetry": {
+      "description": "Check all link fields for symmetry issues: missing inverses or broken inverse references.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "compare_tables": {
+      "description": "Compare field structures between two tables, showing shared and unique fields.\n\nArgs:\n    table_a: First table name or ID.\n    table_b: Second table name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_a": {
+            "type": "string"
+          },
+          "table_b": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_a",
+          "table_b"
+        ],
+        "type": "object"
+      }
+    },
+    "dependency_graph_metrics": {
+      "description": "Base-wide field dependency-graph metrics: blast radius, depth, centrality.\n\nFor each field that participates in the dependency graph: fan_in (direct\ndependents), fan_out (direct dependencies), blast_radius (transitive\ndependents \u2014 everything that breaks if it changes), dependency_depth\n(longest chain down to raw inputs), and in_cycle. Plus base-level rankings:\nthe most central fields (largest blast radius), the deepest dependency\nchains, and the widest fan-out formulas.\n\nEdges span tables (lookups/rollups reach into linked tables), so blast\nradius is cross-table. Optionally scope the per-field list to one table\n(rankings still consider the whole base).\n\nArgs:\n    table_name: Optional table name or ID to scope the field list.\n    top_n: How many entries to include in each ranking.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "default": "",
+            "type": "string"
+          },
+          "top_n": {
+            "default": 20,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "describe_field": {
+      "description": "Deep dive on a single field: type, options, linked table, formula, dependencies.\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    },
+    "describe_table": {
+      "description": "Describe a table: all fields with types, descriptions, and options.\n\nArgs:\n    table_name: Table name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name"
+        ],
+        "type": "object"
+      }
+    },
+    "find_circular_references": {
+      "description": "Detect circular references in formula fields and link chains.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "find_dead_fields": {
+      "description": "Find fields that are not referenced by any formula, lookup, or rollup.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "find_invalid_fields": {
+      "description": "Find fields marked as invalid by Airtable or with broken references.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "find_type_ambiguities": {
+      "description": "Find computed fields with ambiguous or unknown result types.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "flatten_formula": {
+      "description": "Expand nested formula references inline, showing the fully resolved expression.\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    },
+    "formula_function_usage": {
+      "description": "Base-wide histogram of which functions formulas use, and where.\n\nFor each function: total call count, how many formula fields use it, and\nthe fields. Reveals the formula vocabulary, rare/risky functions, and\ntranspile-migration surface. analyze_formula_complexity gives per-field\ndetail; this is the aggregate.\n\nArgs:\n    table_name: Optional table name or ID; all tables if empty.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "generate_schema_diagram": {
+      "description": "Generate a Mermaid ER diagram showing all tables and their link relationships.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "get_formula": {
+      "description": "Get a formula field's expression with human-readable field names instead of IDs.\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    flatten: If True, expand nested formula references inline.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "flatten": {
+            "default": false,
+            "type": "boolean"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    },
+    "get_links": {
+      "description": "Get all link fields between tables, including their inverse fields.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "get_lookups_and_rollups": {
+      "description": "Get all lookup and rollup fields for a table, showing what they derive from.\n\nArgs:\n    table_name: Table name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name"
+        ],
+        "type": "object"
+      }
+    },
+    "get_schema": {
+      "description": "Return the full base schema: all tables with their fields and views.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "get_select_options": {
+      "description": "Get all select field options across tables. Shows option values and finds duplicates.\n\nArgs:\n    table_name: Optional table name or ID. If empty, returns options across all tables.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "list_formula_fields": {
+      "description": "List all formula fields with their expressions and result types.\n\nArgs:\n    table_name: Optional table name or ID. If empty, returns formulas across all tables.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "table_name": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "list_tables": {
+      "description": "List all tables with their name, field count, and primary field.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "reverse_dependencies": {
+      "description": "Find all fields that depend on a given field (what breaks if this field changes).\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    },
+    "search_fields": {
+      "description": "Search fields by name or type across all tables.\n\nArgs:\n    query: Substring to match against field names (case-insensitive). Leave empty to match all.\n    field_type: Filter by Airtable field type (e.g. 'formula', 'multipleRecordLinks', 'singleSelect').\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_type": {
+            "default": "",
+            "type": "string"
+          },
+          "query": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "table_connectivity": {
+      "description": "Analyze the table link graph: connectivity, hubs, isolated and junction tables.\n\nPer table: how many link fields it has, how many distinct tables it\nconnects to (degree), and inbound link count. Base-level: hub tables (most\nconnected), isolated tables (no links in or out), junction tables (a\ntwo-link table with little else \u2014 a many-to-many join), and every\nrelationship with its inferred cardinality (one-to-one / one-to-many /\nmany-to-many). Quantifies what generate_schema_diagram only draws.\n\nArgs:\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "trace_field_dependencies": {
+      "description": "Walk the full dependency chain for a field (formulas, lookups, rollups).\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    },
+    "transpile": {
+      "description": "Convert an Airtable formula to Python, TypeScript, or JavaScript code.\n\nArgs:\n    table_name: Table name or ID.\n    field_name: Field name or ID.\n    language: Target language: 'typescript', 'javascript', or 'python'.\n    base: Registered base alias or Airtable base id; empty uses the default base.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "language": {
+            "default": "typescript",
+            "enum": [
+              "typescript",
+              "javascript",
+              "python"
+            ],
+            "type": "string"
+          },
+          "table_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "field_name"
+        ],
+        "type": "object"
+      }
+    }
+  }
+}

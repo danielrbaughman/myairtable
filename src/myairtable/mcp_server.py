@@ -11,7 +11,7 @@ mcp = FastMCP(
     instructions="""\
 Read-only Airtable schema introspection and analysis tools.
 
-Provides 24 tools for exploring an Airtable base without modifying it:
+Provides 28 tools for exploring an Airtable base without modifying it:
 
 - **Schema browsing**: get_schema, list_tables, describe_table, describe_field, search_fields
 - **Relationships**: get_links, get_lookups_and_rollups, check_link_symmetry
@@ -24,6 +24,12 @@ Provides 24 tools for exploring an Airtable base without modifying it:
 - **Visualization**: generate_schema_diagram (Mermaid ER diagram)
 
 Tables and fields can be referenced by name (case-insensitive) or Airtable ID.
+
+MULTI-BASE. This server can serve several Airtable bases. Every tool takes an optional
+`base`: a registered alias (the readable name — prefer it) or a raw Airtable base id.
+Omit it and the tool reads the configured default base, which is the right choice for
+single-base setups. A tool call never spans bases: pass the same `base` to each call in
+a chain, and note that ids from one base are meaningless in another.
 
 Every tool reads Airtable's official public meta API — nothing here writes, and nothing
 here depends on unofficial endpoints.
