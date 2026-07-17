@@ -63,11 +63,32 @@ with "Please commit or stash", but the `checkout` already succeeded — so you'r
 *unpulled*, and any branch you cut is based on the wrong commit. I nearly started Phase 1b on
 pre-Phase-1a code.
 
+**Fetch BEFORE you check out** — the recipe this doc shipped with had them the other way
+round, which caused trap 1b below.
+
 ```bash
-git checkout main && git checkout -- .beads/issues.jsonl && git fetch -q origin && git reset --hard -q origin/main
+git fetch -q origin && git checkout main && git checkout -- .beads/issues.jsonl && git reset --hard -q origin/main
 ```
 
 Always confirm the base commit before branching.
+
+### 1b. …and checking out a stale main silently REVERTS a `bd close`
+
+The sequel, found after PR #34 merged. `core.hooksPath` is `.beads/hooks`, so **`git checkout`
+fires beads' post-checkout hook**, which imports that commit's `.beads/issues.jsonl` into Dolt —
+the actual source of truth. Check out a main you haven't fetched yet and the hook happily
+re-imports **pre-merge** state, undoing the close you just pushed. The `git reset --hard` that
+follows fixes the *jsonl* but does **not** fire post-checkout, so Dolt keeps the stale value and
+`git status` looks perfectly clean. `myairtable-2ptk` reopened itself exactly this way.
+
+Fetching first (above) avoids it. After any main sync, verify rather than assume:
+
+```bash
+bd list --status=open        # anything here that the committed jsonl calls "closed" diverged
+```
+
+The jsonl is a passive export and is normally the correct one; just re-`bd close` the diverged
+issue.
 
 ### 2. `bd` exports on a COMMIT HOOK — chicken-and-egg
 
