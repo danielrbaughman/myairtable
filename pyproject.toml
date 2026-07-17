@@ -1,6 +1,6 @@
 [project]
 name = "myairtable"
-version = "0.1.0"
+version = "0.1.1"
 description = "An Airtable code generator, focused on developer experience."
 readme = "README.md"
 requires-python = ">=3.12"

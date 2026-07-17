@@ -20,7 +20,9 @@ def test_generator_version_reads_package_metadata():
 
 def test_generate_meta_stamps_version_without_disturbing_the_payload(tmp_path):
     payload = {"tables": [{"id": "tblX", "name": "T", "fields": []}]}
-    generate_meta(payload, tmp_path)  # type: ignore[arg-type]
+    # A minimal stand-in for the real BaseMetadata: the point is that stamping
+    # preserves whatever payload it is handed.
+    generate_meta(payload, tmp_path)  # ty: ignore[invalid-argument-type]
 
     written = json.loads((tmp_path / "meta.json").read_text())
     assert written["generator_version"] == generator_version()
