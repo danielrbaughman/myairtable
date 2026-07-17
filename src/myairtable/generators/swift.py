@@ -33,8 +33,8 @@ from ..utils.helpers import (
     reset_folder,
     sanitize_string,
 )
-from ..utils.verbose import verbose
 from ..utils.write_to_swift_file import WriteToSwiftFile, _choice_to_case, _swift_ident
+from ..verbosity import verbose
 
 # =============================================================================
 # Swift layout

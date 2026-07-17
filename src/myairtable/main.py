@@ -5,7 +5,9 @@ from typing import Annotated
 import pyperclip
 from rich import print
 from typer import Argument, Option, Typer
+from typer_verbose import Verbose
 
+from myairtable import verbosity
 from myairtable.generators.cpp import generate_cpp
 from myairtable.generators.csharp import generate_csharp
 from myairtable.generators.csv import generate_csv
@@ -22,7 +24,11 @@ from myairtable.generators.typescript import generate_typescript
 from myairtable.meta import Base, Field, configure_default, generate_meta, get_base_meta_data
 from myairtable.utils.helpers import create_folder, reset_folder
 from myairtable.utils.type_mapper import map_types
-from myairtable.utils.verbose import verbose
+
+# The -v wiring is typer-coupled and lives here in the CLI, not in the core.
+# `@verbose()` adds -v to each command; on -v the callback flips the typer-free
+# core flag (myairtable.verbosity) that meta.py and the generators read.
+verbose = Verbose(verbose_callback=verbosity.enable)
 
 app = Typer()
 

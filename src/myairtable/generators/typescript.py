@@ -15,8 +15,8 @@ from ..utils.helpers import (
     reset_folder,
     sanitize_string,
 )
-from ..utils.verbose import verbose
 from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
+from ..verbosity import verbose
 
 
 class WriteToTypeScriptFile(WriteToFile):

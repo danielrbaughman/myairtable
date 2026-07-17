@@ -6,7 +6,7 @@ from rich import print
 
 from ..meta import MODEL_NAME, PROPERTY_NAME, Base
 from ..utils.helpers import sanitize_string
-from ..utils.verbose import verbose
+from ..verbosity import verbose
 
 # Column definitions for CSV exports
 TABLE_COLUMNS = [
