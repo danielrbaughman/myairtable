@@ -3,6 +3,7 @@ import os
 import random
 import time
 from csv import DictReader
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -186,13 +187,28 @@ def get_base_meta_data(base_id: str = "", api_key: str = "") -> BaseMetadata:
     return data
 
 
+def generator_version() -> str:
+    """The installed myairtable version, read from package metadata so it can't
+    drift from pyproject. Stamped into generated output as provenance (see
+    generate_meta). "unknown" only if myairtable is run without being installed."""
+    try:
+        return version("myairtable")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def generate_meta(metadata: BaseMetadata, folder: Path):
     """Fetch Airtable metadata into a json file."""
 
     print("Generating Airtable metadata JSON")
     p = folder / "meta.json"
+    # generator_version first, so it records which myairtable produced this tree —
+    # the one field that lets a checked-in tree be matched against the pinned
+    # version. Kept to meta.json (one file per generated tree) rather than every
+    # file's header, so a version bump does not churn thousands of generated files.
+    stamped: dict[str, Any] = {"generator_version": generator_version(), **metadata}
     with open(p, "w") as f:
-        f.write(json.dumps(metadata, indent=4))
+        f.write(json.dumps(stamped, indent=4))
     if verbose:
         print(f"[green] - Base metadata written to '{p.as_posix()}'[/]")
         print("")
