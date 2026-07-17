@@ -12,8 +12,8 @@ from ..formulas.formula_tokenizer import TokenType, tokenize_formula
 from ..meta import Base
 from ..utils.helpers import static_dir
 from ..utils.mermaid_to_image import get_cached_svg, mermaid_live_url, mermaid_to_svg, render_svgs_parallel
-from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
+from ..verbosity import verbose
 from .mermaid import mermaid_base, mermaid_formula
 
 # Paths to static files bundled with the project

@@ -9,7 +9,7 @@ from rich import print
 
 from ..meta import Base, Field
 from ..meta_types import FieldType, GenericType, ResolvedType
-from .verbose import verbose
+from ..verbosity import verbose
 
 # =============================================================================
 # region MAPS

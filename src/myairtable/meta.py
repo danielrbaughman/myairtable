@@ -24,7 +24,7 @@ from .utils.helpers import (
     sanitize_property_name,
     sanitize_reserved_names,
 )
-from .utils.verbose import verbose
+from .verbosity import verbose
 
 # --- base selection -------------------------------------------------------
 #

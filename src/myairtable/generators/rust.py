@@ -17,8 +17,8 @@ from ..utils.helpers import (
     sanitize_property_name,
     sanitize_string,
 )
-from ..utils.verbose import verbose
 from ..utils.write_to_file import WriteToFile
+from ..verbosity import verbose
 
 
 def _choice_to_variant(choice: str) -> str:

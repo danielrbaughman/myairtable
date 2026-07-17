@@ -283,7 +283,6 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "rich" },
-    { name = "typer-verbose" },
     { name = "typing-extensions" },
 ]
 
@@ -294,6 +293,7 @@ cli = [
     { name = "pyairtable" },
     { name = "pyperclip" },
     { name = "typer" },
+    { name = "typer-verbose" },
 ]
 
 [package.dev-dependencies]
@@ -315,7 +315,7 @@ requires-dist = [
     { name = "pyperclip", marker = "extra == 'cli'", specifier = ">=1.11.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.16.1" },
-    { name = "typer-verbose", specifier = ">=0.1.2" },
+    { name = "typer-verbose", marker = "extra == 'cli'", specifier = ">=0.1.2" },
     { name = "typing-extensions", specifier = ">=4.12.0" },
 ]
 provides-extras = ["cli"]

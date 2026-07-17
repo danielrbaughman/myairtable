@@ -19,19 +19,14 @@ classifiers = [
 
 # Core: the analysis layer (myairtable.schema_tools and its closure). Deliberately
 # small — this is what an importing consumer such as ../rogo-mcp pins.
-#
-# typer arrives here transitively, via typer-verbose, because meta.py imports
-# utils/verbose at module level. That is a known, temporary compromise; see
-# myairtable-rm5o, which decouples it so typer moves to [cli].
-#
 # rich was previously UNDECLARED — 15 modules import it and it only resolved via
-# typer's transitive pull. Declaring it is load-bearing once typer leaves core.
+# typer's transitive pull. Declaring it is load-bearing now that typer is gone
+# from core.
 dependencies = [
 	"httpx>=0.28.1",
 	"pydantic>=2.11.7",
 	"rich>=13.0",
 	"typing-extensions>=4.12.0",
-	"typer-verbose>=0.1.2",
 ]
 
 [project.optional-dependencies]
@@ -39,8 +34,11 @@ dependencies = [
 # pyairtable is here rather than core because meta.py reaches it only through
 # lazy imports inside Field.map_python_type/map_typescript_type — the analysis
 # tools never call those.
+# typer-verbose (which pulls typer) is here, not core: the core reads a plain
+# verbosity flag (myairtable/verbosity.py); only the CLI's -v wiring needs typer.
 cli = [
 	"typer>=0.16.1",
+	"typer-verbose>=0.1.2",
 	"pyperclip>=1.11.0",
 	"mermaid-cli>=0.1.2",
 	"pyairtable>=3.2.0",

@@ -36,8 +36,8 @@ from ..utils.helpers import (
     reset_folder,
     sanitize_string,
 )
-from ..utils.verbose import verbose
 from ..utils.write_to_kotlin_file import WriteToKotlinFile, _choice_to_entry, _kotlin_ident, _kotlin_string_literal
+from ..verbosity import verbose
 
 # =============================================================================
 # Kotlin layout

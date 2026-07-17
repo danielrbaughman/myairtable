@@ -2,11 +2,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Literal, Optional, TypedDict
 
-from typer import Typer
 from typing_extensions import ReadOnly
-
-cli = Typer()
-
 
 # =============================================================================
 # GENERIC TYPE SYSTEM
