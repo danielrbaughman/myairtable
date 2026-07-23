@@ -8,9 +8,11 @@ language requirement, so each generated file opens exactly one top-level type.
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from ..meta import Field, Table
-from .helpers import sanitize_property_name, sanitize_string
+from .field_doc import DocStyle, build_field_doc
+from .helpers import sanitize_property_name
 from .write_to_file import WriteToFile
 
 # Java reserved words that can NEVER be identifiers, plus the boolean/null
@@ -279,36 +281,18 @@ class WriteToJavaFile(WriteToFile):
             self.line_indented(f"{_java_ident(name)}{terminator}", indent)
 
     # ---- property doc comments -----------------------------------------------------
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"{{@code {text}}}",
+        fence_open="<pre>",
+        fence_close="</pre>",
+        escape=_javadoc_escape,
+        escape_formula=_javadoc_escape,
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        """Write a Javadoc comment describing an Airtable field.
-
-        Matches the style of WriteToKotlinFile.property_docstring: includes the
-        field's Airtable name and ID, primary-key / read-only tags, and (if
-        present) the field's formula in a <pre> block. Formula text is
-        HTML-entity-escaped rather than wrapped in {@code} because Airtable
-        `{Field}` references can carry unbalanced braces.
-        """
-        base_info = f"{_javadoc_escape(sanitize_string(field.name))} {{@code {field.id}}}"
-
-        tags: list[str] = []
-        if field.id == table.primary_field_id:
-            tags.append("{@code Primary Key}")
-        if field.is_computed():
-            tags.append("{@code Read-Only}")
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            lines: list[str] = [base_info, ""]
-            lines.append("<pre>")
-            # Cap the embedded formula so IDE hovers stay readable; the full
-            # text lives in the generated Markdown/HTML docs (myairtable-dmiw).
-            formula_lines = field.formula(sanitized=True, format=True).splitlines()
-            if len(formula_lines) > 15:
-                formula_lines = formula_lines[:15] + ["… (truncated)"]
-            lines.extend(_javadoc_escape(formula_line) for formula_line in formula_lines)
-            lines.append("</pre>")
-            self.doc_comment(lines, indent=indent_level)
-        else:
-            self.doc_comment(base_info, indent=indent_level)
+        """Write a Javadoc comment describing an Airtable field: name, ID,
+        primary-key / read-only tags, the field description, and (if present)
+        the formula in a <pre> block. Name/description/formula text is
+        HTML-entity-escaped; the id/tags use {@code} (the formula body cannot,
+        because Airtable `{Field}` references can carry unbalanced braces)."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)

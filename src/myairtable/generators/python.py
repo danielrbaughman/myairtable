@@ -1,10 +1,12 @@
 from pathlib import Path
+from typing import ClassVar
 
 from rich import print
 
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
+from ..utils.field_doc import DocStyle, build_field_doc
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -33,32 +35,42 @@ class WriteToPythonFile(WriteToFile):
             self.line(f'"""{docstring}"""')
         self.line_empty()
 
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"`{text}`",
+        fence_open="```",
+        fence_close="```",
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        base_info = f"{sanitize_string(field.name)} `{field.id}`"
+        """Write a docstring describing an Airtable field: name, ID, primary-key
+        / read-only tags, the field description, and (if present) the formula as
+        a fenced code block."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent_level)
 
-        # Build tags
-        tags = []
-        if field.id == table.primary_field_id:
-            tags.append("`Primary Key`")
-        if field.is_computed():
-            tags.append("`Read-Only Field`")
+    def doc_comment(self, text: str | list[str], indent: int = 1):
+        """Write a triple-quoted docstring, hardened against hostile field text.
 
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        # Check for formula and output multi-line if present
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            self.line_indented('"""', indent_level)
-            self.line_indented(base_info, indent_level)
-            self.line_indented("", indent_level)
-            self.line_indented("```", indent_level)
-            for line in field.formula(sanitized=True, format=True).splitlines():
-                self.line_indented(line, indent_level)
-            self.line_indented("```", indent_level)
-            self.line_indented('"""', indent_level)
-        else:
-            self.line_indented(f'"""{base_info}"""', indent_level)
+        Strips bare carriage returns, doubles backslashes (so ``\\brief`` stays
+        literal instead of becoming a backspace / invalid-escape SyntaxWarning),
+        splits embedded newlines, and neutralizes the ``\"\"\"`` terminator. The
+        single-line form is used only when it is safe (content not ending in
+        ``"`` or ``\\``); otherwise the multi-line form (delimiter on its own
+        line) prevents a trailing backslash from escaping the closing quotes.
+        """
+        raw_lines = text if isinstance(text, list) else [text]
+        lines: list[str] = []
+        for raw in raw_lines:
+            # Order matters: double literal backslashes FIRST, then introduce the
+            # intentional escapes that neutralize the `"""` terminator.
+            cleaned = raw.replace(chr(13), "").replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+            lines.extend(cleaned.split("\n"))
+        if len(lines) == 1 and not lines[0].endswith(('"', "\\")):
+            self.line_indented(f'"""{lines[0]}"""', indent)
+            return
+        self.line_indented('"""', indent)
+        for line in lines:
+            self.line_indented(line, indent)
+        self.line_indented('"""', indent)
 
     def docstring(self, text: str | list[str], indent: int = 1):
         if isinstance(text, list):

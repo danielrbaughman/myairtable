@@ -15,11 +15,13 @@ escape rarely triggers in practice; it is a safety net for lowercase positions.
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic.alias_generators import to_pascal
 
 from ..meta import Field, Table
-from .helpers import sanitize_property_name, sanitize_string
+from .field_doc import DocStyle, build_field_doc
+from .helpers import sanitize_property_name
 from .write_to_file import WriteToFile
 
 # C# reserved keywords (ECMA-334 §6.4.4). These can never be bare identifiers and
@@ -298,34 +300,17 @@ class WriteToCSharpFile(WriteToFile):
         self.line_indented(f"{_csharp_ident(name)},", indent)
 
     # ---- property doc comments ----------------------------------------------
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"<c>{text}</c>",
+        fence_open="<code>",
+        fence_close="</code>",
+        escape=_xmldoc_escape,
+        escape_formula=_xmldoc_escape,
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        """Write an XML doc comment describing an Airtable field.
-
-        Matches the style of WriteToJavaFile.property_docstring: includes the
-        field's Airtable name and ID, primary-key / read-only tags, and (if
-        present) the field's formula in a <code> block. All embedded Airtable
-        text is XML-entity-escaped via `_xmldoc_escape`.
-        """
-        base_info = f"{_xmldoc_escape(sanitize_string(field.name))} <c>{field.id}</c>"
-
-        tags: list[str] = []
-        if field.id == table.primary_field_id:
-            tags.append("<c>Primary Key</c>")
-        if field.is_computed():
-            tags.append("<c>Read-Only</c>")
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            lines: list[str] = [base_info, "<code>"]
-            # Cap the embedded formula so IDE hovers stay readable; the full
-            # text lives in the generated Markdown/HTML docs.
-            formula_lines = field.formula(sanitized=True, format=True).splitlines()
-            if len(formula_lines) > 15:
-                formula_lines = formula_lines[:15] + ["… (truncated)"]
-            lines.extend(_xmldoc_escape(formula_line) for formula_line in formula_lines)
-            lines.append("</code>")
-            self.doc_comment(lines, indent=indent_level)
-        else:
-            self.doc_comment(base_info, indent=indent_level)
+        """Write an XML doc comment describing an Airtable field: name, ID,
+        primary-key / read-only tags, the field description, and (if present)
+        the formula in a <code> block. All embedded Airtable text is
+        XML-entity-escaped via `_xmldoc_escape`."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)

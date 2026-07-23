@@ -17,11 +17,13 @@ patterns are UB to declare.
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic.alias_generators import to_pascal
 
 from ..meta import Field, Table
-from .helpers import sanitize_property_name, sanitize_string
+from .field_doc import DocStyle, build_field_doc
+from .helpers import sanitize_property_name
 from .write_to_file import WriteToFile
 
 # C++20 keywords (ISO/IEC 14882:2020 [lex.key]) plus the alternative tokens
@@ -238,13 +240,24 @@ class WriteToCppFile(WriteToFile):
 
     # ---- comments -------------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a `///` Doxygen doc block (one `///` line per input line)."""
+        """Write a `///` Doxygen doc block (one `///` line per input line).
+
+        Trailing backslashes are stripped: in C/C++ a backslash before the
+        newline splices the next physical line into this `//` comment (line
+        continuation), swallowing the declaration that follows. A trailing
+        space does NOT help — clang/gcc treat backslash-then-whitespace-then-
+        newline as a continuation too (only warning). The compiler ignores all
+        other `//` content, so dropping the dangling backslash is safe.
+        """
         raw_lines = text if isinstance(text, list) else [text]
         lines: list[str] = []
         for raw in raw_lines:
             lines.extend(_cppdoc_escape(raw).split("\n"))
         for line in lines:
-            self.line_indented(f"/// {line}".rstrip(), indent)
+            rendered = f"/// {line}".rstrip()
+            while rendered.endswith("\\"):
+                rendered = rendered[:-1].rstrip()
+            self.line_indented(rendered, indent)
 
     def comment(self, text: str, indent: int = 0):
         """Write `// text`."""
@@ -278,33 +291,14 @@ class WriteToCppFile(WriteToFile):
         self.line_indented(f"{_cpp_ident(name)},", indent)
 
     # ---- property doc comments -----------------------------------------------------
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"`{text}`",
+        fence_open="\\code",
+        fence_close="\\endcode",
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        """Write a Doxygen doc comment describing an Airtable field.
-
-        Matches the style of WriteToCSharpFile.property_docstring: the field's
-        Airtable name and ID, primary-key / read-only tags, and (if present) the
-        field's formula in a `\\code ... \\endcode` block.
-        """
-        base_info = f"{sanitize_string(field.name)} `{field.id}`"
-
-        tags: list[str] = []
-        if field.id == table.primary_field_id:
-            tags.append("`Primary Key`")
-        if field.is_computed():
-            tags.append("`Read-Only`")
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            lines: list[str] = [base_info, "\\code"]
-            # Cap the embedded formula so IDE hovers stay readable; the full
-            # text lives in the generated Markdown/HTML docs.
-            formula_lines = field.formula(sanitized=True, format=True).splitlines()
-            if len(formula_lines) > 15:
-                formula_lines = formula_lines[:15] + ["… (truncated)"]
-            lines.extend(formula_lines)
-            lines.append("\\endcode")
-            self.doc_comment(lines, indent=indent_level)
-        else:
-            self.doc_comment(base_info, indent=indent_level)
+        """Write a Doxygen doc comment describing an Airtable field: name, ID,
+        primary-key / read-only tags, the field description, and (if present)
+        the formula in a ``\\code ... \\endcode`` block."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)
