@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic.alias_generators import to_pascal
 from rich import print
@@ -7,6 +8,7 @@ from rich import print
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
+from ..utils.field_doc import DocStyle, build_field_doc
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -166,10 +168,14 @@ class WriteToRustFile(WriteToFile):
         self.line_empty()
 
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a /// doc comment. Strips bare carriage returns that Airtable descriptions may contain."""
-        lines = text if isinstance(text, list) else [text]
-        for line in lines:
-            self.line_indented(f"/// {line.replace(chr(13), '')}", indent)
+        """Write /// doc comment(s). Strips bare carriage returns and splits
+        embedded newlines (Airtable descriptions may contain both) so no line
+        spills out of the comment."""
+        raw_lines = text if isinstance(text, list) else [text]
+        for raw in raw_lines:
+            cleaned = raw.replace(chr(13), "")
+            for line in cleaned.split("\n"):
+                self.line_indented(f"/// {line}", indent)
 
     def derive(self, *traits: str, indent: int = 0):
         """Write a #[derive(...)] attribute."""
@@ -197,29 +203,17 @@ class WriteToRustFile(WriteToFile):
         prefix = "pub " if public else ""
         self.line(f"{prefix}use {path};")
 
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"`{text}`",
+        fence_open="```text",
+        fence_close="```",
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        """Write a doc comment for a struct field."""
-        base_info = f"{sanitize_string(field.name)} `{field.id}`"
-
-        tags = []
-        if field.id == table.primary_field_id:
-            tags.append("`Primary Key`")
-        if field.is_computed():
-            tags.append("`Read-Only`")
-
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            lines = [base_info, ""]
-            lines.append("```text")
-            for line in field.formula(sanitized=True, format=True).splitlines():
-                lines.append(line)
-            lines.append("```")
-            self.doc_comment(lines, indent=indent_level)
-        else:
-            self.doc_comment(base_info, indent=indent_level)
+        """Write a /// doc comment for a struct field: name, ID, primary-key /
+        read-only tags, the field description, and (if present) the formula as a
+        fenced code block."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)
 
 
 # region MAIN

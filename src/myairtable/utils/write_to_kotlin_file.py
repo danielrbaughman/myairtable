@@ -6,9 +6,11 @@ Modeled after WriteToSwiftFile, but emits Kotlin syntax (// region markers,
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from ..meta import Field, Table
-from .helpers import sanitize_property_name, sanitize_string
+from .field_doc import DocStyle, build_field_doc
+from .helpers import sanitize_property_name
 from .write_to_file import WriteToFile
 
 # Kotlin HARD keywords that need backtick-quoting when used as identifiers.
@@ -198,34 +200,14 @@ class WriteToKotlinFile(WriteToFile):
         self.line_indented(f"{_kotlin_ident(name)}{';' if last else ','}", indent)
 
     # ---- property doc comments -----------------------------------------------------
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"`{text}`",
+        fence_open="```text",
+        fence_close="```",
+    )
+
     def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
-        """Write a KDoc comment describing an Airtable field.
-
-        Matches the style of WriteToSwiftFile.property_docstring: includes the
-        field's Airtable name and ID, primary-key / read-only tags, and (if
-        present) the field's formula as a fenced code block.
-        """
-        base_info = f"{sanitize_string(field.name)} `{field.id}`"
-
-        tags: list[str] = []
-        if field.id == table.primary_field_id:
-            tags.append("`Primary Key`")
-        if field.is_computed():
-            tags.append("`Read-Only`")
-        if tags:
-            base_info += " - " + " - ".join(tags)
-
-        formula = field.formula(sanitized=True, condense=True)
-        if formula:
-            lines: list[str] = [base_info, ""]
-            lines.append("```text")
-            # Cap the embedded formula so IDE hovers stay readable; the full
-            # text lives in the generated Markdown/HTML docs (myairtable-dmiw).
-            formula_lines = field.formula(sanitized=True, format=True).splitlines()
-            if len(formula_lines) > 15:
-                formula_lines = formula_lines[:15] + ["… (truncated)"]
-            lines.extend(formula_lines)
-            lines.append("```")
-            self.doc_comment(lines, indent=indent_level)
-        else:
-            self.doc_comment(base_info, indent=indent_level)
+        """Write a KDoc comment describing an Airtable field: name, ID,
+        primary-key / read-only tags, the field description, and (if present)
+        the formula as a fenced code block."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)

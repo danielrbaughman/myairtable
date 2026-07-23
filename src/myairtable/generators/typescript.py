@@ -1,10 +1,12 @@
 from pathlib import Path
+from typing import ClassVar
 
 from rich import print
 
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
 from ..meta import Base, Field, Table
+from ..utils.field_doc import DocStyle, build_field_doc
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -53,6 +55,38 @@ class WriteToTypeScriptFile(WriteToFile):
             self.line_indented(" */", indent=indent)
         else:
             self.line_indented(f"/** {text} */", indent=indent)
+
+    def doc_comment(self, text: str | list[str], indent: int = 1):
+        """Write a hardened /** JSDoc */ block.
+
+        Strips bare carriage returns, neutralizes `*/` (which would terminate
+        the comment early), and splits embedded newlines so no line spills out
+        of the comment — needed for free-form Airtable field descriptions.
+        """
+        raw_lines = text if isinstance(text, list) else [text]
+        lines: list[str] = []
+        for raw in raw_lines:
+            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            lines.extend(cleaned.split("\n"))
+        if len(lines) == 1:
+            self.line_indented(f"/** {lines[0]} */", indent=indent)
+            return
+        self.line_indented("/**", indent=indent)
+        for line in lines:
+            self.line_indented(f" * {line}".rstrip(), indent=indent)
+        self.line_indented(" */", indent=indent)
+
+    DOC_STYLE: ClassVar[DocStyle] = DocStyle(
+        code=lambda text: f"`{text}`",
+        fence_open="```",
+        fence_close="```",
+    )
+
+    def property_docstring(self, field: Field, table: Table, indent_level: int = 1):
+        """Write a JSDoc comment describing an Airtable field: name, ID,
+        primary-key / read-only tags, the field description, and (if present)
+        the formula as a fenced code block."""
+        self.doc_comment(build_field_doc(field, table, self.DOC_STYLE), indent=indent_level)
 
     def types(self, name: str, list: list[str], docstring: str = ""):
         literal_name = f"{name}"
@@ -554,22 +588,11 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             for field in table.fields:
                 field_name = prop_map[field.id]
                 field_type = field.typescript_type()
-                docstring: str | list[str]
-                if field.formula(sanitized=True, condense=True):
-                    docstring: list[str] = [
-                        f"`{field.name}` ({field.id})",
-                        "",
-                        "```",
-                        *[line for line in field.formula(sanitized=True, format=True).splitlines()],
-                        "```",
-                    ]
-                else:
-                    docstring: str = f"`{field.name}` ({field.id})"
 
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     if field_type == "RecordId":
-                        write.docstring(docstring)
+                        write.property_docstring(field, table)
                         write.line_indented(
                             f'public get {field_name}(): ChainableLinkedRecord<{linked_record_type}> {{ return this._fields["{field_name}"] as ChainableLinkedRecord<{linked_record_type}>; }}',
                             1,
@@ -579,7 +602,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                             1,
                         )
                     elif field_type == "RecordId[]":
-                        write.docstring(docstring)
+                        write.property_docstring(field, table)
                         write.line_indented(
                             f'public get {field_name}(): LinkedRecords<{linked_record_type}> {{ return this._fields["{field_name}"] as LinkedRecords<{linked_record_type}>; }}',
                             1,
@@ -590,7 +613,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                         )
                 elif field.is_formula() and runtime:
                     # Formula field -> computed property that checks evaluateFormulasAtRuntime
-                    write.docstring(docstring)
+                    write.property_docstring(field, table)
                     write.line_indented(f"public get {field_name}(): {field_type} | undefined {{", 1)
                     if field.id in transpiled_formulas:
                         formula_code = transpiled_formulas[field.id]
@@ -599,13 +622,13 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     write.line_indented("}", 1)
                 elif field.is_computed():
                     # Computed: getter only (TypeScript enforces read-only at compile time)
-                    write.docstring(docstring)
+                    write.property_docstring(field, table)
                     write.line_indented(
                         f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
                     )
                 else:
                     # Writable: getter + setter
-                    write.docstring(docstring)
+                    write.property_docstring(field, table)
                     write.line_indented(
                         f'public get {field_name}(): {field_type} | undefined {{ return this._fields["{field_name}"] as {field_type}; }}', 1
                     )
