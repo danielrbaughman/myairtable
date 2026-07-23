@@ -128,13 +128,15 @@ class WriteToKotlinFile(WriteToFile):
 
         Sanitizes each line so the block can't be broken by hostile content:
         strips bare \\r (Airtable descriptions may contain them), neutralizes
-        `*/` (which would terminate the KDoc early), and splits embedded
-        newlines into separate comment lines.
+        both `*/` (which would terminate the KDoc early) and `/*` (Kotlin block
+        comments NEST — unlike Java/C — so a `/*` opens an inner comment whose
+        close then swallows the KDoc terminator, leaving the block unclosed),
+        and splits embedded newlines into separate comment lines.
         """
         raw_lines = text if isinstance(text, list) else [text]
         lines: list[str] = []
         for raw in raw_lines:
-            cleaned = raw.replace(chr(13), "").replace("*/", "* /")
+            cleaned = raw.replace(chr(13), "").replace("/*", "/ *").replace("*/", "* /")
             lines.extend(cleaned.split("\n"))
         if len(lines) == 1:
             self.line_indented(f"/** {lines[0]} */", indent)

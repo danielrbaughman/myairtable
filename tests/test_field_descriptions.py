@@ -182,6 +182,14 @@ def test_cpp_lines_all_stay_inside_the_comment():
     field, table = _field_with_description("fld001", "createdTime", HOSTILE_DESCRIPTION)
     lines = _render(WriteToCppFile, field, table)
     assert all(line.startswith("///") for line in lines)
+    # No line may end in a backslash followed by only whitespace: in C/C++ that
+    # splices the next source line into the `//` comment (clang/gcc treat even
+    # backslash-then-space-then-newline as a continuation), swallowing the
+    # following declaration.
+    import re as _re
+
+    for line in lines:
+        assert not _re.search(r"\\\s*$", line)
     assert any("café" in line for line in lines)
 
 
@@ -220,7 +228,12 @@ def test_kotlin_block_comment_not_terminated_early():
     field, table = _field_with_description("fld001", "createdTime", HOSTILE_DESCRIPTION)
     lines = _render(WriteToKotlinFile, field, table)
     _assert_block_comment_safe(lines)
-    assert "café" in "\n".join(lines)
+    src = "\n".join(lines)
+    # Kotlin block comments NEST, so an interior `/*` opens an inner comment whose
+    # close eats the KDoc terminator — it must be neutralized too, not just `*/`.
+    for interior in lines[1:-1]:
+        assert "/*" not in interior
+    assert "café" in src
 
 
 def test_java_escapes_html_and_does_not_terminate_early():

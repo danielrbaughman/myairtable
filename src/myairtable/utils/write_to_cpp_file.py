@@ -240,13 +240,24 @@ class WriteToCppFile(WriteToFile):
 
     # ---- comments -------------------------------------------------------------
     def doc_comment(self, text: str | list[str], indent: int = 0):
-        """Write a `///` Doxygen doc block (one `///` line per input line)."""
+        """Write a `///` Doxygen doc block (one `///` line per input line).
+
+        Trailing backslashes are stripped: in C/C++ a backslash before the
+        newline splices the next physical line into this `//` comment (line
+        continuation), swallowing the declaration that follows. A trailing
+        space does NOT help — clang/gcc treat backslash-then-whitespace-then-
+        newline as a continuation too (only warning). The compiler ignores all
+        other `//` content, so dropping the dangling backslash is safe.
+        """
         raw_lines = text if isinstance(text, list) else [text]
         lines: list[str] = []
         for raw in raw_lines:
             lines.extend(_cppdoc_escape(raw).split("\n"))
         for line in lines:
-            self.line_indented(f"/// {line}".rstrip(), indent)
+            rendered = f"/// {line}".rstrip()
+            while rendered.endswith("\\"):
+                rendered = rendered[:-1].rstrip()
+            self.line_indented(rendered, indent)
 
     def comment(self, text: str, indent: int = 0):
         """Write `// text`."""
