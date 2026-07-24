@@ -8,18 +8,22 @@ name: Release
 #
 # To cut a release:
 #   1. bump `version` in pyproject.toml   (rc first: 0.1.0rc1 — see myairtable-8oig)
-#   2. commit it to main
-#   3. git tag v0.1.0rc1 && git push origin v0.1.0rc1
+#   2. merge it to main
 #
-# The tag drives everything, and `verify` refuses to publish if the tag and
-# pyproject.toml disagree — a mismatch would otherwise ship a version nobody can
-# reproduce from the tag. A PyPI version can never be reused or truly unpublished, so
-# the smoke test runs BEFORE the upload, not after. Never yank; roll forward.
+# That's it — the version bump IS the release trigger. On every push to main this
+# workflow builds and smoke-tests the wheel; the `publish` job only runs when
+# pyproject.toml's version is not already on PyPI, so ordinary commits (docs, code
+# with no bump) build-and-verify but publish nothing, and a bump ships. A PyPI
+# version can never be reused or truly unpublished, so the smoke test runs BEFORE the
+# upload, not after. Never yank; roll forward.
+#
+# workflow_dispatch is a safe rehearsal: it builds and verifies but never publishes
+# (publish is gated on `push`), so you can exercise this file without shipping.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -29,6 +33,9 @@ jobs:
   verify:
     name: Build and verify the artifacts
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      is_new: ${{ steps.ver.outputs.is_new }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,15 +45,20 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
 
-      - name: Tag must match pyproject version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Resolve version and check whether it is already on PyPI
+        id: ver
         run: |
-          tag="${GITHUB_REF#refs/tags/v}"
           version="$(uv run --no-project python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          echo "tag=$tag  pyproject=$version"
-          if [ "$tag" != "$version" ]; then
-            echo "::error::Tag v$tag does not match pyproject.toml version $version. Bump one to match, delete the tag, and re-tag."
-            exit 1
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # PyPI returns 200 for an existing version, 404 otherwise. A version can
+          # never be re-uploaded, so if it already exists we must NOT try to publish.
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/myairtable/$version/json")"
+          if [ "$code" = "200" ]; then
+            echo "v$version is already on PyPI — nothing to publish."
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version is not on PyPI yet (HTTP $code) — will publish."
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
           fi
 
       # The package is a code generator whose static templates live inside the wheel;
@@ -83,10 +95,11 @@ jobs:
     name: Publish to PyPI
     needs: verify
     runs-on: ubuntu-latest
-    # Gates the upload on the `pypi` environment, so its protection rules (and the
-    # trusted publisher) apply. Only tags publish: a workflow_dispatch run stops at
-    # verify, which makes it a safe way to test this file without shipping anything.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Only a push to main that carries a new version publishes. workflow_dispatch stops
+    # here (rehearsal), and a push whose version is already on PyPI skips the upload.
+    # Gating on the `pypi` environment applies its protection rules and the trusted
+    # publisher.
+    if: github.event_name == 'push' && needs.verify.outputs.is_new == 'true'
     environment:
       name: pypi
       url: https://pypi.org/p/myairtable
@@ -100,3 +113,29 @@ jobs:
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Belt-and-suspenders: if the PyPI reachability check in `verify` ever
+          # misfires, don't hard-fail on an already-uploaded version — just skip it.
+          skip-existing: true
+
+  tag:
+    name: Tag the published release
+    needs: [verify, publish]
+    if: github.event_name == 'push' && needs.verify.outputs.is_new == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create and push the vX tag + GitHub release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create v-tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.verify.outputs.version }}"
+          # Idempotent: skip if the tag somehow already exists.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            echo "Tag v$version already exists — skipping."
+            exit 0
+          fi
+          gh release create "v$version" --title "v$version" --generate-notes --target "$GITHUB_SHA"
