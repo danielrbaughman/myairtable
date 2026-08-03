@@ -4,6 +4,7 @@ import hashlib
 import json
 import sys
 import zlib
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,17 +33,51 @@ def cleanup_old_versions(cache_dir: Path, field_id: str, current_file: Path) -> 
             old_file.unlink(missing_ok=True)
 
 
-async def render_svg(mermaid_code: str) -> bytes | None:
-    """Async render mermaid to SVG using mermaid-cli."""
-    try:
-        _, _, svg_data = await render_mermaid(
-            mermaid_code,
-            output_format="svg",
-        )
-        return svg_data
-    except Exception as e:
-        print(f"[yellow]SVG render failed: {e}[/]")
-        return None
+# Diagram rendering degrades rather than aborts — one bad diagram should not lose a
+# whole docs build. But a degraded build must not look like a clean one, so every
+# failure is counted here and the CLI exits non-zero if the count is non-zero.
+# See svg_failure_count() / report_svg_failures().
+_svg_failures: list[str] = []
+
+
+def svg_failure_count() -> int:
+    """Number of SVG renders that have failed in this process."""
+    return len(_svg_failures)
+
+
+def _record_svg_failure(error: str) -> None:
+    _svg_failures.append(error)
+
+
+def report_svg_failures() -> None:
+    """Print a summary of failed SVG renders. No-op when everything rendered."""
+    if not _svg_failures:
+        return
+
+    print(f"[red]{len(_svg_failures)} diagram(s) failed to render — docs are missing or serving stale SVGs.[/]")
+
+    # The same root cause fails every diagram identically, so group rather than
+    # printing N copies of one message.
+    counts = Counter(_svg_failures)
+    for error, count in counts.most_common():
+        suffix = f" [dim](x{count})[/]" if count > 1 else ""
+        print(f"[red] - {error}[/]{suffix}")
+
+    # By far the most common cause: playwright resolved to a version whose pinned
+    # chromium build was never downloaded. Say the exact command rather than making
+    # the reader decode playwright's box-drawing banner.
+    if any("Executable doesn't exist" in error or "playwright install" in error for error in counts):
+        print("[yellow]Hint: the chromium build this playwright expects is not installed. Run:[/]")
+        print("[yellow]  playwright install chromium-headless-shell[/]")
+
+
+async def render_svg(mermaid_code: str) -> bytes:
+    """Async render mermaid to SVG using mermaid-cli. Raises on render failure."""
+    _, _, svg_data = await render_mermaid(
+        mermaid_code,
+        output_format="svg",
+    )
+    return svg_data
 
 
 def get_cached_svg(
@@ -100,7 +135,11 @@ def mermaid_to_svg(
     content_hash = _compute_content_hash(mermaid_code)
     cache_file = cache_dir / f"{field_id}_{content_hash}.svg"
 
-    svg_data = asyncio.run(render_svg(mermaid_code))
+    try:
+        svg_data = asyncio.run(render_svg(mermaid_code))
+    except Exception as e:
+        _record_svg_failure(str(e))
+        return None
 
     if svg_data:
         svg_content = svg_data.decode("utf-8") if isinstance(svg_data, bytes) else svg_data
@@ -124,7 +163,11 @@ async def render_svg_task(field_id: str, mermaid_code: str, cache_dir: Path) -> 
     content_hash = _compute_content_hash(mermaid_code)
     cache_file = cache_dir / f"{field_id}_{content_hash}.svg"
 
-    svg_data = await render_svg(mermaid_code)
+    try:
+        svg_data = await render_svg(mermaid_code)
+    except Exception as e:
+        _record_svg_failure(str(e))
+        return (field_id, None)
 
     if svg_data:
         svg_content = svg_data.decode("utf-8") if isinstance(svg_data, bytes) else svg_data
@@ -194,9 +237,16 @@ def render_svgs_parallel(
     sys.stdout.write(f"Generating formula SVGs (0/{total})...")
     sys.stdout.flush()
 
+    failures_before = svg_failure_count()
     results = asyncio.run(render_all_svgs_async(svg_tasks, cache_dir, update_progress))
+    failed = svg_failure_count() - failures_before
 
-    sys.stdout.write(" done\n")
+    # The progress counter counts *completed* tasks, not successful ones, so an
+    # unqualified "done" here read as success even when every render had failed.
+    if failed:
+        sys.stdout.write(f" {total - failed}/{total} ok, {failed} FAILED\n")
+    else:
+        sys.stdout.write(" done\n")
     sys.stdout.flush()
 
     return results

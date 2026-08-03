@@ -1,6 +1,6 @@
 [project]
 name = "myairtable"
-version = "0.1.2"
+version = "0.1.3"
 description = "An Airtable code generator, focused on developer experience."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -36,11 +36,23 @@ dependencies = [
 # tools never call those.
 # typer-verbose (which pulls typer) is here, not core: the core reads a plain
 # verbosity flag (myairtable/verbosity.py); only the CLI's -v wiring needs typer.
+#
+# playwright is pinned to a MINOR range even though we never import it: mermaid-cli
+# pulls it in unbounded, and playwright hard-codes the chromium build it launches
+# (see its browsers.json). Those browsers are NOT in the wheel — they are downloaded
+# separately by `playwright install` into ~/.cache/ms-playwright/<browser>-<revision>,
+# and the revision rolls with every playwright minor. Unbounded, a fresh resolve
+# (`uvx --from "myairtable[cli]==X"`) picks up a playwright newer than any browser on
+# disk, and every formula diagram fails to render. Pinning the minor is what actually
+# makes a pinned myairtable version reproducible. Bumping this is deliberate: it
+# requires re-running `playwright install chromium-headless-shell` on every machine
+# and in CI.
 cli = [
 	"typer>=0.16.1",
 	"typer-verbose>=0.1.2",
 	"pyperclip>=1.11.0",
 	"mermaid-cli>=0.1.2",
+	"playwright>=1.57.0,<1.58",
 	"pyairtable>=3.2.0",
 	"dotenv>=0.9.9",
 ]
