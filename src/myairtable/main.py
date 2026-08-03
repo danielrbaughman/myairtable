@@ -4,7 +4,7 @@ from typing import Annotated
 
 import pyperclip
 from rich import print
-from typer import Argument, Option, Typer
+from typer import Argument, Exit, Option, Typer
 from typer_verbose import Verbose
 
 from myairtable import verbosity
@@ -23,6 +23,7 @@ from myairtable.generators.swift import generate_swift
 from myairtable.generators.typescript import generate_typescript
 from myairtable.meta import Base, Field, configure_default, generate_meta, get_base_meta_data
 from myairtable.utils.helpers import create_folder, reset_folder
+from myairtable.utils.mermaid_to_image import report_svg_failures, svg_failure_count
 from myairtable.utils.type_mapper import map_types
 
 # The -v wiring is typer-coupled and lives here in the CLI, not in the core.
@@ -301,6 +302,20 @@ def cpp(
     generate_cpp(base=base, output_folder=folder_path, formulas=formulas, wrappers=wrappers, runtime=runtime, flatten=flatten)
 
 
+def _exit_on_svg_failures() -> None:
+    """Fail the run if any formula diagram failed to render.
+
+    Individual renders degrade rather than raise, so one bad diagram can't lose a whole
+    docs build — but the docs that come out are incomplete, or worse, silently keep the
+    previous run's cached SVGs. Exiting non-zero is what lets a `set -e` caller (e.g.
+    ../airtable/generate.sh) notice; previously the only signal was a warning line that
+    the progress counter's \\r overwrote.
+    """
+    if svg_failure_count():
+        report_svg_failures()
+        raise Exit(code=1)
+
+
 @app.command()
 @verbose()
 def md(
@@ -336,6 +351,8 @@ def md(
 
     end = datetime.datetime.now()
     print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
+
+    _exit_on_svg_failures()
 
 
 @app.command()
@@ -373,6 +390,8 @@ def html(
 
     end = datetime.datetime.now()
     print(f"Total time taken: {(end - start).total_seconds():.2f} seconds\n")
+
+    _exit_on_svg_failures()
 
 
 @app.command()
@@ -549,6 +568,8 @@ def all(
     print("[green]Generation complete.[/]")
 
     print("")
+
+    _exit_on_svg_failures()
 
 
 def main() -> None:
