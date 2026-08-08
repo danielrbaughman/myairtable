@@ -542,8 +542,15 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                     linked_table = base.table_by_id(linked_table_id) if linked_table_id else None
                     linked_file = linked_table.name_camel() if linked_table else ""
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
+                    # Getter rather than `linkedModelClass: require(...).Model`, for the
+                    # same reason as the TypeScript generator: linked models are mutually
+                    # circular, and resolving the class while the module body runs reads a
+                    # half-initialised module. Under CommonJS a circular `require` returns
+                    # the partially-populated exports object, so the eager form captures
+                    # `undefined` instead of the class - silently, unlike the ESM version
+                    # which at least throws. Deferring to first access avoids both.
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => require("./{linked_file}").{linked_record_type}.fromId(id, config), linkedModelClass: require("./{linked_file}").{linked_record_type} }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => require("./{linked_file}").{linked_record_type}.fromId(id, config), get linkedModelClass() {{ return require("./{linked_file}").{linked_record_type}; }} }},',
                         2,
                     )
                 elif field_type == "Attachment[]":
