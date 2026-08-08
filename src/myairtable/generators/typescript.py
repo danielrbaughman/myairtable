@@ -568,8 +568,29 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 if (field_type == "RecordId" or field_type == "RecordId[]") and not field.is_computed():
                     linked_record_type = field.get_linked_model_name()
                     field_kind = "linkedRecord" if field_type == "RecordId" else "linkedRecords"
+                    # `linkedModelClass` must be a getter, not `linkedModelClass: Model`.
+                    # Model modules import their siblings through the `../models` barrel,
+                    # so every pair of models that link to each other sits in an import
+                    # cycle. A bare class reference is evaluated while the module body
+                    # runs, and a bundler is free to order the cycle so that evaluation
+                    # happens before the sibling's binding is initialised:
+                    #
+                    #   bonusPeriods.ts:55 Uncaught ReferenceError:
+                    #     Cannot access 'BonusFine' before initialization
+                    #
+                    # That broke mission control's production bundle while dev servers
+                    # stayed green, because Vite pre-bundles dependencies with esbuild and
+                    # esbuild orders the cycle differently than rollup does. The eager
+                    # reference also gave rollup's tree-shaker an ObjectExpression ->
+                    # ClassNode edge that sent it into an unbounded deoptimization
+                    # cascade, so that build never finished at all.
+                    #
+                    # A getter defers the reference to first property access, by which
+                    # point every module has finished evaluating. Consumers still read
+                    # `descriptor.linkedModelClass`, so this stays source-compatible.
+                    # `linkedModelFromId` is already lazy for the same reason.
                     write.line_indented(
-                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config), linkedModelClass: {linked_record_type} as any }},',
+                        f'{{ propertyName: "{field_name}", fieldId: "{field.id}", fieldName: "{sanitize_string(field.name)}", isComputed: {is_computed}, fieldType: "{field_kind}", linkedModelFromId: (id, config) => {linked_record_type}.fromId(id, config), get linkedModelClass(): any {{ return {linked_record_type}; }} }},',
                         2,
                     )
                 elif field_type == "Attachment[]":

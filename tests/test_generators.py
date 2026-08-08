@@ -200,6 +200,58 @@ class TestTypeScriptComputedFields:
         assert "set rating(" in content
 
 
+class TestLinkedModelClassIsLazy:
+    """`linkedModelClass` must be a getter, never a bare class reference.
+
+    Linked models are mutually circular -- each imports its siblings through the
+    `../models` barrel -- so resolving the class while the module body runs reads a
+    half-initialised module. Bundlers are free to order the cycle so that read happens
+    before the sibling's binding is initialised, which shipped to a consumer as
+
+        bonusPeriods.ts:55 Uncaught ReferenceError:
+          Cannot access 'BonusFine' before initialization
+
+    in a production bundle, while every dev server stayed green (Vite pre-bundles
+    dependencies with esbuild, which orders the cycle differently than rollup).
+    """
+
+    def _generate_ts(self, tmp_path: Path) -> str:
+        from myairtable.generators.typescript import write_models
+
+        base = make_test_base([("Links", "fld001", "multipleRecordLinks")])
+        output_folder = tmp_path / "ts_output"
+        output_folder.mkdir()
+        write_models(base, output_folder, formulas=False, zod=False)
+        return _read_generated_model(output_folder, "typescript")
+
+    def _generate_js(self, tmp_path: Path) -> str:
+        from myairtable.generators.javascript import write_models
+
+        base = make_test_base([("Links", "fld001", "multipleRecordLinks")])
+        output_folder = tmp_path / "js_output"
+        output_folder.mkdir()
+        write_models(base, output_folder, formulas=False, zod=False)
+        return _read_generated_model(output_folder, "javascript")
+
+    def test_typescript_defers_linked_model_class(self, tmp_path: Path):
+        content = self._generate_ts(tmp_path)
+        assert "get linkedModelClass()" in content
+        assert not re.search(r"linkedModelClass:\s*\S", content), (
+            "eager reference resolves during module evaluation and TDZ-throws in a circular import"
+        )
+
+    def test_javascript_defers_linked_model_class(self, tmp_path: Path):
+        content = self._generate_js(tmp_path)
+        assert "get linkedModelClass()" in content
+        assert not re.search(r"linkedModelClass:\s*\S", content), (
+            "a circular CommonJS require returns partial exports, so the eager form captures undefined"
+        )
+
+    def test_linked_model_from_id_stays_lazy(self, tmp_path: Path):
+        """The sibling property was always deferred; keep it that way."""
+        assert "linkedModelFromId: (id, config) =>" in self._generate_ts(tmp_path)
+
+
 class TestJavaScriptComputedFields:
     """JavaScript generator should emit getter-only for computed fields."""
 
