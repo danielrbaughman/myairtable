@@ -51,7 +51,10 @@ public class TestDuplicatePayload
         };
         var projected = AirtableModel.ProjectAttachmentsForCreate(fields);
         var items = Assert.IsType<JsonArray>(projected["fldAtt"]);
-        Assert.Equal("u", Assert.IsType<JsonObject>(Assert.Single(items))["url"]!.GetValue<string>());
+        Assert.Equal(
+            "u",
+            Assert.IsType<JsonObject>(Assert.Single(items))["url"]!.GetValue<string>()
+        );
     }
 
     [Fact]
@@ -62,7 +65,10 @@ public class TestDuplicatePayload
         {
             ["fldLink"] = new JsonArray { "rec1", "rec2" },
             ["fldUser"] = new JsonObject { ["id"] = "usrX", ["email"] = "e@x.com" },
-            ["fldUsers"] = new JsonArray { new JsonObject { ["id"] = "usrX", ["email"] = "e@x.com" } },
+            ["fldUsers"] = new JsonArray
+            {
+                new JsonObject { ["id"] = "usrX", ["email"] = "e@x.com" },
+            },
             ["fldEmpty"] = new JsonArray(),
             ["fldText"] = "https://example.com",
         };
