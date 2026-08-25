@@ -122,9 +122,9 @@ class AirtableModel {
 		return r;
 	}
 
-	toCreateRecordData(useFieldIds = true) {
+	toCreateRecordData(useFieldIds = true, asInsert = false) {
 		return {
-			fields: this.writableFields(useFieldIds),
+			fields: this.writableFields(useFieldIds, asInsert),
 		};
 	}
 
@@ -262,11 +262,12 @@ class AirtableModel {
 		this._isNew = false;
 	}
 
-	writableFields(useFieldIds = true) {
+	writableFields(useFieldIds = true, asInsert = false) {
+		const isInsert = this._isNew || asInsert;
 		const fields = {};
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
-			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
+			if (!isInsert && !this.isDirty(desc.propertyName)) continue;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
 				case "linkedRecord": {
@@ -278,7 +279,7 @@ class AirtableModel {
 					fields[key] = this._fields[desc.propertyName]?.ids;
 					break;
 				case "attachment":
-					fields[key] = this.sanitizeAttachment(desc.propertyName, this._isNew);
+					fields[key] = this.sanitizeAttachment(desc.propertyName, isInsert);
 					break;
 				default:
 					fields[key] = this._fields[desc.propertyName];
@@ -287,7 +288,7 @@ class AirtableModel {
 			// On update, an included field is dirty; a nullish value is an explicit clear and must
 			// serialize as JSON null (undefined keys are dropped by JSON.stringify, leaving the cell
 			// unchanged). On create, undefined is left to be dropped (sparse write).
-			if (!this._isNew && fields[key] == null) fields[key] = null;
+			if (!isInsert && fields[key] == null) fields[key] = null;
 		}
 		return fields;
 	}

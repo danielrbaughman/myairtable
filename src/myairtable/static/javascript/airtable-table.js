@@ -244,6 +244,76 @@ class AirtableTable {
 		}
 	}
 
+	/**
+	 * Copy one or more records into brand-new records.
+	 *
+	 * Every writable field is copied verbatim, including the primary field. Computed fields are
+	 * omitted and recalculated by Airtable, so the copy gets its own id, autonumber and timestamps.
+	 *
+	 * The source is always re-read from Airtable before copying, even when a record object is
+	 * passed. That keeps the copy consistent with current server state, guarantees freshly signed
+	 * attachment URLs (Airtable's expire after roughly two hours), and means the caller's own
+	 * object is never touched.
+	 *
+	 * Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+	 * independent attachment rather than aliasing the source's.
+	 *
+	 * Linked records are copied as-is. Airtable link fields are many-to-many underneath, so the
+	 * copy is added alongside the original on the far side of the link; the source record's own
+	 * links are never modified.
+	 *
+	 * @param {object|object[]|string|string[]} source - Record(s) or record id(s) to copy
+	 * @param {{ typecast?: boolean, returnAs?: "model"|"record"|"interface" }} [options]
+	 */
+	async duplicate(source, options) {
+		this.invalidateCache();
+		// Only pass typecast to airtable.js when true (omit when false), matching the API's default.
+		const writeOptions = options?.typecast ? { typecast: true } : undefined;
+		const isArray = Array.isArray(source);
+		if (isArray && source.length === 0) return [];
+		const firstItem = isArray ? source[0] : source;
+		const items = isArray ? source : [source];
+
+		// A record id carries no shape, so id inputs default to models; object inputs round-trip
+		// back to whatever they came in as, matching create()/update().
+		const returnAs = options?.returnAs ?? (typeof firstItem === "string" ? "model" : this.detectInputType(firstItem));
+		const sourceIds = typeof firstItem === "string" ? items : items.map((r) => r?.id);
+
+		const unsavedIndex = sourceIds.findIndex((id) => !id);
+		if (unsavedIndex >= 0) {
+			throw new Error(`duplicate: source at index ${unsavedIndex} has no id; only saved records can be duplicated.`);
+		}
+
+		// One batched read, then re-key to input order: Airtable returns records in table order,
+		// not the order they were asked for.
+		const fetched = await this.get(sourceIds);
+		const byId = new Map(fetched.map((model) => [model.id, model]));
+		const models = sourceIds.map((id) => {
+			const model = byId.get(id);
+			if (!model) throw new Error(`duplicate: source record ${id} was not found`);
+			return model;
+		});
+
+		// `asInsert` is what makes this work: these models came from the server, so `_isNew` is
+		// false and nothing is dirty — the default create payload would be empty.
+		const payloads = models.map((model) => model.toCreateRecordData(true, true));
+		const createdRecords = [];
+		for (let i = 0; i < payloads.length; i += 10) {
+			const batch = payloads.slice(i, i + 10);
+			// create (POST) is non-idempotent: do NOT retry 5xx (could insert duplicates).
+			const batchCreated = await this.withRetry(() => this._table.create(batch, writeOptions), false);
+			createdRecords.push(...batchCreated);
+		}
+
+		const copies =
+			returnAs === "model"
+				? createdRecords.map((r) => this.recordCtor(r))
+				: returnAs === "interface"
+					? createdRecords.map((r) => this.toInterface(r))
+					: createdRecords;
+		return isArray ? copies : copies[0];
+	}
+
 	//#endregion
 
 	//#region UPDATE
