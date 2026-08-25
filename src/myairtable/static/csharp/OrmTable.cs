@@ -220,7 +220,11 @@ public class OrmTable<T>
     /// links are never modified.
     /// </para>
     /// </remarks>
-    public async Task<T> DuplicateAsync(T model, bool typecast = false, CancellationToken ct = default)
+    public async Task<T> DuplicateAsync(
+        T model,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
     {
         var created = await CreateBatchAsync(
                 new[] { AirtableModel.ProjectAttachmentsForCreate(model.ToCreateFields()) },
