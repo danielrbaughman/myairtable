@@ -306,7 +306,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 					(fields as any)[key] = (this._fields[desc.propertyName] as any)?.ids;
 					break;
 				case "attachment":
-					(fields as any)[key] = this.sanitizeAttachment(desc.propertyName);
+					(fields as any)[key] = this.sanitizeAttachment(desc.propertyName, this._isNew);
 					break;
 				default:
 					(fields as any)[key] = this._fields[desc.propertyName];
@@ -320,24 +320,31 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return fields;
 	}
 
-	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
-	protected sanitizeAttachment(fieldName: string): Attachment[] {
+	/**
+	 * Airtable returns attachments with read-only metadata (`size`, `type`, `width`, `height`,
+	 * `thumbnails`) that its own API rejects on write, and create and update do NOT accept the
+	 * same shapes — verified against the live API:
+	 *
+	 * - **create** is a strict whitelist: only `{url}` / `{url, filename}` is accepted. Sending
+	 *   `id` — alone, echoed back with `url`, or as `{id,url,filename,size,type}` — fails with
+	 *   `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id.
+	 * - **update** accepts `id`, and it means *retain this attachment*. Re-sending `{url}` on an
+	 *   update would instead re-download the file and replace the id, so `id` must be preserved
+	 *   here or existing attachments churn on every save.
+	 *
+	 * Hence `forCreate`: project to `{url, filename}` when inserting, keep `{id}` when updating an
+	 * attachment that already has one.
+	 */
+	protected sanitizeAttachment(fieldName: string, forCreate: boolean): Attachment[] {
 		const attachments = this._fields[fieldName] as Attachment[] | undefined;
-		const writableAttachments: Attachment[] = [];
-		if (attachments && Array.isArray(attachments)) {
-			for (const attachment of attachments) {
-				const writableAttachment: Attachment = {
-					id: attachment.id,
-					url: attachment.url,
-					filename: attachment.filename,
-					size: attachment.size,
-					type: attachment.type,
-				};
-				writableAttachments.push(writableAttachment);
-			}
-		}
-
-		return writableAttachments;
+		if (!attachments || !Array.isArray(attachments)) return [];
+		return attachments.map((attachment) => {
+			// Retain an existing attachment on update; Airtable rejects `id` on create.
+			if (!forCreate && attachment.id) return { id: attachment.id } as unknown as Attachment;
+			const writable: { url: string; filename?: string } = { url: attachment.url };
+			if (attachment.filename) writable.filename = attachment.filename;
+			return writable as unknown as Attachment;
+		});
 	}
 
 	private _createLinkedField(desc: FieldDescriptor, value: unknown): LinkedRecord<any> | LinkedRecords<any> {
