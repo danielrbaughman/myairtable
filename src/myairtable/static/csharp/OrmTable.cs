@@ -203,6 +203,95 @@ public class OrmTable<T>
         return collected;
     }
 
+    /// <summary>
+    /// Copy a record into a brand-new record.
+    /// </summary>
+    /// <remarks>
+    /// Every writable field is copied verbatim, including the primary field. Computed fields are
+    /// omitted and recalculated by Airtable, so the copy gets its own id, autonumber and
+    /// timestamps. The source model is never modified.
+    /// <para>
+    /// Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+    /// independent attachment rather than aliasing the source's.
+    /// </para>
+    /// <para>
+    /// Linked records are copied as-is. Airtable link fields are many-to-many underneath, so the
+    /// copy is added alongside the original on the far side of the link; the source record's own
+    /// links are never modified.
+    /// </para>
+    /// </remarks>
+    public async Task<T> DuplicateAsync(T model, bool typecast = false, CancellationToken ct = default)
+    {
+        var created = await CreateBatchAsync(
+                new[] { AirtableModel.ProjectAttachmentsForCreate(model.ToCreateFields()) },
+                typecast,
+                ct
+            )
+            .ConfigureAwait(false);
+        if (created.Count == 0)
+            throw new AirtableException.ApiError(
+                "UNEXPECTED_RESPONSE",
+                "duplicate returned no records"
+            );
+        return created[0];
+    }
+
+    /// <summary>
+    /// Read the record with <paramref name="recordId"/> and copy it. Costs one extra GET, and in
+    /// exchange the copy reflects current server state and its attachment URLs are freshly signed
+    /// (Airtable's expire after roughly two hours).
+    /// </summary>
+    public async Task<T> DuplicateAsync(
+        string recordId,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
+    {
+        var source = await GetAsync(recordId, ct).ConfigureAwait(false);
+        return await DuplicateAsync(source, typecast, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Read the records with <paramref name="recordIds"/> and copy them, preserving order.
+    /// </summary>
+    public async Task<List<T>> DuplicateAsync(
+        IReadOnlyList<string> recordIds,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
+    {
+        if (recordIds.Count == 0)
+            return new List<T>();
+        // GetAsync(IReadOnlyList<string>) already preserves caller-supplied order.
+        var sources = await GetAsync(recordIds, ct).ConfigureAwait(false);
+        return await DuplicateModelsAsync(sources, typecast, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Copy several records into brand-new records. Chunks into Airtable's batch limit (10).
+    /// </summary>
+    /// <remarks>
+    /// Named <c>DuplicateModelsAsync</c> rather than an overload of <c>DuplicateAsync</c> for the
+    /// same reason <c>DeleteModelsAsync</c> exists: it would otherwise be ambiguous with the
+    /// <c>IReadOnlyList&lt;string&gt;</c> id overload at the call site.
+    /// </remarks>
+    public async Task<List<T>> DuplicateModelsAsync(
+        IReadOnlyList<T> models,
+        bool typecast = false,
+        CancellationToken ct = default
+    )
+    {
+        if (models.Count == 0)
+            return new List<T>();
+        var payloads = models
+            .Select(m => AirtableModel.ProjectAttachmentsForCreate(m.ToCreateFields()))
+            .ToList();
+        var collected = new List<T>(models.Count);
+        foreach (var batch in Chunk(payloads))
+            collected.AddRange(await CreateBatchAsync(batch, typecast, ct).ConfigureAwait(false));
+        return collected;
+    }
+
     private async Task<List<T>> CreateBatchAsync(
         IReadOnlyList<Dictionary<string, JsonNode?>> records,
         bool typecast,
