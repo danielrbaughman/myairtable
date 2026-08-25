@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <string>
 
@@ -48,6 +49,55 @@ void write_optional(json& out, const std::string& key, const std::optional<T>& v
     if (value.has_value()) {
         out[key] = *value;
     }
+}
+
+/// Reduce attachment cells to the only shape Airtable accepts when inserting.
+///
+/// Airtable returns attachments carrying read-only metadata (`id`, `size`, `type`, `width`,
+/// `height`, `thumbnails`). On **create** it accepts only `{"url": ...}` (optionally with
+/// `"filename"`) -- sending an `id`, alone or echoed alongside `url`, fails with
+/// `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id,
+/// which is what makes a duplicated record's attachment independent of its source rather than
+/// an alias.
+///
+/// Create-only: on **update** an `id` is legal and means "retain this attachment".
+///
+/// Cells are recognised by shape rather than by field id, so this needs no generated metadata:
+/// no other Airtable cell type is an array of objects carrying a `url` alongside an
+/// `att`-prefixed id. Returns a copy; the caller's json is never modified.
+inline json project_attachments_for_create(const json& fields) {
+    if (!fields.is_object()) {
+        return fields;
+    }
+    json projected_fields = fields;
+    for (auto entry : projected_fields.items()) {
+        json& value = entry.value();
+        if (!value.is_array() || value.empty()) {
+            continue;
+        }
+        const bool is_attachment_cell =
+            std::all_of(value.begin(), value.end(), [](const json& item) {
+                if (!item.is_object() || !item.contains("url") || !item.contains("id")) {
+                    return false;
+                }
+                const json& id = item.at("id");
+                return id.is_string() && id.get<std::string>().rfind("att", 0) == 0;
+            });
+        if (!is_attachment_cell) {
+            continue;
+        }
+        json projected = json::array();
+        for (const json& item : value) {
+            json projected_item = json::object();
+            projected_item["url"] = item.at("url");
+            if (item.contains("filename") && !item.at("filename").is_null()) {
+                projected_item["filename"] = item.at("filename");
+            }
+            projected.push_back(std::move(projected_item));
+        }
+        value = std::move(projected);
+    }
+    return projected_fields;
 }
 
 } // namespace myairtable
