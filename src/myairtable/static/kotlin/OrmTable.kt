@@ -186,6 +186,67 @@ class OrmTable<T : AirtableModel>(
 
     // endregion
 
+    // region duplicate
+
+    /**
+     * Copy a record into a brand-new record.
+     *
+     * Every writable field is copied verbatim, including the primary field. Computed fields
+     * are omitted and recalculated by Airtable, so the copy gets its own id, autonumber and
+     * timestamps. The source model is never modified.
+     *
+     * Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+     * independent attachment rather than aliasing the source's.
+     *
+     * Linked records are copied as-is. Airtable link fields are many-to-many underneath, so
+     * the copy is added alongside the original on the far side of the link; the source
+     * record's own links are never modified.
+     */
+    suspend fun duplicate(
+        model: T,
+        typecast: Boolean = false,
+    ): T =
+        createBatch(listOf(projectAttachmentsForCreate(model.toCreateFields())), typecast).firstOrNull()
+            ?: throw AirtableException.Api("UNEXPECTED_RESPONSE", "duplicate returned no records")
+
+    /**
+     * Copy many records into brand-new records. Chunks into Airtable's batch limit (10).
+     *
+     * `@JvmName` because `List<T>` and `List<String>` erase to the same JVM signature — the
+     * same reason `delete` needs it.
+     */
+    @JvmName("duplicateModels")
+    suspend fun duplicate(
+        models: List<T>,
+        typecast: Boolean = false,
+    ): List<T> =
+        models
+            .map { projectAttachmentsForCreate(it.toCreateFields()) }
+            .chunked(BATCH_SIZE)
+            .flatMap { createBatch(it, typecast) }
+
+    /**
+     * Read the record with [recordId] and copy it. Costs one extra GET, and in exchange the
+     * copy reflects current server state and its attachment URLs are freshly signed
+     * (Airtable's expire after roughly two hours).
+     */
+    suspend fun duplicate(
+        recordId: String,
+        typecast: Boolean = false,
+    ): T = duplicate(get(recordId), typecast)
+
+    /** Read the records with [recordIds] and copy them, preserving the given order. */
+    suspend fun duplicate(
+        recordIds: List<String>,
+        typecast: Boolean = false,
+    ): List<T> {
+        if (recordIds.isEmpty()) return emptyList()
+        // get(recordIds) fans out bounded-concurrently but preserves caller order.
+        return duplicate(get(recordIds), typecast)
+    }
+
+    // endregion
+
     // region update
 
     /**

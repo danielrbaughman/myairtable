@@ -1580,6 +1580,9 @@ class TestKotlinComputedFields:
         assert "suspend fun create(models: List<TestTableModel>)" in content
         assert "suspend fun update(model: TestTableModel)" in content
         assert "suspend fun updateFields(recordId: String, fields: Map<String, JsonElement>)" in content
+        assert "suspend fun duplicate(model: TestTableModel, typecast: Boolean = false)" in content
+        assert '@JvmName("duplicateModels")' in content
+        assert "suspend fun duplicate(recordIds: List<String>, typecast: Boolean = false)" in content
         assert "suspend fun upsert(model: TestTableModel, fieldsToMergeOn: List<String>)" in content
         assert "suspend fun delete(recordId: String)" in content
         assert '@JvmName("deleteModels")' in content
