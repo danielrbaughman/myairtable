@@ -2374,6 +2374,24 @@ class TestJavaTablesAndMain:
         assert "public DictTable dict() {" in content
         assert "new DictTable(TABLE_ID, TestTableFields.nameToId, client);" in content
 
+    def test_tables_forward_orm_methods(self, tmp_path: Path):
+        """The generated table re-emits the ORM surface as explicit forwarders.
+
+        Java is a Group B target: unlike Python/TS/C#/C++, {Table}Table does not inherit from
+        OrmTable, so every verb has to be emitted here or it is simply absent from the
+        generated API. Nothing else pins that list.
+        """
+        out = self._generate(tmp_path)
+        content = (out / "dynamic" / "tables" / "TestTableTable.java").read_text()
+
+        assert "public TestTableModel create(TestTableModel model)" in content
+        assert "public TestTableModel update(TestTableModel model)" in content
+        assert "public TestTableModel duplicate(TestTableModel model)" in content
+        assert "public TestTableModel duplicate(String recordId)" in content
+        # List<Model> and List<String> erase to the same signature, hence the distinct names.
+        assert "public List<TestTableModel> duplicateModels(List<TestTableModel> models)" in content
+        assert "public List<TestTableModel> duplicateAll(List<String> recordIds)" in content
+
     def test_main_contains_base_id_and_per_table_accessors(self, tmp_path: Path):
         """Airtable.java should expose BASE_ID and one accessor method per table."""
         out = self._generate(tmp_path)

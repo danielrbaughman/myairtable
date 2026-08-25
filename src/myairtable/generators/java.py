@@ -792,6 +792,41 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("orm.delete(model);", indent=2)
             write.line_indented("}")
             write.line_empty()
+            # These thread `typecast` through, unlike the create/update forwarders above:
+            # `orm` is package-private, so a flag the forwarder drops is unreachable from
+            # generated code. (Backfilling the other verbs is tracked separately.)
+            write.doc_comment(
+                "Copy a record into a brand-new record. Writable fields are copied verbatim, "
+                "computed fields are recalculated by Airtable, and the source is left untouched.",
+                indent=1,
+            )
+            write.line_indented(f"public {model_name} duplicate({model_name} model, boolean typecast) {{")
+            write.line_indented("return orm.duplicate(model, typecast);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+            write.line_indented(f"public {model_name} duplicate({model_name} model) {{")
+            write.line_indented("return orm.duplicate(model);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+            write.doc_comment("Read the record with this ID and copy it (one extra GET).", indent=1)
+            write.line_indented(f"public {model_name} duplicate(String recordId) {{")
+            write.line_indented("return orm.duplicate(recordId);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+            write.doc_comment(
+                "Copy many records. Chunked. (duplicateModels because erasure forbids overloading List<String> vs List<Model>.)",
+                indent=1,
+            )
+            write.line_indented(f"public List<{model_name}> duplicateModels(List<{model_name}> models) {{")
+            write.line_indented("return orm.duplicateModels(models);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+            write.doc_comment("Read the records with these IDs and copy them, preserving order.", indent=1)
+            write.line_indented(f"public List<{model_name}> duplicateAll(List<String> recordIds) {{")
+            write.line_indented("return orm.duplicateAll(recordIds);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
             write.doc_comment(
                 "Delete many records by ID. Chunked. (deleteAll because erasure forbids overloading List<String> vs List<Model>.)",
                 indent=1,
