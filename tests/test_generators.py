@@ -917,6 +917,8 @@ class TestSwiftGeneratorOutput:
         assert "public func create(" in content
         assert "public func update(" in content
         assert "public func upsert(" in content
+        assert "public func duplicate(_ model: TestTableModel" in content
+        assert "public func duplicate(_ recordId: String" in content
         assert "public func delete(_ recordId: String)" in content
         assert "public func delete(_ recordIds: [String])" in content
         assert "public func delete(_ model: TestTableModel)" in content

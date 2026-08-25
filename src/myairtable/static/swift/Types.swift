@@ -158,6 +158,52 @@ extension VecOrValue: Equatable where T: Equatable {}
 /// A type-erased JSON value used where Airtable's schema doesn't constrain a
 /// field's shape (e.g., `UNKNOWN` fields, raw `DictTable` values). Codable and
 /// Sendable so it can flow through strict-concurrency code paths.
+/// Reduce attachment cells to the only shape Airtable accepts when inserting.
+///
+/// Airtable returns attachments carrying read-only metadata (`id`, `size`, `type`, `width`,
+/// `height`, `thumbnails`). On **create** it accepts only `{"url": ...}` (optionally with
+/// `"filename"`) — sending an `id`, alone or echoed alongside `url`, fails with
+/// `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id,
+/// which is what makes a duplicated record's attachment independent of its source rather than
+/// an alias.
+///
+/// Create-only: on **update** an `id` is legal and means "retain this attachment".
+///
+/// Cells are recognised by shape rather than by field id, so this needs no generated metadata:
+/// no other Airtable cell type is an array of objects carrying a `url` alongside an
+/// `att`-prefixed id.
+public func projectAttachmentsForCreate(
+    _ fields: [String: AirtableJSONValue]
+) -> [String: AirtableJSONValue] {
+    var projectedFields = fields
+    for (key, value) in fields {
+        guard case .array(let items) = value, !items.isEmpty else { continue }
+
+        var projected: [AirtableJSONValue] = []
+        projected.reserveCapacity(items.count)
+        var isAttachmentCell = true
+        for item in items {
+            guard case .object(let object) = item,
+                let url = object["url"],
+                case .string(let id) = object["id"] ?? .null,
+                id.hasPrefix("att")
+            else {
+                isAttachmentCell = false
+                break
+            }
+            var entry: [String: AirtableJSONValue] = ["url": url]
+            if let filename = object["filename"], filename != .null {
+                entry["filename"] = filename
+            }
+            projected.append(.object(entry))
+        }
+        if isAttachmentCell {
+            projectedFields[key] = .array(projected)
+        }
+    }
+    return projectedFields
+}
+
 public enum AirtableJSONValue: Codable, Sendable, Equatable {
     case null
     case bool(Bool)
