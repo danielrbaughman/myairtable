@@ -102,7 +102,11 @@ copies: list[ContactsModel] = airtable.contacts.duplicate([id_a, id_b])
 ```
 
 > [!NOTE]
-> `duplicate()` always re-reads the source from Airtable before copying, so the copy reflects
+> `duplicate()` is available in all ten targets. Languages without overloading spell it
+> `duplicate_one` / `duplicate_many` / `duplicate_one_by_id` / `duplicate_many_by_ids` (Rust, C++,
+> and `DuplicateOne`… in Go), matching how those targets already name the other verbs.
+>
+> It always re-reads the source from Airtable before copying, so the copy reflects
 > current server state. Attachments are copied by URL, which makes Airtable re-ingest each file
 > — the copy owns its attachment rather than sharing the original's. Linked records are copied
 > as-is; because Airtable links are many-to-many underneath, the copy is added alongside the
