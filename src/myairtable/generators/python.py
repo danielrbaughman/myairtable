@@ -494,6 +494,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
     "DurationField",
     "LastModifiedByField",
     "AutoNumberField",
+    "RatingField",
     "CollaboratorField",
     "MultipleCollaboratorsField",
 )
@@ -993,6 +994,7 @@ SIMPLE_ORM_TYPES: dict[str, str] = {
     "lastModifiedTime": "LastModifiedTimeField",
     "count": "CountField",
     "autoNumber": "AutoNumberField",
+    "rating": "RatingField",
     "percent": "PercentField",
     "duration": "DurationField",
     "currency": "CurrencyField",

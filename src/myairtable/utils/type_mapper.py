@@ -34,6 +34,7 @@ AIRTABLE_TO_GENERIC: dict[str, GenericType] = {
     # Integer
     "count": GenericType.INTEGER,
     "autoNumber": GenericType.INTEGER,
+    "rating": GenericType.INTEGER,
     # Float
     "percent": GenericType.FLOAT,
     "currency": GenericType.FLOAT,
