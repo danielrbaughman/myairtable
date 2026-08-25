@@ -2,235 +2,25 @@
 
 An Airtable code generator, focused on developer experience.
 
-> [!WARNING]
-> myAirtable is under active development.
-
 Languages supported:
 
 - Python (via [pyAirtable](https://pyairtable.readthedocs.io/en/stable/))
 - TypeScript (via [airtable.js](https://github.com/Airtable/airtable.js))
 - JavaScript (via [airtable.js](https://github.com/Airtable/airtable.js))
-- Rust (via a custom-built client)
-- Swift (via a custom-built client)
-- Kotlin (via a custom-built client on [Ktor](https://ktor.io) + [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization))
-- Java (via a custom-built client on the JDK's `java.net.http.HttpClient` + [Jackson](https://github.com/FasterXML/jackson-databind))
-- Go (via a custom-built client on the standard library — `net/http` + `encoding/json`, zero third-party dependencies)
-- C# (via a custom-built .NET 8 client on `HttpClient` + `System.Text.Json`, async/await, zero third-party dependencies)
-- C++ (via a custom-built C++20 client on **libcurl** + a vendored [nlohmann/json](https://github.com/nlohmann/json); header-only distribution)
+- Rust
+- Swift
+- Kotlin
+- Java
+- Go
+- C#
+- C++
 
-### Kotlin
-
-The generated Kotlin code uses `@Serializable` models, so the **kotlinx.serialization compiler plugin is REQUIRED** — without `kotlin("plugin.serialization")` the generated code will not compile. A known-good Gradle setup (`build.gradle.kts`):
-
-```kotlin
-plugins {
-    kotlin("jvm") version "2.2.20"
-    kotlin("plugin.serialization") version "2.2.20" // REQUIRED for the generated @Serializable models
-}
-
-sourceSets {
-    main {
-        kotlin.srcDir("path/to/generated/output") // wherever you generate into
-    }
-}
-
-dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    implementation("io.ktor:ktor-client-core:3.2.3")
-    implementation("io.ktor:ktor-client-cio:3.2.3")
-}
-```
-
-### Java
-
-The generated Java code targets **Java 21+** (sealed interfaces, records, pattern-matching switch) and is a plain blocking API (cheap on virtual threads). It only needs Jackson databind on the classpath:
-
-```kotlin
-java {
-    toolchain { languageVersion = JavaLanguageVersion.of(21) }
-}
-
-sourceSets {
-    main {
-        java.srcDir("path/to/generated/output") // wherever you generate into
-    }
-}
-
-dependencies {
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
-}
-```
-
-> [!IMPORTANT]
-> Do NOT register `jackson-datatype-jsr310` (or call `findAndRegisterModules()`) on the runtime's mapper — the bundled `AirtableJacksonModule` owns `Instant`/`Duration` encoding (Airtable durations are numeric seconds, not ISO `PT…` strings).
-
-Models are mutable POJOs created through a generated `Builder` (the Java analog of the other targets' named arguments): `PrimaryModel.builder().primaryKey("x").build()`. Bulk deletes are named `deleteAll(ids)` / `deleteModels(models)` because Java's type erasure forbids overloading `delete(List<String>)` against `delete(List<Model>)`.
-
-#### Error handling
-
-Every failure is an `AirtableException` — a sealed, **unchecked** hierarchy (checked exceptions would poison every generated signature). The subtypes are `Http` (non-2xx, with `statusCode()`/`body()`), `Api` (a structured Airtable error envelope, with `code()`/`apiMessage()`), `RateLimited` (429, with `retryAfterSeconds()`), `Decoding`, `Network`, `InvalidUrl`, and `MissingCredentials`. Catch the base type for everything, or a specific subtype for targeted handling:
-
-```java
-try {
-    var contacts = airtable.primary().get();
-} catch (AirtableException.RateLimited e) {
-    // Only reached after retries are exhausted (see below).
-    log.warn("rate limited; retry after {}s", e.retryAfterSeconds());
-} catch (AirtableException e) {
-    log.error("airtable call failed", e);
-}
-```
-
-Because the hierarchy is sealed, you can also pattern-match exhaustively with a `switch` (Java 21):
-
-```java
-String describe(AirtableException e) {
-    return switch (e) {
-        case AirtableException.Http h -> "HTTP " + h.statusCode();
-        case AirtableException.Api a -> a.code() + ": " + a.apiMessage();
-        case AirtableException.RateLimited r -> "rate limited (" + r.retryAfterSeconds() + "s)";
-        case AirtableException.Decoding d -> "decode error";
-        case AirtableException.Network n -> "network error";
-        case AirtableException.InvalidUrl u -> "bad url";
-        case AirtableException.MissingCredentials m -> "missing credentials";
-    };
-}
-```
-
-> [!NOTE]
-> 429 and 5xx responses are **automatically retried** with exponential backoff (plus jitter, honoring a server `Retry-After`). `AirtableException.RateLimited` only surfaces once retries are exhausted.
-
-#### Resource lifecycle
-
-`Airtable` (and the underlying `AirtableClient`) implements `AutoCloseable`. A long-lived application should construct **one** `Airtable` and hold it for the process lifetime. For short-lived use, a try-with-resources block is idiomatic:
-
-```java
-try (var airtable = new Airtable(baseId, apiKey)) {
-    var contacts = airtable.primary().get();
-}
-```
-
-> [!NOTE]
-> `close()` only closes the `HttpClient` the runtime **owns** — when you inject your own `HttpClient` (via the full `AirtableClient` constructor), `close()` is a no-op and the client remains yours to manage.
-
-#### Clearing a field
-
-To clear a field server-side, set it to `null` on a **fetched** model and update it. Dirty-tracking diffs the model against the snapshot taken at fetch time and emits an explicit JSON `null` for the cleared field:
-
-```java
-var contact = airtable.primary().get("rec1234567890"); // fetched: carries a snapshot
-contact.setSingleLineText(null);
-airtable.primary().update(contact); // sends {"fields": {"fld...": null}}, clearing it
-```
-
-> [!IMPORTANT]
-> This only works on a model **obtained from the table** — it has a snapshot to diff against. A freshly built model (`PrimaryModel.builder()...build()`) has no snapshot, so a `null` field is simply omitted from the create payload rather than sent as an explicit clear.
-
-#### Filtering by formula
-
-Filter with the per-field `f` accessor and pass the resulting formula string via `AirtableQuery.withFormula`:
-
-```java
-var bobs = airtable.primary()
-    .get(new AirtableQuery().withFormula(PrimaryModel.f.singleLineText.contains("Bob")));
-```
-
-Text fields expose `eq`/`neq`/`contains`/`startsWith`/`endsWith`/`regexMatch` (etc.); number fields expose `eq`/`neq`/`greaterThan`/`lessThan`/`between` (etc.). Combine clauses with the `Formulas` combinators `and` / `or` / `not` / `xor`:
-
-```java
-var formula = Formulas.and(
-    PrimaryModel.f.singleLineText.contains("Bob"),
-    PrimaryModel.f.numberInt.greaterThan(10));
-var results = airtable.primary().get(new AirtableQuery().withFormula(formula));
-```
-
-#### Upsert
-
-`upsert(model, mergeOnFieldIds)` inserts or updates a record, matching on the given field IDs. It returns an `OrmTable.UpsertResult<T>` exposing `.model()` (the merged record) and `.wasCreated()` (insert vs update). Merge keys come from the generated `{Table}Fields` ID constants:
-
-```java
-var result = airtable.primary().upsert(
-    PrimaryModel.builder().primaryKey("alice@example.com").build(),
-    List.of(PrimaryFields.primaryKeyId));
-if (result.wasCreated()) {
-    log.info("created {}", result.model().getId());
-}
-```
-
-### Go
-
-The generated Go code targets **Go 1.21+** and depends on the **standard library only** (`net/http` + `encoding/json` — no third-party modules). All files (the static runtime and the generated code) live in one flat `package airtable`, and the generator emits **no** `go.mod` — the consuming project owns its module and imports the generated package:
-
-```go
-import airtable "yourmodule/path/to/output"
-
-at := airtable.NewWithBase(apiKey, baseID, 0) // cacheSeconds; 0 disables caching
-```
-
-Idioms:
-
-- **Models** are structs with `json:"fldID"` tags; optional fields are pointers (`*string`, `*float64`, …) so absent and cleared are distinguishable. Build them with the pointer helpers: `airtable.PrimaryModel{PrimaryKey: airtable.String("x")}`.
-- **`context.Context`** is the first argument of every I/O method: `at.Primary.GetOne(ctx, id)`, `rec.Save(ctx)`.
-- **Errors are returned, never panicked** — typed errors via `errors.As` (`*airtable.APIError`, `*airtable.RateLimitError`, …) and sentinels via `errors.Is` (`airtable.ErrNotFound`). 429/5xx are retried with backoff before surfacing.
-- **Typed table** layer uses generics: `at.Primary` is a `Table[PrimaryModel, *PrimaryModel]`. Methods follow an explicit `*One`/`*Many` naming convention (Go has no overloading): `GetOne`/`GetMany`, `CreateOne`/`CreateMany`, `UpdateOne`/`UpdateMany`, `DeleteOne`/`DeleteMany`, plus `Upsert` and `.Dict()` for raw access. Per-model fluent `Save`/`Fetch`/`Delete` work on models bound via `at.Primary.Attach(&m)` or returned from the table.
-- **Select options** are typed-string constants; **computed fields** decode into `*MaybeSpecialOrError[T]` (read with `.Value()`), lookups/rollups into `*VecOrValue[MaybeSpecialOrError[T]]` (read with `CleanValues`).
-- **Filtering**: `at.Primary.GetMany(ctx, (&airtable.Query{}).WithFilterFormula(airtable.PrimaryF.PrimaryKey.Eq("alice@example.com")))`.
-
-Generated code is `gofmt`-clean by construction; format/lint via `gofmt`/`go vet`/`golangci-lint`.
-
-### C#
-
-The generated C# code targets **.NET 8 / C# 12** and depends on the **base class library only** (`HttpClient` + `System.Text.Json` — no third-party packages). Every file declares the single file-scoped `namespace MyAirtable;`, and the generator emits **no** `.csproj` — the consuming project owns its build:
-
-```csharp
-var airtable = new Airtable(baseId, apiKey, cacheSeconds: 0); // 0 disables caching
-```
-
-Idioms:
-
-- **Models** are mutable `sealed class`es with `[JsonPropertyName("fldID")]` and nullable auto-properties. Writable fields are `{ get; set; }`; computed fields are `[JsonInclude] { get; private set; }` (decode-only). Build them with object initializers: `new PrimaryModel { PrimaryKey = "x" }`.
-- **async/await** throughout: every I/O method is `…Async` and takes a `CancellationToken` — `await at.Primary.GetAsync(id)`, `await model.SaveAsync()`.
-- **Errors** are an unchecked hierarchy — `catch (AirtableException)` or pattern-match a nested case (`AirtableException.ApiError`, `.RateLimitedError`, …). 429/5xx are retried with jittered backoff before surfacing.
-- **Typed ORM is the default** on each table accessor — `at.Primary` _is_ an `OrmTable<PrimaryModel>` (reified generics, no class token), so `at.Primary.GetAsync(id)`/`CreateAsync`/`UpdateAsync`/`UpsertAsync`/`DeleteAsync` return typed models. `at.Primary.Dict` gives raw field-bag access. Per-model fluent `SaveAsync`/`FetchAsync`/`DeleteAsync`.
-- **Select options** are C# enums with a generated per-enum `JsonConverter`; **computed fields** decode into `MaybeSpecialOrError<T>?` (read with `.ValueOrDefault`), lookups/rollups into `VecOrValue<MaybeSpecialOrError<T>>?` (read with `VecOrValue.CleanValues`).
-- **Filtering**: `at.Primary.GetAsync(new AirtableQuery().WithFormula(PrimaryModel.F.PrimaryKey.Eq("alice@example.com")))`.
-
-Generated code is formatted with [CSharpier](https://csharpier.com).
-
-### C++
-
-The generated C++ code targets **C++20** and is **header-only**: add the output folder to your include path, link **libcurl** (preinstalled on macOS/Linux), and compile the vendored timezone implementation in exactly one translation unit:
-
-```cpp
-// tz_impl.cpp — one file in your project (stb-style single-TU implementation)
-#define MYAIRTABLE_TZ_IMPLEMENTATION
-#include "static/airtable_tz.hpp"
-```
-
-```cpp
-#include "airtable.hpp"
-myairtable::Airtable at(apiKey, /*cache_seconds=*/0);  // 0 disables caching
-```
-
-Idioms:
-
-- **Models** are **aggregate structs** over a data-free CRTP behavior base: public `std::optional<T>` members, created with designated initializers — `PrimaryModel{.primary_key = "x"}` — and passed to the table's `create()`. Absent and JSON-null both decode to `std::nullopt`.
-- **Blocking, thread-safe client**: per-request curl handles over a shared DNS/TLS-session cache; 429/5xx retried with jittered backoff before surfacing.
-- **Errors** are exceptions rooted in `std::runtime_error` — `catch (const myairtable::AirtableException&)` or a specific subclass (`ApiError`, `RateLimitedError`, …).
-- **Typed ORM is the default** on each table accessor — `at.primary()` _is_ an `OrmTable<PrimaryModel>`, so `get`/`get_all`/`create`/`update`/`upsert` return typed models; `.dict()` gives raw field-bag access. Per-model fluent `save()`/`fetch()`/**`remove()`** (`delete` is a C++ keyword — the one naming divergence).
-- **Select options** are `enum class`es with generated wire serializers; **computed fields** decode into `std::optional<MaybeSpecialOrError<T>>` (read with `->value()`), lookups/rollups into `std::optional<VecOrValue<MaybeSpecialOrError<T>>>` (read with `->clean_values()`). Computed members are public but **never serialized on write** — mutating one and calling `save()` sends nothing for it (pinned by tests).
-- **Filtering**: `at.primary().get_many(AirtableQuery{.formula = PrimaryModel::F.primary_key.eq("alice@example.com")})`. Combinators are `Formulas::and_`/`or_`/`not_` (`and`/`or`/`not` are C++ alternative tokens).
-- Portability note: designated-initializer-over-base relies on the C++20 P1975 defect resolution; AppleClang is the CI-gated compiler, GCC/MSVC are unverified.
-
-Generated code is formatted with [clang-format](https://clang.llvm.org/docs/ClangFormat.html) (vendored headers exempt).
+> [!WARNING]
+> The Python, JavaScript, and TypeScript versions were all hand-coded, and are abstractions of existing libraries. The other languages use custom-built clients, and were largely AI-generated. All languages are [thoroughly tested](https://github.com/danielrbaughman/myairtable-tests), but only Python, TypeScript, and Rust are battle-tested in production environments. In other words, use at your own risk, and submit a PR if you find a bug.
 
 ## Features
 
-The following examples are in Python, but most features are supported in every language. See notes in each section for language-specific differences.
-
-> [!NOTE]
-> In the examples below, `myairtable_output` stands in for _your_ generated package — the actual import path depends on the output folder you generate into.
+The following examples are in Python, but most features are supported in every language, and the api's are roughly the same in each language.
 
 ### ORM Models
 
@@ -255,7 +45,7 @@ name = contact.name
 > [!NOTE]
 > For JavaScript & TypeScript, the ORM models are custom to myAirtable, though they still use the Airtable.js client for save/delete, and contain methods for conversion to/from Airtable.js's "Record" class. Also, they use [Zod](https://zod.dev) validation under-the-hood.
 >
-> For Rust, Swift, Kotlin, and Java, 100% of the code is custom to myAirtable. The convenient linked-record traversal syntax in Python and TS/JS is not (yet?) implemented in these targets — linked records are raw record-ID lists resolved through the linked table's `get`.
+> For all other languages, 100% of the API-client code is custom to myAirtable.
 
 ### Formula Builders
 
@@ -276,7 +66,7 @@ Airtable().contacts.get(formula=formula)
 ```
 
 > [!NOTE]
-> For JavaScript, TypeScript, Rust, Swift, Kotlin, and Java, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise the same. (Kotlin and Java name the equality pair `eq`/`neq` — `equals` collides with `Any.equals`/`Object.equals` on the JVM.)
+> For all other languages, the formula builders output strings, and lack the Python-specific convenience of dunder methods, but are otherwise largely the same.
 
 ### Table/CRUD Wrappers
 
@@ -329,10 +119,9 @@ myAirtable also includes support for generating documentation for your Airtable 
 - All the types: just about everything from the schema has a constant/dict/type for convenience. Want an array of the options for a select field? How about a map between field ids and names? Or perhaps a union type representing all table names? It's all in there.
 - Convenience functions to:
   - build an Airtable URL for base/table/view/record
-  - get the schema, either static (the one used to build the code) or live (from Airtable's API)
+  - get the base schema
 - Optional caching
 - Optional runtime formula evaluation: if enabled, formula fields have their formula transpiled to native code, to allow runtime (re)evaluation. Supports nearly all formulas (can't do LAST_MODIFIED_TIME or CREATED_TIME).
-- MCP Server: Allows agents to analyze your Airtable schema
 
 ## Getting Started
 
@@ -354,83 +143,6 @@ file in the working directory:
 AIRTABLE_API_KEY=your_airtable_api_key_here
 AIRTABLE_BASE_ID=app1234567890
 ```
-
-### Extras
-
-The package splits along what you actually need, so importing the analysis layer
-doesn't drag in the whole generator:
-
-| Install           | Gets you                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `myairtable`      | The analysis layer only — `myairtable.schema_tools` (28 read-only tools over the public meta API), for importing into your own code |
-| `myairtable[cli]` | The above plus the code generator for all 11 targets (the `myairtable` command)                                                     |
-| `myairtable[mcp]` | The above plus the MCP server                                                                                                       |
-
-### Developing on myAirtable itself
-
-1. Clone the repo
-2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
-3. `uv sync` — installs the project editable, with every extra and dev tool
-4. Add the `.env` above
-5. `uv run myairtable --help`
-
-## MCP Server
-
-myAirtable includes an MCP server that exposes read-only tools for Airtable schema introspection and analysis.
-
-### Setup
-
-Add the following to your MCP client config (e.g. `claude_desktop_config.json` for Claude Desktop, or `.claude/settings.json` for Claude Code):
-
-```json
-{
-	"mcpServers": {
-		"myairtable": {
-			"command": "uv",
-			"args": ["run", "--directory", "/path/to/myairtable", "python", "-m", "myairtable.mcp_server"],
-			"env": {
-				"AIRTABLE_API_KEY": "your_airtable_api_key_here",
-				"AIRTABLE_BASE_ID": "app1234567890"
-			}
-		}
-	}
-}
-```
-
-If you have a `.env` file configured (see step 4 above), you can omit the `env` block.
-
-### Tools on the CLI
-
-Every MCP tool is also a CLI subcommand under `myairtable tools` — handy for scripting,
-piping to `jq`, or testing without an MCP client:
-
-```bash
-myairtable tools list-tables            # public meta-API tools
-myairtable tools transpile Jobs "Total" --language python
-myairtable tools --help                 # list all commands
-```
-
-Output is JSON by default (`--pretty` for rich rendering). Add `--save` (before the
-subcommand) to offload large results to `.data/tools/` and print the envelope, mirroring the
-MCP server. The same `schema_tools.py` functions back both the MCP tools and these commands.
-
-### Large results are saved to disk
-
-Many tools can return large payloads (whole-base scans, full schema dumps). When a result
-exceeds the inline limit (default 16 KB; override with `MYAIRTABLE_INLINE_MAX_BYTES`), the
-**full** result is written to a gitignored `.data/tools/<tool>__<args>.json` and the caller
-receives a small envelope instead:
-
-```json
-{ "saved_to": "...", "bytes": 412934, "record_count": 287,
-  "summary": { ... }, "schema": { ...compact shape skeleton... }, "note": "..." }
-```
-
-`schema` is a depth-capped structural skeleton of the file (keys → type tags, arrays → length +
-element shape) — enough to `jq`/`grep` the file without re-running the tool. This applies to
-**all** MCP tools via a server middleware. From the CLI, add `--save` (e.g.
-`myairtable tools --save list-automations`) to exercise the same path. Note: `audit_shares`
-writes share-URL tokens to that local file.
 
 ## License
 
