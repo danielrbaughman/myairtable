@@ -2,6 +2,21 @@ const { recordIdSchema } = require("./special-types");
 const { getBaseId, getOptions } = require("./helpers");
 const { LinkedRecord, LinkedRecords, wrapLinkedRecordProxy } = require("./linked-record");
 
+/**
+ * Rebuilds arrays/objects so a copy shares no mutable state with its source.
+ *
+ * Scalars and Dates are handled explicitly; anything else is walked. Deliberately not a
+ * blanket `structuredClone`, which throws on the class instances (`LinkedRecord`) that
+ * `_fields` can hold — those are rebuilt by the constructor instead.
+ */
+function detachValue(value) {
+	if (value === null || typeof value !== "object") return value;
+	if (value instanceof Date) return new Date(value.getTime());
+	if (Array.isArray(value)) return value.map(detachValue);
+	if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detachValue(item)]));
+}
+
 class AirtableModel {
 	// Base properties
 	record;
@@ -134,6 +149,68 @@ class AirtableModel {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
 		};
+	}
+
+	/**
+	 * Returns a detached, unsaved deep copy of this record.
+	 *
+	 * Carries every field value — computed ones included, so the copy reads like its source —
+	 * but none of the record's identity, so passing it to `create()` inserts a new record
+	 * instead of updating this one. Mutate it first to change whatever should differ.
+	 *
+	 * `_isNew` is what makes that work. A model read back from Airtable has `_isNew === false`
+	 * and an empty dirty set, so `writableFields()` would emit `{}` and the insert would be a
+	 * BLANK record; a copy is built through the constructor, so it starts new with a fresh dirty
+	 * set and emits its full writable payload.
+	 *
+	 * Values are rebuilt rather than shared. Linked fields in particular must be re-created
+	 * against the new instance: `_createLinkedField` bakes an `onDirty` closure bound to the
+	 * model that owns it, so an aliased wrapper would make edits to the COPY mark THIS record
+	 * dirty. Routing through the constructor's `initializeFields()` rebinds them correctly.
+	 *
+	 * Attachments are copied by URL, which makes Airtable re-ingest each file so the new record
+	 * owns its attachment rather than aliasing this one's. Linked records are copied as-is;
+	 * Airtable links are many-to-many, so the new record is added alongside this one and this
+	 * record's own links are untouched.
+	 *
+	 * Performs no I/O, so the copy is only as fresh as this model — and attachment URLs are
+	 * signed and expire. For a copy guaranteed to reflect current server state, use
+	 * `duplicate()` on the table instead.
+	 *
+	 * @returns {this} A new unsaved model carrying this record's values.
+	 */
+	copy() {
+		const copied = new this.constructor(this.detachedFieldData());
+		// Carried after construction, matching how `fromRecord` applies config.
+		if (this.__configBaseId !== undefined) copied.setConfig(this.__configBaseId, this.__configOptions ?? {});
+		copied.evaluateFormulasAtRuntime = this.evaluateFormulasAtRuntime;
+		return copied;
+	}
+
+	/**
+	 * Field values for a detached copy: no id, nothing aliased, attachments projected for insert.
+	 *
+	 * Shaped for the generated constructor, so linked fields are flattened back to the id / ids
+	 * the constructor re-wraps.
+	 */
+	detachedFieldData() {
+		const data = {};
+		for (const desc of this.getFieldDescriptors()) {
+			const stored = this._fields[desc.propertyName];
+			if (desc.fieldType === "linkedRecord" && !desc.isComputed) {
+				data[desc.propertyName] = stored?.id;
+			} else if (desc.fieldType === "linkedRecords" && !desc.isComputed) {
+				data[desc.propertyName] = detachValue(stored?.ids);
+			} else if (desc.fieldType === "attachment" && !desc.isComputed) {
+				// Airtable's create endpoint accepts only {url, filename}. Computed cells are
+				// deliberately left alone: a lookup can hold the same shape, and it is never
+				// written, so stripping its metadata would lose fidelity for nothing.
+				data[desc.propertyName] = this.sanitizeAttachment(desc.propertyName, true);
+			} else {
+				data[desc.propertyName] = detachValue(stored);
+			}
+		}
+		return data;
 	}
 
 	/** Saves the current Airtable record to the server. */
