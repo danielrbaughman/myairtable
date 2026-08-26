@@ -1962,6 +1962,41 @@ class TestOriginalGeneratorCollisionDedup:
         assert "pub my_field_v2: Option<" in model
         assert "self.my_field_v2" in model
 
+    def test_rust_emits_attachment_projection_for_copy(self, tmp_path: Path):
+        """myairtable-6q37.4 -- `copy()` lives on the OrmModel trait, but the attachment
+        projection it needs cannot: the cells are typed struct members. It is emitted per model,
+        over WRITABLE attachment fields only (a computed lookup can hold the same shape but is
+        never written back), and omitted entirely when a table has no attachment field."""
+        from myairtable.generators.rust import write_models
+        from myairtable.utils.type_mapper import map_types
+
+        fields: list[tuple[str, str, FieldType]] = [
+            ("Name", "fld000", "singleLineText"),
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        base = make_test_base(fields)
+        out = tmp_path / "rust_attachments"
+        out.mkdir()
+        map_types(base)
+        write_models(base, out, formulas=False, runtime=False)
+        model = (out / "dynamic/models/test_table.rs").read_text()
+
+        assert "fn project_attachments_for_copy(&mut self) {" in model
+        assert "if let Some(items) = self.photos.as_mut() {" in model
+        assert "crate::airtable_model::project_attachment_for_copy(item);" in model
+        # The computed lookup keeps its full metadata -- it never reaches a create body.
+        assert "self.lookup_att" not in model
+
+        # No attachment field -> no override; the trait's no-op default stands.
+        plain_fields: list[tuple[str, str, FieldType]] = [("Name", "fld000", "singleLineText")]
+        plain = make_test_base(plain_fields)
+        plain_out = tmp_path / "rust_no_attachments"
+        plain_out.mkdir()
+        map_types(plain)
+        write_models(plain, plain_out, formulas=False, runtime=False)
+        assert "project_attachments_for_copy" not in (plain_out / "dynamic/models/test_table.rs").read_text()
+
     # ---- TypeScript ----
 
     def test_typescript_model_dedup_and_formula_reference(self, tmp_path: Path):

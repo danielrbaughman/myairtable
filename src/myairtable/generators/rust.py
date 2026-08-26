@@ -673,6 +673,33 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("fn set_id(&mut self, id: Option<RecordId>) { self.id = id; }")
             write.line_indented("fn get_created_time(&self) -> &Option<String> { &self.created_time }")
             write.line_indented("fn set_created_time(&mut self, ct: Option<String>) { self.created_time = ct; }")
+
+            # copy() lives on the OrmModel trait, but the attachment projection it needs cannot:
+            # the cells are typed struct members, and the JSON-level projection used by
+            # to_insert_json() is unusable here because a serde round-trip drops the computed
+            # values a copy is meant to carry. So the projection is emitted per model, over the
+            # WRITABLE attachment fields only -- a computed lookup can hold the same shape but is
+            # never written back, so stripping its metadata would lose fidelity for nothing.
+            attachment_fields = [
+                (_rust_ident(prop_map[field.id]), field.rust_type())
+                for field in table.fields
+                if not field.is_computed() and field.rust_type() in ("Attachment", "Vec<Attachment>")
+            ]
+            if attachment_fields:
+                write.doc_comment("Reduce writable attachment cells to the {url, filename} shape create accepts.", indent=1)
+                write.line_indented("fn project_attachments_for_copy(&mut self) {")
+                for field_name, rust_type in attachment_fields:
+                    if rust_type == "Vec<Attachment>":
+                        write.line_indented(f"if let Some(items) = self.{field_name}.as_mut() {{", 2)
+                        write.line_indented("for item in items.iter_mut() {", 3)
+                        write.line_indented("crate::airtable_model::project_attachment_for_copy(item);", 4)
+                        write.line_indented("}", 3)
+                        write.line_indented("}", 2)
+                    else:
+                        write.line_indented(f"if let Some(item) = self.{field_name}.as_mut() {{", 2)
+                        write.line_indented("crate::airtable_model::project_attachment_for_copy(item);", 3)
+                        write.line_indented("}", 2)
+                write.line_indented("}")
             write.line("}")
             write.line_empty()
 

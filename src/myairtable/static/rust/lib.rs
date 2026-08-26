@@ -8,7 +8,7 @@ mod pagination;
 mod struct_table;
 mod types;
 
-pub use airtable_model::{ModelMeta, OrmModel};
+pub use airtable_model::{project_attachment_for_copy, ModelMeta, OrmModel};
 pub use client::AirtableClient;
 pub use error::AirtableError;
 pub use orm_table::OrmTable;
