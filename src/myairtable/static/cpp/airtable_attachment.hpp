@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "airtable_json.hpp"
 
@@ -38,6 +39,40 @@ struct AirtableAttachment {
 
     friend bool operator==(const AirtableAttachment&, const AirtableAttachment&) = default;
 };
+
+/// Reduce ONE attachment to the only shape Airtable accepts when inserting:
+/// `{url}`, optionally with `{filename}`.
+///
+/// The json-level `project_attachments_for_create()` in airtable_json.hpp does the
+/// same job on an already-serialized `fields` object, keyed on cell SHAPE. This
+/// typed overload set is the model-level counterpart used by `AirtableModel::copy()`,
+/// where the cells are still `AirtableAttachment` structs and the writable/computed
+/// split is known statically -- so no shape sniffing is needed and, more importantly,
+/// a COMPUTED attachment-shaped cell (a lookup can hold the identical shape) is never
+/// handed here at all: it is never written back, so stripping its metadata would lose
+/// fidelity for nothing.
+inline AirtableAttachment project_attachment_for_copy(const AirtableAttachment& attachment) {
+    return AirtableAttachment{.url = attachment.url, .filename = attachment.filename};
+}
+
+/// In-place `project_attachment_for_copy` over a writable single-attachment cell.
+/// An absent cell stays absent -- `std::nullopt` is "field not set", not "empty".
+inline void project_attachment_cell(std::optional<AirtableAttachment>& cell) {
+    if (cell.has_value()) {
+        cell = project_attachment_for_copy(*cell);
+    }
+}
+
+/// In-place `project_attachment_for_copy` over a writable attachment LIST cell --
+/// the shape every real Airtable attachment field decodes to.
+inline void project_attachment_cell(std::optional<std::vector<AirtableAttachment>>& cell) {
+    if (!cell.has_value()) {
+        return;
+    }
+    for (AirtableAttachment& attachment : *cell) {
+        attachment = project_attachment_for_copy(attachment);
+    }
+}
 
 } // namespace myairtable
 

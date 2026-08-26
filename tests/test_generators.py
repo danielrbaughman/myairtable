@@ -3017,6 +3017,40 @@ class TestCppGenerator:
         assert "fld002" not in writable_hook  # computed never in a write payload (R21)
         assert 'write_field(fields, "fld002", auto_);' in computed_hook
 
+    def test_model_copy_hook_lists_only_writable_attachment_cells(self, tmp_path: Path):
+        """copy() lives on the CRTP base; this hook is the one generated part (myairtable-6q37.10)."""
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Photos", "fld002", "multipleAttachments"),
+                ("Look", "fld003", "multipleLookupValues"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        hook = content.split("void detach_attachments_for_copy() {")[1].split("}")[0]
+        assert "project_attachment_cell(photos);" in hook
+        # A lookup can hold the identical attachment shape, but it is computed: it never
+        # reaches a create body, so stripping its metadata would lose fidelity for nothing.
+        assert "look" not in hook
+
+    def test_model_copy_hook_emitted_even_with_no_attachments(self, tmp_path: Path):
+        """The base always calls it, so it must always exist."""
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        hook = content.split("void detach_attachments_for_copy() {")[1].split("}")[0]
+        assert hook.strip() == ""
+
+    def test_model_copy_hook_name_is_reserved(self, tmp_path: Path):
+        """A field named "Detach Attachments For Copy" must not shadow the hook."""
+        out = self._generate_fields(
+            [("Primary Key", "fld001", "singleLineText"), ("Detach Attachments For Copy", "fld002", "number"), ("Copy", "fld003", "number")],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "std::optional<double> detach_attachments_for_copy_field{};" in content
+        assert "std::optional<double> copy_field{};" in content
+
     def test_model_from_json_decodes_envelope_by_field_id(self, tmp_path: Path):
         out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
         content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()

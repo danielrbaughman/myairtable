@@ -73,10 +73,19 @@ _CPP_RESERVED_MODEL_MEMBERS = frozenset(
         "copy",
         "collect_writable_fields",
         "collect_computed_fields",
+        "detach_attachments_for_copy",
         "F",
         "k_table_id",
     }
 )
+
+# WRITABLE cell types `AirtableModel::copy()` must project down to {url, filename}
+# (airtable_attachment.hpp `project_attachment_cell`). Everything else the copy carries
+# verbatim: the models are aggregates of value-semantic members, so the implicit copy
+# constructor already deep-copies them. COMPUTED attachment-shaped cells are excluded on
+# purpose — a lookup can hold the identical shape, it is never written back, and stripping
+# its metadata would lose fidelity for nothing (epic contract item 6).
+_CPP_ATTACHMENT_CELL_TYPES = frozenset({"AirtableAttachment", "std::vector<AirtableAttachment>"})
 
 # Airtable field class -> static DSL filter type (formula_class() keys).
 _CPP_FORMULA_CLASS_MAP = {
@@ -415,6 +424,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         props = _field_property_map(table)
         writable = [f for f in table.fields if not f.is_computed()]
         computed = [f for f in table.fields if f.is_computed()]
+        attachment_cells = [f for f in writable if f.cpp_type() in _CPP_ATTACHMENT_CELL_TYPES]
 
         # Pre-transpile this table's formula fields into `evaluate_*` bodies (F8).
         transpiled_formulas: dict[str, str] = {}
@@ -500,6 +510,14 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             for field in computed:
                 write.line_indented(f'write_field(fields, "{field.id}", {props[field.id]});', indent=2)
             write.line_indented("return fields;", indent=2)
+            write.line_indented("}")
+            # copy() lives on the CRTP base, but the base cannot enumerate members: this
+            # hook is the one part of the detach that needs generated knowledge — which
+            # cells are WRITABLE attachments. Emitted even when empty so the base's call
+            # always resolves.
+            write.line_indented("void detach_attachments_for_copy() {")
+            for field in attachment_cells:
+                write.line_indented(f"project_attachment_cell({props[field.id]});", indent=2)
             write.line_indented("}")
             if transpiled_formulas:
                 write.line_empty()
