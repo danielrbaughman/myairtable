@@ -344,3 +344,311 @@ fn build_url_all_params() {
 fn build_url_empty() {
     assert_eq!(build_url("", "", "", ""), "https://airtable.com");
 }
+
+// ---------------------------------------------------------------------------
+// copy() -- the local, no-I/O half of duplicate() (myairtable-6q37.4)
+// ---------------------------------------------------------------------------
+//
+// duplicate_one() is fetch + copy + create; copy() is that middle step alone, handing back a
+// detached unsaved model the caller mutates and passes to create_one(). It touches no network, so
+// every bit of its behaviour is pinned here rather than in the live suite. Three things are easy
+// to get wrong and silent in Rust when you do:
+//
+//   * the SNAPSHOT. to_save_json() returns a *diff* unless `is_new() || snapshot.is_none()`, so a
+//     copy that kept the source's snapshot would POST {"fields": {}} and create a blank record.
+//   * ATTACHMENTS. create_one() serializes the whole struct, so a server-shaped attachment object
+//     (carrying `id`, `type`, `size`, `width`, `height`) goes straight to Airtable and is rejected
+//     with INVALID_ATTACHMENT_OBJECT.
+//   * COMPUTED values. They are carried so the copy reads like its source; that is only safe
+//     because every computed field is `#[serde(skip_serializing)]` and so never reaches the body.
+mod copy_verb {
+    use myairtable_static::*;
+    use serde::{Deserialize, Serialize};
+    use std::sync::Arc;
+
+    const TEXT_FIELD: &str = "fldText00000000001";
+    const TAGS_FIELD: &str = "fldTags00000000001";
+    const ATTACH_FIELD: &str = "fldAttach000000001";
+    const COMPUTED_FIELD: &str = "fldFormula00000001";
+    const COMPUTED_ATTACH_FIELD: &str = "fldLookupAtt000001";
+
+    /// Stands in for a generated ORM model: field ids as serde names, `#[serde(skip)]` record
+    /// metadata, writable fields dropped when `None`, computed fields deserialized but never
+    /// re-encoded. Mirrors exactly what `write_models()` in `generators/rust.py` emits, including
+    /// the `project_attachments_for_copy` override over the writable attachment field only.
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+    struct Copyable {
+        #[serde(skip)]
+        pub id: Option<RecordId>,
+        #[serde(skip)]
+        pub created_time: Option<String>,
+        #[serde(skip)]
+        pub _meta: ModelMeta,
+
+        #[serde(rename = "fldText00000000001")]
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub text: Option<String>,
+
+        #[serde(rename = "fldTags00000000001")]
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub tags: Option<Vec<String>>,
+
+        #[serde(rename = "fldAttach000000001")]
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub attachments: Option<Vec<Attachment>>,
+
+        #[serde(rename = "fldFormula00000001")]
+        #[serde(default)]
+        #[serde(skip_serializing)]
+        pub computed: Option<String>,
+
+        #[serde(rename = "fldLookupAtt000001")]
+        #[serde(default)]
+        #[serde(skip_serializing)]
+        pub computed_attachments: Option<Vec<Attachment>>,
+    }
+
+    impl OrmModel for Copyable {
+        fn meta(&self) -> &ModelMeta {
+            &self._meta
+        }
+        fn meta_mut(&mut self) -> &mut ModelMeta {
+            &mut self._meta
+        }
+        fn get_id(&self) -> &Option<RecordId> {
+            &self.id
+        }
+        fn set_id(&mut self, id: Option<RecordId>) {
+            self.id = id;
+        }
+        fn get_created_time(&self) -> &Option<String> {
+            &self.created_time
+        }
+        fn set_created_time(&mut self, ct: Option<String>) {
+            self.created_time = ct;
+        }
+        /// Writable attachment cells only -- `computed_attachments` is deliberately absent.
+        fn project_attachments_for_copy(&mut self) {
+            if let Some(items) = self.attachments.as_mut() {
+                for item in items.iter_mut() {
+                    project_attachment_for_copy(item);
+                }
+            }
+        }
+    }
+
+    /// An attachment exactly as the API hands it back, metadata and all.
+    fn server_attachment() -> Attachment {
+        Attachment {
+            id: Some("attServerSide00001".to_string()),
+            url: "https://example.com/a.png".to_string(),
+            filename: Some("a.png".to_string()),
+            mime_type: Some("image/png".to_string()),
+            size: Some(1234),
+            width: Some(10),
+            height: Some(10),
+        }
+    }
+
+    /// A model in the state `copy()` actually meets: read back from the API, so it carries an id,
+    /// a created_time, a snapshot taken by `set_record_meta()`, and server-shaped attachments.
+    fn source() -> Copyable {
+        let mut model = Copyable {
+            text: Some("hello".to_string()),
+            tags: Some(vec!["a".to_string(), "b".to_string()]),
+            attachments: Some(vec![server_attachment()]),
+            computed: Some("computed value".to_string()),
+            computed_attachments: Some(vec![server_attachment()]),
+            ..Default::default()
+        };
+        model.set_client(
+            Arc::new(AirtableClient::new(
+                "keyFAKE0000000000",
+                "appFAKE0000000000",
+            )),
+            "tblFAKE0000000001",
+        );
+        model.set_record_meta(
+            "recSOURCE000000001".to_string(),
+            Some("2026-01-01T00:00:00.000Z".to_string()),
+        );
+        model
+    }
+
+    // ---- the detach ----
+
+    #[test]
+    fn copy_clears_record_identity() {
+        let copied = source().copy();
+        assert!(copied.id.is_none(), "a carried id would UPDATE the source");
+        assert!(copied.created_time.is_none());
+        assert!(copied.is_new(), "is_new() is derived purely from the id");
+    }
+
+    #[test]
+    fn copy_clears_the_dirty_snapshot() {
+        // THE load-bearing assertion for Rust. With a snapshot in place, to_save_json() diffs
+        // against it; an unmodified copy would diff to nothing and POST a blank record.
+        let copied = source().copy();
+        assert!(copied.meta().snapshot.is_none());
+    }
+
+    #[test]
+    fn copy_keeps_the_client_handle() {
+        // Kept by contract so `copy.save()` inserts without re-attaching a client. The Arc is
+        // shared with the source on purpose -- AirtableClient is an immutable handle.
+        let src = source();
+        let copied = src.copy();
+        let src_client = src.meta().client.as_ref().expect("source has a client");
+        let copy_client = copied
+            .meta()
+            .client
+            .as_ref()
+            .expect("copy keeps the client");
+        assert!(Arc::ptr_eq(src_client, copy_client));
+        assert_eq!(copied.meta().table_id, Some("tblFAKE0000000001"));
+    }
+
+    // ---- the payload ----
+
+    #[test]
+    fn copy_serializes_the_full_writable_set_not_a_diff() {
+        // The source itself, unmodified after a fetch, serializes to {} -- that is the trap the
+        // snapshot reset exists to avoid. The copy must serialize everything writable instead.
+        let src = source();
+        assert_eq!(
+            src.to_save_json(),
+            serde_json::json!({}),
+            "a fetched, unmodified model diffs to nothing -- this is the failure mode"
+        );
+
+        let payload = src.copy().to_save_json();
+        let object = payload.as_object().expect("payload is an object");
+        assert_eq!(
+            object.len(),
+            3,
+            "expected all three writable cells: {payload}"
+        );
+        assert_eq!(object.get(TEXT_FIELD), Some(&serde_json::json!("hello")));
+        assert_eq!(object.get(TAGS_FIELD), Some(&serde_json::json!(["a", "b"])));
+        assert!(object.contains_key(ATTACH_FIELD));
+    }
+
+    #[test]
+    fn computed_values_are_carried_but_never_serialized() {
+        // Carrying them is what makes the copy read like its source; `#[serde(skip_serializing)]`
+        // on every computed field is what keeps them out of the create body.
+        let copied = source().copy();
+        assert_eq!(copied.computed.as_deref(), Some("computed value"));
+        assert!(copied.computed_attachments.is_some());
+
+        let payload = copied.to_save_json();
+        assert!(
+            payload.get(COMPUTED_FIELD).is_none(),
+            "computed leaked: {payload}"
+        );
+        assert!(payload.get(COMPUTED_ATTACH_FIELD).is_none());
+    }
+
+    #[test]
+    fn writable_attachments_are_projected_to_url_and_filename() {
+        // create accepts only {url} / {url, filename}; an echoed `id` fails with
+        // INVALID_ATTACHMENT_OBJECT. Dropping the id is also what makes Airtable re-ingest the
+        // file so the new record owns its attachment instead of aliasing the source's.
+        let copied = source().copy();
+        let attachment = &copied.attachments.as_ref().unwrap()[0];
+        assert_eq!(attachment.url, "https://example.com/a.png");
+        assert_eq!(attachment.filename.as_deref(), Some("a.png"));
+        assert!(attachment.id.is_none());
+        assert!(attachment.mime_type.is_none());
+        assert!(attachment.size.is_none());
+        assert!(attachment.width.is_none());
+        assert!(attachment.height.is_none());
+
+        let payload = copied.to_save_json();
+        assert_eq!(
+            payload.get(ATTACH_FIELD),
+            Some(&serde_json::json!([{"url": "https://example.com/a.png", "filename": "a.png"}]))
+        );
+    }
+
+    #[test]
+    fn computed_attachment_cells_keep_their_metadata() {
+        // A computed lookup can hold the very same attachment shape, but it is never written back,
+        // so stripping its metadata would lose fidelity for nothing.
+        let copied = source().copy();
+        let attachment = &copied.computed_attachments.as_ref().unwrap()[0];
+        assert_eq!(attachment.id.as_deref(), Some("attServerSide00001"));
+        assert_eq!(attachment.mime_type.as_deref(), Some("image/png"));
+        assert_eq!(attachment.size, Some(1234));
+    }
+
+    // ---- independence ----
+
+    #[test]
+    fn copy_shares_no_mutable_state_with_its_source() {
+        let src = source();
+        let mut copied = src.copy();
+        copied.text = Some("changed".to_string());
+        copied.tags.as_mut().unwrap().push("c".to_string());
+        copied.attachments.as_mut().unwrap().clear();
+        copied.computed = Some("stomped".to_string());
+
+        assert_eq!(src.text.as_deref(), Some("hello"));
+        assert_eq!(
+            src.tags.as_ref().unwrap(),
+            &["a".to_string(), "b".to_string()]
+        );
+        assert_eq!(src.attachments.as_ref().unwrap().len(), 1);
+        assert_eq!(src.computed.as_deref(), Some("computed value"));
+    }
+
+    #[test]
+    fn copy_leaves_the_source_completely_untouched() {
+        let src = source();
+        let before = format!("{src:?}");
+        let _ = src.copy();
+        assert_eq!(format!("{src:?}"), before);
+
+        // Spelled out for the parts that matter most: the source is still a saved, clean record
+        // with server-shaped attachments, so saving it still UPDATES rather than inserting.
+        assert_eq!(src.id.as_deref(), Some("recSOURCE000000001"));
+        assert_eq!(
+            src.created_time.as_deref(),
+            Some("2026-01-01T00:00:00.000Z")
+        );
+        assert!(src.meta().snapshot.is_some());
+        assert!(!src.is_new());
+        assert_eq!(
+            src.attachments.as_ref().unwrap()[0].id.as_deref(),
+            Some("attServerSide00001")
+        );
+    }
+
+    #[test]
+    fn copy_of_a_copy_is_still_detached() {
+        // A copy is a legitimate source in its own right: no id, no snapshot, already-projected
+        // attachments must survive a second round unharmed.
+        let copied = source().copy().copy();
+        assert!(copied.id.is_none());
+        assert!(copied.meta().snapshot.is_none());
+        assert_eq!(
+            copied.attachments.as_ref().unwrap()[0].url,
+            "https://example.com/a.png"
+        );
+        assert!(copied.attachments.as_ref().unwrap()[0].id.is_none());
+    }
+
+    #[test]
+    fn clone_is_not_copy() {
+        // `.clone()` already exists and keeps the id, the created_time and the snapshot -- a clone
+        // still updates the source. This documents the difference the doc comment promises.
+        let cloned = source().clone();
+        assert_eq!(cloned.id.as_deref(), Some("recSOURCE000000001"));
+        assert!(cloned.meta().snapshot.is_some());
+        assert_eq!(cloned.to_save_json(), serde_json::json!({}));
+    }
+}

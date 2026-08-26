@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
@@ -164,6 +165,159 @@ public abstract class AirtableModel
                 projectedFields[key] = projected;
         }
         return projectedFields;
+    }
+
+    // ---- Copy() support -----------------------------------------------------
+    //
+    // The generated `public {Table}Model Copy()` is emitted INSIDE the model class (csharp.py):
+    // that is the only place a computed field's `private set` is assignable, which is what lets a
+    // copy carry computed values without any of them becoming publicly settable. Everything
+    // table-independent lives here.
+    //
+    // The detach itself is structural rather than a list of un-sets: `new {Table}Model { ... }`
+    // starts with a null Id (so the derived IsNew is already true), a null CreatedTime and a null
+    // _snapshot, and the generated initializer names neither Id nor CreatedTime. Only
+    // AttachedClient is deliberately put back, so `table.CreateAsync(record.Copy())` works without
+    // the caller re-threading a client. TakeSnapshot() must never be called on a copy: a copy that
+    // carried a full snapshot would diff to nothing on the next save.
+
+    /// <summary>
+    /// Reduce ONE writable attachment cell entry to the shape Airtable accepts on create —
+    /// <c>{url}</c>, plus <c>{filename}</c> when the source had one.
+    /// </summary>
+    /// <remarks>
+    /// The typed counterpart of <see cref="ProjectAttachmentsForCreate"/>, which works on an
+    /// already-serialized field map. Applied at copy time because <see cref="OrmTable{T}"/>'s
+    /// create path sends <see cref="ToCreateFields"/> verbatim and never projects — only
+    /// <c>DuplicateAsync</c> does.
+    /// </remarks>
+    public static AirtableAttachment? ProjectAttachmentForCopy(AirtableAttachment? attachment) =>
+        attachment is null
+            ? null
+            : new AirtableAttachment { Url = attachment.Url, Filename = attachment.Filename };
+
+    /// <summary>Project every entry of a writable attachment cell (see <see cref="ProjectAttachmentForCopy"/>).</summary>
+    /// <remarks>
+    /// Writable cells only. A COMPUTED attachment-shaped cell — a lookup of an attachment field
+    /// decodes to the identical shape — goes through <see cref="DetachForCopy{T}(VecOrValue{T}?)"/>
+    /// instead and keeps its id/size/type/thumbnails: it is never written back, so stripping its
+    /// metadata would lose fidelity for nothing.
+    /// </remarks>
+    public static List<AirtableAttachment>? ProjectAttachmentsForCopy(
+        List<AirtableAttachment>? cell
+    )
+    {
+        if (cell is null)
+            return null;
+        var projected = new List<AirtableAttachment>(cell.Count);
+        foreach (var attachment in cell)
+            projected.Add(ProjectAttachmentForCopy(attachment)!);
+        return projected;
+    }
+
+    /// <summary>Deep-clone an unmodelled (<see cref="JsonNode"/>) cell so the copy can be edited in place.</summary>
+    public static JsonNode? DetachForCopy(JsonNode? cell) => cell?.DeepClone();
+
+    /// <summary>Rebuild a list cell so the copy's list is not the source's list.</summary>
+    public static List<T>? DetachForCopy<T>(List<T>? cell)
+    {
+        if (cell is null)
+            return null;
+        var detached = new List<T>(cell.Count);
+        foreach (var item in cell)
+            // The `!` is the unconstrained-T tax: DetachLeaf is annotated
+            // [NotNullIfNotNull], but flow analysis cannot see that T is not itself nullable.
+            detached.Add(DetachLeaf(item)!);
+        return detached;
+    }
+
+    /// <summary>
+    /// Rebuild a lookup/rollup cell. <see cref="VecOrValue{T}"/> is an immutable record, but its
+    /// <c>Multiple</c> case wraps a mutable <see cref="List{T}"/>.
+    /// </summary>
+    public static VecOrValue<T>? DetachForCopy<T>(VecOrValue<T>? cell) =>
+        cell switch
+        {
+            null => null,
+            VecOrValue<T>.Single single => new VecOrValue<T>.Single(DetachLeaf(single.Value)),
+            VecOrValue<T>.Multiple multiple => new VecOrValue<T>.Multiple(
+                DetachLeaves(multiple.Values)
+            ),
+            _ => cell,
+        };
+
+    /// <summary>
+    /// Rebuild a computed lookup/rollup cell, descending through the per-entry
+    /// <see cref="MaybeSpecialOrError{T}"/> wrapper.
+    /// </summary>
+    /// <remarks>
+    /// A more specific overload than <see cref="DetachForCopy{T}(VecOrValue{T}?)"/> and chosen
+    /// over it by overload resolution. It has to exist: the general one treats its elements as
+    /// leaves, which would share the <see cref="JsonNode"/> inside a
+    /// <c>VecOrValue&lt;MaybeSpecialOrError&lt;JsonNode&gt;&gt;</c> — the shape a computed lookup
+    /// of an attachment or of an unmodelled field decodes to.
+    /// </remarks>
+    public static VecOrValue<MaybeSpecialOrError<T>>? DetachForCopy<T>(
+        VecOrValue<MaybeSpecialOrError<T>>? cell
+    ) =>
+        cell switch
+        {
+            null => null,
+            VecOrValue<MaybeSpecialOrError<T>>.Single single => new VecOrValue<
+                MaybeSpecialOrError<T>
+            >.Single(DetachForCopy(single.Value)),
+            VecOrValue<MaybeSpecialOrError<T>>.Multiple multiple => new VecOrValue<
+                MaybeSpecialOrError<T>
+            >.Multiple(DetachMaybes(multiple.Values)),
+            _ => cell,
+        };
+
+    /// <summary>
+    /// Rebuild a computed scalar cell. The <c>Special</c>/<c>Error</c> cases carry immutable
+    /// sentinels and are shared; only a <c>Value</c>'s content can be mutable.
+    /// </summary>
+    public static MaybeSpecialOrError<T>? DetachForCopy<T>(MaybeSpecialOrError<T>? cell) =>
+        cell switch
+        {
+            null => null,
+            MaybeSpecialOrError<T>.Value value => new MaybeSpecialOrError<T>.Value(
+                DetachLeaf(value.Content)
+            ),
+            _ => cell,
+        };
+
+    /// <summary>
+    /// Detach one leaf cell value. <see cref="JsonNode"/> is the only mutable leaf: every other
+    /// type a field property can bottom out in is immutable (string, the numerics,
+    /// <see cref="DateTimeOffset"/>, <see cref="TimeSpan"/>, a generated select enum, or one of
+    /// the <c>init</c>-only value carriers), so it is shared. The wrappers cannot nest any deeper
+    /// than this — <c>apply_csharp_computed_wrapping</c> strips a <c>List&lt;&gt;</c> before
+    /// wrapping, and <c>render_type</c> never wraps an already-list type.
+    /// </summary>
+    [return: NotNullIfNotNull(nameof(value))]
+    private static T? DetachLeaf<T>(T? value) =>
+        value is JsonNode node ? (T)(object)node.DeepClone() : value;
+
+    private static List<T?> DetachLeaves<T>(List<T?>? values)
+    {
+        var detached = new List<T?>(values?.Count ?? 0);
+        if (values is null)
+            return detached;
+        foreach (var value in values)
+            detached.Add(DetachLeaf(value));
+        return detached;
+    }
+
+    private static List<MaybeSpecialOrError<T>?> DetachMaybes<T>(
+        List<MaybeSpecialOrError<T>?>? values
+    )
+    {
+        var detached = new List<MaybeSpecialOrError<T>?>(values?.Count ?? 0);
+        if (values is null)
+            return detached;
+        foreach (var value in values)
+            detached.Add(DetachForCopy(value));
+        return detached;
     }
 
     /// <summary>

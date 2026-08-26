@@ -16,6 +16,21 @@ export interface FieldDescriptor {
 	linkedModelClass?: any;
 }
 
+/**
+ * Rebuilds arrays/objects so a copy shares no mutable state with its source.
+ *
+ * Scalars and Dates are handled explicitly; anything else is walked. Deliberately not a
+ * blanket `structuredClone`, which throws on the class instances (`LinkedRecord`) that
+ * `_fields` can hold — those are rebuilt by the constructor instead.
+ */
+function detachValue(value: unknown): unknown {
+	if (value === null || typeof value !== "object") return value;
+	if (value instanceof Date) return new Date(value.getTime());
+	if (Array.isArray(value)) return value.map(detachValue);
+	if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detachValue(item)]));
+}
+
 export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	// Base properties
 	protected record?: ATRecord<FldSt>;
@@ -139,9 +154,9 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return r;
 	}
 
-	public toCreateRecordData(useFieldIds: boolean = true, asInsert: boolean = false): CreateRecordData<Partial<FldSt>> {
+	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FldSt>> {
 		return {
-			fields: this.writableFields(useFieldIds, asInsert),
+			fields: this.writableFields(useFieldIds),
 		};
 	}
 
@@ -151,6 +166,67 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			id: this.id,
 			fields: this.writableFields(useFieldIds),
 		};
+	}
+
+	/**
+	 * Returns a detached, unsaved deep copy of this record.
+	 *
+	 * Carries every field value — computed ones included, so the copy reads like its source —
+	 * but none of the record's identity, so passing it to `create()` inserts a new record
+	 * instead of updating this one. Mutate it first to change whatever should differ.
+	 *
+	 * `_isNew` is what makes that work. A model read back from Airtable has `_isNew === false`
+	 * and an empty dirty set, so `writableFields()` would emit `{}` and the insert would be a
+	 * BLANK record; a copy is built through the constructor, so it starts new with a fresh dirty
+	 * set and emits its full writable payload.
+	 *
+	 * Values are rebuilt rather than shared. Linked fields in particular must be re-created
+	 * against the new instance: `_createLinkedField` bakes an `onDirty` closure bound to the
+	 * model that owns it, so an aliased wrapper would make edits to the COPY mark THIS record
+	 * dirty. Routing through the constructor's `initializeFields()` rebinds them correctly.
+	 *
+	 * Attachments are copied by URL, which makes Airtable re-ingest each file so the new record
+	 * owns its attachment rather than aliasing this one's. Linked records are copied as-is;
+	 * Airtable links are many-to-many, so the new record is added alongside this one and this
+	 * record's own links are untouched.
+	 *
+	 * Performs no I/O, so the copy is only as fresh as this model — and attachment URLs are
+	 * signed and expire. For a copy guaranteed to reflect current server state, use
+	 * `duplicate()` on the table instead.
+	 */
+	public copy(): this {
+		const constructor = this.constructor as new (data?: Record<string, unknown>) => this;
+		const copied = new constructor(this.detachedFieldData());
+		// Carried after construction, matching how `fromRecord` applies config.
+		if (this.__configBaseId !== undefined) copied.setConfig(this.__configBaseId, this.__configOptions ?? {});
+		copied.evaluateFormulasAtRuntime = this.evaluateFormulasAtRuntime;
+		return copied;
+	}
+
+	/**
+	 * Field values for a detached copy: no id, nothing aliased, attachments projected for insert.
+	 *
+	 * Shaped for the generated constructor, so linked fields are flattened back to the id / ids
+	 * the constructor re-wraps.
+	 */
+	protected detachedFieldData(): Record<string, unknown> {
+		const data: Record<string, unknown> = {};
+		for (const desc of this.getFieldDescriptors()) {
+			const stored = this._fields[desc.propertyName];
+			if (desc.fieldType === "linkedRecord" && !desc.isComputed) {
+				data[desc.propertyName] = (stored as any)?.id;
+			} else if (desc.fieldType === "linkedRecords" && !desc.isComputed) {
+				data[desc.propertyName] = detachValue((stored as any)?.ids);
+			} else if (desc.fieldType === "attachment" && !desc.isComputed) {
+				// Airtable's create endpoint accepts only {url, filename}. Computed cells are
+				// deliberately left alone: a lookup can hold the same shape, and it is never
+				// written, so stripping its metadata would lose fidelity for nothing.
+				data[desc.propertyName] = this.sanitizeAttachment(desc.propertyName, true);
+			} else {
+				data[desc.propertyName] = detachValue(stored);
+			}
+		}
+		return data;
 	}
 
 	/** Saves the current Airtable record to the server. */
@@ -291,15 +367,16 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	/**
-	 * @param asInsert Treat this as an insert even though the model came from the server: emit
-	 *   every writable field rather than only the dirty ones, and use create semantics for
-	 *   attachments and nullish values. Set by `duplicate()`, which copies a record that was
-	 *   read back from Airtable — for such a model `_isNew` is false and nothing is dirty, so
-	 *   without this the payload would come out empty and the copy would be a blank record.
+	 * On an insert, emit every writable field and use create semantics for attachments and
+	 * nullish values; on an update, emit only the dirty ones.
+	 *
+	 * A model read back from Airtable is neither new nor dirty, so its insert payload would be
+	 * empty. Anything needing to insert such a record copies it first — `copy()` returns a
+	 * genuinely new model — rather than overriding the distinction here.
 	 */
-	protected writableFields(useFieldIds: boolean = true, asInsert: boolean = false): Partial<FldSt> {
+	protected writableFields(useFieldIds: boolean = true): Partial<FldSt> {
 		const fields: Partial<FldSt> = {};
-		const isInsert = this._isNew || asInsert;
+		const isInsert = this._isNew;
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
 			if (!isInsert && !this.isDirty(desc.propertyName)) continue;

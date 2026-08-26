@@ -28,7 +28,7 @@ from rich import print
 
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
-from ..meta import Base, Table
+from ..meta import Base, Field, Table
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -122,6 +122,44 @@ _JAVA_RESERVED_MODEL_MEMBERS = frozenset({"f", "snapshot", "attachedClient", "id
 # a field; `close`/`invalidateAllCaches` are methods whose signatures a same-named
 # table accessor would clash with (different return type, same erasure).
 _JAVA_RESERVED_TABLE_PROPS = frozenset({"client", "close", "invalidateAllCaches"})
+
+
+# Cell types a `copy()` must rebuild rather than alias. Everything NOT in this set is
+# immutable by construction (`String`, the boxed numerics, `Boolean`, `Instant`,
+# `Duration`, the generated select-option enums, and the `AirtableButton` record), so
+# carrying it by reference shares nothing. Kept as an explicit list because it is the
+# closed set GENERIC_TO_JAVA plus `apply_java_computed_wrapping` can produce, and a new
+# mutable runtime type has to be added here deliberately.
+_JAVA_MUTABLE_CELL_TYPES = frozenset({"JsonNode", "AirtableAttachment", "AirtableCollaborator"})
+_JAVA_MUTABLE_CELL_PREFIXES = ("List<", "MaybeSpecialOrError<", "VecOrValue<")
+
+
+def _java_copy_expression(field: Field, prop: str) -> str:
+    """The value `copy()` assigns for one field (myairtable-6q37.6).
+
+    Three cases, and the interesting one is the first:
+
+    * A WRITABLE attachment cell is projected to `{url, filename}` at copy time —
+      `OrmTable.create` does not project, and Airtable rejects the `id`/`size`/`type`
+      an attachment read back from the server carries. A COMPUTED attachment-shaped
+      cell (a lookup can hold the identical shape) is left whole by
+      `detachForCopy`: it never reaches a create body, so stripping its metadata
+      would lose fidelity for nothing.
+    * Anything that can reach a mutable container or POJO goes through
+      `AirtableModel.detachForCopy`, which rebuilds it. Java needs this where Kotlin
+      only needed `toList()`: `AirtableAttachment`/`AirtableCollaborator` are mutable
+      POJOs, and an unmodelled cell is an editable `JsonNode`.
+    * Everything else is immutable, so it is carried by reference.
+    """
+    java_type = field.java_type()
+    if not field.is_computed():
+        if java_type == "List<AirtableAttachment>":
+            return f"AirtableModel.projectAttachmentsForCopy({prop})"
+        if java_type == "AirtableAttachment":
+            return f"AirtableModel.projectAttachmentForCopy({prop})"
+    if java_type in _JAVA_MUTABLE_CELL_TYPES or java_type.startswith(_JAVA_MUTABLE_CELL_PREFIXES):
+        return f"AirtableModel.detachForCopy({prop})"
+    return prop
 
 
 def _field_property_map(table: Table) -> dict[str, str]:
@@ -604,6 +642,57 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.doc_comment("Delete the record referenced by this model's id.", indent=1)
             write.line_indented("public void delete() {")
             write.line_indented("ModelOps.delete(this);", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            # ---------- copy(): local, detached, unsaved clone (myairtable-6q37.6) ----------
+            #
+            # Emitted per model rather than as an AirtableModel default method: seeding a
+            # COMPUTED field means writing the private POJO field directly, which is legal
+            # only from inside this class (computed fields get no setter and no Builder
+            # entry, and that public invariant is worth keeping). Java lets one instance
+            # touch another's private fields as long as they are the same class, so `copied.x
+            # = x` needs no new API at all — the same move the generated Builder.build()
+            # already makes.
+            #
+            # The detach is structural: a fresh instance starts with a null id, a null
+            # createdTime and `snapshot = Map.of()`, so nothing has to be un-set and nothing
+            # can be forgotten when a field is added. takeSnapshot() is deliberately NOT
+            # called — a copy carrying a full snapshot would have an empty dirtyFields() —
+            # and a carried id would make save() PATCH the source row instead of inserting.
+            # Only attachedClient is put back, so `copy().save()` inserts (contract item 4).
+            write.doc_comment(
+                [
+                    "A detached, unsaved copy of this record, ready to hand to {@code create(...)}.",
+                    "",
+                    "<p>Carries every field value — computed ones included, so the copy reads like",
+                    "its source — but none of the record's identity: {@code id}, {@code createdTime}",
+                    "and the dirty-tracking snapshot all start empty, so the copy is a brand-new row",
+                    "rather than an edit of this one. The attached client is kept, so {@code",
+                    "copy().save()} inserts.",
+                    "",
+                    "<p>Performs no I/O — that is the whole difference from the table's {@code",
+                    "duplicate(...)}, which re-reads the source from Airtable first. A copy is",
+                    "therefore only as fresh as the model in hand, which matters most for",
+                    "attachments: their signed URLs expire after roughly two hours.",
+                    "",
+                    "<p>Writable attachment cells are reduced to {@code {url, filename}} here,",
+                    "because {@code create(...)} does not project and Airtable rejects",
+                    "server-returned attachment objects. Computed cells keep their full metadata:",
+                    "they are never written back.",
+                    "",
+                    "<p>Linked records are copied as-is. Airtable links are many-to-many, so the copy",
+                    "is added alongside the original and this record's own links are untouched.",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"public {model_name} copy() {{")
+            write.line_indented(f"{model_name} copied = new {model_name}();", indent=2)
+            for field in table.fields:
+                prop = _java_ident(prop_names[field.id])
+                write.line_indented(f"copied.{prop} = {_java_copy_expression(field, prop)};", indent=2)
+            write.line_indented("copied.attachedClient = attachedClient;", indent=2)
+            write.line_indented("return copied;", indent=2)
             write.line_indented("}")
             write.line_empty()
 

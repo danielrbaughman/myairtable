@@ -294,9 +294,9 @@ class AirtableTable {
 			return model;
 		});
 
-		// `asInsert` is what makes this work: these models came from the server, so `_isNew` is
-		// false and nothing is dirty — the default create payload would be empty.
-		const payloads = models.map((model) => model.toCreateRecordData(true, true));
+		// Built from a copy, not from the fetched model: these came from the server, so they are
+		// neither new nor dirty and their own create payload would be empty.
+		const payloads = models.map((model) => model.copy().toCreateRecordData(true));
 		const createdRecords = [];
 		for (let i = 0; i < payloads.length; i += 10) {
 			const batch = payloads.slice(i, i + 10);

@@ -82,6 +82,42 @@ fun AirtableModel.requireAttachedClient(): AirtableClient =
             "Model must be obtained via a table (get / create / upsert) before calling save() / fetch() / delete()",
         )
 
+// region copy() support
+//
+// The generated `{Table}Model.copy()` is emitted per model (kotlin.py) because it
+// has to call the model's own primary constructor with every property named — there
+// is no reflection-free way to write that once. What CAN live here are the pieces
+// that are the same for every table: the attachment projection below.
+
+/**
+ * Reduce one attachment value to the `{url, filename}` shape Airtable's create
+ * endpoint accepts.
+ *
+ * Applied by `copy()` at copy time rather than on the wire, because [OrmTable.create]
+ * does NOT project (only `duplicate` does, via [projectAttachmentsForCreate]) — a
+ * server-returned attachment object carries `id`/`size`/`type`/`thumbnails`, and
+ * posting those fails with INVALID_ATTACHMENT_OBJECT. Copying by URL is also what
+ * makes the created record own an independent file rather than aliasing the source's.
+ *
+ * Nulls are dropped on encode (`explicitNulls = false`), so a caller-built
+ * `AirtableAttachment(url = "…")` round-trips unchanged.
+ */
+fun projectAttachmentForCopy(attachment: AirtableAttachment?): AirtableAttachment? =
+    attachment?.let { AirtableAttachment(url = it.url, filename = it.filename) }
+
+/**
+ * [projectAttachmentForCopy] over a multi-attachment cell. Returns a brand-new list,
+ * so it doubles as the defensive re-wrap those cells need.
+ *
+ * Only WRITABLE cells are projected: a computed lookup can hold the very same
+ * attachment shape, is never written back, and stripping its metadata would lose
+ * fidelity for nothing.
+ */
+fun projectAttachmentsForCopy(attachments: List<AirtableAttachment>?): List<AirtableAttachment>? =
+    attachments?.map { AirtableAttachment(url = it.url, filename = it.filename) }
+
+// endregion
+
 // Fluent model-side CRUD.
 //
 // Mirrors the Rust / TS / Py pattern: once a model has been produced by a

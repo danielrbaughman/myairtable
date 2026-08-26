@@ -4,6 +4,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 from myairtable.meta import Base, Choice, Field, Options, Result, Table, View
 from myairtable.meta_types import FieldType
 
@@ -1134,6 +1136,103 @@ class TestSwiftComputedFields:
         assert "fetchLink" not in content
         assert "Linked record fetching" not in content
 
+    # ---- copy() ----
+
+    COPY_SPEC: list[tuple[str, str, FieldType]] = [
+        ("My Text", "fld001", "singleLineText"),
+        ("Photos", "fld002", "multipleAttachments"),
+        ("Links", "fld003", "multipleRecordLinks"),
+        ("My Formula", "fld004", "formula"),
+        ("Auto", "fld005", "autoNumber"),
+    ]
+
+    def _copy_init_block(self, content: str) -> str:
+        block = content.split("private init(_copyOf source: TestTableModel) {")[1]
+        return block[: block.index("\n    }")]
+
+    def test_model_emits_copy_as_an_inherent_member(self, tmp_path: Path):
+        """myairtable-6q37.8 -- `copy()` cannot live in the `AirtableModel` protocol
+        extension next to save/fetch/delete: computed fields are `public let`, and only an
+        initializer can seed a `let`, so carrying computed values needs an initializer that
+        knows the concrete stored properties. Hence an inherent member returning the
+        concrete `{Table}Model`, plus the `private init(_copyOf:)` it delegates to."""
+        content = self._generate(self.COPY_SPEC, tmp_path)
+
+        assert "public func copy() -> TestTableModel {" in content
+        assert "return TestTableModel(_copyOf: self)" in content
+        # private: no caller gains a way to forge a computed value.
+        assert "private init(_copyOf source: TestTableModel) {" in content
+
+    def test_copy_init_detaches_identity_and_carries_computed_values(self, tmp_path: Path):
+        """The two ways to get this wrong are both silent: a carried `id` makes `save()`
+        PATCH the source row, and a carried snapshot makes `dirtyFields()` diff to empty so
+        the insert POSTs a blank record. Computed values ARE carried -- safe because
+        `encode(to:)` only writes writable fields and `OrmTable.create(_:)` sends
+        `toRecord()`, so they physically cannot reach a POST body."""
+        block = self._copy_init_block(self._generate(self.COPY_SPEC, tmp_path))
+
+        assert "self.id = nil" in block
+        assert "self.createdTime = nil" in block
+        assert "source.id" not in block
+        assert "source.createdTime" not in block
+        # _snapshot's `[:]` default IS the fully-dirty state an insert needs.
+        assert "takeSnapshot" not in block
+        assert "_snapshot" not in block
+        # Computed cells carried verbatim.
+        assert "self.myFormula = source.myFormula" in block
+        assert "self.auto = source.auto" in block
+        # Writable cells carried; links as-is (Airtable links are many-to-many).
+        assert "self.myText = source.myText" in block
+        assert "self.links = source.links" in block
+        # Contract item 4: the client is the one thing deliberately kept.
+        assert "self._attachedClient = source._attachedClient" in block
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """`OrmTable.create(_:)` sends `toRecord()` verbatim and never projects -- only
+        `duplicate(_:)` does -- so a copy has to project at copy time or Airtable rejects
+        the server-returned attachment objects with INVALID_ATTACHMENT_OBJECT."""
+        block = self._copy_init_block(self._generate(self.COPY_SPEC, tmp_path))
+
+        assert "self.photos = projectAttachmentsForCopy(source.photos)" in block
+        # Non-attachment writable cells are plain assignments (Swift value semantics
+        # already give contract item 7 -- nothing here to deep-copy by hand).
+        assert "projectAttachmentsForCopy(source.myText)" not in block
+        assert "projectAttachmentsForCopy(source.links)" not in block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
+
+    def test_copy_helper_name_is_a_reserved_field_property_name(self):
+        """The emitted initializer calls `projectAttachmentsForCopy` UNQUALIFIED. Swift
+        resolves an unqualified name to an enclosing-type member first, and the free
+        function cannot be module-qualified (the generator does not know the user's module
+        name), so a same-named field property would make the call not compile."""
+        from myairtable.generators.swift import _field_property_map
+
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Primary Key", "fld001", "singleLineText"),
+            ("Project Attachments For Copy", "fld002", "singleLineText"),
+        ]
+        props = _field_property_map(make_test_base(fields_spec).tables[0])
+        assert props["fld002"] == "projectAttachmentsForCopyField"
+
+    def test_copy_survives_a_field_named_copy(self, tmp_path: Path):
+        """Ties back to the reserved-name work (f2c1afd): a field named "Copy" becomes
+        `copyField`, so `copy()` is not `invalid redeclaration of 'copy()'`."""
+        content = self._generate(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Copy", "fld002", "singleLineText"),
+            ],
+            tmp_path,
+        )
+        assert "public func copy() -> TestTableModel {" in content
+        assert "public var copyField: String?" in content
+        assert "self.copyField = source.copyField" in self._copy_init_block(content)
+
 
 class TestSwiftFormulaFunctions:
     """Formula fields should still appear on the model as `let` (not getter
@@ -1560,6 +1659,53 @@ class TestKotlinComputedFields:
         content = self._generate([("Links", "fld001", "multipleRecordLinks")], tmp_path)
         assert "var links: List<RecordId>? = null," in content
 
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.7 -- `copy()` rebuilds the model through its own primary
+        constructor, which IS the detach: a fresh instance starts with a null id, a null
+        createdTime and an empty snapshot, so nothing has to be un-set. Only the client is
+        deliberately put back, and takeSnapshot() must never be called -- a copy carrying a
+        full snapshot would diff to nothing and POST a blank record."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("My Text", "fld001", "singleLineText"),
+            ("Links", "fld002", "multipleRecordLinks"),
+            ("My Formula", "fld003", "formula"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+        copy_block = content.split("fun copy(): TestTableModel {")[1].split("override fun toString()")[0]
+
+        assert "val copied =\n            TestTableModel(" in copy_block
+        assert "myText = myText," in copy_block
+        # Computed values are carried: they never reach a create body (toCreateFields is
+        # writable-only), and they make the copy read like its source.
+        assert "myFormula = myFormula," in copy_block
+        # Containers are re-wrapped so the copy shares no mutable state with its source.
+        assert "links = links?.toList()," in copy_block
+        assert "copied.attachedClient = attachedClient" in copy_block
+        assert "copied.id" not in copy_block, "the copy must keep the fresh null id the constructor gives it"
+        assert "takeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.7 -- OrmTable.create does NOT project attachments, so a copy has
+        to do it at copy time or Airtable rejects the server-returned objects. Computed
+        attachment-shaped cells (a lookup can hold the same shape) are left whole: they are
+        never written back, so stripping their metadata would lose fidelity for nothing."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+        copy_block = content.split("fun copy(): TestTableModel {")[1].split("override fun toString()")[0]
+
+        assert "photos = projectAttachmentsForCopy(photos)," in copy_block
+        assert "projectAttachmentsForCopy(lookupAtt)" not in copy_block
+        assert "lookupAtt = lookupAtt," in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
+
     def test_tables_forward_orm_methods(self, tmp_path: Path):
         """ORM is the default: get/create/update/upsert/delete live on the table."""
         from myairtable.generators.kotlin import write_tables
@@ -1959,6 +2105,41 @@ class TestOriginalGeneratorCollisionDedup:
         assert "pub my_field: Option<" in model
         assert "pub my_field_v2: Option<" in model
         assert "self.my_field_v2" in model
+
+    def test_rust_emits_attachment_projection_for_copy(self, tmp_path: Path):
+        """myairtable-6q37.4 -- `copy()` lives on the OrmModel trait, but the attachment
+        projection it needs cannot: the cells are typed struct members. It is emitted per model,
+        over WRITABLE attachment fields only (a computed lookup can hold the same shape but is
+        never written back), and omitted entirely when a table has no attachment field."""
+        from myairtable.generators.rust import write_models
+        from myairtable.utils.type_mapper import map_types
+
+        fields: list[tuple[str, str, FieldType]] = [
+            ("Name", "fld000", "singleLineText"),
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        base = make_test_base(fields)
+        out = tmp_path / "rust_attachments"
+        out.mkdir()
+        map_types(base)
+        write_models(base, out, formulas=False, runtime=False)
+        model = (out / "dynamic/models/test_table.rs").read_text()
+
+        assert "fn project_attachments_for_copy(&mut self) {" in model
+        assert "if let Some(items) = self.photos.as_mut() {" in model
+        assert "crate::airtable_model::project_attachment_for_copy(item);" in model
+        # The computed lookup keeps its full metadata -- it never reaches a create body.
+        assert "self.lookup_att" not in model
+
+        # No attachment field -> no override; the trait's no-op default stands.
+        plain_fields: list[tuple[str, str, FieldType]] = [("Name", "fld000", "singleLineText")]
+        plain = make_test_base(plain_fields)
+        plain_out = tmp_path / "rust_no_attachments"
+        plain_out.mkdir()
+        map_types(plain)
+        write_models(plain, plain_out, formulas=False, runtime=False)
+        assert "project_attachments_for_copy" not in (plain_out / "dynamic/models/test_table.rs").read_text()
 
     # ---- TypeScript ----
 
@@ -2933,6 +3114,40 @@ class TestCppGenerator:
         assert "fld002" not in writable_hook  # computed never in a write payload (R21)
         assert 'write_field(fields, "fld002", auto_);' in computed_hook
 
+    def test_model_copy_hook_lists_only_writable_attachment_cells(self, tmp_path: Path):
+        """copy() lives on the CRTP base; this hook is the one generated part (myairtable-6q37.10)."""
+        out = self._generate_fields(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Photos", "fld002", "multipleAttachments"),
+                ("Look", "fld003", "multipleLookupValues"),
+            ],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        hook = content.split("void detach_attachments_for_copy() {")[1].split("}")[0]
+        assert "project_attachment_cell(photos);" in hook
+        # A lookup can hold the identical attachment shape, but it is computed: it never
+        # reaches a create body, so stripping its metadata would lose fidelity for nothing.
+        assert "look" not in hook
+
+    def test_model_copy_hook_emitted_even_with_no_attachments(self, tmp_path: Path):
+        """The base always calls it, so it must always exist."""
+        out = self._generate_fields([("Primary Key", "fld001", "singleLineText")], tmp_path)
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        hook = content.split("void detach_attachments_for_copy() {")[1].split("}")[0]
+        assert hook.strip() == ""
+
+    def test_model_copy_hook_name_is_reserved(self, tmp_path: Path):
+        """A field named "Detach Attachments For Copy" must not shadow the hook."""
+        out = self._generate_fields(
+            [("Primary Key", "fld001", "singleLineText"), ("Detach Attachments For Copy", "fld002", "number"), ("Copy", "fld003", "number")],
+            tmp_path,
+        )
+        content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
+        assert "std::optional<double> detach_attachments_for_copy_field{};" in content
+        assert "std::optional<double> copy_field{};" in content
+
     def test_model_from_json_decodes_envelope_by_field_id(self, tmp_path: Path):
         out = self._generate_fields([("Primary Key", "fld001", "singleLineText"), ("Auto", "fld002", "autoNumber")], tmp_path)
         content = (out / "dynamic" / "models" / "test_table_model.hpp").read_text()
@@ -3286,6 +3501,75 @@ class TestCSharpComputedFields:
         assert "public Task<TestTableModel> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);" in content
         assert "public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);" in content
 
+    # ---- copy() ----
+
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.9 -- `Copy()` is emitted INSIDE the model class, which is the only
+        place a computed field's `private set` is assignable: that is how the copy carries
+        computed values without any of them becoming publicly settable. The detach is
+        structural -- a fresh instance already has a null Id (so the derived IsNew is true)
+        and a null snapshot -- so the initializer must never name Id/CreatedTime and must
+        never take a snapshot, either of which would silently turn an insert into an update
+        or into a blank record."""
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        copy_block = content.split("public TestTableModel Copy() =>")[1].split("SaveAsync")[0]
+
+        assert "public TestTableModel Copy() =>" in content
+        assert "AttachedClient = AttachedClient," in copy_block
+        # Immutable cell types are carried by reference; nothing can leak through them.
+        assert "MyText = MyText," in copy_block
+        # Computed values are carried (they never reach a create body -- ToCreateFields is
+        # built from CollectWritableFields alone) and their containers are rebuilt.
+        assert "MyFormula = DetachForCopy(MyFormula)," in copy_block
+        assert "Look = DetachForCopy(Look)," in copy_block
+        assert "Id =" not in copy_block, "the copy must keep the fresh null Id the instance starts with"
+        assert "CreatedTime" not in copy_block
+        assert "TakeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+        # No Async suffix: in this target its absence is the "performs no I/O" signal.
+        assert "CopyAsync" not in content
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.9 -- OrmTable.CreateAsync sends ToCreateFields() verbatim and never
+        projects (only DuplicateAsync does), so a copy has to project at copy time or Airtable
+        rejects the server-returned attachment objects. A COMPUTED attachment-shaped cell (a
+        lookup of an attachment field decodes to the same shape) takes the plain detach and
+        keeps its metadata: it is never written back."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel Copy() =>")[1].split("SaveAsync")[0]
+
+        assert "Photos = ProjectAttachmentsForCopy(Photos)," in copy_block
+        assert "ProjectAttachmentsForCopy(LookupAtt)" not in copy_block
+        assert "LookupAtt = DetachForCopy(LookupAtt)," in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._model([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "ProjectAttachmentsForCopy" not in plain
+
+    def test_copy_helper_names_are_reserved_field_property_names(self):
+        """The emitted Copy() calls the static base helpers UNQUALIFIED, so a field whose
+        PascalCase matches one would shadow the inherited method and stop the call
+        compiling. `Copy` itself is CS0102 (f2c1afd)."""
+        from myairtable.generators.csharp import _field_property_map
+
+        base = make_test_base(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Copy", "fld002", "singleLineText"),
+                ("Detach For Copy", "fld003", "singleLineText"),
+                ("Project Attachments For Copy", "fld004", "singleLineText"),
+            ]
+        )
+        props = _field_property_map(base.tables[0])
+        assert props["fld002"] == "CopyField"
+        assert props["fld003"] == "DetachForCopyField"
+        assert props["fld004"] == "ProjectAttachmentsForCopyField"
+
     # ---- deferred features ----
 
     def test_filter_accessor_present_when_formulas(self, tmp_path: Path):
@@ -3504,6 +3788,59 @@ class TestJavaModels:
         assert "return ModelOps.fetch(this, TestTableModel.class);" in content
         assert "public void delete() {" in content
         assert "ModelOps.delete(this);" in content
+
+    # ---- copy() ----
+
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.6 -- `copy()` builds a fresh instance and writes its private
+        fields directly (legal only from inside the class, which is how a COMPUTED field
+        with no setter gets seeded). The fresh instance IS the detach: it starts with a
+        null id, a null createdTime and an empty snapshot, so nothing has to be un-set.
+        Only the client is deliberately put back, and takeSnapshot() must never be called
+        -- a copy carrying a full snapshot would diff to nothing and POST a blank record."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("My Text", "fld001", "singleLineText"),
+            ("Links", "fld002", "multipleRecordLinks"),
+            ("My Formula", "fld003", "formula"),
+        ]
+        content = self._generate_model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel copy() {")[1].split("public String toString()")[0]
+
+        assert "TestTableModel copied = new TestTableModel();" in copy_block
+        # Immutable cell types are carried by reference; nothing can leak through them.
+        assert "copied.myText = myText;" in copy_block
+        # Computed values are carried: they never reach a create body (toCreateFields is
+        # writable-only), and they make the copy read like its source.
+        assert "copied.myFormula = AirtableModel.detachForCopy(myFormula);" in copy_block
+        # Containers are rebuilt so the copy shares no mutable state with its source.
+        assert "copied.links = AirtableModel.detachForCopy(links);" in copy_block
+        assert "copied.attachedClient = attachedClient;" in copy_block
+        assert "copied.id" not in copy_block, "the copy must keep the fresh null id the constructor gives it"
+        assert "copied.createdTime" not in copy_block
+        assert "takeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.6 -- OrmTable.create does NOT project attachments, so a copy has
+        to do it at copy time or Airtable rejects the server-returned objects. Computed
+        attachment-shaped cells (a lookup can hold the same shape) go through the plain
+        detach and keep everything: they are never written back, so stripping their
+        metadata would lose fidelity for nothing."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._generate_model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel copy() {")[1].split("public String toString()")[0]
+
+        assert "copied.photos = AirtableModel.projectAttachmentsForCopy(photos);" in copy_block
+        assert "projectAttachmentsForCopy(lookupAtt)" not in copy_block
+        assert "copied.lookupAtt = AirtableModel.detachForCopy(lookupAtt);" in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate_model([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
 
     # ---- formula gating ----
 
@@ -3910,6 +4247,18 @@ class TestGoComputedFields:
         assert re.search(r"func \(m \*TestTableModel\) TableID\(\) string", content)
         assert re.search(r"func \(m \*TestTableModel\) writableFields\(\) map\[string\]json\.RawMessage", content)
 
+    def test_model_emits_copy_forwarder(self, tmp_path: Path):
+        """myairtable-6q37.5 -- Copy() is a one-line forwarder onto the runtime's
+        generic copyModel, so the detach + deep-copy rules live in model.go rather
+        than being re-emitted (and re-drifted) once per table. It takes no context:
+        copy performs zero I/O."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert re.search(
+            r"func \(m \*TestTableModel\) Copy\(\) \*TestTableModel \{\s*return copyModel\[TestTableModel\]\(m\)\s*\}",
+            content,
+        )
+        assert "func (m *TestTableModel) Copy(ctx context.Context)" not in content
+
 
 class TestGoFormulaHelpers:
     """Go `filters_{table}.go` (F7): per-table `{prefix}Filters` struct mapping
@@ -3980,3 +4329,140 @@ class TestGoFormulaHelpers:
         assert (out / "filters_testtable.go").exists()
         for name in _GO_FORMULA_STATIC_FILES:
             assert (out / name).exists()
+
+
+class TestCopyVerbReservedAcrossTargets:
+    """A field named "Copy" must not collide with the generated `copy()` verb (myairtable-6q37.1).
+
+    `copy()` is a model method in all ten targets. Every verdict below was reproduced
+    against the real toolchain before the reserved entry was added:
+
+      Go      `field and method with the same name Copy`      (go build AND go vet)
+      C#      `error CS0102: type already contains a definition for 'Copy'`  (.NET 9)
+      TS      `error TS2300: Duplicate identifier 'copy'`     (repo's tsc --strict)
+      Swift   `error: invalid redeclaration of 'copy()'`      (plain AND @Observable)
+      C++     silent at class scope; the call site fails with
+              "type 'std::optional<std::string>' does not provide a call operator"
+      Python  silent -- the field descriptor replaces the method (methods are written
+              before fields, last binding wins); `record.copy()` raises TypeError
+      JS      silent -- `get copy()` shadows the inherited method; TypeError at call
+
+    Java, Kotlin and Rust keep fields and methods in separate namespaces and were
+    compile-verified to accept a `copy` field and a `copy()` method side by side, so
+    they are deliberately NOT reserved: adding entries there would contradict each
+    generator's own documented policy and rename user properties for no reason.
+    """
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Copy", "fld002", "singleLineText"),
+    ]
+
+    # generator module -> the property name "Copy" must be renamed to
+    GUARDED = {
+        "go": "CopyField",
+        "csharp": "CopyField",
+        "cpp": "copy_field",
+        "swift": "copyField",
+        "python": "copy_field",
+        "typescript": "copyField",
+        "javascript": "copyField",
+    }
+    # generator module -> the property name "Copy" keeps (namespaces are disjoint)
+    IMMUNE = {"java": "copy", "kotlin": "copy"}
+
+    def _props(self, module: str, fields: list[tuple[str, str, FieldType]]) -> dict[str, str]:
+        import importlib
+
+        field_property_map = importlib.import_module(f"myairtable.generators.{module}")._field_property_map
+        return field_property_map(make_test_base(fields).tables[0])
+
+    @pytest.mark.parametrize("module,expected", sorted(GUARDED.items()))
+    def test_copy_field_is_suffixed(self, module: str, expected: str):
+        assert self._props(module, self.FIELDS)["fld002"] == expected
+
+    @pytest.mark.parametrize("module,expected", sorted(IMMUNE.items()))
+    def test_copy_field_is_left_alone_where_namespaces_are_disjoint(self, module: str, expected: str):
+        assert self._props(module, self.FIELDS)["fld002"] == expected
+
+    def test_rust_is_left_alone(self):
+        """Rust has no reserved-member layer; an inherent `fn copy()` and a `pub copy`
+        field coexist (compile-verified), so it consumes the shared snake map directly."""
+        from myairtable.utils.helpers import deduplicated_field_property_map_snake
+
+        assert deduplicated_field_property_map_snake(make_test_base(self.FIELDS).tables[0])["fld002"] == "copy"
+
+    @pytest.mark.parametrize("module,expected", sorted(GUARDED.items()))
+    def test_suffixed_name_rededuplicates(self, module: str, expected: str):
+        """The rename must not create a NEW collision with a field already named
+        "Copy Field" -- the suffixed name goes back through deduplicate_identifiers."""
+        fields: list[tuple[str, str, FieldType]] = [*self.FIELDS, ("Copy Field", "fld003", "singleLineText")]
+        props = self._props(module, fields)
+        assert props["fld002"] == expected
+        assert props["fld003"] != expected
+        assert len(set(props.values())) == len(props)
+
+    def test_python_model_has_no_copy_property(self, tmp_path: Path):
+        """End-to-end: the silent-failure case. A `copy` descriptor in the class body
+        would replace the method with no error at generation or import time."""
+        from myairtable.generators.python import write_models
+
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(make_test_base(self.FIELDS), out, formulas=False, runtime=False)
+        content = (out / "dynamic" / "models" / "test_table.py").read_text()
+        assert "copy_field: " in content
+        assert not re.search(r"^\s+copy: ", content, re.MULTILINE)
+
+    def test_typescript_model_has_no_copy_accessor(self, tmp_path: Path):
+        """End-to-end: the hard-failure case (TS2300)."""
+        from myairtable.generators.typescript import write_models
+
+        out = tmp_path / "ts_output"
+        out.mkdir()
+        write_models(make_test_base(self.FIELDS), out, formulas=False, zod=False)
+        content = _read_generated_model(out, "typescript")
+        assert "public get copyField()" in content
+        assert "public get copy()" not in content
+        assert "public set copy(" not in content
+
+
+class TestPythonCopyVerbEmission:
+    """The generated Python model is a thin forwarder onto `copy_model` (myairtable-6q37.2)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from myairtable.generators.python import write_models
+        from myairtable.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "py_output"
+        out.mkdir()
+        map_types(base)
+        write_models(base, out, formulas=False, runtime=False)
+        return (out / "dynamic" / "models" / "test_table.py").read_text()
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Attachments", "fld002", "multipleAttachments"),
+        ("Calc", "fld003", "formula"),
+    ]
+
+    def test_copy_method_is_emitted_with_the_concrete_return_type(self, tmp_path: Path):
+        source = self._generate(self.FIELDS, tmp_path)
+        assert 'def copy(self) -> "TestTableModel":' in source
+        assert "return copy_model(self)" in source
+
+    def test_helper_is_imported(self, tmp_path: Path):
+        assert "from ...static.table_helpers import copy_model" in self._generate(self.FIELDS, tmp_path)
+
+    def test_copy_is_not_shadowed_by_a_field_named_copy(self, tmp_path: Path):
+        """Ties back to the reserved-name work: a field named "Copy" becomes
+        `copy_field`, leaving the verb callable."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Primary Key", "fld001", "singleLineText"),
+            ("Copy", "fld002", "singleLineText"),
+        ]
+        source = self._generate(fields_spec, tmp_path)
+        assert "def copy(self)" in source
+        assert "copy_field: " in source
+        assert "\n    copy: " not in source

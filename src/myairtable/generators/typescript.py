@@ -11,6 +11,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    deduplicate_identifiers,
     deduplicate_names,
     deduplicated_field_property_map,
     escape_for_double_quoted_string,
@@ -19,6 +20,29 @@ from ..utils.helpers import (
 )
 from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
 from ..verbosity import verbose
+
+# Member names a generated model may not use. TypeScript puts accessors and
+# methods in one class namespace, so a field named "Copy" against the local
+# `copy()` verb is `error TS2300: Duplicate identifier 'copy'` -- a hard build
+# break. Colliding field names get a `Field` suffix, then re-deduplicate.
+#
+# `id` / `createdTime` are not listed: they are pre-renamed upstream by
+# `sanitize_reserved_names`.
+_TYPESCRIPT_RESERVED_MODEL_MEMBERS = frozenset({"copy"})
+
+
+def _field_property_map(table: Table) -> dict[str, str]:
+    """`{field_id: deduplicated lowerCamelCase property name}` for one table.
+
+    Every writer (models, interfaces, Fields consts, Filters, and the
+    transpiler's field_name_map) consumes this same map so colliding field names
+    deduplicate consistently. Names colliding with a generated model member are
+    suffixed.
+    """
+    raw = deduplicated_field_property_map(table)
+    adjusted = [f"{name}Field" if name in _TYPESCRIPT_RESERVED_MODEL_MEMBERS else name for name in raw.values()]
+    deduped = deduplicate_identifiers(adjusted, suffix="V")
+    return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
 
 
 class WriteToTypeScriptFile(WriteToFile):
@@ -211,7 +235,7 @@ def write_types(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
-        prop_map = deduplicated_field_property_map(table)
+        prop_map = _field_property_map(table)
         with WriteToTypeScriptFile(path=types_dir / f"{table_name_camel}.ts") as write:
             # Imports
             write.region("IMPORTS")
@@ -431,7 +455,7 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
     zod_dir = create_dynamic_subdir(output_folder, Paths.ZOD)
 
     for table in base.tables:
-        prop_map = deduplicated_field_property_map(table)
+        prop_map = _field_property_map(table)
         with WriteToTypeScriptFile(path=zod_dir / f"{table.name_camel()}.ts") as write:
             write.line('import * as z from "zod";')
             write.mark_imports()
@@ -473,7 +497,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
         model_name = table.name_model()
-        prop_map = deduplicated_field_property_map(table)
+        prop_map = _field_property_map(table)
         with WriteToTypeScriptFile(path=models_dir / f"{table_name_camel}.ts") as write:
             # Imports (registered as candidates; only symbols used in the body are emitted)
             write.mark_imports()
@@ -809,7 +833,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
-        prop_map = deduplicated_field_property_map(table)
+        prop_map = _field_property_map(table)
         with WriteToTypeScriptFile(path=formulas_dir / f"{table_name_camel}.ts") as write:
             # Imports (only the formula classes / option types actually referenced are emitted)
             write.mark_imports()
@@ -854,7 +878,7 @@ def write_options(base: Base, output_folder: Path) -> None:
     for table in base.tables:
         table_name = table.name_pascal()
         table_name_camel = table.name_camel()
-        prop_map = deduplicated_field_property_map(table)
+        prop_map = _field_property_map(table)
         select_fields = table.select_fields()
         with WriteToTypeScriptFile(path=options_dir / f"{table_name_camel}.ts") as write:
             if len(select_fields) > 0:

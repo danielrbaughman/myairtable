@@ -62,9 +62,11 @@ _GO_FORMULA_CLASS_MAP = {
 _GO_FORMULA_STATIC_FILES = ("formula.go", "formula_fields.go", "formula_date.go")
 
 # Exported model member names a field property must not collide with. Generated
-# models expose ID()/CreatedTime()/Save/Fetch/Delete methods; a field whose
+# models expose ID()/CreatedTime()/Save/Fetch/Delete/Copy methods; a field whose
 # Pascal name equals one of these would shadow the method, so it is suffixed.
-_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete", "TableID"})
+# Go rejects this outright -- `field and method with the same name Copy` -- so
+# `Copy` is load-bearing, not defensive.
+_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete", "TableID", "Copy"})
 
 
 def _go_model_field_type(field) -> str:
@@ -284,6 +286,14 @@ def write_models(base: Base, output_folder: Path, runtime: bool = True, flatten:
             write.line(f"func (m *{model}) Fetch(ctx context.Context) error {{ return modelFetch[{model}](ctx, m) }}")
             write.comment("Delete removes this record.")
             write.line(f"func (m *{model}) Delete(ctx context.Context) error {{ return modelDelete[{model}](ctx, m) }}")
+            # Copy: purely local, no I/O. Thin forwarder onto copyModel (model.go) so the
+            # detach + deep-copy rules live in one place instead of once per table.
+            write.comment("Copy returns a detached, unsaved deep copy of this record: every field value")
+            write.comment("(computed ones included) but no id, createdTime or snapshot, so Save inserts it")
+            write.comment("as a NEW record instead of patching this one. Keeps the client, so the copy can")
+            write.comment("Save itself. Performs no I/O. Named for cross-target symmetry, not for the")
+            write.comment("builtin copy() -- semantically this is a Clone.")
+            write.line(f"func (m *{model}) Copy() *{model} {{ return copyModel[{model}](m) }}")
 
             # Runtime formula evaluation (G8.9): one Evaluate{Field}() per formula
             # field whose formula transpiled. Returns the native `any` runtime value.

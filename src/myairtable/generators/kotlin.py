@@ -26,7 +26,7 @@ from rich import print
 
 from ..formulas.formula_flattener import flatten_formula_for_transpilation
 from ..formulas.formula_transpiler import transpile_table_formulas
-from ..meta import Base, Table
+from ..meta import Base, Field, Table
 from ..utils.helpers import (
     Paths,
     copy_static_files,
@@ -98,6 +98,35 @@ def _field_property_map(table: Table) -> dict[str, str]:
     adjusted = [f"{name}Field" if name in _KOTLIN_RESERVED_MODEL_MEMBERS else name for name in raw.values()]
     deduped = deduplicate_identifiers(adjusted, suffix="V")
     return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
+
+
+def _kotlin_copy_expression(field: Field, prop: str) -> str:
+    """The value `copy()` passes for one property (myairtable-6q37.7).
+
+    Three cases, and the interesting one is the middle:
+
+    * A WRITABLE attachment cell is projected to `{url, filename}` at copy time —
+      `OrmTable.create` does not project, and Airtable rejects the `id`/`size`/`type`
+      an attachment read back from the server carries. A COMPUTED attachment-shaped
+      cell (a lookup) is left whole: it never reaches a create body, so stripping its
+      metadata would lose fidelity for nothing.
+    * Any `List<...>` is re-wrapped with `toList()`. Every other Kotlin type a field
+      can have is immutable (String/Long/Double/Boolean/Instant/Duration, the
+      `AirtableAttachment`/`AirtableCollaborator` data classes, `JsonElement`), so the
+      list containers are the only place the copy could otherwise share mutable state
+      with its source — kotlinx decodes them into an `ArrayList` behind the `List`
+      interface, and nothing stops a caller from having passed a `MutableList` in.
+    * Everything else is carried by value.
+    """
+    kotlin_type = field.kotlin_type()
+    if not field.is_computed():
+        if kotlin_type == "List<AirtableAttachment>":
+            return f"projectAttachmentsForCopy({prop})"
+        if kotlin_type == "AirtableAttachment":
+            return f"projectAttachmentForCopy({prop})"
+    if kotlin_type.startswith("List<"):
+        return f"{prop}?.toList()"
+    return prop
 
 
 def _table_type_prefix(table: Table) -> str:
@@ -476,6 +505,62 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.line_indented("for ((key, value) in current) if (snapshot[key] != value) dirty[key] = value", indent=2)
             write.line_indented("for (key in snapshot.keys) if (key !in current) dirty[key] = JsonNull", indent=2)
             write.line_indented("return dirty", indent=2)
+            write.line_indented("}")
+
+            # ---------- copy(): local, detached, unsaved clone (myairtable-6q37.7) ----------
+            #
+            # Emitted per model rather than hoisted onto the AirtableModel interface: the
+            # only reflection-free way to build a same-typed instance is to call this
+            # class's own primary constructor with every property named. The runtime keeps
+            # the parts that ARE table-independent (projectAttachment(s)ForCopy).
+            #
+            # The detach is structural. A fresh instance starts with id = null,
+            # createdTime = null and snapshot = emptyMap(), so nothing has to be un-set and
+            # nothing can be forgotten when a field is added. takeSnapshot() is deliberately
+            # NOT called: a snapshot on an unsaved model is meaningless, and dirtyFields()
+            # against a full snapshot would diff to empty. Only attachedClient is put back,
+            # so `copy.save()` can insert (contract item 4).
+            write.line_empty()
+            write.doc_comment(
+                [
+                    "A detached, unsaved copy of this record, ready to hand to `create(...)`.",
+                    "",
+                    "Carries every field value — computed ones included, so the copy reads like its",
+                    "source — but none of the record's identity: `id`, `createdTime` and the dirty-",
+                    "tracking snapshot all start empty, so the copy is a brand-new row rather than an",
+                    "edit of this one. The attached client is kept, so `copy().save()` inserts.",
+                    "",
+                    "NOT the `copy()` a data class synthesizes. `AirtableQuery`, `DictTable.Record`",
+                    "and `AirtableAttachment` in this same runtime ARE data classes, whose `copy()`",
+                    "means componentwise-copy-with-overrides; a generated model is a plain class and",
+                    "this one detaches, takes no overrides, and returns something you can insert.",
+                    "",
+                    "Performs no I/O — that is the whole difference from the table's `duplicate(...)`,",
+                    "which re-reads the source from Airtable first. A copy is therefore only as fresh",
+                    "as the model in hand, which matters most for attachments: their signed URLs",
+                    "expire after roughly two hours.",
+                    "",
+                    "Writable attachment cells are reduced to `{url, filename}` here, because",
+                    "`create(...)` does not project and Airtable rejects server-returned attachment",
+                    "objects. Computed cells keep their full metadata: they are never written back.",
+                    "",
+                    "Linked records are copied as-is. Airtable links are many-to-many, so the copy is",
+                    "added alongside the original and this record's own links are untouched.",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"fun copy(): {model_name} {{")
+            if table.fields:
+                write.line_indented("val copied =", indent=2)
+                write.line_indented(f"{model_name}(", indent=3)
+                for field in table.fields:
+                    prop = _kotlin_ident(prop_names[field.id])
+                    write.line_indented(f"{prop} = {_kotlin_copy_expression(field, prop)},", indent=4)
+                write.line_indented(")", indent=3)
+            else:
+                write.line_indented(f"val copied = {model_name}()", indent=2)
+            write.line_indented("copied.attachedClient = attachedClient", indent=2)
+            write.line_indented("return copied", indent=2)
             write.line_indented("}")
 
             write.line_empty()

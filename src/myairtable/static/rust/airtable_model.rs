@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
-use crate::types::{Fields, Record, RecordId};
+use crate::types::{Attachment, Fields, Record, RecordId};
 
 /// Shared internal state for ORM models.
 #[derive(Debug, Clone, Default)]
@@ -87,6 +87,59 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
         let mut fields = self.to_json();
         project_attachments_for_create(&mut fields);
         fields
+    }
+
+    /// Reduce this model's **writable** attachment cells to the shape create accepts.
+    ///
+    /// The default is a no-op; the generator overrides it on every model that has a writable
+    /// attachment field. It cannot be written generically here: the fields are typed struct
+    /// members, and the JSON-level `project_attachments_for_create` is unusable for `copy()`
+    /// because a serde round-trip would drop the computed values the copy is meant to carry
+    /// (they are `#[serde(skip_serializing)]`).
+    ///
+    /// Only writable cells are touched. A computed lookup can hold the very same attachment
+    /// shape, but it is never written back, so stripping its metadata would lose fidelity for
+    /// nothing.
+    fn project_attachments_for_copy(&mut self) {}
+
+    /// Return a detached, unsaved copy of this record.
+    ///
+    /// Carries every field value -- computed ones included, so the copy reads like its source --
+    /// but none of the record's identity, so passing it to `create_one()` (or calling `save()`)
+    /// inserts a new record instead of updating this one. Mutate it first to change whatever
+    /// should differ.
+    ///
+    /// Note this is deliberately *not* `Clone::clone`: `.clone()` keeps the id, the
+    /// `created_time` and the dirty-tracking snapshot, so a cloned record still updates its
+    /// source. `copy()` clears all three. Clearing the snapshot is the load-bearing part:
+    /// `to_save_json()` returns a *diff* whenever a snapshot exists and the model has an id, so
+    /// a copy that kept the source's snapshot would POST `{}` and create a blank record.
+    ///
+    /// The client handle and table id are kept, so `copy.save()` works without re-attaching.
+    ///
+    /// Attachments are projected to `{url, filename}`, which makes Airtable re-ingest each file
+    /// so the new record owns its attachment rather than aliasing this one's. Linked records are
+    /// copied as-is; Airtable links are many-to-many, so the new record is added alongside this
+    /// one and this record's own links are untouched.
+    ///
+    /// Performs no I/O, so the copy is only as fresh as this model -- and attachment URLs are
+    /// signed and expire. For a copy guaranteed to reflect current server state, use
+    /// `OrmTable::duplicate_one()` instead.
+    fn copy(&self) -> Self
+    where
+        Self: Clone,
+    {
+        // `Clone` on the generated struct is derived, so every `Option<Vec<..>>` cell is deep
+        // copied -- the copy shares no mutable state with its source. `ModelMeta::clone` clones
+        // the `Arc<AirtableClient>` (a shared handle, which is what we want) and the snapshot,
+        // which is dropped immediately below.
+        let mut copied = self.clone();
+        copied.set_id(None);
+        copied.set_created_time(None);
+        // ModelMeta has exactly three fields; client and table_id are deliberately retained.
+        copied.meta_mut().snapshot = None;
+        copied.project_attachments_for_copy();
+        copied
     }
 
     /// Build a JSON value with only changed fields (for update) or all set fields (for create).
@@ -190,6 +243,20 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
             client.delete_record(table_id, id).await
         }
     }
+}
+
+/// Strip the read-only server metadata from a single attachment, in place.
+///
+/// The typed counterpart of [`project_attachments_for_create`], for `copy()`: create accepts only
+/// `{"url": ...}` (optionally with `"filename"`), and an echoed `id` fails with
+/// `INVALID_ATTACHMENT_OBJECT`. Dropping the id is also what makes the created record re-ingest
+/// the file and own an independent attachment rather than aliasing the source's.
+pub fn project_attachment_for_copy(attachment: &mut Attachment) {
+    attachment.id = None;
+    attachment.mime_type = None;
+    attachment.size = None;
+    attachment.width = None;
+    attachment.height = None;
 }
 
 /// Reduce attachment cells to the only shape Airtable accepts when inserting.
