@@ -817,6 +817,26 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(
                 f"pub async fn create_many(&self, models: &[{model}], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.create_many(models, typecast).await }}"
             )
+            write.doc_comment(
+                "Copy a record into a brand-new record. Writable fields are copied verbatim, "
+                "computed fields are recalculated by Airtable, and the source is left untouched.",
+                indent=1,
+            )
+            write.line_indented(
+                f"pub async fn duplicate_one(&self, model: &{model}, typecast: bool) -> Result<{model}, AirtableError> {{ self.orm.duplicate_one(model, typecast).await }}"
+            )
+            write.doc_comment("Copy multiple records into brand-new records.", indent=1)
+            write.line_indented(
+                f"pub async fn duplicate_many(&self, models: &[{model}], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.duplicate_many(models, typecast).await }}"
+            )
+            write.doc_comment("Read the record with this ID and copy it (one extra GET).", indent=1)
+            write.line_indented(
+                f"pub async fn duplicate_one_by_id(&self, record_id: &RecordId, typecast: bool) -> Result<{model}, AirtableError> {{ self.orm.duplicate_one_by_id(record_id, typecast).await }}"
+            )
+            write.doc_comment("Read the records with these IDs and copy them, preserving order.", indent=1)
+            write.line_indented(
+                f"pub async fn duplicate_many_by_ids(&self, record_ids: &[RecordId], typecast: bool) -> Result<Vec<{model}>, AirtableError> {{ self.orm.duplicate_many_by_ids(record_ids, typecast).await }}"
+            )
             write.doc_comment("Update an existing record.", indent=1)
             write.line_indented(
                 f"pub async fn update_one(&self, record_id: &RecordId, model: &{model}, typecast: bool) -> Result<{model}, AirtableError> {{ self.orm.update_one(record_id, model, typecast).await }}"

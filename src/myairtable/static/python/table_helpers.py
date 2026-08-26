@@ -48,6 +48,49 @@ def convert_datetime_fields_to_str(fields: dict) -> dict:
     return {k: v.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if isinstance(v, datetime) else v for k, v in fields.items()}
 
 
+def project_attachments_for_create(fields: dict) -> dict:
+    """Reduce attachment cells to the only shape Airtable accepts when inserting.
+
+    Airtable returns attachments carrying read-only metadata (``id``, ``size``, ``type``,
+    ``width``, ``height``, ``thumbnails``). On **create** it accepts only ``{"url": ...}``
+    (optionally with ``"filename"``) — sending an ``id``, alone or echoed alongside ``url``,
+    fails with ``INVALID_ATTACHMENT_OBJECT``. Airtable re-ingests the file and mints a fresh
+    attachment id, which is what makes a duplicated record's attachment independent of its
+    source rather than an alias.
+
+    Create-only: on **update** an ``id`` is legal and means "retain this attachment", so this
+    must not be applied to the update path or existing attachments churn on every save.
+
+    Attachment cells are recognised by shape rather than by field id, because the raw dict
+    layer may be keyed by either field id or field name depending on ``use_field_ids``. The
+    shape is unambiguous: no other Airtable cell type is a list of mappings carrying a ``url``
+    alongside an ``att``-prefixed id. A cell the caller already built as ``{"url": ...}`` has
+    no id and is passed through unchanged, which is exactly the shape create wants anyway.
+
+    Returns a new dict; the caller's fields are never mutated.
+    """
+
+    def _is_attachment_cell(value: Any) -> bool:
+        return (
+            isinstance(value, list)
+            and bool(value)
+            and all(isinstance(v, dict) and "url" in v and str(v.get("id", "")).startswith("att") for v in value)
+        )
+
+    projected_fields = dict(fields)
+    for field_key, value in fields.items():
+        if not _is_attachment_cell(value):
+            continue
+        projected: list[dict] = []
+        for attachment in value:
+            item: dict[str, Any] = {"url": attachment["url"]}
+            if attachment.get("filename"):
+                item["filename"] = attachment["filename"]
+            projected.append(item)
+        projected_fields[field_key] = projected
+    return projected_fields
+
+
 def prepare_fields_for_save(fields: dict, calculated_fields: Sequence[str]) -> dict:
     """Prepare fields for sending to Airtable."""
     fields = remove_calculated_fields(fields, calculated_fields)

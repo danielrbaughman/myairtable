@@ -111,6 +111,62 @@ public abstract class AirtableModel
     }
 
     /// <summary>
+    /// Reduce attachment cells to the only shape Airtable accepts when inserting.
+    /// </summary>
+    /// <remarks>
+    /// Airtable returns attachments carrying read-only metadata (<c>id</c>, <c>size</c>,
+    /// <c>type</c>, <c>width</c>, <c>height</c>, <c>thumbnails</c>). On <b>create</b> it accepts
+    /// only <c>{"url": ...}</c> (optionally with <c>"filename"</c>) — sending an <c>id</c>, alone
+    /// or echoed alongside <c>url</c>, fails with <c>INVALID_ATTACHMENT_OBJECT</c>. Airtable
+    /// re-ingests the file and mints a fresh attachment id, which is what makes a duplicated
+    /// record's attachment independent of its source rather than an alias.
+    /// <para>
+    /// Create-only: on <b>update</b> an <c>id</c> is legal and means "retain this attachment".
+    /// </para>
+    /// <para>
+    /// Cells are recognised by shape rather than by field id, so this needs no generated
+    /// metadata: no other Airtable cell type is an array of objects carrying a <c>url</c>
+    /// alongside an <c>att</c>-prefixed id.
+    /// </para>
+    /// </remarks>
+    public static Dictionary<string, JsonNode?> ProjectAttachmentsForCreate(
+        IReadOnlyDictionary<string, JsonNode?> fields
+    )
+    {
+        var projectedFields = new Dictionary<string, JsonNode?>(fields.Count);
+        foreach (var (key, value) in fields)
+        {
+            projectedFields[key] = value;
+            if (value is not JsonArray items || items.Count == 0)
+                continue;
+
+            var projected = new JsonArray();
+            var isAttachmentCell = true;
+            foreach (var item in items)
+            {
+                if (
+                    item is not JsonObject obj
+                    || obj["url"] is not JsonNode url
+                    || obj["id"] is not JsonValue idValue
+                    || !idValue.TryGetValue<string>(out var id)
+                    || !id.StartsWith("att", StringComparison.Ordinal)
+                )
+                {
+                    isAttachmentCell = false;
+                    break;
+                }
+                var entry = new JsonObject { ["url"] = url.DeepClone() };
+                if (obj["filename"] is JsonNode filename)
+                    entry["filename"] = filename.DeepClone();
+                projected.Add(entry);
+            }
+            if (isAttachmentCell)
+                projectedFields[key] = projected;
+        }
+        return projectedFields;
+    }
+
+    /// <summary>
     /// Non-null <b>writable</b> field values keyed by field ID — the only path to create payloads.
     /// Computed fields never appear here.
     /// </summary>

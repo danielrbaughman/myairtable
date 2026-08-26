@@ -196,6 +196,88 @@ public final class OrmTable<T extends AirtableModel> {
     return created.get(0);
   }
 
+  /**
+   * Copy a record into a brand-new record.
+   *
+   * <p>Every writable field is copied verbatim, including the primary field. Computed fields are
+   * omitted and recalculated by Airtable, so the copy gets its own id, autonumber and timestamps.
+   * The source model is never modified.
+   *
+   * <p>Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+   * independent attachment rather than aliasing the source's.
+   *
+   * <p>Linked records are copied as-is. Airtable link fields are many-to-many underneath, so the
+   * copy is added alongside the original on the far side of the link; the source record's own links
+   * are never modified.
+   */
+  public T duplicate(T model) {
+    return duplicate(model, false);
+  }
+
+  /** Copy a record, with optional {@code typecast}. */
+  public T duplicate(T model, boolean typecast) {
+    List<T> created =
+        createBatch(
+            List.of(AirtableJson.projectAttachmentsForCreate(model.toCreateFields())), typecast);
+    if (created.isEmpty()) {
+      throw new AirtableException.Api("UNEXPECTED_RESPONSE", "duplicate returned no records");
+    }
+    return created.get(0);
+  }
+
+  /**
+   * Read the record with {@code recordId} and copy it. Costs one extra GET, and in exchange the
+   * copy reflects current server state and its attachment URLs are freshly signed (Airtable's
+   * expire after roughly two hours).
+   */
+  public T duplicate(String recordId) {
+    return duplicate(recordId, false);
+  }
+
+  /** Read the record with {@code recordId} and copy it, with optional {@code typecast}. */
+  public T duplicate(String recordId, boolean typecast) {
+    return duplicate(get(recordId), typecast);
+  }
+
+  /**
+   * Copy many records into brand-new records. Chunks into Airtable's batch limit (10).
+   *
+   * <p>Named {@code duplicateModels} rather than an overload because {@code List<T>} and {@code
+   * List<String>} erase to the same signature — the same reason {@code deleteModels} exists.
+   */
+  public List<T> duplicateModels(List<T> models) {
+    return duplicateModels(models, false);
+  }
+
+  /** Copy many records, with optional {@code typecast}. */
+  public List<T> duplicateModels(List<T> models, boolean typecast) {
+    List<Map<String, JsonNode>> payloads =
+        models.stream()
+            .map(m -> AirtableJson.projectAttachmentsForCreate(m.toCreateFields()))
+            .toList();
+    List<T> collected = new ArrayList<>(models.size());
+    for (int start = 0; start < payloads.size(); start += BATCH_SIZE) {
+      collected.addAll(
+          createBatch(
+              payloads.subList(start, Math.min(start + BATCH_SIZE, payloads.size())), typecast));
+    }
+    return collected;
+  }
+
+  /** Read the records with {@code recordIds} and copy them, preserving the given order. */
+  public List<T> duplicateAll(List<String> recordIds) {
+    return duplicateAll(recordIds, false);
+  }
+
+  /** Read the records with {@code recordIds} and copy them, with optional {@code typecast}. */
+  public List<T> duplicateAll(List<String> recordIds, boolean typecast) {
+    if (recordIds.isEmpty()) {
+      return List.of();
+    }
+    // get(List<String>) fans out on virtual threads but preserves caller order.
+    return duplicateModels(get(recordIds), typecast);
+  }
+
   /** Create many records. Chunks into Airtable's batch limit (10). */
   public List<T> create(List<T> models) {
     return create(models, false);

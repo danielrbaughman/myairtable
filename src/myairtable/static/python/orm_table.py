@@ -1,7 +1,7 @@
 import json
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any, Generic, Optional, overload
+from typing import Any, Generic, Optional, cast, overload
 
 from pyairtable import Table
 from pyairtable.api.types import RecordDict
@@ -9,7 +9,16 @@ from pyairtable.formulas import Formula
 
 from .formula import ID
 from .helpers import validate_keys
-from .table_helpers import FieldType, ORMType, SortOption, ViewType, convert_sort_options, prepare_fields_for_save, sanitize_record_dict
+from .table_helpers import (
+    FieldType,
+    ORMType,
+    SortOption,
+    ViewType,
+    convert_sort_options,
+    prepare_fields_for_save,
+    project_attachments_for_create,
+    sanitize_record_dict,
+)
 
 
 class ORMTable(Generic[ORMType, ViewType, FieldType]):
@@ -392,6 +401,131 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record = sanitize_record_dict(record)
             orm_record = self._orm_cls.from_record(record)
             return orm_record
+
+    def _create_fields(self, record: ORMType) -> dict[str, Any]:
+        """The full writable field payload for a record, independent of dirty state.
+
+        Deliberately does not go through ``record.save()``: pyairtable's ``Model.save()``
+        PATCHes whenever the model already carries an id, which would update the source
+        record instead of inserting a copy.
+        """
+        fields = prepare_fields_for_save(record.to_record()["fields"], self._calculated_field_ids)
+        return project_attachments_for_create(fields)
+
+    @overload
+    def duplicate(self, record: ORMType, *, typecast: bool = False) -> ORMType:
+        """
+        Creates a new Airtable record that is an exact copy of an existing one.
+
+        Args:
+            record (Model): The record to copy. Only its id is used — the source is re-read
+                from Airtable, so the copy always reflects current server state.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type.
+        """
+        ...
+
+    @overload
+    def duplicate(self, records: list[ORMType], *, typecast: bool = False) -> list[ORMType]:
+        """
+        Creates a copy of each of several existing Airtable records.
+
+        Args:
+            records (list[Model]): The records to copy.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type.
+        """
+        ...
+
+    @overload
+    def duplicate(self, record_id: str, *, typecast: bool = False) -> ORMType:
+        """
+        Creates a new Airtable record that is an exact copy of the record with this id.
+
+        Args:
+            record_id (str): Airtable record ID of the record to copy.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type.
+        """
+        ...
+
+    @overload
+    def duplicate(self, record_ids: list[str], *, typecast: bool = False) -> list[ORMType]:
+        """
+        Creates a copy of each of the records with these ids.
+
+        Args:
+            record_ids (list[str]): Airtable record IDs of the records to copy.
+            typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type.
+        """
+        ...
+
+    def duplicate(
+        self,
+        record: "ORMType | list[ORMType] | str | list[str] | None" = None,
+        records: list[ORMType] | None = None,
+        record_id: str = "",
+        record_ids: list[str] | None = None,
+        typecast: bool = False,
+    ) -> "ORMType | list[ORMType]":
+        """Copy one or more records into brand-new records.
+
+        Every writable field is copied verbatim, including the primary field. Computed fields
+        (formulas, rollups, counts, autonumbers, created/modified metadata) are omitted and
+        recalculated by Airtable, so the copy gets its own id, autonumber and timestamps.
+
+        The source is always re-read from Airtable before copying, even when a model is passed,
+        so the copy reflects current server state and attachment URLs are freshly signed.
+
+        Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+        independent attachment rather than aliasing the source's.
+
+        Linked records are copied as-is. Airtable link fields are many-to-many underneath, so
+        the copy is *added* alongside the original on the far side of the link; the source
+        record's own links are never modified.
+        """
+        self.invalidate_cache()
+
+        # Resolve every documented form -- model/id, single/list, positional or keyword -- to a
+        # list of source ids. Sniffing the first positional argument is what lets all four work
+        # positionally; `delete()` does not do this, so `delete("rec...")` binds to `record` and
+        # fails on `record.delete()`. Don't copy that here.
+        source_ids: list[str]
+        is_list: bool
+        if isinstance(record, str):
+            source_ids, is_list = [record], False
+        elif isinstance(record, list):
+            if len(record) == 0:
+                return []
+            source_ids = cast("list[str]", record) if isinstance(record[0], str) else [r.id for r in cast("list[ORMType]", record)]
+            is_list = True
+        elif record is not None:
+            source_ids, is_list = [record.id], False
+        elif record_ids is not None:
+            source_ids, is_list = list(record_ids), True
+        elif records is not None:
+            source_ids, is_list = [r.id for r in records], True
+        elif record_id:
+            source_ids, is_list = [record_id], False
+        else:
+            raise ValueError("Record to duplicate cannot be None.")
+
+        if not source_ids:
+            return []
+        missing_ids = [i for i, source_id in enumerate(source_ids) if not source_id]
+        if missing_ids:
+            raise ValueError(f"duplicate: record(s) at position(s) {missing_ids} have no id; only saved records can be duplicated.")
+
+        # One batched read (ID.in_list), then re-key to input order: Airtable returns records in
+        # table order, not the order they were asked for.
+        fetched = self.get(record_ids=source_ids)
+        fetched_list: list[ORMType] = fetched if isinstance(fetched, list) else [fetched]
+        by_id = {r.id: r for r in fetched_list}
+        not_found = [source_id for source_id in source_ids if source_id not in by_id]
+        if not_found:
+            raise RuntimeError(f"duplicate: source record(s) not found: {not_found}")
+
+        create_dicts = [self._create_fields(by_id[source_id]) for source_id in source_ids]
+        created = self._table.batch_create(create_dicts, typecast=typecast, use_field_ids=True)
+        copies = [self._orm_cls.from_record(sanitize_record_dict(r)) for r in created]
+        return copies if is_list else copies[0]
 
     def upsert(
         self,

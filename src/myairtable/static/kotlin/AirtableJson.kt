@@ -225,3 +225,43 @@ fun isTruthy(value: JsonElement?): Boolean =
     }
 
 // endregion
+
+/**
+ * Reduce attachment cells to the only shape Airtable accepts when inserting.
+ *
+ * Airtable returns attachments carrying read-only metadata (`id`, `size`, `type`, `width`,
+ * `height`, `thumbnails`). On **create** it accepts only `{"url": ...}` (optionally with
+ * `"filename"`) — sending an `id`, alone or echoed alongside `url`, fails with
+ * `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id,
+ * which is what makes a duplicated record's attachment independent of its source rather than
+ * an alias.
+ *
+ * Create-only: on **update** an `id` is legal and means "retain this attachment".
+ *
+ * Cells are recognised by shape rather than by field id, so this needs no generated metadata:
+ * no other Airtable cell type is an array of objects carrying a `url` alongside an
+ * `att`-prefixed id.
+ */
+fun projectAttachmentsForCreate(fields: Map<String, JsonElement>): Map<String, JsonElement> {
+    val projectedFields = fields.toMutableMap()
+    for ((key, value) in fields) {
+        val items = (value as? JsonArray)?.takeIf { it.isNotEmpty() } ?: continue
+        val projected = mutableListOf<JsonElement>()
+        var isAttachmentCell = true
+        for (item in items) {
+            val obj = item as? JsonObject
+            val url = obj?.get("url")
+            val id = (obj?.get("id") as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (url == null || id == null || !id.startsWith("att")) {
+                isAttachmentCell = false
+                break
+            }
+            val entry = mutableMapOf("url" to url)
+            val filename = obj["filename"]
+            if (filename != null && filename !is JsonNull) entry["filename"] = filename
+            projected.add(JsonObject(entry))
+        }
+        if (isAttachmentCell) projectedFields[key] = JsonArray(projected)
+    }
+    return projectedFields
+}

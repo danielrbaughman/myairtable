@@ -112,6 +112,58 @@ public struct OrmTable<Model: AirtableModel>: Sendable {
     }
 
     // =====================================================================
+    // MARK: - duplicate
+    // =====================================================================
+
+    /// Copy a record into a brand-new record.
+    ///
+    /// Every writable field is copied verbatim, including the primary field. Computed
+    /// fields are omitted and recalculated by Airtable, so the copy gets its own id,
+    /// autonumber and timestamps. The source model is never modified.
+    ///
+    /// Attachments are copied by URL, so Airtable re-ingests each file and the copy owns
+    /// an independent attachment rather than aliasing the source's.
+    ///
+    /// Linked records are copied as-is. Airtable link fields are many-to-many underneath,
+    /// so the copy is added alongside the original on the far side of the link; the source
+    /// record's own links are never modified.
+    public func duplicate(_ model: Model, typecast: Bool = false) async throws -> Model {
+        let results = try await createBatch(
+            [projectAttachmentsForCreate(model.toRecord())],
+            typecast: typecast
+        )
+        guard let first = results.first else {
+            throw AirtableError.api(code: "UNEXPECTED_RESPONSE", message: "duplicate returned no records")
+        }
+        return first
+    }
+
+    /// Copy many records into brand-new records. Chunks into Airtable's batch limit (10).
+    public func duplicate(_ models: [Model], typecast: Bool = false) async throws -> [Model] {
+        if models.isEmpty { return [] }
+        let payloads = models.map { projectAttachmentsForCreate($0.toRecord()) }
+        var collected: [Model] = []
+        for chunk in payloads.chunked(intoBatchSize: Self.batchSize) {
+            collected.append(contentsOf: try await createBatch(chunk, typecast: typecast))
+        }
+        return collected
+    }
+
+    /// Read the record with `recordId` and copy it. Costs one extra GET, and in exchange the
+    /// copy reflects current server state and its attachment URLs are freshly signed
+    /// (Airtable's expire after roughly two hours).
+    public func duplicate(_ recordId: String, typecast: Bool = false) async throws -> Model {
+        try await duplicate(try await get(recordId), typecast: typecast)
+    }
+
+    /// Read the records with `recordIds` and copy them, preserving the given order.
+    public func duplicate(_ recordIds: [String], typecast: Bool = false) async throws -> [Model] {
+        if recordIds.isEmpty { return [] }
+        // get(_ recordIds:) fetches per id and preserves the caller's order.
+        return try await duplicate(try await get(recordIds), typecast: typecast)
+    }
+
+    // =====================================================================
     // MARK: - update
     // =====================================================================
 

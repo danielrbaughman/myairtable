@@ -735,6 +735,45 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented("}")
             write.line_empty()
 
+            # ----- duplicate overloads -----
+            # Unlike the create/update forwarders above, these thread `typecast` through:
+            # `orm` is internal, so a flag the forwarder drops is unreachable from generated
+            # code entirely. (Backfilling the other verbs is tracked separately.)
+            write.doc_comment(
+                "Copy a record into a brand-new record. Writable fields are copied verbatim, "
+                "computed fields are recalculated by Airtable, and the source is left untouched.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func duplicate(_ model: {model_name}, typecast: Bool = false) async throws -> {model_name} {{")
+            write.line_indented("try await orm.duplicate(model, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment(
+                "Copy many records into brand-new records. Chunks into Airtable's 10-per-call batch limit.",
+                indent=1,
+            )
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func duplicate(_ models: [{model_name}], typecast: Bool = false) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.duplicate(models, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment("Read the record with this ID and copy it (one extra GET).", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func duplicate(_ recordId: String, typecast: Bool = false) async throws -> {model_name} {{")
+            write.line_indented("try await orm.duplicate(recordId, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
+            write.doc_comment("Read the records with these IDs and copy them, preserving order.", indent=1)
+            write.line_indented("@inlinable")
+            write.line_indented(f"public func duplicate(_ recordIds: [String], typecast: Bool = false) async throws -> [{model_name}] {{")
+            write.line_indented("try await orm.duplicate(recordIds, typecast: typecast)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+
             # ----- update overloads -----
             write.doc_comment(
                 "Update one model. Sends only fields that changed since last snapshot.",

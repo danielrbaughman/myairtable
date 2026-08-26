@@ -8,6 +8,7 @@ package airtable
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 type Table[T any, PT interface {
@@ -94,6 +95,90 @@ func (t *Table[T, PT]) CreateMany(ctx context.Context, models []PT, opts ...Writ
 		return nil, err
 	}
 	return t.hydrateInto(models, recs)
+}
+
+// DuplicateOne copies a record into a brand-new record.
+//
+// Every writable field is copied verbatim, including the primary field. Computed fields are
+// omitted and recalculated by Airtable, so the copy gets its own ID, autonumber and
+// timestamps. The returned model is a FRESH instance -- unlike CreateOne, which hydrates the
+// model you pass it, so duplicating with CreateOne would overwrite the source's ID with the
+// copy's.
+//
+// Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+// independent attachment rather than aliasing the source's.
+//
+// Linked records are copied as-is. Airtable link fields are many-to-many underneath, so the
+// copy is added alongside the original on the far side of the link; the source record's own
+// links are never modified.
+func (t *Table[T, PT]) DuplicateOne(ctx context.Context, m PT, opts ...WriteOption) (PT, error) {
+	o := resolveWriteOptions(opts)
+	fields := projectAttachmentsForCreate(toCreateFields(m))
+	recs, err := t.client.createRecords(ctx, t.tableID, []map[string]json.RawMessage{fields}, o.typecast)
+	if err != nil {
+		return nil, err
+	}
+	if len(recs) == 0 {
+		return nil, ErrNotFound
+	}
+	// decode() allocates a fresh model; hydrate() would mutate the caller's.
+	return t.decode(&recs[0])
+}
+
+// DuplicateMany copies several records into brand-new records (batched at 10 per request).
+// The source models are left untouched.
+func (t *Table[T, PT]) DuplicateMany(ctx context.Context, models []PT, opts ...WriteOption) ([]PT, error) {
+	if len(models) == 0 {
+		return nil, nil
+	}
+	o := resolveWriteOptions(opts)
+	payload := make([]map[string]json.RawMessage, 0, len(models))
+	for _, m := range models {
+		payload = append(payload, projectAttachmentsForCreate(toCreateFields(m)))
+	}
+	recs, err := t.client.createRecords(ctx, t.tableID, payload, o.typecast)
+	if err != nil {
+		return nil, err
+	}
+	return t.decodeAll(recs)
+}
+
+// DuplicateOneByID reads the record with id and copies it. Costs one extra GET, and in
+// exchange the copy reflects current server state and its attachment URLs are freshly signed
+// (Airtable's expire after roughly two hours).
+func (t *Table[T, PT]) DuplicateOneByID(ctx context.Context, id string, opts ...WriteOption) (PT, error) {
+	source, err := t.GetOne(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return t.DuplicateOne(ctx, source, opts...)
+}
+
+// DuplicateManyByIDs reads the records with ids and copies them, preserving the given order.
+func (t *Table[T, PT]) DuplicateManyByIDs(ctx context.Context, ids []string, opts ...WriteOption) ([]PT, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// One batched read via a RECORD_ID() OR-list, rather than a GET per id.
+	q := (&Query{}).WithFilter(NewIDField().InList(ids).String())
+	fetched, err := t.GetMany(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	// Airtable returns records in table order, not the order they were asked for.
+	byID := make(map[string]PT, len(fetched))
+	for _, m := range fetched {
+		byID[m.ID()] = m
+	}
+	ordered := make([]PT, 0, len(ids))
+	for _, id := range ids {
+		m, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("duplicate: source record %s was not found: %w", id, ErrNotFound)
+		}
+		ordered = append(ordered, m)
+	}
+	return t.DuplicateMany(ctx, ordered, opts...)
 }
 
 // UpdateOne PATCHes a model's dirty fields (or all writable fields when it has

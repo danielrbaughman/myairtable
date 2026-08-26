@@ -93,7 +93,24 @@ for contact in contacts:
 contact: ContactsRecordDict = airtable.contacts.dict.get("rec1234567890")
 contact["fields"]["name"] = "Joe"
 airtable.contacts.dict.update(contact)
+
+# duplicate() copies a record into a brand-new one. Every writable field is copied verbatim
+# (primary field included); computed fields are left to Airtable, so the copy gets its own id,
+# autonumber and timestamps. Takes a record or a record id, one or many, on either layer.
+copy: ContactsModel = airtable.contacts.duplicate(contact_id)
+copies: list[ContactsModel] = airtable.contacts.duplicate([id_a, id_b])
 ```
+
+> [!NOTE]
+> `duplicate()` is available in all ten targets. Languages without overloading spell it
+> `duplicate_one` / `duplicate_many` / `duplicate_one_by_id` / `duplicate_many_by_ids` (Rust, C++,
+> and `DuplicateOne`… in Go), matching how those targets already name the other verbs.
+>
+> It always re-reads the source from Airtable before copying, so the copy reflects
+> current server state. Attachments are copied by URL, which makes Airtable re-ingest each file
+> — the copy owns its attachment rather than sharing the original's. Linked records are copied
+> as-is; because Airtable links are many-to-many underneath, the copy is added alongside the
+> original and the source record's own links are never modified.
 
 > [!NOTE]
 > For JavaScript & TypeScript, the equivalents of `.dict` are integrated into the standard CRUD operations. They will return/accept the myAirtable's `AirtableModel` classes, Airtable.js's `Record<FieldSet>` class, or a plain interface containing the json data.

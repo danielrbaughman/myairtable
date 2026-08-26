@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 )
 
 // Model is the contract every generated model satisfies (pointer receiver).
@@ -60,6 +61,58 @@ func diffFields(snapshot, current map[string]json.RawMessage) map[string]json.Ra
 		old, ok := snapshot[k]
 		if !ok || !bytes.Equal(old, v) {
 			out[k] = v
+		}
+	}
+	return out
+}
+
+// projectAttachmentsForCreate reduces attachment cells to the only shape Airtable accepts
+// when inserting.
+//
+// Airtable returns attachments carrying read-only metadata (id, size, type, thumbnails,
+// width, height). On *create* it accepts only {"url": ...} (optionally with "filename") --
+// sending an id, alone or echoed alongside url, fails with INVALID_ATTACHMENT_OBJECT.
+// Airtable re-ingests the file and mints a fresh attachment id, which is what makes a
+// duplicated record's attachment independent of its source rather than an alias.
+//
+// Create-only: on *update* an id is legal and means "retain this attachment".
+//
+// Cells are recognised by shape rather than by field ID, so this needs no generated
+// metadata: no other Airtable cell type is an array of objects carrying a url alongside an
+// att-prefixed id. Returns a new map; the caller's fields are never mutated.
+func projectAttachmentsForCreate(fields map[string]json.RawMessage) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(fields))
+	for k, v := range fields {
+		out[k] = v
+		var items []map[string]json.RawMessage
+		if err := json.Unmarshal(v, &items); err != nil || len(items) == 0 {
+			continue
+		}
+		projected := make([]map[string]json.RawMessage, 0, len(items))
+		isAttachmentCell := true
+		for _, item := range items {
+			url, hasURL := item["url"]
+			rawID, hasID := item["id"]
+			if !hasURL || !hasID {
+				isAttachmentCell = false
+				break
+			}
+			var id string
+			if err := json.Unmarshal(rawID, &id); err != nil || !strings.HasPrefix(id, "att") {
+				isAttachmentCell = false
+				break
+			}
+			entry := map[string]json.RawMessage{"url": url}
+			if filename, ok := item["filename"]; ok && string(filename) != "null" {
+				entry["filename"] = filename
+			}
+			projected = append(projected, entry)
+		}
+		if !isAttachmentCell {
+			continue
+		}
+		if encoded, err := json.Marshal(projected); err == nil {
+			out[k] = encoded
 		}
 	}
 	return out

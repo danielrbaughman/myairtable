@@ -18,6 +18,7 @@ from .table_helpers import (
     ViewType,
     convert_sort_options,
     prepare_fields_for_save,
+    project_attachments_for_create,
     sanitize_record_dict,
 )
 
@@ -334,6 +335,113 @@ class DictTable(Generic[DictType, UpdateDictType, CreateDictType, ViewType, Fiel
             created_record = self._table.create(fields=record["fields"], use_field_ids=use_field_ids, **options)
             sanitized_record = sanitize_record_dict(created_record)
             return cast("DictType", sanitized_record)
+
+    @overload
+    def duplicate(self, record: DictType, *, use_field_ids: bool = False, **options) -> DictType:
+        """
+        Creates a new Airtable record that is an exact copy of an existing one.
+
+        Args:
+            record (RecordDict): The record to copy. Only its id is used — the source is re-read
+                from Airtable, so the copy always reflects current server state.
+        """
+        ...
+
+    @overload
+    def duplicate(self, records: list[DictType], *, use_field_ids: bool = False, **options) -> list[DictType]:
+        """
+        Creates a copy of each of several existing Airtable records.
+
+        Args:
+            records (list[RecordDict]): The records to copy.
+        """
+        ...
+
+    @overload
+    def duplicate(self, record_id: str, *, use_field_ids: bool = False, **options) -> DictType:
+        """
+        Creates a new Airtable record that is an exact copy of the record with this id.
+
+        Args:
+            record_id (str): Airtable record ID of the record to copy.
+        """
+        ...
+
+    @overload
+    def duplicate(self, record_ids: list[str], *, use_field_ids: bool = False, **options) -> list[DictType]:
+        """
+        Creates a copy of each of the records with these ids.
+
+        Args:
+            record_ids (list[str]): Airtable record IDs of the records to copy.
+        """
+        ...
+
+    def duplicate(
+        self,
+        record: "DictType | list[DictType] | str | list[str] | None" = None,
+        records: list[DictType] | None = None,
+        record_id: str = "",
+        record_ids: list[str] | None = None,
+        use_field_ids: bool = False,
+        **options,
+    ) -> "DictType | list[DictType]":
+        """Copy one or more records into brand-new records.
+
+        Every writable field is copied verbatim, including the primary field. Computed fields
+        are omitted and recalculated by Airtable, so the copy gets its own id, autonumber and
+        timestamps.
+
+        The source is always re-read from Airtable before copying, even when a record dict is
+        passed, so the copy reflects current server state and attachment URLs are freshly
+        signed. The caller's dict is never mutated (unlike ``create``/``update``, which
+        rewrite ``record["fields"]`` in place).
+        """
+        self.invalidate_cache()
+
+        source_ids: list[str]
+        is_list: bool
+        if isinstance(record, str):
+            source_ids, is_list = [record], False
+        elif isinstance(record, list):
+            if len(record) == 0:
+                return []
+            source_ids = cast("list[str]", record) if isinstance(record[0], str) else [r["id"] for r in cast("list[DictType]", record)]
+            is_list = True
+        elif record is not None:
+            source_ids, is_list = [record["id"]], False
+        elif record_ids is not None:
+            source_ids, is_list = list(record_ids), True
+        elif records is not None:
+            source_ids, is_list = [r["id"] for r in records], True
+        elif record_id:
+            source_ids, is_list = [record_id], False
+        else:
+            raise ValueError("Record to duplicate cannot be None.")
+
+        if not source_ids:
+            return []
+        unsaved = [i for i, source_id in enumerate(source_ids) if not source_id]
+        if unsaved:
+            raise ValueError(f"duplicate: record(s) at position(s) {unsaved} have no id; only saved records can be duplicated.")
+
+        # One batched read (ID.in_list), then re-key to input order: Airtable returns records in
+        # table order, not the order they were asked for.
+        fetched = self.get(record_ids=source_ids, use_field_ids=use_field_ids)
+        fetched_list: list[DictType] = fetched if isinstance(fetched, list) else [fetched]
+        by_id = {r["id"]: r for r in fetched_list}
+        not_found = [source_id for source_id in source_ids if source_id not in by_id]
+        if not_found:
+            raise RuntimeError(f"duplicate: source record(s) not found: {not_found}")
+
+        calculated_field_keys = self._calculated_field_ids if use_field_ids else self._calculated_field_names
+        create_dicts = [
+            project_attachments_for_create(prepare_fields_for_save(dict(by_id[source_id]["fields"]), calculated_field_keys))
+            for source_id in source_ids
+        ]
+        created = self._table.batch_create(create_dicts, use_field_ids=use_field_ids, **options)
+        copies = cast("list[DictType]", [sanitize_record_dict(r) for r in created])
+        return copies if is_list else copies[0]
 
     @overload
     def update(

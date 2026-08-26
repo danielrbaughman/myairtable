@@ -574,8 +574,9 @@ def write_tables(base: Base, output_folder: Path) -> None:
             _doc(
                 write,
                 f"Table accessor for {sanitize_string(table.name)}: the typed ORM surface\n"
-                f"(get_one/get_many/create_one/create_many/update_one/update_many/upsert/\n"
-                f"delete_one/delete_many over {model_name}) is the default;\n"
+                f"(get_one/get_many/create_one/create_many/update_one/update_many/\n"
+                f"duplicate_one/duplicate_many/upsert/delete_one/delete_many over\n"
+                f"{model_name}) is the default;\n"
                 f".dict() is the raw field-bag escape hatch.",
             )
             write.class_open(table_name, base=f"OrmTable<{model_name}>")

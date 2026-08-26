@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use crate::airtable_model::OrmModel;
 use crate::client::AirtableClient;
 use crate::error::AirtableError;
+use crate::formula::FormulaId;
 use crate::types::{AirtableQuery, Record, RecordId};
 
 /// A table accessor for typed ORM model access.
@@ -203,6 +204,108 @@ impl<T: DeserializeOwned + OrmModel> OrmTable<T> {
         let raw = self
             .client
             .update_records(self.table_id, &borrowed, true, typecast)
+            .await?;
+        raw.into_iter().map(|r| self.record_to_model(r)).collect()
+    }
+
+    /// Copy a record into a brand-new record.
+    ///
+    /// Every writable field is copied verbatim, including the primary field. Computed fields are
+    /// omitted and recalculated by Airtable, so the copy gets its own id, autonumber and
+    /// timestamps. The source model is never modified.
+    ///
+    /// Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+    /// independent attachment rather than aliasing the source's.
+    ///
+    /// Linked records are copied as-is. Airtable link fields are many-to-many underneath, so the
+    /// copy is added alongside the original on the far side of the link; the source record's own
+    /// links are never modified.
+    pub async fn duplicate_one(&self, model: &T, typecast: bool) -> Result<T, AirtableError> {
+        self.invalidate_cache();
+        let fields = model.to_insert_json();
+        let record = self
+            .client
+            .create_record(self.table_id, &fields, true, typecast)
+            .await?;
+        self.record_to_model(record)
+    }
+
+    /// Copy several records into brand-new records. Batched by the client at 10 per request.
+    pub async fn duplicate_many(
+        &self,
+        models: &[T],
+        typecast: bool,
+    ) -> Result<Vec<T>, AirtableError> {
+        self.invalidate_cache();
+        if models.is_empty() {
+            return Ok(Vec::new());
+        }
+        let payloads: Vec<serde_json::Value> = models.iter().map(|m| m.to_insert_json()).collect();
+        let raw = self
+            .client
+            .create_records(self.table_id, &payloads, true, typecast)
+            .await?;
+        raw.into_iter().map(|r| self.record_to_model(r)).collect()
+    }
+
+    /// Read the record with `record_id` and copy it. Costs one extra GET, and in exchange the
+    /// copy reflects current server state and its attachment URLs are freshly signed (Airtable's
+    /// expire after roughly two hours).
+    pub async fn duplicate_one_by_id(
+        &self,
+        record_id: &RecordId,
+        typecast: bool,
+    ) -> Result<T, AirtableError> {
+        let source = self.get_one(record_id).await?;
+        self.duplicate_one(&source, typecast).await
+    }
+
+    /// Read the records with `record_ids` and copy them, preserving the given order.
+    pub async fn duplicate_many_by_ids(
+        &self,
+        record_ids: &[RecordId],
+        typecast: bool,
+    ) -> Result<Vec<T>, AirtableError> {
+        if record_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // One batched read via RECORD_ID() OR-list, rather than a GET per id.
+        let id_refs: Vec<&str> = record_ids.iter().map(|id| id.as_str()).collect();
+        let query = AirtableQuery {
+            formula: Some(FormulaId.in_list(&id_refs)),
+            ..Default::default()
+        };
+        let fetched = self.get_many(&query).await?;
+
+        // Airtable returns records in table order, not the order they were asked for, so build
+        // the payloads in the caller's order rather than the response's.
+        let mut by_id: HashMap<&str, &T> = HashMap::with_capacity(fetched.len());
+        for model in &fetched {
+            if let Some(id) = model.get_id() {
+                by_id.insert(id.as_str(), model);
+            }
+        }
+        let mut payloads: Vec<serde_json::Value> = Vec::with_capacity(record_ids.len());
+        for record_id in record_ids {
+            match by_id.get(record_id.as_str()) {
+                Some(model) => payloads.push(model.to_insert_json()),
+                None => {
+                    return Err(AirtableError::Api {
+                        status: 404,
+                        code: "NOT_FOUND".to_string(),
+                        body: format!(
+                            "duplicate: source record {} was not found",
+                            record_id.as_str()
+                        ),
+                    })
+                }
+            }
+        }
+
+        self.invalidate_cache();
+        let raw = self
+            .client
+            .create_records(self.table_id, &payloads, true, typecast)
             .await?;
         raw.into_iter().map(|r| self.record_to_model(r)).collect()
     }

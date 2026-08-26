@@ -139,9 +139,9 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return r;
 	}
 
-	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FldSt>> {
+	public toCreateRecordData(useFieldIds: boolean = true, asInsert: boolean = false): CreateRecordData<Partial<FldSt>> {
 		return {
-			fields: this.writableFields(useFieldIds),
+			fields: this.writableFields(useFieldIds, asInsert),
 		};
 	}
 
@@ -290,11 +290,19 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		this._isNew = false;
 	}
 
-	protected writableFields(useFieldIds: boolean = true): Partial<FldSt> {
+	/**
+	 * @param asInsert Treat this as an insert even though the model came from the server: emit
+	 *   every writable field rather than only the dirty ones, and use create semantics for
+	 *   attachments and nullish values. Set by `duplicate()`, which copies a record that was
+	 *   read back from Airtable — for such a model `_isNew` is false and nothing is dirty, so
+	 *   without this the payload would come out empty and the copy would be a blank record.
+	 */
+	protected writableFields(useFieldIds: boolean = true, asInsert: boolean = false): Partial<FldSt> {
 		const fields: Partial<FldSt> = {};
+		const isInsert = this._isNew || asInsert;
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
-			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
+			if (!isInsert && !this.isDirty(desc.propertyName)) continue;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
 				case "linkedRecord": {
@@ -306,7 +314,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 					(fields as any)[key] = (this._fields[desc.propertyName] as any)?.ids;
 					break;
 				case "attachment":
-					(fields as any)[key] = this.sanitizeAttachment(desc.propertyName);
+					(fields as any)[key] = this.sanitizeAttachment(desc.propertyName, isInsert);
 					break;
 				default:
 					(fields as any)[key] = this._fields[desc.propertyName];
@@ -315,29 +323,36 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 			// On update, an included field is dirty; a nullish value is an explicit clear and must
 			// serialize as JSON null (undefined keys are dropped by JSON.stringify, leaving the cell
 			// unchanged). On create, undefined is left to be dropped (sparse write).
-			if (!this._isNew && (fields as any)[key] == null) (fields as any)[key] = null;
+			if (!isInsert && (fields as any)[key] == null) (fields as any)[key] = null;
 		}
 		return fields;
 	}
 
-	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
-	protected sanitizeAttachment(fieldName: string): Attachment[] {
+	/**
+	 * Airtable returns attachments with read-only metadata (`size`, `type`, `width`, `height`,
+	 * `thumbnails`) that its own API rejects on write, and create and update do NOT accept the
+	 * same shapes — verified against the live API:
+	 *
+	 * - **create** is a strict whitelist: only `{url}` / `{url, filename}` is accepted. Sending
+	 *   `id` — alone, echoed back with `url`, or as `{id,url,filename,size,type}` — fails with
+	 *   `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id.
+	 * - **update** accepts `id`, and it means *retain this attachment*. Re-sending `{url}` on an
+	 *   update would instead re-download the file and replace the id, so `id` must be preserved
+	 *   here or existing attachments churn on every save.
+	 *
+	 * Hence `forCreate`: project to `{url, filename}` when inserting, keep `{id}` when updating an
+	 * attachment that already has one.
+	 */
+	protected sanitizeAttachment(fieldName: string, forCreate: boolean): Attachment[] {
 		const attachments = this._fields[fieldName] as Attachment[] | undefined;
-		const writableAttachments: Attachment[] = [];
-		if (attachments && Array.isArray(attachments)) {
-			for (const attachment of attachments) {
-				const writableAttachment: Attachment = {
-					id: attachment.id,
-					url: attachment.url,
-					filename: attachment.filename,
-					size: attachment.size,
-					type: attachment.type,
-				};
-				writableAttachments.push(writableAttachment);
-			}
-		}
-
-		return writableAttachments;
+		if (!attachments || !Array.isArray(attachments)) return [];
+		return attachments.map((attachment) => {
+			// Retain an existing attachment on update; Airtable rejects `id` on create.
+			if (!forCreate && attachment.id) return { id: attachment.id } as unknown as Attachment;
+			const writable: { url: string; filename?: string } = { url: attachment.url };
+			if (attachment.filename) writable.filename = attachment.filename;
+			return writable as unknown as Attachment;
+		});
 	}
 
 	private _createLinkedField(desc: FieldDescriptor, value: unknown): LinkedRecord<any> | LinkedRecords<any> {

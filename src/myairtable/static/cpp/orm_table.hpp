@@ -124,6 +124,67 @@ template <typename M> class OrmTable {
         return collected;
     }
 
+    // ---- duplicate --------------------------------------------------------------
+
+    /// Copy a record into a brand-new record.
+    ///
+    /// Every writable field is copied verbatim, including the primary field. Computed fields
+    /// are omitted and recalculated by Airtable, so the copy gets its own id, autonumber and
+    /// timestamps. The source model is never modified.
+    ///
+    /// Attachments are copied by URL, so Airtable re-ingests each file and the copy owns an
+    /// independent attachment rather than aliasing the source's.
+    ///
+    /// Linked records are copied as-is. Airtable link fields are many-to-many underneath, so
+    /// the copy is added alongside the original on the far side of the link; the source
+    /// record's own links are never modified.
+    M duplicate_one(const M& model, bool typecast = false) const {
+        auto created =
+            create_batch({project_attachments_for_create(model.to_create_fields())}, typecast);
+        if (created.empty()) {
+            throw ApiError("UNEXPECTED_RESPONSE", "duplicate returned no records");
+        }
+        return std::move(created.front());
+    }
+
+    /// Copy many records into brand-new records. Chunks into Airtable's batch limit (10).
+    std::vector<M> duplicate_many(const std::vector<M>& models, bool typecast = false) const {
+        std::vector<M> collected;
+        collected.reserve(models.size());
+        std::vector<json> payloads;
+        payloads.reserve(models.size());
+        for (const auto& model : models) {
+            payloads.push_back(project_attachments_for_create(model.to_create_fields()));
+        }
+        for (size_t start = 0; start < payloads.size(); start += kBatchSize) {
+            const std::vector<json> batch(
+                payloads.begin() + static_cast<long>(start),
+                payloads.begin() +
+                    static_cast<long>(std::min(start + kBatchSize, payloads.size())));
+            for (auto& model : create_batch(batch, typecast)) {
+                collected.push_back(std::move(model));
+            }
+        }
+        return collected;
+    }
+
+    /// Read the record with `record_id` and copy it. Costs one extra GET, and in exchange the
+    /// copy reflects current server state and its attachment URLs are freshly signed
+    /// (Airtable's expire after roughly two hours).
+    M duplicate_one_by_id(const std::string& record_id, bool typecast = false) const {
+        return duplicate_one(get_one(record_id), typecast);
+    }
+
+    /// Read the records with `record_ids` and copy them, preserving the given order.
+    std::vector<M> duplicate_many_by_ids(const std::vector<std::string>& record_ids,
+                                         bool typecast = false) const {
+        if (record_ids.empty()) {
+            return {};
+        }
+        // get_many(ids) fetches per id and preserves the caller's order.
+        return duplicate_many(get_many(record_ids), typecast);
+    }
+
     // ---- update -----------------------------------------------------------------
 
     /// Update a single model: diffs against the model's snapshot and sends only

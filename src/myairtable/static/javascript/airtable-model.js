@@ -122,9 +122,9 @@ class AirtableModel {
 		return r;
 	}
 
-	toCreateRecordData(useFieldIds = true) {
+	toCreateRecordData(useFieldIds = true, asInsert = false) {
 		return {
-			fields: this.writableFields(useFieldIds),
+			fields: this.writableFields(useFieldIds, asInsert),
 		};
 	}
 
@@ -262,11 +262,12 @@ class AirtableModel {
 		this._isNew = false;
 	}
 
-	writableFields(useFieldIds = true) {
+	writableFields(useFieldIds = true, asInsert = false) {
+		const isInsert = this._isNew || asInsert;
 		const fields = {};
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
-			if (!this._isNew && !this.isDirty(desc.propertyName)) continue;
+			if (!isInsert && !this.isDirty(desc.propertyName)) continue;
 			const key = useFieldIds ? desc.fieldId : desc.fieldName;
 			switch (desc.fieldType) {
 				case "linkedRecord": {
@@ -278,7 +279,7 @@ class AirtableModel {
 					fields[key] = this._fields[desc.propertyName]?.ids;
 					break;
 				case "attachment":
-					fields[key] = this.sanitizeAttachment(desc.propertyName);
+					fields[key] = this.sanitizeAttachment(desc.propertyName, isInsert);
 					break;
 				default:
 					fields[key] = this._fields[desc.propertyName];
@@ -287,29 +288,38 @@ class AirtableModel {
 			// On update, an included field is dirty; a nullish value is an explicit clear and must
 			// serialize as JSON null (undefined keys are dropped by JSON.stringify, leaving the cell
 			// unchanged). On create, undefined is left to be dropped (sparse write).
-			if (!this._isNew && fields[key] == null) fields[key] = null;
+			if (!isInsert && fields[key] == null) fields[key] = null;
 		}
 		return fields;
 	}
 
-	/** The attachment we get from Airtable has extra properties that its own API doesn't accept when saving, so we sanitize it before saving */
-	sanitizeAttachment(fieldName) {
+	/**
+	 * Airtable returns attachments with read-only metadata (`size`, `type`, `width`, `height`,
+	 * `thumbnails`) that its own API rejects on write, and create and update do NOT accept the
+	 * same shapes — verified against the live API:
+	 *
+	 * - **create** is a strict whitelist: only `{url}` / `{url, filename}` is accepted. Sending
+	 *   `id` — alone, echoed back with `url`, or as `{id,url,filename,size,type}` — fails with
+	 *   `INVALID_ATTACHMENT_OBJECT`. Airtable re-ingests the file and mints a fresh attachment id.
+	 * - **update** accepts `id`, and it means *retain this attachment*. Re-sending `{url}` on an
+	 *   update would instead re-download the file and replace the id, so `id` must be preserved
+	 *   here or existing attachments churn on every save.
+	 *
+	 * Hence `forCreate`: project to `{url, filename}` when inserting, keep `{id}` when updating an
+	 * attachment that already has one.
+	 * @param {string} fieldName
+	 * @param {boolean} forCreate
+	 */
+	sanitizeAttachment(fieldName, forCreate) {
 		const attachments = this._fields[fieldName];
-		const writableAttachments = [];
-		if (attachments && Array.isArray(attachments)) {
-			for (const attachment of attachments) {
-				const writableAttachment = {
-					id: attachment.id,
-					url: attachment.url,
-					filename: attachment.filename,
-					size: attachment.size,
-					type: attachment.type,
-				};
-				writableAttachments.push(writableAttachment);
-			}
-		}
-
-		return writableAttachments;
+		if (!attachments || !Array.isArray(attachments)) return [];
+		return attachments.map((attachment) => {
+			// Retain an existing attachment on update; Airtable rejects `id` on create.
+			if (!forCreate && attachment.id) return { id: attachment.id };
+			const writable = { url: attachment.url };
+			if (attachment.filename) writable.filename = attachment.filename;
+			return writable;
+		});
 	}
 
 	_createLinkedField(desc, value) {

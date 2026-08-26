@@ -561,6 +561,39 @@ def write_tables(base: Base, output_folder: Path) -> None:
             write.line_indented(f"suspend fun create(models: List<{model_name}>): List<{model_name}> = orm.create(models)")
             write.line_empty()
 
+            # These thread `typecast` through, unlike the create/update forwarders above:
+            # `orm` is internal, so a flag the forwarder drops is unreachable from generated
+            # code. (Backfilling the other verbs is tracked separately.)
+            write.doc_comment(
+                "Copy a record into a brand-new record. Writable fields are copied verbatim, "
+                "computed fields are recalculated by Airtable, and the source is left untouched.",
+                indent=1,
+            )
+            write.line_indented(
+                f"suspend fun duplicate(model: {model_name}, typecast: Boolean = false): {model_name} = orm.duplicate(model, typecast)"
+            )
+            write.line_empty()
+            write.doc_comment(
+                "Copy many records into brand-new records. Chunks into Airtable's 10-per-call batch limit.",
+                indent=1,
+            )
+            # List<Model> and List<String> erase to the same JVM signature, as with delete.
+            write.line_indented('@JvmName("duplicateModels")')
+            write.line_indented(
+                f"suspend fun duplicate(models: List<{model_name}>, typecast: Boolean = false): List<{model_name}> = orm.duplicate(models, typecast)"
+            )
+            write.line_empty()
+            write.doc_comment("Read the record with this ID and copy it (one extra GET).", indent=1)
+            write.line_indented(
+                f"suspend fun duplicate(recordId: String, typecast: Boolean = false): {model_name} = orm.duplicate(recordId, typecast)"
+            )
+            write.line_empty()
+            write.doc_comment("Read the records with these IDs and copy them, preserving order.", indent=1)
+            write.line_indented(
+                f"suspend fun duplicate(recordIds: List<String>, typecast: Boolean = false): List<{model_name}> = orm.duplicate(recordIds, typecast)"
+            )
+            write.line_empty()
+
             write.doc_comment("Update a model's dirty fields (diffed against its snapshot).", indent=1)
             write.line_indented(f"suspend fun update(model: {model_name}): {model_name} = orm.update(model)")
             write.line_empty()
