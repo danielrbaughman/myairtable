@@ -211,3 +211,85 @@ func modelDelete[T any, PT interface {
 	m.setID("")
 	return nil
 }
+
+// copyModel returns a detached, unsaved deep copy of a model.
+//
+// Named Copy for symmetry with the other nine targets, NOT for Go's builtin copy():
+// the idiomatic Go name for an independent duplicate is Clone (maps.Clone,
+// slices.Clone, http.Header.Clone), and Clone is what this does. Nothing is copied
+// into a destination the caller supplies, and nothing is truncated to a length.
+//
+// The copy carries every field value -- computed ones included, so it reads like its
+// source -- but none of the record's identity, so Save(ctx) INSERTS it as a new record
+// instead of patching the original. Mutate it and Save it, or hand it to CreateOne.
+//
+// Performs no I/O. That is the whole difference from DuplicateOne, which POSTs; a copy
+// is therefore only as fresh as the model in hand, which matters most for attachments
+// (their signed URLs expire after roughly two hours).
+//
+// Detaching is what makes this safe, and here it is structural: the clone is a FRESH
+// new(T), so id, createdTime and snapshot start zero and there is no way to forget one.
+// The tempting `*clone = *src` (legal inside this package) is exactly what is avoided --
+// Go struct assignment is shallow, so it would alias every slice, map and pointer with
+// the source, and a mutation of the copy's option or attachment slice would be felt by
+// the original. id is the load-bearing field: modelSave branches on ID() == "", so a
+// copy that kept it would PATCH the source. The client handle IS kept, deliberately --
+// that is what lets copy.Save(ctx) work without re-plumbing a table.
+//
+// Values move through JSON rather than through reflection. Every field's Go type already
+// declares a total, round-trippable JSON encoding (that is how records are hydrated in the
+// first place), and encoding/json allocates fresh containers on the way in, which is the
+// deep copy -- for free, and without the unsafe games reflection would need to reach the
+// unexported fields inside wrappers like MaybeSpecialOrError. The one lossy edge is
+// AirtableTime, whose MarshalJSON truncates to whole seconds; that truncation is already
+// what any write of that value would have sent, so the copy matches the wire, not the
+// clock.
+//
+// Attachments are projected to {url, filename} here, at copy time, because Airtable
+// rejects server-returned attachment objects on create, and copying by URL is what makes
+// the created record own an independent attachment rather than aliasing the source's.
+// Only WRITABLE cells are projected: a computed lookup can hold the very same shape, is
+// never written back, and stripping its metadata would lose fidelity for nothing.
+//
+// A JSON error is unreachable for generated models; should one occur the clone is
+// returned as far as it got, detached and never aliased -- degraded, never dangerous.
+func copyModel[T any, PT interface {
+	*T
+	Model
+}](src PT) PT {
+	clone := PT(new(T))
+	clone.setClient(src.getClient())
+
+	// Marshal through the model's own json tags: the result is keyed by field ID,
+	// exactly like a record envelope's "fields", and carries computed cells too
+	// (unexported id/createdTime/client/snapshot have no tags and cannot leak in).
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return clone
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return clone
+	}
+
+	// writableFields() is the generated writable-only whitelist, so its key set is the
+	// exact set of cells that may be projected.
+	writable := make(map[string]json.RawMessage, len(fields))
+	for id := range src.writableFields() {
+		if value, ok := fields[id]; ok {
+			writable[id] = value
+		}
+	}
+	for id, projected := range projectAttachmentsForCreate(writable) {
+		fields[id] = projected
+	}
+
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return clone
+	}
+	// Decode failures are per-field and already reported by hydrate's path; ignoring the
+	// error here mirrors that, and cannot leave shared state behind.
+	_ = json.Unmarshal(encoded, clone)
+	return clone
+}

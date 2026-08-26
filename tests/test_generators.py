@@ -3947,6 +3947,18 @@ class TestGoComputedFields:
         assert re.search(r"func \(m \*TestTableModel\) TableID\(\) string", content)
         assert re.search(r"func \(m \*TestTableModel\) writableFields\(\) map\[string\]json\.RawMessage", content)
 
+    def test_model_emits_copy_forwarder(self, tmp_path: Path):
+        """myairtable-6q37.5 -- Copy() is a one-line forwarder onto the runtime's
+        generic copyModel, so the detach + deep-copy rules live in model.go rather
+        than being re-emitted (and re-drifted) once per table. It takes no context:
+        copy performs zero I/O."""
+        content = self._generate_model(self.MIXED_SPEC, tmp_path)
+        assert re.search(
+            r"func \(m \*TestTableModel\) Copy\(\) \*TestTableModel \{\s*return copyModel\[TestTableModel\]\(m\)\s*\}",
+            content,
+        )
+        assert "func (m *TestTableModel) Copy(ctx context.Context)" not in content
+
 
 class TestGoFormulaHelpers:
     """Go `filters_{table}.go` (F7): per-table `{prefix}Filters` struct mapping
