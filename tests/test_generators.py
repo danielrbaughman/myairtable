@@ -3589,6 +3589,59 @@ class TestJavaModels:
         assert "public void delete() {" in content
         assert "ModelOps.delete(this);" in content
 
+    # ---- copy() ----
+
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.6 -- `copy()` builds a fresh instance and writes its private
+        fields directly (legal only from inside the class, which is how a COMPUTED field
+        with no setter gets seeded). The fresh instance IS the detach: it starts with a
+        null id, a null createdTime and an empty snapshot, so nothing has to be un-set.
+        Only the client is deliberately put back, and takeSnapshot() must never be called
+        -- a copy carrying a full snapshot would diff to nothing and POST a blank record."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("My Text", "fld001", "singleLineText"),
+            ("Links", "fld002", "multipleRecordLinks"),
+            ("My Formula", "fld003", "formula"),
+        ]
+        content = self._generate_model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel copy() {")[1].split("public String toString()")[0]
+
+        assert "TestTableModel copied = new TestTableModel();" in copy_block
+        # Immutable cell types are carried by reference; nothing can leak through them.
+        assert "copied.myText = myText;" in copy_block
+        # Computed values are carried: they never reach a create body (toCreateFields is
+        # writable-only), and they make the copy read like its source.
+        assert "copied.myFormula = AirtableModel.detachForCopy(myFormula);" in copy_block
+        # Containers are rebuilt so the copy shares no mutable state with its source.
+        assert "copied.links = AirtableModel.detachForCopy(links);" in copy_block
+        assert "copied.attachedClient = attachedClient;" in copy_block
+        assert "copied.id" not in copy_block, "the copy must keep the fresh null id the constructor gives it"
+        assert "copied.createdTime" not in copy_block
+        assert "takeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.6 -- OrmTable.create does NOT project attachments, so a copy has
+        to do it at copy time or Airtable rejects the server-returned objects. Computed
+        attachment-shaped cells (a lookup can hold the same shape) go through the plain
+        detach and keep everything: they are never written back, so stripping their
+        metadata would lose fidelity for nothing."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._generate_model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel copy() {")[1].split("public String toString()")[0]
+
+        assert "copied.photos = AirtableModel.projectAttachmentsForCopy(photos);" in copy_block
+        assert "projectAttachmentsForCopy(lookupAtt)" not in copy_block
+        assert "copied.lookupAtt = AirtableModel.detachForCopy(lookupAtt);" in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate_model([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
+
     # ---- formula gating ----
 
     def test_evaluate_methods_emitted_with_runtime_and_gated_off_without(self, tmp_path: Path):
