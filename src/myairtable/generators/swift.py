@@ -93,7 +93,15 @@ def _escape_string_literal(text: str) -> str:
 #
 # `id` / `createdTime` are not listed: they are pre-renamed upstream by
 # `sanitize_reserved_names`.
-_SWIFT_RESERVED_MODEL_MEMBERS = frozenset({"copy"})
+#
+# `projectAttachmentsForCopy` is a module-scope function in Types.swift that the
+# emitted `copy()` initializer calls UNQUALIFIED. Swift resolves an unqualified
+# name to a member of the enclosing type before a module-scope one, and there is
+# no way to qualify the call (the free function lives in whatever module the user
+# drops the generated code into, whose name the generator does not know). So a
+# field named "Project Attachments For Copy" would resolve the call to a
+# `[AirtableAttachment]?` property and fail with "not callable".
+_SWIFT_RESERVED_MODEL_MEMBERS = frozenset({"copy", "projectAttachmentsForCopy"})
 
 
 def _field_property_map(table: Table) -> dict[str, str]:
@@ -565,6 +573,94 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             )
             write.line_indented("}", indent=2)
             write.line_indented("return dirty", indent=2)
+            write.line_indented("}")
+
+            # ---------- Local copy verb ----------
+            #
+            # An INHERENT member, not a protocol extension next to save/fetch/delete.
+            # Two reasons, and both are forced:
+            #   1. Computed fields are `public let`, and only an initializer can seed a
+            #      `let` — so carrying them (contract item 5) needs an initializer that
+            #      knows the concrete stored properties, which only this class has.
+            #   2. `copy()` has to return `{Table}Model`, not `Self`, to read the way
+            #      save()/fetch() already do at a call site.
+            # The `Field`-suffix rename in _SWIFT_RESERVED_MODEL_MEMBERS is what keeps a
+            # field named "Copy" from becoming `invalid redeclaration of 'copy()'`.
+            write.line_empty()
+            write.mark_section("copy", indent=1)
+            write.doc_comment(
+                [
+                    "A detached, unsaved copy of this record — mutate it and hand it to",
+                    "`airtable.<table>.create(_:)`. Performs **no I/O**.",
+                    "",
+                    "That is the whole difference from the table's `duplicate(_:)`, which re-reads",
+                    "the source from Airtable before POSTing it. A copy is only as fresh as the",
+                    "model in hand, which matters most for attachments: their signed URLs expire.",
+                    "",
+                    "The copy carries every cell value, computed ones included, so it reads like",
+                    "its source. Those values never reach the wire — `create(_:)` sends",
+                    "`toRecord()`, and `encode(to:)` only ever writes the writable fields. The",
+                    "cost is that a carried computed value is semantically stale on the copy: a",
+                    "formula over `RECORD_ID()` shows the SOURCE's id until the copy is saved and",
+                    "re-read.",
+                    "",
+                    "It carries no record identity. `id` and `createdTime` are `nil` and no",
+                    "snapshot is taken, so `isNew` is true and the copy inserts. Getting this",
+                    "wrong is silent in both directions — a carried `id` makes `save()` PATCH the",
+                    "source row, and a carried snapshot makes `dirtyFields()` diff to empty.",
+                    "`_attachedClient` is deliberately the one thing kept, so `create(_:)` /",
+                    "`save()` on the copy work without re-threading a table.",
+                    "",
+                    "Writable attachment cells are projected to `{url, filename}` here, because",
+                    "`create(_:)` does not project and Airtable rejects a server-returned",
+                    "attachment object on insert. A computed attachment-shaped cell keeps its full",
+                    "metadata: it is never written back.",
+                    "",
+                    "Linked records are copied as-is. Airtable links are many-to-many, so the copy",
+                    "is added alongside the original on the far side; the source's links are",
+                    "untouched.",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"public func copy() -> {model_name} {{")
+            write.line_indented(f"return {model_name}(_copyOf: self)", indent=2)
+            write.line_indented("}")
+            write.line_empty()
+            write.doc_comment(
+                [
+                    "Seeds a fresh instance from `source`, including the computed `let`s that no",
+                    "other initializer can reach. `private` so no caller gains a way to forge a",
+                    "computed value — the server-owned invariant survives.",
+                    "",
+                    "Every cell is assigned by value. Swift's field carriers are all value types",
+                    "(`String`, the numerics, `Date`, arrays, `AirtableAttachment`,",
+                    "`AirtableJSONValue`, `MaybeSpecialOrError`, `VecOrValue`), so contract item 7",
+                    "— no shared mutable state with the source — falls out of assignment itself;",
+                    "there is nothing here to deep-copy by hand.",
+                    "",
+                    "`_snapshot` is deliberately not assigned and `takeSnapshot()` deliberately not",
+                    "called: its `[:]` default IS the fully-dirty state a to-be-inserted record",
+                    "needs.",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"private init(_copyOf source: {model_name}) {{")
+            # Identity: cleared, exactly as the designated initializer does it.
+            write.line_indented("self.id = nil", indent=2)
+            write.line_indented("self.createdTime = nil", indent=2)
+            for field in computed_fields:
+                prop = _swift_ident(prop_names[field.id])
+                write.line_indented(f"self.{prop} = source.{prop}", indent=2)
+            for field in writable_fields:
+                prop = _swift_ident(prop_names[field.id])
+                # Attachment-typed WRITABLE cells only. A computed lookup of an
+                # attachment field renders as VecOrValue<MaybeSpecialOrError<
+                # AirtableAttachment>> and is handled by the loop above, unprojected.
+                if "AirtableAttachment" in field.swift_type():
+                    write.line_indented(f"self.{prop} = projectAttachmentsForCopy(source.{prop})", indent=2)
+                else:
+                    write.line_indented(f"self.{prop} = source.{prop}", indent=2)
+            write.line_indented("self._attachedClient = source._attachedClient", indent=2)
             write.line_indented("}")
 
             # ---------- Runtime formula evaluation methods (F8.10) ----------

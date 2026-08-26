@@ -160,7 +160,9 @@ class WriteToSwiftFile(WriteToFile):
         for raw in raw_lines:
             cleaned = raw.replace(chr(13), "").replace("*/", "* /")
             for line in cleaned.split("\n"):
-                self.line_indented(f"/// {line}", indent)
+                # A blank paragraph separator emits a bare `///`; `/// ` would leave
+                # trailing whitespace on every blank line of a multi-paragraph comment.
+                self.line_indented(f"/// {line}" if line else "///", indent)
 
     def comment(self, text: str, indent: int = 0):
         """Write `// text`."""

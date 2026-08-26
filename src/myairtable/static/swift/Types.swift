@@ -204,6 +204,58 @@ public func projectAttachmentsForCreate(
     return projectedFields
 }
 
+/// Reduce a *typed* attachment cell to the only shape Airtable accepts when inserting.
+///
+/// The model-level counterpart to `projectAttachmentsForCreate`, and it exists because
+/// `OrmTable.create(_:)` sends `model.toRecord()` verbatim — only `duplicate(_:)` projects.
+/// So a model that is going to be inserted has to arrive already projected, which is what
+/// the generated `copy()` does.
+///
+/// Where the JSON-level projector has to sniff shapes (an array of objects carrying a `url`
+/// beside an `att`-prefixed `id`), this one needs no sniffing at all: the generator knows at
+/// emit time which cells are attachment-typed *and* writable, and emits a call for exactly
+/// those. That static split is also what keeps a computed attachment-shaped cell out of here
+/// — a lookup of an attachment field decodes to the identical struct, but it is never written
+/// back, so stripping its `id`/`size`/`type`/`thumbnails` would lose fidelity for nothing.
+///
+/// `nil` in, `nil` out. An absent cell means "field not set"; an *empty* attachment list means
+/// "clear this cell", and conflating the two would silently wipe the copy's attachments.
+public func projectAttachmentsForCopy(_ attachments: [AirtableAttachment]?) -> [AirtableAttachment]? {
+    guard let attachments else { return nil }
+    return attachments.map(projectAttachmentForCopy)
+}
+
+/// Scalar overload of `projectAttachmentsForCopy(_:)`. `GenericType.ATTACHMENT` renders as a
+/// bare `AirtableAttachment`, so the generator's type-driven emission rule can produce this
+/// call shape; today `multipleAttachments` is the only writable attachment field type and it
+/// always renders as a list.
+public func projectAttachmentsForCopy(_ attachment: AirtableAttachment?) -> AirtableAttachment? {
+    guard let attachment else { return nil }
+    return projectAttachmentForCopy(attachment)
+}
+
+/// `VecOrValue` overload of `projectAttachmentsForCopy(_:)`. Unreachable from today's schema —
+/// the union wrapper is only applied to lookup/rollup cells, which are computed and therefore
+/// never projected — but it means the emission rule (any *writable* cell whose Swift type
+/// mentions `AirtableAttachment`) cannot produce a call that fails to compile.
+public func projectAttachmentsForCopy(_ cell: VecOrValue<AirtableAttachment>?) -> VecOrValue<AirtableAttachment>? {
+    guard let cell else { return nil }
+    switch cell {
+    case .single(let value): return .single(projectAttachmentForCopy(value))
+    case .multiple(let values): return .multiple(values.map { $0.map(projectAttachmentForCopy) })
+    }
+}
+
+/// The one-attachment core of `projectAttachmentsForCopy(_:)`.
+///
+/// Rebuilds rather than mutates: `AirtableAttachment`'s fields are `let`, and dropping the
+/// server metadata is the entire point — echoing an `id` back on create fails with
+/// `INVALID_ATTACHMENT_OBJECT`, and Airtable re-ingesting the file from `url` is what makes the
+/// copy's attachment its own file rather than an alias of the source's.
+private func projectAttachmentForCopy(_ attachment: AirtableAttachment) -> AirtableAttachment {
+    AirtableAttachment(url: attachment.url, filename: attachment.filename)
+}
+
 public enum AirtableJSONValue: Codable, Sendable, Equatable {
     case null
     case bool(Bool)

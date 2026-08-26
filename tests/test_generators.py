@@ -1136,6 +1136,103 @@ class TestSwiftComputedFields:
         assert "fetchLink" not in content
         assert "Linked record fetching" not in content
 
+    # ---- copy() ----
+
+    COPY_SPEC: list[tuple[str, str, FieldType]] = [
+        ("My Text", "fld001", "singleLineText"),
+        ("Photos", "fld002", "multipleAttachments"),
+        ("Links", "fld003", "multipleRecordLinks"),
+        ("My Formula", "fld004", "formula"),
+        ("Auto", "fld005", "autoNumber"),
+    ]
+
+    def _copy_init_block(self, content: str) -> str:
+        block = content.split("private init(_copyOf source: TestTableModel) {")[1]
+        return block[: block.index("\n    }")]
+
+    def test_model_emits_copy_as_an_inherent_member(self, tmp_path: Path):
+        """myairtable-6q37.8 -- `copy()` cannot live in the `AirtableModel` protocol
+        extension next to save/fetch/delete: computed fields are `public let`, and only an
+        initializer can seed a `let`, so carrying computed values needs an initializer that
+        knows the concrete stored properties. Hence an inherent member returning the
+        concrete `{Table}Model`, plus the `private init(_copyOf:)` it delegates to."""
+        content = self._generate(self.COPY_SPEC, tmp_path)
+
+        assert "public func copy() -> TestTableModel {" in content
+        assert "return TestTableModel(_copyOf: self)" in content
+        # private: no caller gains a way to forge a computed value.
+        assert "private init(_copyOf source: TestTableModel) {" in content
+
+    def test_copy_init_detaches_identity_and_carries_computed_values(self, tmp_path: Path):
+        """The two ways to get this wrong are both silent: a carried `id` makes `save()`
+        PATCH the source row, and a carried snapshot makes `dirtyFields()` diff to empty so
+        the insert POSTs a blank record. Computed values ARE carried -- safe because
+        `encode(to:)` only writes writable fields and `OrmTable.create(_:)` sends
+        `toRecord()`, so they physically cannot reach a POST body."""
+        block = self._copy_init_block(self._generate(self.COPY_SPEC, tmp_path))
+
+        assert "self.id = nil" in block
+        assert "self.createdTime = nil" in block
+        assert "source.id" not in block
+        assert "source.createdTime" not in block
+        # _snapshot's `[:]` default IS the fully-dirty state an insert needs.
+        assert "takeSnapshot" not in block
+        assert "_snapshot" not in block
+        # Computed cells carried verbatim.
+        assert "self.myFormula = source.myFormula" in block
+        assert "self.auto = source.auto" in block
+        # Writable cells carried; links as-is (Airtable links are many-to-many).
+        assert "self.myText = source.myText" in block
+        assert "self.links = source.links" in block
+        # Contract item 4: the client is the one thing deliberately kept.
+        assert "self._attachedClient = source._attachedClient" in block
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """`OrmTable.create(_:)` sends `toRecord()` verbatim and never projects -- only
+        `duplicate(_:)` does -- so a copy has to project at copy time or Airtable rejects
+        the server-returned attachment objects with INVALID_ATTACHMENT_OBJECT."""
+        block = self._copy_init_block(self._generate(self.COPY_SPEC, tmp_path))
+
+        assert "self.photos = projectAttachmentsForCopy(source.photos)" in block
+        # Non-attachment writable cells are plain assignments (Swift value semantics
+        # already give contract item 7 -- nothing here to deep-copy by hand).
+        assert "projectAttachmentsForCopy(source.myText)" not in block
+        assert "projectAttachmentsForCopy(source.links)" not in block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
+
+    def test_copy_helper_name_is_a_reserved_field_property_name(self):
+        """The emitted initializer calls `projectAttachmentsForCopy` UNQUALIFIED. Swift
+        resolves an unqualified name to an enclosing-type member first, and the free
+        function cannot be module-qualified (the generator does not know the user's module
+        name), so a same-named field property would make the call not compile."""
+        from myairtable.generators.swift import _field_property_map
+
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Primary Key", "fld001", "singleLineText"),
+            ("Project Attachments For Copy", "fld002", "singleLineText"),
+        ]
+        props = _field_property_map(make_test_base(fields_spec).tables[0])
+        assert props["fld002"] == "projectAttachmentsForCopyField"
+
+    def test_copy_survives_a_field_named_copy(self, tmp_path: Path):
+        """Ties back to the reserved-name work (f2c1afd): a field named "Copy" becomes
+        `copyField`, so `copy()` is not `invalid redeclaration of 'copy()'`."""
+        content = self._generate(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Copy", "fld002", "singleLineText"),
+            ],
+            tmp_path,
+        )
+        assert "public func copy() -> TestTableModel {" in content
+        assert "public var copyField: String?" in content
+        assert "self.copyField = source.copyField" in self._copy_init_block(content)
+
 
 class TestSwiftFormulaFunctions:
     """Formula fields should still appear on the model as `let` (not getter
