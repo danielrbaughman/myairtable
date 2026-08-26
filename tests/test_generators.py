@@ -1562,6 +1562,53 @@ class TestKotlinComputedFields:
         content = self._generate([("Links", "fld001", "multipleRecordLinks")], tmp_path)
         assert "var links: List<RecordId>? = null," in content
 
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.7 -- `copy()` rebuilds the model through its own primary
+        constructor, which IS the detach: a fresh instance starts with a null id, a null
+        createdTime and an empty snapshot, so nothing has to be un-set. Only the client is
+        deliberately put back, and takeSnapshot() must never be called -- a copy carrying a
+        full snapshot would diff to nothing and POST a blank record."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("My Text", "fld001", "singleLineText"),
+            ("Links", "fld002", "multipleRecordLinks"),
+            ("My Formula", "fld003", "formula"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+        copy_block = content.split("fun copy(): TestTableModel {")[1].split("override fun toString()")[0]
+
+        assert "val copied =\n            TestTableModel(" in copy_block
+        assert "myText = myText," in copy_block
+        # Computed values are carried: they never reach a create body (toCreateFields is
+        # writable-only), and they make the copy read like its source.
+        assert "myFormula = myFormula," in copy_block
+        # Containers are re-wrapped so the copy shares no mutable state with its source.
+        assert "links = links?.toList()," in copy_block
+        assert "copied.attachedClient = attachedClient" in copy_block
+        assert "copied.id" not in copy_block, "the copy must keep the fresh null id the constructor gives it"
+        assert "takeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.7 -- OrmTable.create does NOT project attachments, so a copy has
+        to do it at copy time or Airtable rejects the server-returned objects. Computed
+        attachment-shaped cells (a lookup can hold the same shape) are left whole: they are
+        never written back, so stripping their metadata would lose fidelity for nothing."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._generate(fields_spec, tmp_path)
+        copy_block = content.split("fun copy(): TestTableModel {")[1].split("override fun toString()")[0]
+
+        assert "photos = projectAttachmentsForCopy(photos)," in copy_block
+        assert "projectAttachmentsForCopy(lookupAtt)" not in copy_block
+        assert "lookupAtt = lookupAtt," in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._generate([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "projectAttachmentsForCopy" not in plain
+
     def test_tables_forward_orm_methods(self, tmp_path: Path):
         """ORM is the default: get/create/update/upsert/delete live on the table."""
         from myairtable.generators.kotlin import write_tables
