@@ -154,9 +154,9 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 		return r;
 	}
 
-	public toCreateRecordData(useFieldIds: boolean = true, asInsert: boolean = false): CreateRecordData<Partial<FldSt>> {
+	public toCreateRecordData(useFieldIds: boolean = true): CreateRecordData<Partial<FldSt>> {
 		return {
-			fields: this.writableFields(useFieldIds, asInsert),
+			fields: this.writableFields(useFieldIds),
 		};
 	}
 
@@ -367,15 +367,16 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	/**
-	 * @param asInsert Treat this as an insert even though the model came from the server: emit
-	 *   every writable field rather than only the dirty ones, and use create semantics for
-	 *   attachments and nullish values. Set by `duplicate()`, which copies a record that was
-	 *   read back from Airtable — for such a model `_isNew` is false and nothing is dirty, so
-	 *   without this the payload would come out empty and the copy would be a blank record.
+	 * On an insert, emit every writable field and use create semantics for attachments and
+	 * nullish values; on an update, emit only the dirty ones.
+	 *
+	 * A model read back from Airtable is neither new nor dirty, so its insert payload would be
+	 * empty. Anything needing to insert such a record copies it first — `copy()` returns a
+	 * genuinely new model — rather than overriding the distinction here.
 	 */
-	protected writableFields(useFieldIds: boolean = true, asInsert: boolean = false): Partial<FldSt> {
+	protected writableFields(useFieldIds: boolean = true): Partial<FldSt> {
 		const fields: Partial<FldSt> = {};
-		const isInsert = this._isNew || asInsert;
+		const isInsert = this._isNew;
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;
 			if (!isInsert && !this.isDirty(desc.propertyName)) continue;

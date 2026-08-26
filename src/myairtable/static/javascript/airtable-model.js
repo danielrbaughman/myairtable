@@ -137,9 +137,9 @@ class AirtableModel {
 		return r;
 	}
 
-	toCreateRecordData(useFieldIds = true, asInsert = false) {
+	toCreateRecordData(useFieldIds = true) {
 		return {
-			fields: this.writableFields(useFieldIds, asInsert),
+			fields: this.writableFields(useFieldIds),
 		};
 	}
 
@@ -339,8 +339,8 @@ class AirtableModel {
 		this._isNew = false;
 	}
 
-	writableFields(useFieldIds = true, asInsert = false) {
-		const isInsert = this._isNew || asInsert;
+	writableFields(useFieldIds = true) {
+		const isInsert = this._isNew;
 		const fields = {};
 		for (const desc of this.getFieldDescriptors()) {
 			if (desc.isComputed) continue;

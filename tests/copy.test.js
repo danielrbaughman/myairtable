@@ -189,3 +189,17 @@ describe("copy() shares no mutable state", () => {
 		expect(original.dirtyFields).toEqual([]);
 	});
 });
+
+describe("copy() is what makes duplicate()'s insert payload", () => {
+	it("emits the full writable payload, which is what `asInsert` used to force", () => {
+		// duplicate() builds its POST body from a copy for exactly this reason: the models it
+		// re-reads from Airtable are not new and not dirty, so their own create payload is {}.
+		expect(source().copy().toCreateRecordData(true).fields).toEqual({
+			fldText0000000001: "hello",
+			fldTags0000000001: ["a", "b"],
+			fldAttach00000001: [{ url: "https://example.com/a.png", filename: "a.png" }],
+			fldLinks000000001: ["recLINKED00000001"],
+		});
+		expect(source().toCreateRecordData(true).fields).toEqual({});
+	});
+});
