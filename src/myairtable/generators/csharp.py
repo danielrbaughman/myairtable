@@ -92,6 +92,8 @@ _CSHARP_RESERVED_MODEL_MEMBERS = frozenset(
         "ToCreateFields",
         "RequireId",
         "RequireAttachedClient",
+        # Local (non-Async) copy verb: a same-named property is CS0102.
+        "Copy",
         # Protected hooks a generated property would shadow
         "CollectWritableFields",
         "CollectComputedFields",

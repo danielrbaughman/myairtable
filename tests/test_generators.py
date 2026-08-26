@@ -4,6 +4,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 from myairtable.meta import Base, Choice, Field, Options, Result, Table, View
 from myairtable.meta_types import FieldType
 
@@ -3980,3 +3982,99 @@ class TestGoFormulaHelpers:
         assert (out / "filters_testtable.go").exists()
         for name in _GO_FORMULA_STATIC_FILES:
             assert (out / name).exists()
+
+
+class TestCopyVerbReservedAcrossTargets:
+    """A field named "Copy" must not collide with the generated `copy()` verb (myairtable-6q37.1).
+
+    `copy()` is a model method in all ten targets. Every verdict below was reproduced
+    against the real toolchain before the reserved entry was added:
+
+      Go      `field and method with the same name Copy`      (go build AND go vet)
+      C#      `error CS0102: type already contains a definition for 'Copy'`  (.NET 9)
+      TS      `error TS2300: Duplicate identifier 'copy'`     (repo's tsc --strict)
+      Swift   `error: invalid redeclaration of 'copy()'`      (plain AND @Observable)
+      C++     silent at class scope; the call site fails with
+              "type 'std::optional<std::string>' does not provide a call operator"
+      Python  silent -- the field descriptor replaces the method (methods are written
+              before fields, last binding wins); `record.copy()` raises TypeError
+      JS      silent -- `get copy()` shadows the inherited method; TypeError at call
+
+    Java, Kotlin and Rust keep fields and methods in separate namespaces and were
+    compile-verified to accept a `copy` field and a `copy()` method side by side, so
+    they are deliberately NOT reserved: adding entries there would contradict each
+    generator's own documented policy and rename user properties for no reason.
+    """
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Copy", "fld002", "singleLineText"),
+    ]
+
+    # generator module -> the property name "Copy" must be renamed to
+    GUARDED = {
+        "go": "CopyField",
+        "csharp": "CopyField",
+        "cpp": "copy_field",
+        "swift": "copyField",
+        "python": "copy_field",
+        "typescript": "copyField",
+        "javascript": "copyField",
+    }
+    # generator module -> the property name "Copy" keeps (namespaces are disjoint)
+    IMMUNE = {"java": "copy", "kotlin": "copy"}
+
+    def _props(self, module: str, fields: list[tuple[str, str, FieldType]]) -> dict[str, str]:
+        import importlib
+
+        field_property_map = importlib.import_module(f"myairtable.generators.{module}")._field_property_map
+        return field_property_map(make_test_base(fields).tables[0])
+
+    @pytest.mark.parametrize("module,expected", sorted(GUARDED.items()))
+    def test_copy_field_is_suffixed(self, module: str, expected: str):
+        assert self._props(module, self.FIELDS)["fld002"] == expected
+
+    @pytest.mark.parametrize("module,expected", sorted(IMMUNE.items()))
+    def test_copy_field_is_left_alone_where_namespaces_are_disjoint(self, module: str, expected: str):
+        assert self._props(module, self.FIELDS)["fld002"] == expected
+
+    def test_rust_is_left_alone(self):
+        """Rust has no reserved-member layer; an inherent `fn copy()` and a `pub copy`
+        field coexist (compile-verified), so it consumes the shared snake map directly."""
+        from myairtable.utils.helpers import deduplicated_field_property_map_snake
+
+        assert deduplicated_field_property_map_snake(make_test_base(self.FIELDS).tables[0])["fld002"] == "copy"
+
+    @pytest.mark.parametrize("module,expected", sorted(GUARDED.items()))
+    def test_suffixed_name_rededuplicates(self, module: str, expected: str):
+        """The rename must not create a NEW collision with a field already named
+        "Copy Field" -- the suffixed name goes back through deduplicate_identifiers."""
+        fields: list[tuple[str, str, FieldType]] = [*self.FIELDS, ("Copy Field", "fld003", "singleLineText")]
+        props = self._props(module, fields)
+        assert props["fld002"] == expected
+        assert props["fld003"] != expected
+        assert len(set(props.values())) == len(props)
+
+    def test_python_model_has_no_copy_property(self, tmp_path: Path):
+        """End-to-end: the silent-failure case. A `copy` descriptor in the class body
+        would replace the method with no error at generation or import time."""
+        from myairtable.generators.python import write_models
+
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(make_test_base(self.FIELDS), out, formulas=False, runtime=False)
+        content = (out / "dynamic" / "models" / "test_table.py").read_text()
+        assert "copy_field: " in content
+        assert not re.search(r"^\s+copy: ", content, re.MULTILINE)
+
+    def test_typescript_model_has_no_copy_accessor(self, tmp_path: Path):
+        """End-to-end: the hard-failure case (TS2300)."""
+        from myairtable.generators.typescript import write_models
+
+        out = tmp_path / "ts_output"
+        out.mkdir()
+        write_models(make_test_base(self.FIELDS), out, formulas=False, zod=False)
+        content = _read_generated_model(out, "typescript")
+        assert "public get copyField()" in content
+        assert "public get copy()" not in content
+        assert "public set copy(" not in content

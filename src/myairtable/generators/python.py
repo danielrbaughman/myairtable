@@ -11,6 +11,7 @@ from ..utils.helpers import (
     Paths,
     copy_static_files,
     create_dynamic_subdir,
+    deduplicate_identifiers,
     deduplicate_names,
     deduplicated_field_property_map_snake,
     escape_for_double_quoted_string,
@@ -19,6 +20,38 @@ from ..utils.helpers import (
 )
 from ..utils.write_to_file import ImportGroup, ImportSymbol, WriteToFile
 from ..verbosity import verbose
+
+# Member names a generated model may not use. Python has ONE namespace per class
+# body and the generator writes methods before field descriptors, so a field named
+# "Copy" silently REPLACES the `copy()` verb -- no error at generation, import, or
+# type-check time; `record.copy()` just raises `TypeError: 'str' object is not
+# callable` at the call site. pyairtable's own reserved-name check cannot catch it
+# either: it only intersects against `Model.__dict__`, and a subclass-defined
+# method is invisible to that. Colliding field names get a `_field` suffix, then
+# re-deduplicate.
+#
+# `id` / `created_time` are not listed: they are pre-renamed upstream by
+# `sanitize_reserved_names`.
+#
+# Note this deliberately differs from how a field named `url` is handled below,
+# where the generated convenience METHOD is renamed to `URL` instead. That trade
+# is right for `url` (a niche helper) and wrong for `copy`: renaming the verb
+# per-table would make a core verb's name depend on the base's field names, and
+# every other target resolves this collision by suffixing the field.
+_PYTHON_RESERVED_MODEL_MEMBERS = frozenset({"copy"})
+
+
+def _field_property_map(table: Table) -> dict[str, str]:
+    """`{field_id: deduplicated snake_case property name}` for one table.
+
+    Every writer (models, dicts, Fields consts, Filters, and the transpiler's
+    field_name_map) consumes this same map so colliding field names deduplicate
+    consistently. Names colliding with a generated model member are suffixed.
+    """
+    raw = deduplicated_field_property_map_snake(table)
+    adjusted = [f"{name}_field" if name in _PYTHON_RESERVED_MODEL_MEMBERS else name for name in raw.values()]
+    deduped = deduplicate_identifiers(adjusted, suffix="_v")
+    return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
 
 
 class WriteToPythonFile(WriteToFile):
@@ -211,7 +244,7 @@ def write_types(base: Base, output_folder: Path) -> None:
 
     # Table Types
     for table in base.tables:
-        prop_map = deduplicated_field_property_map_snake(table)
+        prop_map = _field_property_map(table)
         with WriteToPythonFile(path=types_dir / f"{table.name_snake()}.py") as write:
             # Imports
             write.region("IMPORTS")
@@ -504,7 +537,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
     models_dir = create_dynamic_subdir(output_folder, Paths.MODELS)
 
     for table in base.tables:
-        prop_map = deduplicated_field_property_map_snake(table)
+        prop_map = _field_property_map(table)
         has_field_called_url: bool = any(name == "url" for name in prop_map.values())
         url_method_name: str = "URL" if has_field_called_url else "url"
 
@@ -705,7 +738,7 @@ def write_formula_helpers(base: Base, output_folder: Path) -> None:
     formulas_dir = create_dynamic_subdir(output_folder, Paths.FORMULAS)
 
     for table in base.tables:
-        prop_map = deduplicated_field_property_map_snake(table)
+        prop_map = _field_property_map(table)
         with WriteToPythonFile(path=formulas_dir / f"{table.name_snake()}.py") as write:
             # Imports (only the formula classes / option types actually referenced are emitted)
             write.mark_imports()
@@ -749,7 +782,7 @@ def write_options(base: Base, output_folder: Path) -> None:
     options_dir = create_dynamic_subdir(output_folder, Paths.OPTIONS)
 
     for table in base.tables:
-        prop_map = deduplicated_field_property_map_snake(table)
+        prop_map = _field_property_map(table)
         select_fields = table.select_fields()
         with WriteToPythonFile(path=options_dir / f"{table.name_snake()}.py") as write:
             if len(select_fields) > 0:

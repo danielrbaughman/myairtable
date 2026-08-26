@@ -62,9 +62,11 @@ _GO_FORMULA_CLASS_MAP = {
 _GO_FORMULA_STATIC_FILES = ("formula.go", "formula_fields.go", "formula_date.go")
 
 # Exported model member names a field property must not collide with. Generated
-# models expose ID()/CreatedTime()/Save/Fetch/Delete methods; a field whose
+# models expose ID()/CreatedTime()/Save/Fetch/Delete/Copy methods; a field whose
 # Pascal name equals one of these would shadow the method, so it is suffixed.
-_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete", "TableID"})
+# Go rejects this outright -- `field and method with the same name Copy` -- so
+# `Copy` is load-bearing, not defensive.
+_GO_RESERVED_MODEL_MEMBERS = frozenset({"ID", "CreatedTime", "Save", "Fetch", "Delete", "TableID", "Copy"})
 
 
 def _go_model_field_type(field) -> str:

@@ -70,6 +70,7 @@ _CPP_RESERVED_MODEL_MEMBERS = frozenset(
         "save",
         "fetch",
         "remove",
+        "copy",
         "collect_writable_fields",
         "collect_computed_fields",
         "F",

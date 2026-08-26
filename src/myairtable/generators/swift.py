@@ -83,15 +83,32 @@ def _escape_string_literal(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
+# Member names a generated model may not use. Swift puts stored properties and
+# methods in ONE namespace, so a field named "Copy" against the local `copy()`
+# verb is `error: invalid redeclaration of 'copy()'` -- a hard build break, in
+# both a plain `final class` and the `@Observable` one the generator emits.
+# `copy()` must be an inherent class member (only an initializer can seed the
+# computed `let`s it carries), so it cannot be moved to a protocol extension to
+# dodge this. Colliding field names get a `Field` suffix, then re-deduplicate.
+#
+# `id` / `createdTime` are not listed: they are pre-renamed upstream by
+# `sanitize_reserved_names`.
+_SWIFT_RESERVED_MODEL_MEMBERS = frozenset({"copy"})
+
+
 def _field_property_map(table: Table) -> dict[str, str]:
     """`{field_id: deduplicated lowerCamelCase property name}` for one table.
 
     Every writer (models, Fields consts, Create*Fields, Filters, evaluate*
     methods, and the transpiler's field_name_map) consumes this same map so
     colliding field names ("My Field" / "my field") deduplicate consistently
-    to `myField` / `myFieldV2`. Keyword backticking is applied at call sites.
+    to `myField` / `myFieldV2`. Names colliding with a generated model member
+    are suffixed. Keyword backticking is applied at call sites.
     """
-    return deduplicated_field_property_map(table)
+    raw = deduplicated_field_property_map(table)
+    adjusted = [f"{name}Field" if name in _SWIFT_RESERVED_MODEL_MEMBERS else name for name in raw.values()]
+    deduped = deduplicate_identifiers(adjusted, suffix="V")
+    return {field_id: name for field_id, name in zip(raw.keys(), deduped)}
 
 
 def _table_type_prefix(table: Table) -> str:
