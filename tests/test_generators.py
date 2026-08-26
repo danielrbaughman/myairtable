@@ -4078,3 +4078,44 @@ class TestCopyVerbReservedAcrossTargets:
         assert "public get copyField()" in content
         assert "public get copy()" not in content
         assert "public set copy(" not in content
+
+
+class TestPythonCopyVerbEmission:
+    """The generated Python model is a thin forwarder onto `copy_model` (myairtable-6q37.2)."""
+
+    def _generate(self, fields_spec: list[tuple[str, str, FieldType]], tmp_path: Path) -> str:
+        from myairtable.generators.python import write_models
+        from myairtable.utils.type_mapper import map_types
+
+        base = make_test_base(fields_spec)
+        out = tmp_path / "py_output"
+        out.mkdir()
+        map_types(base)
+        write_models(base, out, formulas=False, runtime=False)
+        return (out / "dynamic" / "models" / "test_table.py").read_text()
+
+    FIELDS: list[tuple[str, str, FieldType]] = [
+        ("Primary Key", "fld001", "singleLineText"),
+        ("Attachments", "fld002", "multipleAttachments"),
+        ("Calc", "fld003", "formula"),
+    ]
+
+    def test_copy_method_is_emitted_with_the_concrete_return_type(self, tmp_path: Path):
+        source = self._generate(self.FIELDS, tmp_path)
+        assert 'def copy(self) -> "TestTableModel":' in source
+        assert "return copy_model(self)" in source
+
+    def test_helper_is_imported(self, tmp_path: Path):
+        assert "from ...static.table_helpers import copy_model" in self._generate(self.FIELDS, tmp_path)
+
+    def test_copy_is_not_shadowed_by_a_field_named_copy(self, tmp_path: Path):
+        """Ties back to the reserved-name work: a field named "Copy" becomes
+        `copy_field`, leaving the verb callable."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Primary Key", "fld001", "singleLineText"),
+            ("Copy", "fld002", "singleLineText"),
+        ]
+        source = self._generate(fields_spec, tmp_path)
+        assert "def copy(self)" in source
+        assert "copy_field: " in source
+        assert "\n    copy: " not in source
