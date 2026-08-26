@@ -3370,6 +3370,75 @@ class TestCSharpComputedFields:
         assert "public Task<TestTableModel> FetchAsync(CancellationToken ct = default) => ModelOps.FetchAsync(this, ct);" in content
         assert "public Task DeleteAsync(CancellationToken ct = default) => ModelOps.DeleteAsync(this, ct);" in content
 
+    # ---- copy() ----
+
+    def test_model_emits_copy_with_structural_detach(self, tmp_path: Path):
+        """myairtable-6q37.9 -- `Copy()` is emitted INSIDE the model class, which is the only
+        place a computed field's `private set` is assignable: that is how the copy carries
+        computed values without any of them becoming publicly settable. The detach is
+        structural -- a fresh instance already has a null Id (so the derived IsNew is true)
+        and a null snapshot -- so the initializer must never name Id/CreatedTime and must
+        never take a snapshot, either of which would silently turn an insert into an update
+        or into a blank record."""
+        content = self._model(self.MIXED_SPEC, tmp_path)
+        copy_block = content.split("public TestTableModel Copy() =>")[1].split("SaveAsync")[0]
+
+        assert "public TestTableModel Copy() =>" in content
+        assert "AttachedClient = AttachedClient," in copy_block
+        # Immutable cell types are carried by reference; nothing can leak through them.
+        assert "MyText = MyText," in copy_block
+        # Computed values are carried (they never reach a create body -- ToCreateFields is
+        # built from CollectWritableFields alone) and their containers are rebuilt.
+        assert "MyFormula = DetachForCopy(MyFormula)," in copy_block
+        assert "Look = DetachForCopy(Look)," in copy_block
+        assert "Id =" not in copy_block, "the copy must keep the fresh null Id the instance starts with"
+        assert "CreatedTime" not in copy_block
+        assert "TakeSnapshot" not in copy_block, "a snapshotted copy would diff to empty and POST {}"
+        # No Async suffix: in this target its absence is the "performs no I/O" signal.
+        assert "CopyAsync" not in content
+
+    def test_copy_projects_writable_attachments_only(self, tmp_path: Path):
+        """myairtable-6q37.9 -- OrmTable.CreateAsync sends ToCreateFields() verbatim and never
+        projects (only DuplicateAsync does), so a copy has to project at copy time or Airtable
+        rejects the server-returned attachment objects. A COMPUTED attachment-shaped cell (a
+        lookup of an attachment field decodes to the same shape) takes the plain detach and
+        keeps its metadata: it is never written back."""
+        fields_spec: list[tuple[str, str, FieldType]] = [
+            ("Photos", "fld001", "multipleAttachments"),
+            ("Lookup Att", "fld002", "multipleLookupValues"),
+        ]
+        content = self._model(fields_spec, tmp_path)
+        copy_block = content.split("public TestTableModel Copy() =>")[1].split("SaveAsync")[0]
+
+        assert "Photos = ProjectAttachmentsForCopy(Photos)," in copy_block
+        assert "ProjectAttachmentsForCopy(LookupAtt)" not in copy_block
+        assert "LookupAtt = DetachForCopy(LookupAtt)," in copy_block
+
+        # A table with no attachment field never mentions the projection helper.
+        plain_path = tmp_path / "plain"
+        plain_path.mkdir()
+        plain = self._model([("My Text", "fld001", "singleLineText")], plain_path)
+        assert "ProjectAttachmentsForCopy" not in plain
+
+    def test_copy_helper_names_are_reserved_field_property_names(self):
+        """The emitted Copy() calls the static base helpers UNQUALIFIED, so a field whose
+        PascalCase matches one would shadow the inherited method and stop the call
+        compiling. `Copy` itself is CS0102 (f2c1afd)."""
+        from myairtable.generators.csharp import _field_property_map
+
+        base = make_test_base(
+            [
+                ("Primary Key", "fld001", "singleLineText"),
+                ("Copy", "fld002", "singleLineText"),
+                ("Detach For Copy", "fld003", "singleLineText"),
+                ("Project Attachments For Copy", "fld004", "singleLineText"),
+            ]
+        )
+        props = _field_property_map(base.tables[0])
+        assert props["fld002"] == "CopyField"
+        assert props["fld003"] == "DetachForCopyField"
+        assert props["fld004"] == "ProjectAttachmentsForCopyField"
+
     # ---- deferred features ----
 
     def test_filter_accessor_present_when_formulas(self, tmp_path: Path):

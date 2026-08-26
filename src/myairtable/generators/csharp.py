@@ -94,6 +94,11 @@ _CSHARP_RESERVED_MODEL_MEMBERS = frozenset(
         "RequireAttachedClient",
         # Local (non-Async) copy verb: a same-named property is CS0102.
         "Copy",
+        # Static base helpers the generated Copy() calls UNQUALIFIED. A same-named property
+        # shadows the inherited method and the call stops compiling.
+        "DetachForCopy",
+        "ProjectAttachmentForCopy",
+        "ProjectAttachmentsForCopy",
         # Protected hooks a generated property would shadow
         "CollectWritableFields",
         "CollectComputedFields",
@@ -413,6 +418,38 @@ def write_models(
             _write_collect_method(write, "CollectComputedFields", computed_fields, prop_names)
             write.line_empty()
 
+            # ---------- local copy verb ----------
+            write.doc_comment(
+                [
+                    "A detached, unsaved copy of this model — mutate it and hand it to the",
+                    "table's <c>CreateAsync</c>. Performs NO I/O (hence no <c>Async</c> suffix):",
+                    "that is the whole difference from the table's <c>DuplicateAsync</c>, which",
+                    "re-reads the source from Airtable first, so a copy is only as fresh as the",
+                    "model in hand — which matters most for attachments, whose signed URLs expire.",
+                    "",
+                    "<para>The copy carries every cell value, computed ones included, so it reads",
+                    "like its source; computed values never reach the wire because create payloads",
+                    "are built from <c>CollectWritableFields</c> alone. It carries no record",
+                    "identity: <c>Id</c> and <c>CreatedTime</c> stay null and no snapshot is taken,",
+                    "so it inserts instead of updating. Only <c>AttachedClient</c> is kept.</para>",
+                    "",
+                    "<para>Linked records are copied as-is: Airtable links are many-to-many, so the",
+                    "copy is added alongside the original and the source's links are untouched.</para>",
+                ],
+                indent=1,
+            )
+            write.line_indented(f"public {model_name} Copy() =>", indent=1)
+            write.line_indented("new()", indent=2)
+            write.line_indented("{", indent=2)
+            # Id / CreatedTime are deliberately absent: a fresh instance already has neither, and
+            # naming them here is the one edit that would silently turn Copy() into an update.
+            write.line_indented("AttachedClient = AttachedClient,", indent=3)
+            for field in table.fields:
+                prop = _csharp_ident(prop_names[field.id])
+                write.line_indented(f"{prop} = {_copy_expression(field, prop)},", indent=3)
+            write.line_indented("};", indent=2)
+            write.line_empty()
+
             # ---------- fluent CRUD ----------
             write.doc_comment(
                 [
@@ -447,6 +484,35 @@ def write_models(
                 write.endregion(indent=1)
 
             write.close()
+
+
+def _copy_expression(field, prop: str) -> str:
+    """The right-hand side of one `{Prop} = ...` line in a generated `Copy()`.
+
+    Three cases, decided by the field's C# type:
+
+    * a WRITABLE attachment cell is projected to `{url, filename}` — `CreateAsync` sends
+      `ToCreateFields()` verbatim and never projects, and Airtable rejects a server-returned
+      attachment object on create;
+    * anything that can hold mutable state — `List<>`, the `VecOrValue<>` / `MaybeSpecialOrError<>`
+      computed wrappers (whose `Multiple` case wraps a mutable list), and an unmodelled `JsonNode`
+      — is rebuilt by `AirtableModel.DetachForCopy`;
+    * everything else is a closed set of immutable types (string, the numerics, `DateTimeOffset`,
+      `TimeSpan`, `bool`, a generated select enum, `AirtableButton`) and is carried by reference.
+
+    A COMPUTED attachment-shaped cell (a lookup of an attachment field decodes to the same shape,
+    wrapped) takes the plain-detach branch and keeps its id/size/type/thumbnails: it is never
+    written back, so stripping its metadata would lose fidelity for nothing.
+    """
+    cs_type = field.csharp_type()
+    if not field.is_computed():
+        if cs_type == "List<AirtableAttachment>":
+            return f"ProjectAttachmentsForCopy({prop})"
+        if cs_type == "AirtableAttachment":
+            return f"ProjectAttachmentForCopy({prop})"
+    if cs_type == "JsonNode" or cs_type.startswith(("List<", "VecOrValue<", "MaybeSpecialOrError<")):
+        return f"DetachForCopy({prop})"
+    return prop
 
 
 def _write_collect_method(
