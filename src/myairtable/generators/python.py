@@ -604,21 +604,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
             write.line_indented(f'def copy(self) -> "{table.name_model()}":')
             write.docstring(
                 [
-                    "Return a detached, unsaved deep copy of this record.",
-                    "",
-                    "Carries every field value -- computed ones included, so the copy reads like",
-                    "its source -- but none of the record's identity, so passing it to `create()`",
-                    "inserts a new record instead of updating this one. Mutate it first to change",
-                    "whatever should differ.",
-                    "",
-                    "Attachments are copied by URL, which makes Airtable re-ingest each file so the",
-                    "new record owns its attachment rather than aliasing this one's. Linked records",
-                    "are copied as-is; Airtable links are many-to-many, so the new record is added",
-                    "alongside this one and this record's own links are untouched.",
-                    "",
-                    "Performs no I/O, so the copy is only as fresh as this model -- and attachment",
-                    "URLs are signed and expire. For a copy guaranteed to reflect current server",
-                    "state, use `duplicate()` on the table instead.",
+                    "Create an in-memory deep copy.",
                 ],
                 2,
             )

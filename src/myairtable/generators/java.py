@@ -663,26 +663,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             # Only attachedClient is put back, so `copy().save()` inserts (contract item 4).
             write.doc_comment(
                 [
-                    "A detached, unsaved copy of this record, ready to hand to {@code create(...)}.",
-                    "",
-                    "<p>Carries every field value — computed ones included, so the copy reads like",
-                    "its source — but none of the record's identity: {@code id}, {@code createdTime}",
-                    "and the dirty-tracking snapshot all start empty, so the copy is a brand-new row",
-                    "rather than an edit of this one. The attached client is kept, so {@code",
-                    "copy().save()} inserts.",
-                    "",
-                    "<p>Performs no I/O — that is the whole difference from the table's {@code",
-                    "duplicate(...)}, which re-reads the source from Airtable first. A copy is",
-                    "therefore only as fresh as the model in hand, which matters most for",
-                    "attachments: their signed URLs expire after roughly two hours.",
-                    "",
-                    "<p>Writable attachment cells are reduced to {@code {url, filename}} here,",
-                    "because {@code create(...)} does not project and Airtable rejects",
-                    "server-returned attachment objects. Computed cells keep their full metadata:",
-                    "they are never written back.",
-                    "",
-                    "<p>Linked records are copied as-is. Airtable links are many-to-many, so the copy",
-                    "is added alongside the original and this record's own links are untouched.",
+                    "Create an in-memory deep copy.",
                 ],
                 indent=1,
             )

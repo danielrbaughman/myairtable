@@ -169,30 +169,7 @@ export abstract class AirtableModel<FldSt extends FieldSet, MdlInterface, Fld> {
 	}
 
 	/**
-	 * Returns a detached, unsaved deep copy of this record.
-	 *
-	 * Carries every field value — computed ones included, so the copy reads like its source —
-	 * but none of the record's identity, so passing it to `create()` inserts a new record
-	 * instead of updating this one. Mutate it first to change whatever should differ.
-	 *
-	 * `_isNew` is what makes that work. A model read back from Airtable has `_isNew === false`
-	 * and an empty dirty set, so `writableFields()` would emit `{}` and the insert would be a
-	 * BLANK record; a copy is built through the constructor, so it starts new with a fresh dirty
-	 * set and emits its full writable payload.
-	 *
-	 * Values are rebuilt rather than shared. Linked fields in particular must be re-created
-	 * against the new instance: `_createLinkedField` bakes an `onDirty` closure bound to the
-	 * model that owns it, so an aliased wrapper would make edits to the COPY mark THIS record
-	 * dirty. Routing through the constructor's `initializeFields()` rebinds them correctly.
-	 *
-	 * Attachments are copied by URL, which makes Airtable re-ingest each file so the new record
-	 * owns its attachment rather than aliasing this one's. Linked records are copied as-is;
-	 * Airtable links are many-to-many, so the new record is added alongside this one and this
-	 * record's own links are untouched.
-	 *
-	 * Performs no I/O, so the copy is only as fresh as this model — and attachment URLs are
-	 * signed and expire. For a copy guaranteed to reflect current server state, use
-	 * `duplicate()` on the table instead.
+	 * Create an in-memory deep copy.
 	 */
 	public copy(): this {
 		const constructor = this.constructor as new (data?: Record<string, unknown>) => this;

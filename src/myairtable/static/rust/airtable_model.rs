@@ -102,29 +102,7 @@ pub trait OrmModel: Sized + Send + Sync + serde::Serialize + serde::de::Deserial
     /// nothing.
     fn project_attachments_for_copy(&mut self) {}
 
-    /// Return a detached, unsaved copy of this record.
-    ///
-    /// Carries every field value -- computed ones included, so the copy reads like its source --
-    /// but none of the record's identity, so passing it to `create_one()` (or calling `save()`)
-    /// inserts a new record instead of updating this one. Mutate it first to change whatever
-    /// should differ.
-    ///
-    /// Note this is deliberately *not* `Clone::clone`: `.clone()` keeps the id, the
-    /// `created_time` and the dirty-tracking snapshot, so a cloned record still updates its
-    /// source. `copy()` clears all three. Clearing the snapshot is the load-bearing part:
-    /// `to_save_json()` returns a *diff* whenever a snapshot exists and the model has an id, so
-    /// a copy that kept the source's snapshot would POST `{}` and create a blank record.
-    ///
-    /// The client handle and table id are kept, so `copy.save()` works without re-attaching.
-    ///
-    /// Attachments are projected to `{url, filename}`, which makes Airtable re-ingest each file
-    /// so the new record owns its attachment rather than aliasing this one's. Linked records are
-    /// copied as-is; Airtable links are many-to-many, so the new record is added alongside this
-    /// one and this record's own links are untouched.
-    ///
-    /// Performs no I/O, so the copy is only as fresh as this model -- and attachment URLs are
-    /// signed and expire. For a copy guaranteed to reflect current server state, use
-    /// `OrmTable::duplicate_one()` instead.
+    /// Create an in-memory deep copy.
     fn copy(&self) -> Self
     where
         Self: Clone,
