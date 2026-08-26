@@ -125,7 +125,7 @@ new_contact: ContactsModel = airtable.contacts.create(draft)
 > and `copy()` everywhere else. There is no `.dict` equivalent — a bare record dict has no ORM
 > identity to detach.
 >
-> The copy carries computed values so it reads like its source, but they are the *source's*
+> The copy carries computed values so it reads like its source, but they are the _source's_
 > values: a formula over `RECORD_ID()` shows the original's id until you save, and Airtable
 > recalculates the real ones on create. Attachments are reduced to `{url, filename}` — the only
 > shape Airtable accepts when inserting, and what makes the new record own its attachment rather
