@@ -21,6 +21,35 @@ from .table_helpers import (
 )
 
 
+def _update_fields(record: ORMType, calculated_field_ids: Sequence[str], *, force: bool) -> dict[str, Any] | None:
+    """The PATCH payload for ``ORMTable.update()``: only the fields changed since the model was read.
+
+    Airtable's PATCH is per field, so a full-payload write re-asserts every field the model was
+    read with and silently reverts whatever another writer changed in between (the classic
+    symptom: a flag one lambda set disappears because a second lambda saved a stale copy of the
+    record seconds later). pyairtable records every descriptor assignment and every mutation of
+    a list read off the model in ``Model._changed``, and ``Model.save()`` sends only those; this
+    mirrors that, so ``update()`` and ``save()`` agree on what a write touches.
+
+    Returns ``None`` when there is nothing to send. ``force`` sends every writable field, like
+    ``Model.save(force=True)``. A model without change tracking (no ``_changed``) is sent in
+    full, since there is nothing to diff against.
+    """
+    fields = prepare_fields_for_save(record.to_record()["fields"], calculated_field_ids)
+    changed = getattr(record, "_changed", None)
+    if force or changed is None:
+        return fields
+    fields = {key: value for key, value in fields.items() if changed.get(key)}
+    return fields or None
+
+
+def _clear_changed(record: ORMType) -> None:
+    """After a write lands, the model's pending changes are no longer pending (as ``Model.save()`` does)."""
+    changed = getattr(record, "_changed", None)
+    if changed is not None:
+        changed.clear()
+
+
 class ORMTable(Generic[ORMType, ViewType, FieldType]):
     """An abstraction of pyAirtable's `Table` for ORM models."""
 
@@ -342,7 +371,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             return new_record
 
     @overload
-    def update(self, record: ORMType, *, typecast: bool = False) -> ORMType:
+    def update(self, record: ORMType, *, typecast: bool = False, force: bool = False) -> ORMType:
         """
         Updates a single Airtable record.
 
@@ -350,11 +379,13 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             record (Model): The record to update.
             typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
                 (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
+            force (bool, optional): If True, every writable field is sent whether or not it changed,
+                like pyairtable's ``Model.save(force=True)``. Defaults to False.
         """
         ...
 
     @overload
-    def update(self, records: list[ORMType], *, typecast: bool = False) -> list[ORMType]:
+    def update(self, records: list[ORMType], *, typecast: bool = False, force: bool = False) -> list[ORMType]:
         """
         Updates multiple Airtable records.
 
@@ -362,6 +393,8 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
             records (list[Model]): The records to update.
             typecast (bool, optional): If True, Airtable coerces string inputs to the cell's type
                 (creating missing select options, parsing dates/numbers, etc.). Defaults to False.
+            force (bool, optional): If True, every writable field is sent whether or not it changed,
+                like pyairtable's ``Model.save(force=True)``. Defaults to False.
         """
         ...
 
@@ -370,6 +403,7 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
         record: ORMType | None = None,
         records: list[ORMType] | None = None,
         typecast: bool = False,
+        force: bool = False,
     ) -> ORMType | list[ORMType]:
         self.invalidate_cache()
         if isinstance(record, list):
@@ -384,23 +418,31 @@ class ORMTable(Generic[ORMType, ViewType, FieldType]):
                 raise ValueError("Records to update cannot be None.")
             if len(records) == 0:
                 return []
-            records: list[RecordDict] = [r.to_record() for r in records]
-            for r in records:
-                r["fields"] = prepare_fields_for_save(r["fields"], self._calculated_field_ids)
-            update_dicts: list[RecordDict] = [{"id": r["id"], "createdTime": r.get("createdTime", ""), "fields": r["fields"]} for r in records]
-            records = self._table.batch_update(update_dicts, use_field_ids=True, typecast=typecast)
-            records = [sanitize_record_dict(r) for r in records]
-            orm_records = [self._orm_cls.from_record(r) for r in records]
-            return orm_records
+            # Unchanged models are returned as-is in their input position; only the rest are sent.
+            out: list[ORMType] = list(records)
+            to_send: list[tuple[int, ORMType, RecordDict]] = []
+            for i, model in enumerate(records):
+                fields = _update_fields(model, self._calculated_field_ids, force=force)
+                if fields is None:
+                    continue
+                rec = model.to_record()
+                to_send.append((i, model, {"id": rec["id"], "createdTime": rec.get("createdTime", ""), "fields": fields}))
+            if not to_send:
+                return out
+            updated = self._table.batch_update([payload for _, _, payload in to_send], use_field_ids=True, typecast=typecast)
+            for (i, model, _), r in zip(to_send, updated):
+                out[i] = self._orm_cls.from_record(sanitize_record_dict(r))
+                _clear_changed(model)
+            return out
         else:
             if record is None:
                 raise ValueError("Record to update cannot be None.")
-            record: RecordDict = record.to_record()
-            record["fields"] = prepare_fields_for_save(record["fields"], self._calculated_field_ids)
-            record = self._table.update(record_id=record["id"], fields=record["fields"], use_field_ids=True, typecast=typecast)
-            record = sanitize_record_dict(record)
-            orm_record = self._orm_cls.from_record(record)
-            return orm_record
+            fields = _update_fields(record, self._calculated_field_ids, force=force)
+            if fields is None:
+                return record
+            updated_dict = self._table.update(record_id=record.id, fields=fields, use_field_ids=True, typecast=typecast)
+            _clear_changed(record)
+            return self._orm_cls.from_record(sanitize_record_dict(updated_dict))
 
     def _create_fields(self, record: ORMType) -> dict[str, Any]:
         """The full writable field payload for a record, independent of dirty state.

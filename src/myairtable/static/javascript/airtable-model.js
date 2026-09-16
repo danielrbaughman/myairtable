@@ -153,7 +153,7 @@ class AirtableModel {
 
 	/**
 	 * Create an in-memory deep copy.
-	 * 
+	 *
 	 * @returns {this} A new unsaved model carrying this record's values.
 	 */
 	copy() {

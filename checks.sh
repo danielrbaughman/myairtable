@@ -28,33 +28,64 @@ cargo fmt
 # Requires swift-format from the Swift 6.0+ toolchain (brew install swift-format).
 # The static runtime tests live in their own SPM package at tests/swift_static/
 # which symlinks src/myairtable/static/swift/ into its Sources tree.
-if command -v swift &> /dev/null; then
+# On macOS, always build with the Xcode-selected toolchain (xcrun) rather than
+# whatever `swift` is first on PATH. swiftly's open-source toolchains cannot
+# compile against a newer Xcode SDK: e.g. Swift 6.3.x + the macOS 27 SDK fails
+# with "unknown argument: '-target-arch-variant'" and Foundation never imports.
+SWIFT=swift
+if [ "$(uname -s)" = "Darwin" ] && command -v xcrun &> /dev/null; then
+    XCODE_SWIFT=$(xcrun --find swift 2>/dev/null || true)
+    if [ -n "$XCODE_SWIFT" ]; then
+        SWIFT="$XCODE_SWIFT"
+    fi
+fi
+if command -v "$SWIFT" &> /dev/null; then
     echo "--- Swift checks ---"
     # Swift toolchain version gate — require Swift 6 for @Observable + macros.
-    SWIFT_VERSION=$(swift --version | head -1 | awk -F' ' '{for(i=1;i<=NF;i++) if ($i=="Swift" && $(i+1)=="version") print $(i+2)}')
+    SWIFT_VERSION=$("$SWIFT" --version | head -1 | awk -F' ' '{for(i=1;i<=NF;i++) if ($i=="Swift" && $(i+1)=="version") print $(i+2)}')
     SWIFT_MAJOR=${SWIFT_VERSION%%.*}
     if [ -n "$SWIFT_MAJOR" ] && [ "$SWIFT_MAJOR" -lt 6 ]; then
         echo "[error] Swift 6+ required (got $SWIFT_VERSION). @Observable + strict concurrency need the Swift 6 toolchain."
         exit 1
     fi
 
-    (cd tests/swift_static && swift build)
-    (cd tests/swift_static && swift test)
-    if command -v swift-format &> /dev/null; then
-        # Require a swift-format from the Swift 6.0+ toolchain. Two version
-        # schemes exist: the old swift-syntax numbering (5xx = Swift 5.x,
-        # 6xx = Swift 6.x, e.g. 600.x/602.x) and the newer semantic scheme that
-        # tracks the Swift release directly (6.x.x = Swift 6.x). Accept either.
-        SWIFT_FORMAT_VERSION=$(swift-format --version | head -1)
-        SWIFT_FORMAT_MAJOR=${SWIFT_FORMAT_VERSION%%.*}
-        # OK when: new scheme major >= 6 (and < 100), or old scheme major >= 600.
-        if { [ "$SWIFT_FORMAT_MAJOR" -ge 6 ] && [ "$SWIFT_FORMAT_MAJOR" -lt 100 ]; } || [ "$SWIFT_FORMAT_MAJOR" -ge 600 ]; then
-            :
-        else
-            echo "[error] swift-format $SWIFT_FORMAT_VERSION is too old. Need Swift 6.0+ (6.x.x or 600.x.x+)."
-            exit 1
+    (cd tests/swift_static && "$SWIFT" build)
+    (cd tests/swift_static && "$SWIFT" test)
+    # Resolve swift-format from the same toolchain as $SWIFT, so a git hook and
+    # an interactive shell agree no matter which shim swiftly puts first on PATH.
+    # (Both Homebrew's 603.0.0 and Xcode's bundled build format this tree
+    # byte-for-byte identically, so this only pins *which* binary runs.)
+    SWIFT_FORMAT=$(command -v swift-format 2>/dev/null || true)
+    if [ "$(uname -s)" = "Darwin" ] && command -v xcrun &> /dev/null; then
+        XCODE_SWIFT_FORMAT=$(xcrun --find swift-format 2>/dev/null || true)
+        if [ -n "$XCODE_SWIFT_FORMAT" ]; then
+            SWIFT_FORMAT="$XCODE_SWIFT_FORMAT"
         fi
-        swift-format format --in-place --recursive --configuration .swift-format src/myairtable/static/swift tests/swift_static/Tests
+    fi
+    if [ -n "$SWIFT_FORMAT" ]; then
+        # Require a swift-format from the Swift 6.0+ toolchain. Three version
+        # strings show up in the wild: the old swift-syntax numbering (5xx =
+        # Swift 5.x, 6xx = Swift 6.x, e.g. 600.x/602.x), the newer semantic
+        # scheme that tracks the Swift release directly (6.x.x = Swift 6.x),
+        # and a bare "main" from toolchain-bundled dev builds (Xcode ships one).
+        # Only a numeric version can be too old; "main" is always newer than 6.0.
+        SWIFT_FORMAT_VERSION=$("$SWIFT_FORMAT" --version | head -1)
+        SWIFT_FORMAT_MAJOR=${SWIFT_FORMAT_VERSION%%.*}
+        case "$SWIFT_FORMAT_MAJOR" in
+            '' | *[!0-9]*)
+                : # non-numeric (e.g. "main"): a dev build from a modern toolchain
+                ;;
+            *)
+                # OK when: new scheme major >= 6 (and < 100), or old scheme major >= 600.
+                if { [ "$SWIFT_FORMAT_MAJOR" -ge 6 ] && [ "$SWIFT_FORMAT_MAJOR" -lt 100 ]; } || [ "$SWIFT_FORMAT_MAJOR" -ge 600 ]; then
+                    :
+                else
+                    echo "[error] swift-format $SWIFT_FORMAT_VERSION is too old. Need Swift 6.0+ (6.x.x or 600.x.x+)."
+                    exit 1
+                fi
+                ;;
+        esac
+        "$SWIFT_FORMAT" format --in-place --recursive --configuration .swift-format src/myairtable/static/swift tests/swift_static/Tests
     else
         echo "[warn] swift-format not installed; skipping format step. (brew install swift-format)"
     fi
