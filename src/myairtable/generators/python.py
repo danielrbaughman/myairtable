@@ -549,6 +549,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool, runtime: bool,
             write.add_import("pyairtable.orm", ["Model"])
             write.add_import("pyairtable.orm.fields", list(PYAIRTABLE_FIELD_TYPES))
             write.add_import("...static.helpers", ["get_api_key", "get_base_id", "build_url"])
+            write.add_import("...static.orm_fields", list(COMPUTED_DATE_ORM_TYPES.values()))
             write.add_import("...static.special_types", ["AirtableAttachment", "RecordId"])
             write.add_import("...static.table_helpers", ["copy_model"])
             # Register the formula runtime import unconditionally; resolve_imports drops it when no
@@ -1051,6 +1052,14 @@ SIMPLE_ORM_TYPES: dict[str, str] = {
     "button": "ButtonField",
 }
 
+# A formula or rollup with a date result gets a tolerant field in place of pyairtable's:
+# its result type says how the field is displayed, not what the API returns for it. See
+# static/python/orm_fields.py.
+COMPUTED_DATE_ORM_TYPES: dict[str, str] = {
+    "date": "ComputedDateField",
+    "dateTime": "ComputedDatetimeField",
+}
+
 
 def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_prefix: str) -> str:
     """Returns the appropriate PyAirtable ORM type for a given Airtable field."""
@@ -1059,10 +1068,15 @@ def pyairtable_orm_type(field: Field, base: Base, output_folder: Path, package_p
     is_read_only: bool = field.is_computed()
 
     # With formula/rollup fields, we want to know the type of the result
-    if field.type in ["formula", "rollup"]:
+    is_formula_or_rollup = field.type in ["formula", "rollup"]
+    if is_formula_or_rollup:
         airtable_type = field.result_type()
 
     params = f'field_name="{original_id}"' + (", readonly=True" if is_read_only else "")
+
+    if is_formula_or_rollup and airtable_type in COMPUTED_DATE_ORM_TYPES:
+        orm_class = COMPUTED_DATE_ORM_TYPES[airtable_type]
+        return f"{orm_class} = {orm_class}({params})"
 
     # Handle simple type mappings via lookup
     if airtable_type in SIMPLE_ORM_TYPES:

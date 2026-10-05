@@ -314,6 +314,72 @@ class TestPythonComputedFields:
         assert "readonly=True" not in result
 
 
+class TestPythonComputedDateFields:
+    """A formula or rollup with a date result gets the tolerant field from static/python/orm_fields.py.
+
+    Its result type says how Airtable displays the field, not what the API returns for it, and
+    pyairtable's own DateField raises on a date-time, a list or an error value -- which fails the
+    whole record, not just the field. See tests/test_orm_fields.py for the field itself.
+    """
+
+    @staticmethod
+    def _with_result(field: Field, result_type: FieldType) -> Field:
+        """make_test_base gives every formula a number result; give `field` this one instead."""
+        assert field.options is not None
+        field.options.result = Result.model_construct(type=result_type, options=None)
+        return field
+
+    def _orm_type(self, field_type: FieldType, result_type: FieldType | None = None) -> str:
+        from myairtable.generators.python import pyairtable_orm_type
+
+        base = make_test_base([("My Field", "fld001", field_type)])
+        field = base.tables[0].fields[0]
+        if result_type is not None:
+            self._with_result(field, result_type)
+        return pyairtable_orm_type(field, base, Path("output"), "")
+
+    @pytest.mark.parametrize("field_type", ["formula", "rollup"])
+    def test_date_result_gets_the_computed_date_field(self, field_type: FieldType):
+        assert self._orm_type(field_type, "date") == 'ComputedDateField = ComputedDateField(field_name="fld001", readonly=True)'
+
+    @pytest.mark.parametrize("field_type", ["formula", "rollup"])
+    def test_date_time_result_gets_the_computed_datetime_field(self, field_type: FieldType):
+        assert self._orm_type(field_type, "dateTime") == 'ComputedDatetimeField = ComputedDatetimeField(field_name="fld001", readonly=True)'
+
+    def test_other_formula_results_keep_pyairtables_field(self):
+        assert self._orm_type("formula", "number").startswith("NumberField = NumberField(")
+
+    def test_a_real_date_field_keeps_pyairtables_strict_field(self):
+        """A writable date column does come back as a date, and is validated on write."""
+        assert self._orm_type("date") == 'DateField = DateField(field_name="fld001")'
+
+    def test_a_real_date_time_field_keeps_pyairtables_strict_field(self):
+        assert self._orm_type("dateTime") == 'DatetimeField = DatetimeField(field_name="fld001")'
+
+    def test_model_imports_the_computed_field_it_uses(self, tmp_path: Path):
+        from myairtable.generators.python import write_models
+
+        base = make_test_base([("My Text", "fld000", "singleLineText"), ("My Formula", "fld001", "formula")], formula_map={"fld001": "TODAY()"})
+        self._with_result(base.tables[0].fields[1], "date")
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, package_prefix="")
+        content = (out / "dynamic" / "models" / "test_table.py").read_text()
+
+        ast.parse(content)
+        assert "from ...static.orm_fields import ComputedDateField\n" in content, "only the computed field in use is imported"
+        assert '_orm_my_formula: ComputedDateField = ComputedDateField(field_name="fld001", readonly=True)' in content
+
+    def test_model_without_computed_dates_does_not_import_them(self, tmp_path: Path):
+        from myairtable.generators.python import write_models
+
+        base = make_test_base([("My Text", "fld000", "singleLineText")])
+        out = tmp_path / "py_output"
+        out.mkdir()
+        write_models(base, out, formulas=False, runtime=True, package_prefix="")
+        assert "orm_fields" not in (out / "dynamic" / "models" / "test_table.py").read_text()
+
+
 # region Formula Function Generation Tests
 
 
