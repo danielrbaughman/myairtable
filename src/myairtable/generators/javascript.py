@@ -443,7 +443,14 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             write.add_import("../../static/special-types", ["recordIdSchema"], always=True)
             write.add_import(
                 "../../static/special-types",
-                ["AirtableAttachmentSchema", "AirtableCollaboratorSchema", "AirtableButtonSchema", "SpecialNumberSchema", "ErrorValueSchema"],
+                [
+                    "AirtableAttachmentSchema",
+                    "AirtableCollaboratorSchema",
+                    "AirtableButtonSchema",
+                    "AirtableAiTextSchema",
+                    "SpecialNumberSchema",
+                    "ErrorValueSchema",
+                ],
             )
 
             # Register select option constants from types (resolved against usage)

@@ -114,6 +114,7 @@ _STATIC_TYPES = frozenset(
         "Attachment",
         "Collaborator",
         "AirtableButton",
+        "AirtableAiText",
         "VecOrValue",
         "MaybeSpecialOrError",
         "MaybeError",

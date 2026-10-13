@@ -88,6 +88,16 @@ public struct AirtableButton: Codable, Sendable, Equatable {
     public let url: String?
 }
 
+/// Airtable AI text field — the generated text and where its generation stands.
+/// `state` is `empty`, `loading`, `generated` or `error`; `errorType` is set
+/// only for `error`.
+public struct AirtableAiText: Codable, Sendable, Equatable {
+    public let state: String
+    public let isStale: Bool?
+    public let value: String?
+    public let errorType: String?
+}
+
 /// Wrapping envelope for an Airtable record as returned by the API:
 /// `{"id": "recXXX", "createdTime": "2024-...", "fields": {...}}`.
 ///

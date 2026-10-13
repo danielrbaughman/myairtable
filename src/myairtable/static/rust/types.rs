@@ -257,6 +257,19 @@ pub struct AirtableButton {
     pub url: Option<String>,
 }
 
+/// An Airtable AI text object: the generated text and where its generation stands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AirtableAiText {
+    /// `empty`, `loading`, `generated` or `error`.
+    pub state: String,
+    #[serde(rename = "isStale", default)]
+    pub is_stale: bool,
+    pub value: Option<String>,
+    /// Only when `state` is `error`.
+    #[serde(rename = "errorType", default, skip_serializing_if = "Option::is_none")]
+    pub error_type: Option<String>,
+}
+
 /// Represents a value that can be either a single item or a list.
 /// Used for lookup/rollup fields where the shape is ambiguous.
 ///

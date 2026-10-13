@@ -241,7 +241,7 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.region("IMPORTS")
             write.mark_imports()
             write.add_import("airtable", ["Attachment", "Collaborator", "FieldSet"])
-            write.add_import("../../static/special-types", ["RecordId"])
+            write.add_import("../../static/special-types", ["RecordId", "AirtableButton", "AirtableAiText"])
             write.endregion()
             write.line_empty()
 
@@ -462,7 +462,14 @@ def write_zod_schemas(base: Base, output_folder: Path) -> None:
             write.add_import("../../static/special-types", ["recordIdSchema"], always=True)
             write.add_import(
                 "../../static/special-types",
-                ["AirtableAttachmentSchema", "AirtableCollaboratorSchema", "AirtableButtonSchema", "SpecialNumberSchema", "ErrorValueSchema"],
+                [
+                    "AirtableAttachmentSchema",
+                    "AirtableCollaboratorSchema",
+                    "AirtableButtonSchema",
+                    "AirtableAiTextSchema",
+                    "SpecialNumberSchema",
+                    "ErrorValueSchema",
+                ],
             )
 
             write.line_empty()
@@ -504,7 +511,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
             write.add_import("airtable", ["AirtableOptions", "FieldSet", "Record"], always=True)
             write.add_import("airtable", ["Attachment", "Collaborator"])
             write.add_import("../../static/airtable-model", ["AirtableModel", "FieldDescriptor"], always=True)
-            write.add_import("../../static/special-types", ["RecordId", "AirtableButton"])
+            write.add_import("../../static/special-types", ["RecordId", "AirtableButton", "AirtableAiText"])
             write.add_import("../../static/linked-record", ["LinkedRecord", "LinkedRecords", "ChainableLinkedRecord"])
             write.add_import("../../static/helpers", ["buildUrl"])
 

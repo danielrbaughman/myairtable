@@ -498,7 +498,7 @@ def _copy_expression(field, prop: str) -> str:
       computed wrappers (whose `Multiple` case wraps a mutable list), and an unmodelled `JsonNode`
       — is rebuilt by `AirtableModel.DetachForCopy`;
     * everything else is a closed set of immutable types (string, the numerics, `DateTimeOffset`,
-      `TimeSpan`, `bool`, a generated select enum, `AirtableButton`) and is carried by reference.
+      `TimeSpan`, `bool`, a generated select enum, `AirtableButton`, `AirtableAiText`) and is carried by reference.
 
     A COMPUTED attachment-shaped cell (a lookup of an attachment field decodes to the same shape,
     wrapped) takes the plain-detach branch and keeps its id/size/type/thumbnails: it is never

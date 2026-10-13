@@ -1,6 +1,7 @@
 // Value-carrier (de)serialization (C# TestValueCarriers parity).
 #include <catch2/catch_test_macros.hpp>
 
+#include "airtable_ai_text.hpp"
 #include "airtable_attachment.hpp"
 #include "airtable_button.hpp"
 #include "airtable_collaborator.hpp"
@@ -53,6 +54,22 @@ TEST_CASE("button decodes label and url", "[carriers]") {
     // Airtable omits url when the button formula yields none.
     auto no_url = json::parse(R"({"label":"Open"})").get<AirtableButton>();
     REQUIRE(no_url.url == std::nullopt);
+}
+
+TEST_CASE("ai text decodes state, staleness, value and error type", "[carriers]") {
+    auto t = json::parse(R"({"state":"generated","isStale":false,"value":"A summary"})")
+                 .get<AirtableAiText>();
+    REQUIRE(t.state == "generated");
+    REQUIRE(t.is_stale == false);
+    REQUIRE(t.value == "A summary");
+    REQUIRE(t.error_type == std::nullopt);
+    // A failed generation has a null value and names what went wrong.
+    auto failed =
+        json::parse(
+            R"({"state":"error","errorType":"emptyDependency","isStale":true,"value":null})")
+            .get<AirtableAiText>();
+    REQUIRE(failed.value == std::nullopt);
+    REQUIRE(failed.error_type == "emptyDependency");
 }
 
 TEST_CASE("record envelope decodes id, createdTime, raw fields", "[carriers]") {

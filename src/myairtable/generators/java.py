@@ -126,7 +126,7 @@ _JAVA_RESERVED_TABLE_PROPS = frozenset({"client", "close", "invalidateAllCaches"
 
 # Cell types a `copy()` must rebuild rather than alias. Everything NOT in this set is
 # immutable by construction (`String`, the boxed numerics, `Boolean`, `Instant`,
-# `Duration`, the generated select-option enums, and the `AirtableButton` record), so
+# `Duration`, the generated select-option enums, and the `AirtableButton`/`AirtableAiText` records), so
 # carrying it by reference shares nothing. Kept as an explicit list because it is the
 # closed set GENERIC_TO_JAVA plus `apply_java_computed_wrapping` can produce, and a new
 # mutable runtime type has to be added here deliberately.

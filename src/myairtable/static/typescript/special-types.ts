@@ -65,6 +65,17 @@ export const AirtableButtonSchema = z.object({
 
 export type AirtableButton = z.infer<typeof AirtableButtonSchema>;
 
+export const AirtableAiTextSchema = z.object({
+	/** "empty", "loading", "generated" or "error" */
+	state: z.string(),
+	isStale: z.boolean().optional(),
+	value: z.string().nullable().optional(),
+	/** Only when `state` is "error" */
+	errorType: z.string().optional(),
+});
+
+export type AirtableAiText = z.infer<typeof AirtableAiTextSchema>;
+
 export type RecordId = string;
 
 /** A variant of `RecordData`, without the ID */

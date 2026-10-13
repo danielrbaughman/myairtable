@@ -47,6 +47,15 @@ const AirtableButtonSchema = z.object({
 	url: z.string().optional(),
 });
 
+const AirtableAiTextSchema = z.object({
+	/** "empty", "loading", "generated" or "error" */
+	state: z.string(),
+	isStale: z.boolean().optional(),
+	value: z.string().nullable().optional(),
+	/** Only when `state` is "error" */
+	errorType: z.string().optional(),
+});
+
 module.exports = {
 	baseIdSchema,
 	recordIdSchema,
@@ -61,4 +70,5 @@ module.exports = {
 	AirtableAttachmentSchema,
 	AirtableCollaboratorSchema,
 	AirtableButtonSchema,
+	AirtableAiTextSchema,
 };

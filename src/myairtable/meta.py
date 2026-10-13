@@ -475,6 +475,7 @@ class Field(Named):
             "count",
             "button",
             "autoNumber",
+            "aiText",
         ]
         return self.type in computed_types
 
@@ -518,6 +519,8 @@ class Field(Named):
 
     def type_friendly(self) -> str:
         match self.type:
+            case "aiText":
+                return "AI Text"
             case "autoNumber":
                 return "Auto-Number"
             case "barcode":
@@ -778,7 +781,8 @@ class Field(Named):
         # Compute result
         if self.type == "multipleLookupValues" or self.type == "lookup":
             result = True
-        elif self.options is None:
+        elif self.type == "aiText" or self.options is None:
+            # An aiText cell is one object whatever its prompt reads from.
             result = False
         else:
             result = False
@@ -803,7 +807,8 @@ class Field(Named):
         # Compute result
         if self.type == "rollup":
             result = True
-        elif self.options is None:
+        elif self.type == "aiText" or self.options is None:
+            # An aiText cell is one object whatever its prompt reads from.
             result = False
         else:
             result = False

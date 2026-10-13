@@ -173,4 +173,31 @@ struct TestSpecialErrorDecoding {
         let json = String(data: try JSONEncoder().encode(v), encoding: .utf8)!
         #expect(json == #"["a",null]"#)
     }
+
+    // MARK: - AirtableAiText
+
+    @Test func maybeDecodesAiTextAsValue() throws {
+        let v = try decode(
+            MaybeSpecialOrError<AirtableAiText>.self,
+            #"{"state":"generated","isStale":false,"value":"A summary"}"#)
+        #expect(
+            v.value
+                == AirtableAiText(
+                    state: "generated", isStale: false, value: "A summary", errorType: nil))
+    }
+
+    @Test func maybeDecodesFailedAiTextAsValue() throws {
+        // An aiText in its own `error` state carries `errorType`, not the `error` sentinel key.
+        let v = try decode(
+            MaybeSpecialOrError<AirtableAiText>.self,
+            #"{"state":"error","errorType":"emptyDependency","isStale":true,"value":null}"#)
+        #expect(v.value?.errorType == "emptyDependency")
+        #expect(v.value?.value == nil)
+    }
+
+    @Test func maybeAiTextStillDecodesErrorValue() throws {
+        // `state` is required, so the value-first decode cannot swallow an error object.
+        let v = try decode(MaybeSpecialOrError<AirtableAiText>.self, ##"{"error":"#ERROR!"}"##)
+        #expect(v == .error(ErrorValue("#ERROR!")))
+    }
 }

@@ -33,6 +33,7 @@ FieldTypeSchema = Literal[
     "createdBy",
     "button",
     "lastModifiedBy",
+    "aiText",
 ]
 
 

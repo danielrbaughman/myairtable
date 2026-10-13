@@ -213,6 +213,26 @@ class TestSpecialErrorDecoding {
     }
 
     // endregion
+
+    // region AirtableAiText
+
+    @Test
+    fun maybeDecodesAiTextAsValue() {
+        val v = decode<MaybeSpecialOrError<AirtableAiText>>("""{"state":"generated","isStale":false,"value":"A summary"}""")
+        assertEquals(AirtableAiText(state = "generated", value = "A summary"), v.valueOrNull)
+    }
+
+    @Test
+    fun maybeDecodesFailedAiTextAsValue() {
+        // An aiText in its own `error` state carries `errorType`, not the `error` sentinel key.
+        val v =
+            decode<MaybeSpecialOrError<AirtableAiText>>(
+                """{"state":"error","errorType":"emptyDependency","isStale":true,"value":null}""",
+            )
+        assertEquals(AirtableAiText(state = "error", isStale = true, errorType = "emptyDependency"), v.valueOrNull)
+    }
+
+    // endregion
 }
 
 /**

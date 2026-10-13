@@ -251,7 +251,9 @@ def write_types(base: Base, output_folder: Path) -> None:
             write.mark_imports()
             write.add_import("datetime", ["datetime", "timedelta"])
             write.add_import("typing", ["Any", "Literal", "TypedDict"])
-            write.add_import("...static.special_types", ["AirtableAttachment", "AirtableButton", "AirtableCollaborator", "RecordId"])
+            write.add_import(
+                "...static.special_types", ["AirtableAiText", "AirtableAttachment", "AirtableButton", "AirtableCollaborator", "RecordId"]
+            )
             write.endregion()
             write.line_empty()
 
@@ -522,6 +524,7 @@ PYAIRTABLE_FIELD_TYPES: tuple[str, ...] = (
     "AttachmentsField",
     "CreatedByField",
     "ButtonField",
+    "AITextField",
     "CountField",
     "DatetimeField",
     "DurationField",
@@ -1050,6 +1053,7 @@ SIMPLE_ORM_TYPES: dict[str, str] = {
     "singleCollaborator": "CollaboratorField",
     "multipleCollaborators": "MultipleCollaboratorsField",
     "button": "ButtonField",
+    "aiText": "AITextField",
 }
 
 # A formula or rollup with a date result gets a tolerant field in place of pyairtable's:

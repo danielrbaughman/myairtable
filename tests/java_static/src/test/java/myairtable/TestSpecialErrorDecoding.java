@@ -262,6 +262,39 @@ class TestSpecialErrorDecoding {
     assertEquals("90", AirtableJson.MAPPER.writeValueAsString(Duration.ofSeconds(90)));
     assertEquals("1.5", AirtableJson.MAPPER.writeValueAsString(Duration.ofMillis(1500)));
   }
+
+  // ---- AirtableAiText --------------------------------------------------------
+
+  @Test
+  void aiTextDecodesAsValue() throws Exception {
+    MaybeSpecialOrError<AirtableAiText> v =
+        decodeMaybe(
+            "{\"state\":\"generated\",\"isStale\":false,\"value\":\"A summary\"}",
+            AirtableAiText.class);
+    assertEquals(
+        new AirtableAiText("generated", false, "A summary", null),
+        ((MaybeSpecialOrError.Value<AirtableAiText>) v).value());
+  }
+
+  @Test
+  void failedAiTextDecodesAsValue() throws Exception {
+    // An aiText in its own "error" state carries errorType, not the "error" sentinel key.
+    MaybeSpecialOrError<AirtableAiText> v =
+        decodeMaybe(
+            "{\"state\":\"error\",\"errorType\":\"emptyDependency\",\"isStale\":true,\"value\":null}",
+            AirtableAiText.class);
+    assertEquals(
+        new AirtableAiText("error", true, null, "emptyDependency"),
+        ((MaybeSpecialOrError.Value<AirtableAiText>) v).value());
+  }
+
+  @Test
+  void aiTextEncodesItsWireKeys() throws Exception {
+    assertEquals(
+        "{\"state\":\"generated\",\"isStale\":false,\"value\":\"A summary\"}",
+        AirtableJson.MAPPER.writeValueAsString(
+            new AirtableAiText("generated", false, "A summary", null)));
+  }
 }
 
 /**
