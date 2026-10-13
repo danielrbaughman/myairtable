@@ -49,6 +49,16 @@ type AirtableButton struct {
 	URL   string `json:"url,omitempty"`
 }
 
+// AirtableAiText is an AI text field value: the generated text and where its
+// generation stands. State is "empty", "loading", "generated" or "error";
+// ErrorType is set only for "error".
+type AirtableAiText struct {
+	State     string `json:"state"`
+	IsStale   bool   `json:"isStale"`
+	Value     string `json:"value,omitempty"`
+	ErrorType string `json:"errorType,omitempty"`
+}
+
 // SortDirection is the direction of a sort spec ("asc" / "desc").
 type SortDirection string
 

@@ -118,6 +118,7 @@ COMPUTED_TYPES: list[FieldType] = [
     "count",
     "button",
     "autoNumber",
+    "aiText",
 ]
 
 # A representative writable type
@@ -381,6 +382,64 @@ class TestPythonComputedDateFields:
 
 
 # region Formula Function Generation Tests
+
+
+class TestAiTextField:
+    """An `aiText` cell is a read-only object: `{state, isStale, value, errorType?}`.
+
+    Airtable added the type after the generator's field-type list was written, and a base
+    with one such field failed schema validation before anything was generated.
+    """
+
+    @staticmethod
+    def _field(referenced_field_ids: list[str] | None = None) -> Field:
+        base = make_test_base([("Looked Up", "fld001", "multipleLookupValues"), ("Summary", "fld002", "aiText")])
+        field = base.tables[0].fields[1]
+        assert field.options is not None
+        field.options.referenced_field_ids = referenced_field_ids
+        return field
+
+    def test_schema_accepts_the_type(self):
+        from pydantic import TypeAdapter
+
+        assert TypeAdapter(FieldType).validate_python("aiText") == "aiText"
+
+    def test_is_read_only(self):
+        assert self._field().is_computed()
+
+    @pytest.mark.parametrize(
+        ("language", "expected"),
+        [
+            ("python", "AirtableAiText"),
+            ("typescript", "AirtableAiText"),
+            ("zod", "AirtableAiTextSchema"),
+            ("rust", "AirtableAiText"),
+            ("swift", "AirtableAiText"),
+            ("kotlin", "AirtableAiText"),
+            ("java", "AirtableAiText"),
+            ("go", "AirtableAiText"),
+            ("csharp", "AirtableAiText"),
+            ("cpp", "AirtableAiText"),
+        ],
+    )
+    def test_maps_to_the_ai_text_carrier(self, language, expected: str):
+        from myairtable.utils.type_mapper import map_type, render_type
+
+        field = self._field()
+        assert render_type(field, language, resolved=map_type(field)) == expected
+
+    def test_a_prompt_that_reads_a_lookup_does_not_make_the_cell_a_list(self):
+        from myairtable.utils.type_mapper import map_type, render_type
+
+        field = self._field(referenced_field_ids=["fld001"])
+        assert not field.involves_lookup()
+        assert render_type(field, "python", resolved=map_type(field)) == "AirtableAiText"
+
+    def test_python_model_uses_pyairtables_field(self):
+        from myairtable.generators.python import pyairtable_orm_type
+
+        field = self._field()
+        assert pyairtable_orm_type(field, field.base, Path("output"), "") == 'AITextField = AITextField(field_name="fld002", readonly=True)'
 
 
 class TestTypeScriptFormulaFunctions:

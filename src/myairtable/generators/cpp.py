@@ -454,6 +454,7 @@ def write_models(base: Base, output_folder: Path, formulas: bool = True, runtime
                 write.include_local(f"dynamic/formulas/{_header_name(f'{prefix}Filters')}")
             for header in _model_option_includes(table):
                 write.include_local(header)
+            write.include_local("static/airtable_ai_text.hpp")
             write.include_local("static/airtable_attachment.hpp")
             write.include_local("static/airtable_button.hpp")
             write.include_local("static/airtable_collaborator.hpp")

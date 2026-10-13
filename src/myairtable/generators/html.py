@@ -46,6 +46,7 @@ _TYPE_CATEGORIES: dict[str, str] = {
     "lookup": "computed",
     "multipleLookupValues": "computed",
     "count": "computed",
+    "aiText": "computed",
     "multipleRecordLinks": "link",
     "date": "date",
     "dateTime": "date",

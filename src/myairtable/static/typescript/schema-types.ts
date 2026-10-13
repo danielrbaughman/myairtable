@@ -30,7 +30,8 @@ export type FieldTypeSchema =
 	| "currency"
 	| "createdBy"
 	| "button"
-	| "lastModifiedBy";
+	| "lastModifiedBy"
+	| "aiText";
 
 export interface FieldOptionSchema {
 	id: string;

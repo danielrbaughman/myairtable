@@ -161,3 +161,30 @@ func TestVecOrValueNestedMSOE(t *testing.T) {
 		t.Fatalf("vals[2] should be special")
 	}
 }
+
+func TestMSOEAiTextIsAValue(t *testing.T) {
+	var m MaybeSpecialOrError[AirtableAiText]
+	if err := json.Unmarshal([]byte(`{"state":"generated","isStale":false,"value":"A summary"}`), &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := AirtableAiText{State: "generated", Value: "A summary"}
+	if v, ok := m.Value(); !ok || v != want {
+		t.Fatalf("value = %+v ok=%v, want %+v/true", v, ok, want)
+	}
+}
+
+func TestMSOEFailedAiTextIsAValue(t *testing.T) {
+	// An aiText in its own "error" state carries errorType, not the "error" sentinel key.
+	var m MaybeSpecialOrError[AirtableAiText]
+	raw := `{"state":"error","errorType":"emptyDependency","isStale":true,"value":null}`
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := AirtableAiText{State: "error", IsStale: true, ErrorType: "emptyDependency"}
+	if v, ok := m.Value(); !ok || v != want {
+		t.Fatalf("value = %+v ok=%v, want %+v/true", v, ok, want)
+	}
+	if m.IsError() {
+		t.Fatalf("a failed aiText is a value, not an ErrorValue")
+	}
+}

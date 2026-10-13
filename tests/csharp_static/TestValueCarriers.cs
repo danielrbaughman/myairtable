@@ -90,4 +90,26 @@ public class TestValueCarriers
         Assert.Equal("Open", model.Label);
         Assert.Equal("https://example.com", model.Url);
     }
+
+    // ---- AI text ----
+
+    [Fact]
+    public void AiTextDecodesStateStalenessAndValue()
+    {
+        var model = Decode<AirtableAiText>(
+            """{ "state": "generated", "isStale": false, "value": "A summary" }"""
+        );
+        Assert.Equal(new AirtableAiText("generated", false, "A summary", null), model);
+    }
+
+    [Fact]
+    public void FailedAiTextIsAValueNotAnErrorValue()
+    {
+        // An aiText in its own "error" state carries errorType, not the "error" sentinel key.
+        var model = Decode<MaybeSpecialOrError<AirtableAiText>>(
+            """{ "state": "error", "errorType": "emptyDependency", "isStale": true, "value": null }"""
+        );
+        var value = Assert.IsType<MaybeSpecialOrError<AirtableAiText>.Value>(model);
+        Assert.Equal(new AirtableAiText("error", true, null, "emptyDependency"), value.Content);
+    }
 }

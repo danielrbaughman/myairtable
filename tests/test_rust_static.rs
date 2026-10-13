@@ -228,6 +228,36 @@ fn maybe_special_or_error_deserializes_value() {
 }
 
 #[test]
+fn maybe_special_or_error_deserializes_ai_text_as_value() {
+    let json = r#"{"state":"generated","isStale":false,"value":"A summary"}"#;
+    let v: MaybeSpecialOrError<AirtableAiText> = serde_json::from_str(json).unwrap();
+    let text = v.value().expect("expected Value");
+    assert_eq!(text.state, "generated");
+    assert!(!text.is_stale);
+    assert_eq!(text.value.as_deref(), Some("A summary"));
+    assert_eq!(text.error_type, None);
+}
+
+#[test]
+fn maybe_special_or_error_deserializes_failed_ai_text_as_value() {
+    // An aiText in its own `error` state carries `errorType`, not the `error` sentinel key.
+    let json = r#"{"state":"error","errorType":"emptyDependency","isStale":true,"value":null}"#;
+    let v: MaybeSpecialOrError<AirtableAiText> = serde_json::from_str(json).unwrap();
+    let text = v.value().expect("expected Value");
+    assert!(text.is_stale);
+    assert_eq!(text.value, None);
+    assert_eq!(text.error_type.as_deref(), Some("emptyDependency"));
+}
+
+#[test]
+fn maybe_special_or_error_ai_text_still_deserializes_error() {
+    // `state` is required, so the value-first untagged decode cannot swallow an error object.
+    let v: MaybeSpecialOrError<AirtableAiText> =
+        serde_json::from_str(r##"{"error":"#ERROR!"}"##).unwrap();
+    assert!(v.is_error());
+}
+
+#[test]
 fn maybe_special_or_error_deserializes_special() {
     let v: MaybeSpecialOrError<f64> = serde_json::from_str(r#"{"specialValue":"NaN"}"#).unwrap();
     assert!(matches!(v, MaybeSpecialOrError::Special(s) if s.special_value == "NaN"));

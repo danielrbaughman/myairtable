@@ -33,4 +33,11 @@ class AirtableButton(TypedDict, total=False):
     url: Optional[str]
 
 
+class AirtableAiText(TypedDict, total=False):
+    state: str  # "empty", "loading", "generated" or "error"
+    isStale: bool
+    value: Optional[str]
+    errorType: str  # only when state is "error"
+
+
 RecordId = str

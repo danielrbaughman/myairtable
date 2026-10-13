@@ -112,6 +112,18 @@ data class AirtableButton(
 )
 
 /**
+ * Airtable AI text field — the generated text and where its generation stands.
+ * [state] is `empty`, `loading`, `generated` or `error`; [errorType] is set only for `error`.
+ */
+@Serializable
+data class AirtableAiText(
+    val state: String,
+    val isStale: Boolean = false,
+    val value: String? = null,
+    val errorType: String? = null,
+)
+
+/**
  * Wrapping envelope for an Airtable record as returned by the API:
  * `{"id": "recXXX", "createdTime": "2024-...", "fields": {...}}`.
  */

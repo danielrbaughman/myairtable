@@ -27,6 +27,7 @@ class GenericType(Enum):
     ATTACHMENT = auto()
     COLLABORATOR = auto()
     BUTTON = auto()
+    AI_TEXT = auto()
 
     # Container types
     LIST_OF_RECORD_IDS = auto()
@@ -94,6 +95,7 @@ FieldType = Literal[
     "createdBy",
     "button",
     "lastModifiedBy",
+    "aiText",
 ]
 
 
@@ -319,6 +321,17 @@ class MultipleCollaboratorsField(NamedFieldMetadata):
     type: Literal["multipleCollaborators"]
 
 
+class AiTextFieldOptions(OptionsBase, total=False):
+    # Literal text interleaved with `{"field": {"fieldId": ...}}` references.
+    prompt: list[str | dict[str, Any]]
+    referencedFieldIds: list[str]
+
+
+class AiTextField(NamedFieldMetadata):
+    type: Literal["aiText"]
+    options: AiTextFieldOptions
+
+
 type FieldMetadata = (
     SingleLineTextField
     | FormulaField
@@ -345,6 +358,7 @@ type FieldMetadata = (
     | MultipleAttachmentsField
     | ButtonField
     | MultipleCollaboratorsField
+    | AiTextField
 )
 
 
